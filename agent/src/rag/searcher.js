@@ -12,15 +12,14 @@ import { DEFAULT_SEARCH_CONFIG } from './config.js';
 import { RagError } from './errors.js';
 
 // ---- 关键词通道参数 ----
-// 其中 4 个参数导出给记忆召回（src/memory）复用：两条通道必须同口径，否则同一查询在两侧得到不可比的分值
 const KEYWORD_MIN_LEN = 2;          // 命中单元最小长度（单字符匹配噪声过大）
 const KEYWORD_MAX_FRAGMENT_LEN = 4; // 中文最长匹配窗口（≥4 字命中已顶格 3 单元，无需更长窗口）
-export const KEYWORD_BOOST_PER_HIT = 0.1;  // 每命中单元加分
+const KEYWORD_BOOST_PER_HIT = 0.1;  // 每命中单元加分
 const KEYWORD_MAX_HITS = 3;         // 计分单元总数上限（防止长查询过度加分）
-export const KEYWORD_MIN_SCORE = 0.5;      // 命中 chunk 的保底分（高于默认阈值 0.3，确保能召回展示）
-export const KEYWORD_MAX_DF_RATIO = 0.5;   // 命中超过半数 chunk 的单元视为高频不参与（如"项目"这类常见词）
+const KEYWORD_MIN_SCORE = 0.5;      // 命中 chunk 的保底分（高于默认阈值 0.3，确保能召回展示）
+const KEYWORD_MAX_DF_RATIO = 0.5;   // 命中超过半数 chunk 的单元视为高频不参与（如"项目"这类常见词）
 const KEYWORD_SCAN_LIMIT = 20000;   // 全量扫描 chunk 数上限（超过则跳过关键词通道，防止大库检索卡顿）
-export const SCORE_MAX = 0.99;             // 分数封顶
+const SCORE_MAX = 0.99;             // 分数封顶
 
 /**
  * 从查询中提取关键词（英文/数字按分隔符成段；中文取连续段）

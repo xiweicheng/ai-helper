@@ -1,4 +1,5 @@
 // agent/src/memory/service.js - 长期记忆业务逻辑（自扩展端 tool-memory.js 下推，行为不变）
+// 召回有两条通道：关键词通道（缺省即全部，行为与下推时逐字一致）+ 可选向量通道（memoryEmbedding.enabled）。
 // 逻辑与数据文件同进程：fs 直接读写 MEMORY_DIR/global-memory.json，互斥锁进程内生效。
 // store/recall/manage 按 action 分发；文案经调用方传入的请求语言 t 闭包渲染。
 
@@ -7,6 +8,12 @@ import { join } from 'path';
 import { MEMORY_DIR } from '../config.js';
 import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
 import { extractKeywords } from './tokens.js';
+import { getMemoryEmbeddingConfig } from './embedding-config.js';
+import { createVectorStoreFacade, memoryModelKey, cosine } from './vectors.js';
+import { resolveMemoryTier, isVectorTier, MEMORY_VECTOR_THRESHOLD } from './tier.js';
+import { isRagAvailable } from '../rag/detect.js';
+import { EMBED_BATCH_SIZE } from '../rag/config.js';
+import { createEmbeddingProvider } from '../rag/embedding/index.js';
 
 // 记忆数据结构默认值（迁移自 tool-memory.js:137-144，字段与版本结构保持一致）
 const DEFAULT_MEMORY_DATA = () => ({
@@ -28,12 +35,89 @@ function generateMemoryId(type) {
   return `${prefix}_${timestamp}_${random}`;
 }
 
+// 查询向量的一次嵌入上限（与 embedding 探活端点同口径）：超时即降级到关键词单通道
+const MEMORY_EMBED_TIMEOUT_MS = 8000;
+
+// 向量命中折算到记忆侧整数分值上的加分。记忆关键词分是「content+3 / title+2 / tags+2 / 全文精确 +5+3」
+// 的整数累加，RAG searcher 用的是 [0,1] 余弦 + 0.1 加分，两把尺子不可比：把 searcher 的常量搬过来
+// 等于改写关键词档的计分，违反「未启用向量时行为逐字不变」的硬约束。因此向量分落在同一把整数尺子上：
+// 达阈值先保底一次 content 命中的权重，相似度满值再折 4 分（合计 7 ≈ content+title+tags 同时命中）。
+const VECTOR_HIT_BONUS = 3;
+const VECTOR_SCALE_POINTS = 4;
+
+/**
+ * 关键词通道计分（自 recall 内联代码原样抽出，权重与判定顺序逐字不变）
+ * @returns {number} 整数分，0 表示词面完全不沾
+ */
+function keywordScore(m, keywords, originalQuery) {
+  let score = 0;
+  const content = (m.content || '').toLowerCase();
+  const title = (m.title || '').toLowerCase();
+  const memTags = (m.tags || []).map(tg => tg.toLowerCase());
+  for (const kw of keywords) {
+    if (content.includes(kw)) score += 3;
+    if (title.includes(kw)) score += 2;
+    if (memTags.some(tg => tg.includes(kw))) score += 2;
+  }
+  if (originalQuery.length >= 2) {
+    if (content.includes(originalQuery)) score += 5;
+    if (title.includes(originalQuery)) score += 3;
+  }
+  return score;
+}
+
+/** 参与 embedding 的文本：与关键词通道同一字段面（content + title + tags） */
+function memorySearchText(m) {
+  return [m.content, m.title, (m.tags || []).join(' ')]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /**
  * 创建记忆服务实例
- * @param {{filePath?: string}} [options] filePath 可注入（测试用），缺省 MEMORY_DIR/global-memory.json
- * @returns {{store: (args: object, t: Function) => Promise<object>, readAll: () => Promise<object>}}
+ * @param {object} [options] 注入点：filePath / vectorsFilePath 指定数据与向量缓存路径（测试用），
+ *   embeddingConfigProvider / tierResolver / embedderFactory / embedTimeoutMs 用于关闭网络与真实配置依赖。
+ *   缺省全部走真实实现：向量通道只在 memoryEmbedding 显式启用后开启，未启用时 recall 与历史行为一致。
+ * @returns {{store: Function, recall: Function, manage: Function, injectSelect: Function, backfillVectors: Function, readAll: Function}}
  */
-export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory.json') } = {}) {
+export function createMemoryService({
+  filePath = join(MEMORY_DIR, 'global-memory.json'),
+  vectorsFilePath,
+  embeddingConfigProvider = getMemoryEmbeddingConfig,
+  embedderFactory = (cfg) => createEmbeddingProvider(cfg),
+  tierResolver = (cfg) => resolveMemoryTier(cfg, isRagAvailable()),
+  embedTimeoutMs = MEMORY_EMBED_TIMEOUT_MS
+} = {}) {
+  const vectors = createVectorStoreFacade(vectorsFilePath ? { filePath: vectorsFilePath } : {});
+  let cachedProvider = null;
+  let cachedProviderKey = null;
+
+  /** provider 按模型标识复用：改配置即重建，避免拿旧 endpoint/key 打新模型 */
+  function getProvider() {
+    const cfg = embeddingConfigProvider();
+    const key = memoryModelKey(cfg);
+    if (!cachedProvider || cachedProviderKey !== key) {
+      cachedProvider = embedderFactory(cfg);
+      cachedProviderKey = key;
+    }
+    return { provider: cachedProvider, cfg };
+  }
+
+  /** 嵌入调用带超时上限：外部 embedding 端点挂起不能把一次召回无限拖住（超时即退回关键词通道） */
+  async function embedWithTimeout(promise) {
+    let timer;
+    try {
+      return await Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('embedding_timeout')), embedTimeoutMs);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // 进程内互斥锁：保护 read-modify-write（替代扩展端 SW 内存锁，tool-memory.js:111-130 语义）
   let lockChain = Promise.resolve();
   function withMemoryLock(task) {
@@ -252,6 +336,23 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
   async function recall(args, sessionId, t) {
     const { query, tags, memoryType = 'all', limit = 10 } = args;
 
+    // 档位判定与查询向量在取锁之前完成：embedding 是外部网络调用，放进互斥锁里会让一次慢请求
+    // 阻塞同进程的所有记忆写入（锁是进程内 Promise 链，没有超时逃生口）。
+    const tier = tierResolver(embeddingConfigProvider());
+    let queryVec = null;
+    if (isVectorTier(tier) && query && query.trim()) {
+      try {
+        const { provider } = getProvider();
+        const vec = await embedWithTimeout(provider.embedQuery(query));
+        queryVec = Array.isArray(vec) && vec.length ? vec : null;
+      } catch (err) {
+        console.warn('[Memory] embedQuery failed, fallback to keyword-only:', err.message);
+        queryVec = null;
+      }
+    }
+    // fused = 本次确实拿到了可用的查询向量（queryVec 仅在向量档且嵌入成功时非空）
+    const fused = queryVec !== null;
+
     return withMemoryLock(async () => {
       const readResult = await readMemoryFile();
       if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
@@ -273,7 +374,9 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
           message: t('memory.memoryEmpty'),
           results: [],
           total: 0,
-          query
+          query,
+          tier,
+          vectorMatched: 0
         };
       }
 
@@ -286,31 +389,15 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
       }
 
       // 按关键词搜索
+      let vectorMatched = 0;
       if (query && query.trim()) {
         const keywords = extractKeywords(query);
         const originalQuery = query.toLowerCase().trim();
 
-        if (keywords.length > 0) {
-          const scored = candidates.map(m => {
-            let score = 0;
-            const content = (m.content || '').toLowerCase();
-            const title = (m.title || '').toLowerCase();
-            const memTags = (m.tags || []).map(tg => tg.toLowerCase());
-
-            for (const kw of keywords) {
-              if (content.includes(kw)) score += 3;
-              if (title.includes(kw)) score += 2;
-              if (memTags.some(tg => tg.includes(kw))) score += 2;
-            }
-
-            // 全文精确匹配加分
-            if (originalQuery.length >= 2) {
-              if (content.includes(originalQuery)) score += 5;
-              if (title.includes(originalQuery)) score += 3;
-            }
-
-            return { memory: m, score };
-          });
+        if (keywords.length > 0 && !fused) {
+          // 关键词单通道：A 档（未启用向量）走这条，向量档但本次查询向量不可用时也退回这条，
+          // 因此融合失败的最坏情况就是今天的行为，不会更差。
+          const scored = candidates.map(m => ({ memory: m, score: keywordScore(m, keywords, originalQuery) }));
 
           // 有匹配关键词的才返回，按分数排序
           candidates = scored
@@ -320,6 +407,42 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
 
           // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
           // 上一行赋值清空的 candidates 数组，恒返回空，属死代码，未随迁——行为等价。
+        } else if (fused) {
+          // 双通道融合：词面分照算，语义达阈值的条目在其词面分之上叠加整数向量分。
+          // 关键词零命中但语义达阈值的条目由此能被召回——这是 A 档拿不到的增量。
+          const vecMap = (await vectors.read()).vectors;
+
+          const missing = candidates.filter(m => m.id && !(m.id in vecMap));
+          if (missing.length) {
+            // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义分，不影响正确性
+            try {
+              const { provider, cfg } = getProvider();
+              const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
+              const pairs = missing.map((m, i) => [m.id, Array.isArray(vecs) ? vecs[i] : undefined]).filter(([, v]) => Array.isArray(v) && v.length);
+              if (pairs.length) {
+                await vectors.upsertVectors(pairs, memoryModelKey(cfg));
+                for (const [id, v] of pairs) vecMap[id] = v;
+              }
+            } catch (err) {
+              console.warn('[Memory] vector backfill skipped:', err.message);
+            }
+          }
+
+          const scored = candidates.map(m => {
+            const score = keywordScore(m, keywords, originalQuery);
+            const vec = m.id ? vecMap[m.id] : null;
+            const cos = vec ? cosine(queryVec, vec) : 0;
+            if (cos >= MEMORY_VECTOR_THRESHOLD) {
+              vectorMatched++;
+              return { memory: m, score: score + VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS) };
+            }
+            return { memory: m, score };
+          });
+
+          candidates = scored
+            .filter(s => s.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(s => s.memory);
         }
       }
 
@@ -407,7 +530,10 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
           return rest;
         }),
         total: results.length,
-        query
+        query,
+        // 召回档位与语义命中数：供调用方（转发层/侧栏）展示"这次用到哪一档"，不改变其余字段
+        tier,
+        vectorMatched
       };
     });
   }
@@ -557,11 +683,57 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
     });
   }
 
+  /**
+   * 显式为全部记忆重建向量缓存（模型变更后或首次启用向量档时调用一次）。
+   * 派生缓存：失败不影响正确性——recall 会按需补齐，最坏情况是这次少一条语义分。
+   * @param {Function} t 请求语言翻译函数
+   */
+  async function backfillVectors(t) {
+    const cfg = embeddingConfigProvider();
+    const tier = tierResolver(cfg);
+    if (!isVectorTier(tier)) {
+      return { success: true, skipped: true, reason: t ? t('memory.embeddingDisabled') : 'embedding_disabled' };
+    }
+    const readResult = await readMemoryFile();
+    if (!readResult.success) return { success: false, error: readResult.error };
+    const data = readResult.data;
+    const items = [...(data.facts || []), ...(data.summaries || [])].filter(m => m && m.id);
+    if (!items.length) return { success: true, indexed: 0 };
+
+    let provider;
+    try {
+      provider = getProvider().provider;
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+
+    const pairs = [];
+    const errors = [];
+    for (let i = 0; i < items.length; i += EMBED_BATCH_SIZE) {
+      const batch = items.slice(i, i + EMBED_BATCH_SIZE);
+      try {
+        const vecs = await embedWithTimeout(provider.embedDocuments(batch.map(memorySearchText)));
+        batch.forEach((m, j) => {
+          if (Array.isArray(vecs) && Array.isArray(vecs[j]) && vecs[j].length) pairs.push([m.id, vecs[j]]);
+        });
+      } catch (err) {
+        // 单批失败不中断整体：能建多少算多少，剩余条目后续 recall 时再补
+        errors.push(err.message);
+      }
+    }
+    if (!pairs.length) {
+      return { success: false, indexed: 0, error: errors[0] || 'no_vectors' };
+    }
+    await vectors.upsertVectors(pairs, memoryModelKey(cfg));
+    return { success: true, indexed: pairs.length, total: items.length, failedBatches: errors.length };
+  }
+
   return {
     store,
     recall,
     manage,
     injectSelect,
+    backfillVectors,
     // 读全部记忆数据对象（失败抛错；仅供测试与内部逻辑使用，业务方法内部用 readMemoryFile）
     readAll: async () => {
       const r = await readMemoryFile();

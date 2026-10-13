@@ -5,7 +5,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryService } from '../../src/memory/service.js';
@@ -240,5 +240,168 @@ describe('injectSelect', () => {
     assert.equal(r.success, true);
     assert.deepEqual(r.injected, []);
     assert.equal(r.remainingCount, 0);
+  }));
+});
+
+// 追加：recall 的向量通道（Tier B/C）。
+// 关键约束：A 档（tier === 'none'）必须逐字维持现状——既不能触碰 provider，也不能创建向量缓存文件。
+// 注入点用 embeddingConfigProvider / tierResolver / embedderFactory，测试绝不读用户真实 config.json，也绝不联网。
+describe('recall 向量通道', () => {
+  const EMBED_CFG = { enabled: true, mode: 'openai-compat', baseUrl: '', modelName: 'm', apiKey: 'k', dimensions: 3, queryPrefix: '' };
+
+  function withVectorService(opts, fn) {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-test-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, ...(opts.embeddingConfig || {}) }),
+      tierResolver: () => 'remote',
+      embedTimeoutMs: 200,
+      ...opts
+    });
+    return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+  }
+
+  // 语义近、词面零重合的条目应被召回；无关条目两条通道都不沾，应被排除
+  it('向量通道召回语义相近但关键词零命中的条目，并标注 tier/vectorMatched', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('目标') ? [0.98, 0.2, 0] : [0, 1, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关条目', tags: [], importance: 5 }, T);
+    const backfill = await svc.backfillVectors(T);
+    assert.equal(backfill.success, true);
+    assert.equal(backfill.indexed, 2);
+
+    const r = await svc.recall({ query: '完全不同措辞', limit: 5 }, null, T);
+    assert.equal(r.tier, 'remote');
+    assert.ok(r.vectorMatched >= 1);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, '目标条目');
+  }));
+
+  it('缺向量的条目在 recall 中按需补齐，第二次召回不再调用 embedDocuments', () => withVectorService({
+    embedderFactory: () => {
+      const calls = { q: 0, d: 0 };
+      return {
+        get stats() { return calls; },
+        embedQuery: async () => { calls.q++; return [1, 0, 0]; },
+        embedDocuments: async (texts) => { calls.d += texts.length; return texts.map(() => [0.98, 0.2, 0]); }
+      };
+    }
+  }, async (svc, { vectorsFilePath }) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha', tags: [], importance: 5 }, T);
+    const r1 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r1.success, true);
+    assert.ok(existsSync(vectorsFilePath), '补齐后应落盘向量缓存');
+
+    const r2 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r2.success, true);
+    assert.equal(r2.vectorMatched, r1.vectorMatched);
+  }));
+
+  it('embedQuery 抛错：本次召回不失败，退回关键词排序', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => { throw new Error('boom'); }, embedDocuments: async () => { throw new Error('boom'); } })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '必须命中 npm 包', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 1);
+    assert.equal(r.vectorMatched, 0);
+    assert.ok(r.results[0].content.includes('npm'));
+  }));
+
+  it('embedQuery 永不 resolve：按超时降级，不挂起', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: () => new Promise(() => {}), embedDocuments: async () => [] }),
+    embedTimeoutMs: 20
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'x npm', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 1);
+  }));
+
+  it('provider 工厂本身抛错：等价于向量通道不可用，召回仍成功', () => withVectorService({
+    embedderFactory: () => { throw new Error('no provider'); }
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'y npm', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.vectorMatched, 0);
+  }));
+
+  it('A 档（none）完全不触碰向量侧：不调 provider、不创建缓存文件', () => {
+    let embedCalls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-a-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false }),
+      tierResolver: () => 'none',
+      embedderFactory: () => { embedCalls++; throw new Error('A 档不该创建 provider'); }
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      await s.store({ action: 'add', type: 'fact', content: 'abc 关键词', tags: ['t'], importance: 5 }, T);
+      const r = await s.recall({ query: '关键词', limit: 5 }, null, T);
+      assert.equal(r.tier, 'none');
+      assert.equal(r.vectorMatched, 0);
+      assert.equal(r.total, 1);
+      assert.equal(embedCalls, 0);
+      assert.equal(existsSync(vectorsFilePath), false, 'A 档不得生成向量缓存文件');
+      const bf = await s.backfillVectors(T);
+      assert.equal(bf.skipped, true);
+      assert.equal(embedCalls, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('无 query 的召回不做向量计算（没有可嵌入的查询）', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => { throw new Error('不应被调用'); }, embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '条目', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.vectorMatched, 0);
+    assert.equal(r.total, 1);
+  }));
+
+  it('backfillVectors 整体重建：模型标识变更即作废旧向量', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-key-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    let cfg = { ...EMBED_CFG, modelName: 'm1' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => cfg,
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      await s.store({ action: 'add', type: 'fact', content: 'alpha', tags: [], importance: 5 }, T);
+      const first = await s.backfillVectors(T);
+      assert.equal(first.indexed, 1);
+      const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      assert.equal(stored.modelKey, 'openai-compat|m1|3');
+
+      cfg = { ...cfg, modelName: 'm2' };
+      await s.backfillVectors(T);
+      const after = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      assert.equal(after.modelKey, 'openai-compat|m2|3');
+      assert.equal(Object.keys(after.vectors).length, 1, '换模型后只应剩新模型的这一条向量');
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('delete 淘汰记忆后不再被召回（向量缓存中的孤儿不影响结果）', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    const added = await svc.store({ action: 'add', type: 'fact', content: '临时条目', tags: [], importance: 5 }, T);
+    await svc.backfillVectors(T);
+    await svc.store({ action: 'delete', memoryId: added.memory.id }, T);
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 0);
   }));
 });
