@@ -4,6 +4,32 @@
 
 ## 2026-10-13
 
+### 变更（记忆向量配置界面：四项体验反馈 + 一次数据污染事故的修复）
+> 用户实机使用后回报四项体验问题，另在收口时发现上一轮留下的 agent 测试夹具会写坏用户的真实向量缓存（见本节末「事故」）。
+
+- **状态卡不再把「读失败」伪装成「读取中」**（上一轮的缺陷）：`agentApi` 原先 `return resp.json()` 丢掉状态码，`renderStatus(null)` 又把 404 与「尚未请求」合并成同一句 `statusLoading` → 永久「读取中…」。现在 `toolbox-shared.js` 给解析后的对象附 `data.httpStatus`（**字段名不用 `status`**，避开响应体已有的同名字段，与 `background/local-agent-client.js` 同一惯例；改前 grep 核过 43 个调用方无整体展开/回塞），面板改三态：加载中 / 成功 / 失败（`httpStatus === 404` → 提示「当前代理版本没有这个状态接口，请重启代理后再看」，其余失败附 `返回信息: <code>` 真实错误），未连接另给 `statusOffline`，不谎称读取中。`loadAll()` 拆成 cfgTask / statusTask **两个并发但各自独立降级**的请求：状态读失败不得拖垮配置回填（先改成了串行 await，与既有「并行拉取」语义相背，已改回）。
+- **两颗同名不同物的保存按钮改成可区分**：底部 `#saveBtn` 写 chrome.storage 扩展设置，面板那颗写 agent 的 `config.json`——不是重复功能，故不删除而是**改名 + 加职责说明行**：按钮文案改「**保存到代理**」（用户指定措辞）/ `Save to Agent`，面板新增 `.memory-scope-hint`（「本 Tab 的配置写入代理（本地 agent 服务）的 config.json；页面底部的「保存」只存扩展自身设置，两者互不影响」）。**术语冲突已记录**：仓库 zh 里「代理」同时也是 `data-tab="agent"` 那个 Tab（`tabAgent`）的名字，说明行因此显式写成「代理（本地 agent 服务）」降低歧义。
+- **修掉「刷新配置页后记忆 Tab 跳回基础」**（用户描述为「那个 G 的 tab 不正常」，即「记」）：根因是 `src/options/index.js:55` 的 `validTabs` 是硬编码白名单，上一轮新增记忆 Tab 时忘了同步 → `#memory` 被判非法 → 掉回 HTML 默认 active 的「基础」。同时把刷新收敛成 `tabRefreshers` 注册表并在 `switchTab()` 末尾派发：激活一共有四条路径（按钮 click、hash 直达、`optionsInitialTab`、`SWITCH_TAB` 消息），刷新若只挂在按钮 click 上，F5 与从侧边栏跳进来这两条会停在空数据。**注册必须早于 `activateByHash()`**，否则深链接那一条仍漏。
+- **记忆弹层新增「＋」跳配置快捷入口**：`side_panel.html` 标题行右侧新增 `#memoryLimitConfigEntry`，**图标与 MCP/Skill 那颗逐字一致**（同一 `M12 5v14` / `M5 12h14` 加号、22×22、同一 hover 色），走同一通道 `OPEN_OPTIONS_PAGE` + `hash: 'memory'`。定位用 `margin-left:auto; flex:none`，不抢 `stopPropagation`（它在 dropdown 内部，文档监听靠 `contains(e.target)` 不会关掉弹层）。中英各新键 `memory.configEntry`。
+- **英文整排 Tab 省略号**：实测容器内宽 540px，英文 8 个 Tab 自然宽合计 **550px**，只差 10px 就让整排全部截断 2–4px（中文 526px 放得下，所以只在英文复现）。修法不是继续缩字号而是**去掉 `min-width:0` + 给 `.tab-nav` 加 `flex-wrap:wrap` + `padding: 10px 6px → 10px 4px`**：`min-width:0` 允许按钮缩到文字以下，代价就是整排省略号；现在宽窗单行、真放不下才换行，任何宽度零截断。
+
+### 事故（上一轮留下的 agent 测试夹具写坏用户真实数据，本轮修复）
+- **泄漏方式**：`memory-service.unit.test.js` 的 `withService` 与 `memory-routes.unit.test.js` 的 `withRouter` **只注入了 `filePath`**。`createMemoryService` 的 `embeddingConfigProvider` 默认就是 `getMemoryEmbeddingConfig` → `loadConfig()` 读用户真实 `~/.ai-helper-agent/config.json`，`vectorsFilePath` 缺省 → facade 默认落 `VECTORS_FILE`。本机一开记忆向量，这些“单测”就会**拿真 key 联网**（实测单条耗时 827ms）并把向量**写进用户真实缓存**。
+- **后果（实测）**：用户 `memory-vectors.json` 的 41 条被覆盖成 2 条测试条目（`upsertVectors` 在 `cur.modelKey !== modelKey` 时整体作废旧向量）。真源 `global-memory.json` **未被碰**（mtime 20:22、41 条完好），属派生缓存，可重建。
+- **恢复**：经用户授权后调 `POST /api/memory/reindex` 两次重建（均 `indexed:41 total:41 failedBatches:0`），再用 `dropVectors` 清掉测试残留的 7 条孤儿；端点实测 `GET /api/memory/vector-status` 回 `200 {indexed:41,total:41,stale:false,tier:"remote"}`。**泄漏已堵的硬证据**：修复后跑全量 agent 单测，该文件的 mtime 与字节数跑前后逐字相同（`14:04:55.328Z` / 1043714B）。
+- **上一轮的记录在此作废一条**：`withStatusRoute` 的注释当时已写明「复用 withRouter 会读真实缓存」，但**只隔离了新夹具、没回头修老 harness**，属于已知风险未堵。
+- **防复发**：新增 `agent/test/unit/memory-test-isolation.unit.test.js`（33 例）——**扫全部 `test/unit/*.test.js` 源码**，按括号配对取出每个 `createMemoryService(...)` 的实参，要求五个注入点（`filePath`/`vectorsFilePath`/`embeddingConfigProvider`/`tierResolver`/`embedderFactory`）齐备，并禁 `vectorsFilePath: VECTORS_FILE` 与无参 `createVectorStoreFacade()`。它当场又拓出第三处：`memory-recall-eval.unit.test.js` 缺 `vectorsFilePath`（靠 `enabled:false` 遮蔽，结构上仍是开的）。`withVectorService` 补上**默认抛错的 `embedderFactory`**（写在 `...opts` 之前，用例自带的照旧覆盖）：忘了供假 provider 应当当场炸，而不是静默回落去联网。
+- **反向验证**：`git checkout HEAD --` 临时退回三个旧夹具文件 → 结构钉 3 红（逐个点名缺哪个注入点）且碎块用例回红（569ms，仍在联网）；恢复后 369/369 绿。**意外收获**：`只碰到 2 字碎块的条目不当成命中` 这条红不是召回实现被改坏，而是断言从「纯词面通道」漂成了「词面 + 语义」双通道——隔离回 A 档后它**本就该绿**（临时脚本实测 `tier=none total=1`）。
+- **未采纳**：不动 `withStatusRoute` 的现有形态，不改 `RRF` 实现（碎块 vs 语义 top1 的名次取向仍是上一轮已登记的遗留项，本轮只消除测试环境的干扰）。
+
+### 工程质量与测试（四项体验反馈）
+- 新增/改写 22 例：`memory-panel.unit.test.js` 状态卡三态 describe 5 例 + harness 加 `nextStatus`/`statusThrows`；新文件 `memory-popup-quick-entry.unit.test.js` 4 例结构钉（按钮位置/type、＋ 图标与 manage 逐字一致、`OPEN_OPTIONS_PAGE` hash、中英 `configEntry`）；`memory-panel-structure.unit.test.js` +4 例（`validTabs` 子集钉、刷新收敛钉、保存文案/说明行钉、三态文案键钉）；agent 侧 `memory-test-isolation.unit.test.js` 33 例。
+- 计数（均实测）：根 vitest **1298/1298**（84 文件，上一节 1285 + 13）、agent 单测 **369/369**（336 + 33）、`memory-service` **56/56**、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对 9 个改动文件零输出。
+- **常驻探针三件**（`test-results-probes/`，已被 .gitignore 盖）：`_tab-nav-overflow.mjs` **16/16**（从 `options.html` + 两份语言包解析真实标签，8 宽度 × 中英零截断零横向溢出）；`_memory-config-entry.mjs` **13/13**（加载真实 dist 扩展：＋ 在 360px 弹层里 22×22、贴标题行右、与文字同行不截断，点击真打开 options 并停在 `#memory`，未连代理时状态卡是「代理未连接」而非「读取中」）；临时端到端探针 **14/14**（8 条 Tab 的 F5 全中、深链接回填、404 → 旧代理提示且不含「读取中」、vw=1440 单行零截断）。
+- **上一轮的溢出探针记录作废**：当时用 `page.setContent()` + file:// 样式表，那其实是个 `about:blank` 文档、**样式根本没加载**（本轮前置断言 `cssApplied=false` 暴露），那次「全绿」结论不成立。本轮改用仓库内 file:// 夹具 + `goto` 重测，并把「先断言样式确实生效」写进探针；`git stash` 退回旧样式后同一探针退出码 1（en vw=1440 整排截断），新样式 0。
+- **已知非全绿（与本改动无关）**：根 vitest 仍有 **2 处既有 unhandled rejection**（`apply-rag-tool-introduction.unit.test.js` 的 `document is not defined`，源头 `src/side_panel/tool-panel.js:921`）。已 `git stash push --` 本次全部改动后单跑该文件复现同一 2 错（1 文件 passed / 9 例全过但带 2 错），确认在干净 main 上就存在，本轮不背这个改动。
+- **未跑项如实记录**：`agent/test/integration/*.test.js` 仍未运行（需连一个真实在跑的 agent，会打到用户正在运行的进程）；本轮用户授权的是一次 `reindex`，不是重启。
+
 ### 新增（记忆向量配置界面）
 - **options 页新增「记忆」Tab**（`src/options/memory-panel.js`）：开关语义召回、远端/本地单选、读写 `memoryEmbedding` 配置、探活并自动回填维度、保存、重建向量索引。配置真值仍只在 agent 的 `config.json`，扩展端全部经 HTTP 打既有端点（`/api/memory/embedding-config`、`/api/memory/test-embedding`、`/api/memory/reindex`），**agent 业务逻辑零改动**。
 - **新只读端点 `GET /api/memory/vector-status`**（`service.vectorStatus()` + `handleEmbeddingEndpoints` 分支）：`{ indexed, total, storedModelKey, currentModelKey, stale, tier }`。`stale = Boolean(storedModelKey) && storedModelKey !== currentModelKey`，**空库不算陈旧**（首次启用是正常态）；`tier === 'none'` 照返 200（「关着但有陈旧残留」是要看到的状态）。走 GET 而非 `ROUTE_METHODS`（后者只收 POST 业务动作）。路由上非 GET 落回通用分发（404），不新增业务路由。
@@ -19,8 +45,8 @@
 ### 工程质量与测试（记忆向量配置界面）
 - 新增 20 例：agent `memory-service` +3（条数与换模型 stale、空库不算陈旧、向量档关着照返统计）、agent `memory-routes` +3（GET 合法 200、stale 透传、非 GET 落 404）、扩展端结构钉 4 + 行为钉 10。
 - 计数（均实测）：`memory-service` **56/56**（基线 53 + 3）、`memory-routes` **15/15**（基线 12 + 3）、agent 全量单测 **336/336**、冒烟 **21/21**、根 vitest **1285/1285**（83 文件，本次 +14）、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对新增/修改的扩展端文件零输出。
-- **反向验证**：Task 1/2 分别 `git stash` 退回 `service.js` / `routes.js` 实现后见红（3 红 / 2 红）且红因准确（`svc.vectorStatus is not a function` / `statusCode 404 ≠ 200`），pop 后转绿；Task 4 stash 退回 `memory-panel.js` 空壳后 10 例全红。全部 agent 测试用 `mkdtempSync` 临时目录 + 注入 `embeddingConfigProvider` / `tierResolver` / `embedderFactory`，**零联网、零下载模型、不碰 `~/.ai-helper-agent`**。
-- **tab 栏溢出探针**（用完即删）：第 8 个 Tab 加入后，静态复刻真实 `styles.css` 跑 8 个宽度 × 中英，`tab-nav` 无溢出、页面无横向滚动、无一个按钮文案被省略号截断（沿用上一轮 `min-width:0` + 窄屏断点的修复，本次无需再改）。
+- **反向验证**：Task 1/2 分别 `git stash` 退回 `service.js` / `routes.js` 实现后见红（3 红 / 2 红）且红因准确（`svc.vectorStatus is not a function` / `statusCode 404 ≠ 200`），pop 后转绿；Task 4 stash 退回 `memory-panel.js` 空壳后 10 例全红。全部 agent 测试用 `mkdtempSync` 临时目录 + 注入 `embeddingConfigProvider` / `tierResolver` / `embedderFactory`，**零联网、零下载模型、不碰 `~/.ai-helper-agent`**。 —— **本句末段为错定**（已由同日「事故」节推翻）：只适用于 `withVectorService` 与 `withStatusRoute` 两个新夹具，`withService` / `withRouter` / `memory-recall-eval` 三处开的是真网、写的是用户真实向量缓存，本轮已修。
+- **tab 栏溢出探针**（用完即删）：第 8 个 Tab 加入后，静态复刻真实 `styles.css` 跑 8 个宽度 × 中英，`tab-nav` 无溢出、页面无横向滚动、无一个按钮文案被省略号截断（沿用上一轮 `min-width:0` + 窄屏断点的修复，本次无需再改）。 —— **本条结论作废**：探针用的 `setContent()` + file:// 样式表在 `about:blank` 下根本不加载样式，那是一次假绿灯；英文整排在真实页面上是截断的，已由同日上方「四项体验反馈」节的 `flex-wrap` 修复与重测探针处理。
 - **未跑项如实记录**：`agent/test/integration/*.test.js` 本次未运行——它需连一个真实在跑的 agent（`127.0.0.1:18910` + token），会打到用户正在运行的进程上；新端点的影响面已由 `memory-routes` 单测 + 冒烟覆盖。
 
 ### 更正（记忆向量配置界面：spec 自审抓到的错话）

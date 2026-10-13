@@ -1160,3 +1160,39 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 收口计数（全部实测）：`memory-service` **56/56**、`memory-routes` **15/15**、agent 单测 **336/336**（+6）、冒烟 **21/21**、根 vitest **1285/1285**（83 文件，+14）、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对扩展端改动文件零输出、`git status --porcelain -uall` 0 行。
 
 诚实记录两项非全绿：根 vitest 仍有 **2 处既有 unhandled rejection**（`apply-rag-tool-introduction.unit.test.js` 的 `document is not defined`），已用 `git stash push -u` 退回本次改动复验，确认与本计划无关；agent 集成测试本次未跑（见上文第 6 条）。
+
+---
+
+## 执行记录第二轮（2026-10-13 深夜：四项体验反馈 + 一次事故修复）
+
+用户实机试用后回报四项体验问题（① 状态卡永久「读取中」② 两颗「保存配置」重名 ③ 英文整排 Tab 省略号 ④ 记忆弹层缺快捷入口），另报一个 bug（选中记忆 Tab 刷新后跳回「基础」）。本轮另发现并修复一个上一轮留下的、会写坏用户真实数据的测试缺陷。提交全在 main，**未推送**。
+
+### 本轮作废的三条上一轮结论（均为错定，就地标注）
+
+1. **「第 8 个 Tab 不需再改 `.tab-nav`」作废**。那次溢出探针用 `page.setContent()` + file:// 样式表，文档是 `about:blank`、**样式根本没加载**（本轮前置断言 `cssApplied=false` 才暴露）。改用仓库内 file:// 夹具 + `goto` 重测后得到真数据：容器内宽 540px，英文 8 个 Tab 自然宽合计 550px——只差 10px 就让整排全部截断 2–4px（中文 526px 放得下，故只在英文复现）。
+2. **「全部 agent 测试零联网、不碰 `~/.ai-helper-agent`」作废**。`withService`（`memory-service.unit.test.js`）与 `withRouter`（`memory-routes.unit.test.js`）只注入了 `filePath`，而 `embeddingConfigProvider` 的默认值就是读用户真实 `config.json` 的 `getMemoryEmbeddingConfig`、`vectorsFilePath` 的默认值就是真实 `VECTORS_FILE`。
+3. **「`validTabs` 无需改动」作废**：新增 Tab 时未同步这个硬编码白名单，`#memory` 被判非法后掉回 HTML 默认 active 的「基础」——这就是用户看到的「只有那个 Tab 刷新会跑掉」。
+
+### 事故与恢复（用户真实数据）
+
+- 现象：跑 agent 单测时，「只碰到 2 字碎块的条目不当成命中」从绿转红（`total` 期望 1 实得 2）。红因**不是** `RRF` 实现被改坏，而是该用例跑在双通道环境里（断言从「纯词面通道」漂到「词面+语义」）。临时脚本实测：注入 A 档后 `tier=none total=1`，不注入则 `tier=remote`、单条耗时 827ms（真联网）。
+- 损害：用户 `~/.ai-helper-agent/memory/memory-vectors.json` 的 41 条被覆盖（`upsertVectors` 在 `cur.modelKey !== modelKey` 时整体作废旧向量），实测一度只剩 2 条、后一次 7 条全孤儿。真源 `global-memory.json` 未被动（mtime 20:22、41 条完好），是派生缓存。
+- 处置（均经用户授权）：`POST /api/memory/reindex` 重建两次（`indexed:41 total:41 failedBatches:0`）+ `dropVectors` 清 7 条孤儿 → 缓存回到 41 条、0 孤儿；端点实测 `200 {indexed:41,total:41,stale:false,tier:"remote"}`。
+- 堵漏：三个夹具补齐全五个注入点；`withVectorService` 加**默认抛错的 `embedderFactory`**（写在 `...opts` 前，不覆盖用例自带的）；新增 `agent/test/unit/memory-test-isolation.unit.test.js` 扫全目录源码做结构钉。
+- **泄漏已堵的硬证据**：修复后跑全量 agent 单测（369/369，3.96s），该文件 mtime 与字节数跑前后逐字相同（`14:04:55.328Z` / 1043714B）。
+- 反向验证：`git checkout HEAD --` 退回三个旧夹具 → 结构钉 3 红（逐个点名缺哪个注入点）且碎块用例回红；恢复后全绿。
+
+### 四项体验反馈的实现要点（与原计划有出入之处）
+
+- ① 状态卡：`agentApi` 附 `data.httpStatus`（不用 `status` 以免与响应体冲突，沿用 `background/local-agent-client.js` 惯例；改前 grep 核过 43 个调用方）；面板改三态 + `statusOffline`。`loadAll()` 第一版改成串行 `await`，与既有「进面板并行拉配置与状态」的测试语义相背 → 改回 cfgTask/statusTask 两个并发 IIFE、各自独立降级。
+- ① 文案：用户指定「保存到Agent」改「**保存到代理**」。术语冲突已记录：仓库 zh 里「代理」同时是 `data-tab="agent"`（`tabAgent`）那个 Tab 的名字，故说明行显式写「代理（本地 agent 服务）」。
+- ① 测试写法约束：`t(key)` 不传 params 时原样返回模板串，所以断言 `toContain(t('memoryPanel.statusFail'))` 要求该键**无占位符** → `statusFail` 设计成无参标签，错误详情另用 `statusDetail` + `<code>` 渲染。
+- ② 刷新收敛为 `tabRefreshers` 注册表 + 在 `switchTab()` 末尾派发（四条激活路径全汇到它）；**注册必须早于 `activateByHash()`**，否则 F5 深链接那一条仍漏。`toolbox` / `knowledge` 的同类缺口只记录不修（不改它们 init 时序的风险）。
+- ④ CSS：`row-gap:4px` 会被后面的 `gap:2px` 简写覆盖 → 必须写 `gap: 4px 2px`；去掉 `min-width:0` 交给 `flex-wrap` 兜底。
+- ③ 探针量法教训：标题行是 `align-items:center`，用「各子元素 top 是否相同」判换行会把 22px 按钮与 17px 文字误判成两行；正确信号是**行高 > 最高子元素**。
+
+### 本轮收口计数（全部实测）
+
+根 vitest **1298/1298**（84 文件，+13）、agent 单测 **369/369**（336 + 33）、`memory-service` **56/56**、`npx eslint` 对 9 个改动 js 零输出、`npm run build:silent` BUILD_SUCCESS。探针：`_tab-nav-overflow.mjs` 16/16、`_memory-config-entry.mjs` 13/13、临时端到端探针 14/14（已删）。常驻探针留在 `test-results-probes/`（该目录已 gitignore）。
+
+仍有 2 处既有 unhandled rejection（`tool-panel.js:921` 的 `document is not defined`），已 `git stash push --` 本次全部改动后单跑复现，确认在干净 main 上就存在。
