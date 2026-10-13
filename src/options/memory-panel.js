@@ -87,6 +87,31 @@ function renderStatus(s) {
     ${s.stale ? `<div class="memory-status-hint">${escapeHtml(t('memoryPanel.staleHint'))}</div>` : ''}`;
 }
 
+// 状态卡失败态。本面板上线后的第一个真实事故：agent 进程载的还是旧代码时，
+// vector-status 返回 404，而失败当时被当成「还没读到」交给 renderStatus(null)，
+// 于是页面永远停在「读取中…」——失败必须说失败，还要把能做的事告诉用户。
+// 404 单独给「重启代理」提示：新端点不存在的最常见原因就是进程未重启。
+function renderStatusFail(err) {
+  const box = $('memoryStatus');
+  if (!box) return;
+  const label = err && err.httpStatus === 404
+    ? t('memoryPanel.statusOldAgent')
+    : t('memoryPanel.statusFail');
+  const detail = (err && (err.error || err.message)) || 'unknown';
+  box.innerHTML = `
+    <div class="memory-status-row">
+      <span class="memory-status-badge fail">${escapeHtml(label)}</span>
+    </div>
+    <div class="memory-status-keys"><span>${escapeHtml(t('memoryPanel.statusDetail'))}: <code>${escapeHtml(detail)}</code></span></div>`;
+}
+
+// 代理未连接时不谎称「读取中」：这个态不是一次失败的请求，而是根本没法发请求
+function renderStatusOffline() {
+  const box = $('memoryStatus');
+  if (!box) return;
+  box.innerHTML = `<span class="memory-status-muted">${escapeHtml(t('memoryPanel.statusOffline'))}</span>`;
+}
+
 // 写操作进行中锁住三个按钮：重建是长任务（本地档 41 条实测 23 分钟），
 // 而 agentApi 是裸 fetch 无超时，中途再点一次会并发两个全量重建。
 function setBusy(on) {
@@ -166,20 +191,35 @@ async function onReindex() {
 // ==================== 加载 ====================
 
 async function loadAll() {
-  try {
-    const [cfgRes, statusRes] = await Promise.all([
-      agentApi('GET', '/api/memory/embedding-config'),
-      agentApi('GET', '/api/memory/vector-status')
-    ]);
-    if (cfgRes && cfgRes.success === true && cfgRes.config) {
-      fillForm(cfgRes.config);
+  // 两条请求并发（进面板不等两个往返串行），但各自独立降级：
+  // 旧代理可能只缺其中一个端点，捆在同一个 try 里会让能拿到的那份也被拖成失败
+  const cfgTask = (async () => {
+    try {
+      const cfgRes = await agentApi('GET', '/api/memory/embedding-config');
+      if (cfgRes && cfgRes.success === true && cfgRes.config) {
+        fillForm(cfgRes.config);
+      }
+    } catch (err) {
+      logger.warn('[MemoryPanel] config load failed:', err.message);
+      showToast(t('memoryPanel.statusFail') + ' — ' + err.message, 'error');
     }
-    renderStatus(statusRes && statusRes.success === true ? statusRes : null);
-  } catch (err) {
-    logger.warn('[MemoryPanel] load failed:', err.message);
-    showToast(t('memoryPanel.statusLoading') + ' — ' + err.message, 'error');
-    renderStatus(null);
-  }
+  })();
+
+  const statusTask = (async () => {
+    try {
+      const statusRes = await agentApi('GET', '/api/memory/vector-status');
+      if (statusRes && statusRes.success === true) {
+        renderStatus(statusRes);
+      } else {
+        renderStatusFail(statusRes);
+      }
+    } catch (err) {
+      logger.warn('[MemoryPanel] status load failed:', err.message);
+      renderStatusFail(err);
+    }
+  })();
+
+  await Promise.all([cfgTask, statusTask]);
 }
 
 function renderGate(status) {
@@ -220,6 +260,6 @@ export async function refreshMemoryPanel() {
   const status = await loadRagStatus();
   lastStatus = status;
   renderGate(status);
-  if (!status.connected) { renderStatus(null); return; }
+  if (!status.connected) { renderStatusOffline(); return; }
   await loadAll();
 }

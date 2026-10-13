@@ -1518,6 +1518,30 @@ body {
 .memory-limit-info-icon:hover {
   color: #667eea;
 }
+/* 记忆弹层跳配置入口：与输入框面板的管理按钮（.input-add-panel-manage）同一套尺寸与 hover，
+   区别只在定位——那颗在搜索行里靠 right:5px 绝对定位，这颗跟在标题后面，
+   所以用 margin-left:auto + flex:none 顶到行尾且不被长文案挤掉 */
+.memory-limit-config-entry {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: transparent;
+  color: #5f6674;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.memory-limit-config-entry:hover {
+  color: #667eea;
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(102, 126, 234, 0.06);
+}
 .memory-limit-options {
   display: flex;
   flex-direction: column;

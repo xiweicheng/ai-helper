@@ -420,6 +420,12 @@ function initMemoryLimitDropdown() {
     });
   }
 
+  // 快捷入口：跳配置页的记忆 Tab（与输入框 ✚ 面板的 MCP/Skill 管理入口同一通道）
+  // 不抢 stopPropagation：本按钮在 dropdown 内部，下方文档监听靠 contains(e.target) 不会关掉弹层
+  document.getElementById('memoryLimitConfigEntry')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'memory' });
+  });
+
   document.addEventListener('click', (e) => {
     if (!dropdown.contains(e.target) && e.target !== label) {
       dropdown.classList.remove('show');

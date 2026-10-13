@@ -539,6 +539,10 @@
             <div class="memory-limit-dropdown-title">
               <span data-i18n="memory.historyLimit">记忆历史限制</span>
               <span class="memory-limit-info-icon" data-i18n-title="memory.hint" title="记忆越多，上下文越连贯，但 token 消耗也越大；记忆太少，则可能无法结合前文准确回答。">ⓘ</span>
+              <!-- 跳配置页记忆 Tab 的快捷入口：与输入框 ✚ 面板的 MCP/Skill 管理入口同一形状同一通道 -->
+              <button class="memory-limit-config-entry" id="memoryLimitConfigEntry" type="button" data-i18n-title="memory.configEntry" title="打开记忆配置">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </button>
             </div>
             <div class="memory-limit-options" id="memoryLimitOptions">
               <div class="memory-limit-option" data-value="0"><span class="memory-limit-check"></span><span data-i18n="memory.unlimited">不限制</span></div>

@@ -169,7 +169,14 @@ export async function agentApi(method, path, body = null) {
     opts.body = JSON.stringify(body);
   }
   const resp = await fetch(`${state.agentBaseUrl}${path}`, opts);
-  return resp.json();
+  const data = await resp.json();
+  // 保留原始 HTTP 状态码：Agent 的 404/400 都带 JSON 体，只看 body 分不出
+  // 「接口不存在（代理版本旧）」与「业务参数错」。字段名用 httpStatus 而非 status，
+  // 避开响应体里可能已有的 status（与 background/local-agent-client.js 同一惯例）。
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    data.httpStatus = resp.status;
+  }
+  return data;
 }
 
 // ==================== 通用工具函数 ====================

@@ -33,6 +33,11 @@ import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LAN
 
 let currentTools = [];
 
+// Tab 激活时的数据刷新注册表。
+// 激活一共有四条路径（按钮点击、hash 直达、optionsInitialTab、SWITCH_TAB 消息），它们最终都汇到
+// switchTab；刷新若只挂在按钮 click 上，F5 和从侧边栏跳进来这两条就会停在空数据。
+const tabRefreshers = {};
+
 // Tab 切换函数
 function switchTab(tabName) {
   document.querySelectorAll('.tab-nav-btn').forEach(b => b.classList.remove('active'));
@@ -47,12 +52,16 @@ function switchTab(tabName) {
   if (window.location.hash !== '#' + tabName) {
     history.replaceState(null, '', '#' + tabName);
   }
+
+  // 已注册刷新入口的面板进入时重拉一次（目前只有 memory；toolbox / knowledge 仍靠自己的 click 监听，
+  // 它们同样有 hash 直达不刷新的缺口，但未在本次范围内，不背改动它们 init 时序的风险）
+  tabRefreshers[tabName]?.();
 }
 
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge', 'memory'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -168,6 +177,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   });
   
+  // 记忆面板的数据源在 agent 侧，注册刷新入口必须在 activateByHash 之前：
+  // F5 时 hash 会直接激活记忆 Tab，等到下面 initMemoryPanel() 才注册就漏了这一条路径
+  tabRefreshers.memory = refreshMemoryPanel;
+
   // 根据 hash 激活对应 tab
   activateByHash();
   window.addEventListener('hashchange', activateByHash);
@@ -1272,11 +1285,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
 
   // 初始化记忆向量面板（配置与状态都来自 agent，需连接后才有内容）
+  // 刷新入口已在 activateByHash 之前注册进 tabRefreshers，这里只绑事件
   initMemoryPanel();
-
-  document.querySelector('[data-tab="memory"]')?.addEventListener('click', () => {
-    refreshMemoryPanel();
-  });
 });
 
 // 持久化并重新渲染

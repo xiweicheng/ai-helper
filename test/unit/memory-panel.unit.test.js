@@ -12,6 +12,8 @@ const CONFIG = {
   modelName: 'BAAI/bge-m3', apiKey: '', hasApiKey: true, dimensions: 1024, queryPrefix: ''
 };
 let STATUS = { indexed: 41, total: 41, storedModelKey: 'openai-compat|BAAI/bge-m3|1024', currentModelKey: 'openai-compat|BAAI/bge-m3|1024', stale: false, tier: 'remote' };
+let nextStatus = null;   // 非 null 时接管状态接口响应（带 httpStatus），用来测失败态
+let statusThrows = false; // true 时状态请求直接报错，用来测网络异常
 let nextReindex = { success: true, indexed: 41, total: 41, failedBatches: 0 };
 let nextSave = null;   // 非 null 时接管保存响应，用来模拟接口失败
 
@@ -19,7 +21,10 @@ vi.mock('../../src/options/toolbox-shared.js', () => ({
   agentApi: vi.fn(async (method, path, body) => {
     apiCalls.push({ method, path, body });
     if (method === 'GET' && path === '/api/memory/embedding-config') return { success: true, config: CONFIG };
-    if (method === 'GET' && path === '/api/memory/vector-status') return { success: true, ...STATUS };
+    if (method === 'GET' && path === '/api/memory/vector-status') {
+      if (statusThrows) throw new Error('net::ERR_CONNECTION_REFUSED');
+      return nextStatus || { success: true, ...STATUS };
+    }
     if (method === 'POST' && path === '/api/memory/test-embedding') return { success: true, dimensions: 512 };
     if (method === 'POST' && path === '/api/memory/embedding-config') return nextSave || { success: true, config: { ...CONFIG, ...(body || {}) } };
     if (method === 'POST' && path === '/api/memory/reindex') return nextReindex;
@@ -61,6 +66,8 @@ beforeEach(async () => {
   vi.resetModules();
   apiCalls.length = 0; toastCalls.length = 0; confirmCalls.length = 0;
   STATUS = { ...STATUS, stale: false, storedModelKey: STATUS.currentModelKey };
+  nextStatus = null;
+  statusThrows = false;
   nextReindex = { success: true, indexed: 41, total: 41, failedBatches: 0 };
   nextSave = null;
   document.body.innerHTML = DOM;
@@ -166,5 +173,46 @@ describe('记忆面板：陈旧与重建', () => {
       expect(toastCalls.some(([m, kind]) => kind === 'error' && m.includes('invalid_embedding_mode'))).toBe(true);
     });
     expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3', '保存失败不得把表单抹掉');
+  });
+});
+
+// 本案的真实事故：状态接口报错时被当成「还没读到」，页面永远转圈。
+describe('记忆面板：状态卡必须分得清加载中与读失败', () => {
+  const statusText = () => document.getElementById('memoryStatus').textContent;
+
+  test('404（代理版本没有此端点）要提示重启代理，不得仍是「读取中」', async () => {
+    nextStatus = { success: false, httpStatus: 404, error: '未知的 API 路径' };
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(statusText()).toContain(t('memoryPanel.statusOldAgent')));
+    expect(statusText()).not.toContain(t('memoryPanel.statusLoading'));
+  });
+
+  test('其他失败把代理返回的真实错误显示出来', async () => {
+    nextStatus = { success: false, httpStatus: 400, error: 'memory_read_failed' };
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(statusText()).toContain('memory_read_failed'));
+    expect(statusText()).toContain(t('memoryPanel.statusFail'));
+    expect(statusText()).not.toContain(t('memoryPanel.statusLoading'));
+  });
+
+  test('请求抛错（网络断）也是失败态，且不能谎报成加载中', async () => {
+    statusThrows = true;
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => {
+      expect(statusText()).toContain(t('memoryPanel.statusFail'));
+      expect(statusText()).toContain('net::ERR_CONNECTION_REFUSED');
+    });
+    expect(statusText()).not.toContain(t('memoryPanel.statusLoading'));
+  });
+
+  test('拉状态失败不影响配置回填（两条请求各自独立降级）', async () => {
+    nextStatus = { success: false, httpStatus: 404, error: 'unknown' };
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3'));
+  });
+
+  test('成功态照常给出条数与指纹（回归护栏）', async () => {
+    expect(statusText()).toContain('41');
+    expect(statusText()).toContain('openai-compat|BAAI/bge-m3|1024');
   });
 });
