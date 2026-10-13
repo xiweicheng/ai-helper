@@ -289,6 +289,31 @@ git commit -m "test: 记忆向量档评测基线（黄金向量离线复现真�
 （`node --test test/unit/memory-recall-eval.unit.test.js`）—— A 档只消费 `CASES`，不该受影响；
 若变红说明两处期望互相矛盾，必须当场解决而不是留到实现阶段。
 
+### Task 1 执行结果（2026-10-13，提交 `1cfa35a`）
+
+改动前基线（`[eval-b]` 逐行）：
+
+```
+换说法命中 Vue 偏好   → webpage, long-zhihu, vue-pref, summary-1, proxy | vectorMatched=6
+换说法命中国家观点   → country, proxy, summary-1                          | vectorMatched=3
+换说法命中境外访问   → mem-bug, country, proxy, webpage, long-zhihu        | vectorMatched=6
+换说法命中 store 缺陷 → mem-bug, webpage, long-zhihu, summary-1, vue-pref  | vectorMatched=7
+无关查询（菜谱）     → long-zhihu, summary-1                              | vectorMatched=2
+无关查询（电费）     → webpage, long-zhihu, summary-1, country, proxy      | vectorMatched=6
+词面命中不因融合掉出前 2 → vue-pref, webpage, long-zhihu                    | vectorMatched=3
+子串误伤在向量档同样不允许 → vue-pref, long-zhihu, summary-1, country, webpage | vectorMatched=6
+```
+
+**3 项失败**（正是预测的三类）：目标排第 3 超 `maxRank 2`（境外访问）；两条控制查询分别返回 2 条 / 5 条。
+`vectorMatched` 在 7 条库上是 2~7——即阈值几乎对所有候选都成立，印证前置实测 §3 的旁路结论。
+A 档评测仍全绿（10 条用例一条未改），黄金向量实际体积 128KB（7 文档 + 8 查询）。
+
+**与计划的偏差（2 处，均已修）**：
+
+1. `import.meta.dirname` 换成 `dirname(fileURLToPath(import.meta.url))`。计划写的那行需要 Node ≥ 20.11，
+   而 `agent/package.json` 的 `engines` 声明是 `>=18.0.0`；仓内其余测试都用 `fileURLToPath`。
+2. 计划里两个 `import` 行合并为一行（同一模块不得写两条 import）。
+
 ---
 
 ## Task 2: 融合与采信门的候选规则实测（禁止拍脑袋定常量）
@@ -674,6 +699,41 @@ git add agent/src/memory/fusion.js agent/test/unit/memory-fusion.unit.test.js \
 git commit -m "feat(memory): 语义档改排名融合，条目级绝对阈值换查询级地板"
 ```
 
+### Task 3 执行结果（2026-10-13，提交 `47c31d7`）
+
+| 套件 | 改动前 | 改动后 |
+|---|---|---|
+| `memory-fusion.unit.test.js` | 红（`ERR_MODULE_NOT_FOUND`） | **12/12 绿** |
+| `memory-recall-eval.unit.test.js`（A 档护栏） | 绿 | **绿**（一条未改） |
+| `memory-recall-eval-b.unit.test.js` | 红 3 项 | **绿** |
+| `test/unit/*.unit.test.js` 全量 | — | **320/320 绿** |
+| `test/integration/*.integration.test.js` | 60/62（两条既有失败） | 60/62（**同一两条**） |
+
+B 档改动后的实际行为（与 Task 2 网格预测逐条一致）：
+
+```
+换说法命中 Vue 偏好   → vue-pref, long-zhihu | vectorMatched=2
+换说法命中国家观点   → country                | vectorMatched=1
+换说法命中境外访问   → proxy                  | vectorMatched=1
+换说法命中 store 缺陷 → mem-bug                | vectorMatched=1
+无关查询（菜谱/电费）  → (无命中)              | vectorMatched=0
+词面命中不因融合掉出前 2 → vue-pref              | vectorMatched=1
+子串误伤在向量档同样不允许 → vue-pref              | vectorMatched=0
+```
+
+**Step 5 的预期落空了，且落空得有意义**：计划假定 `memory-service.unit.test.js` 里会有断言依赖旧语义而需要改，
+实际 **45/45 一条未改就全绿**。查下去发现原因：那些用例的手搓向量是 0.98 / 0 这种极端距离，新旧两套规则
+在这个距离上结论相同——它们钉得住机制（懒补/超时/降级），钉不住本次修的缺陷。于是**新增两条服务层回归钉**：
+用 `cos = 0.4`（≥ 旧阈值 0.3、< 新地板 0.48）的向量，即原缺陷泛滥的那一类。为证明它们不是跟着实现写的装饰，
+用 `git stash` 临时退回旧实现跑了一遍：**两条都红**，而原有那条向量用例仍绿（证实它确实不敏感）。
+恢复后 47/47 绿。service 层从 45 例变 47 例。
+
+**两条既有集成失败（与本改动无关，已验证）**：`api.integration.test.js` 的「~ 展开到用户主目录」与
+「路径穿越 .. 被限制在沙箱内」。在 `git stash` 退回旧实现的状态下跑同一文件仍是这 2 条红，故为既有失败。
+
+**其他偏差**：`tier.js` 连带删了 `DEFAULT_SEARCH_CONFIG` 的 import（只为该常量而存在）；`memory-tier.unit.test.js`
+除了计划写明的删两条断言，还删了同一目的的 `DEFAULT_SEARCH_CONFIG` import，并留了注释说明阈值概念已迁至 `fusion.js`。
+
 ---
 
 ## Task 4: 真机复测（新公式在用户真实库上的实际效果）
@@ -719,6 +779,50 @@ rm -f agent/.tmp-live-verify.mjs && git status --porcelain -uall   # 必须为�
 
 **收尾状态**：`memoryEmbedding.enabled` 留 false 还是 true，由用户在报告后拍板；
 `memory-vectors.json`（41 条 / 891KB）保留复用，避免每轮验证都重新联网嵌入。
+
+### Task 4 执行结果（2026-10-13，真机 PID 28292）
+
+真机进程需重启才能加载新代码（旧进程 93944 跑的是改动前的 `service.js`）。
+
+| 查询 | A 档 | 旧 B 档（前置实测） | **新 B 档** | 返回条数 |
+|---|---|---|---|---|
+| 他习惯用哪种界面库写网页 | 未召回 | 掉出前 12 | **第 3**（语义第 2） | 3 |
+| 这两个国家的综合实力谁更强 | 未召回（0 条） | 3 | **第 1** | 1 |
+| 为什么我查不到海外的资料 | 未召回（0 条） | 4 | **第 1** | 1 |
+| 写入假装成功其实没保存的老毛病 | 未召回 | 2 | **第 2**（语义第 1） | 2 |
+| 前端选型时他最中意哪个库 | 1 | 1 | **第 1** | 1 |
+| 法式洋葱汤 / 敦煌莫高窟 / 北京天气 / 珠峰海拔（控制） | — | 填满 limit | **全部 0 条** | 0 |
+
+逐条实测输出：`tier=remote`、`vectorMatched` 分别为 2/1/1/1/1，控制组全为 0；相关查询**无一填满 limit**（旧公式 5 条全部填满）。
+
+**四条通过标准：3 过 1 没过。**
+
+- ✅ 标准 1（主判据）：4 条控制查询返回条数之和 = **0**。
+- ✅ 标准 3：填满 limit 的查询数 = **0**，`vectorMatched` 上限就是 `SEMANTIC_MAX_TAKE = 2`。
+- ✅ 标准 4：A 档开启前后两次均为 `1 / 0 / 0 / 1 / 1`，与前置实测逐字一致——融合**没有泄漏进 A 档路径**。
+- ❌ **标准 2 未达成**：目标名次和 = **8**，判据写的是 ≤ 6。不许把这条解释成过。
+
+**标准 2 为什么没过（定位到条目，不是笼统的「有优化空间」）**：那个 6 是**纯 cos 单通道的理想值**
+（前置实测表里 2+1+1+1+1），而设计是双通道融合，词面路每一跳都在投票。多出的 2 名全部来自词面路：
+
+```
+Q1 目标第 3：前面是 mu5affte（「product-form.html …**界面**…」——「界面」碎块词面命中）
+              和 mu9kqlkb（简历「Java 后端 + **Vue** 前端双栈」，它确实是 cos 全场 top1）
+Q4 目标第 2：前面是 mv607bck（视频降噪「…安装**成功**…」）
+```
+
+关键事实：**A 档单独跑 Q1 时，返回的就是 mu5affte 这一条**。所以新 B 档相对 A 档严格变好（多出语义目标），
+相对旧 B 档也是大幅变好（名次和从「Q1 不可达 + 其余 3/4/2/1」降到全部可达且 3/1/1/2/1）。
+
+**判据本身的问题（写下来供后续计划引用）**：拿双通道融合的结果去比单通道理想值，是个错定的口径。
+真正该问的是「词面碎块该不该压过语义 top1」——那是个产品取向问题，属计划五（若需要，手段是调 `RRF_K`
+或给词面路只采信整段命中，而不是回到绝对阈值）。本计划不动它，因为调 `RRF_K` 会同时改变 A 档与 B 档的相对权重，
+需重跑 Task 2 网格与 Task 4 全量复测。
+
+**电费对照（已从控制组踢出、改作词面合法命中对照）**：`vm=2` 返回 2 条（token8341 充值规则与商业链路两条），
+语义上确实相近（花费/充值），不是噪声——印证 Task 2 将它重新分类的判断。
+
+**收尾**：`enabled` 已由脚本本身收回 `false`；向量缓存 41 条保留复用；`.tmp-live-verify.mjs` 已删。
 
 ---
 
