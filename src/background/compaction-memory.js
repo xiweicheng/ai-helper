@@ -18,7 +18,8 @@ registerTranslations('en', {
   },
 });
 
-// 摘要属于"决策/结论"类记忆：importance 6（Tier2 按需注入，不常驻系统提示词）
+// 摘要属于"决策/结论"类记忆。importance 只影响价值排序与清理候选：agent 端 injection.js
+// 对 type=summary 一律不做 Tier1/2 常驻注入，仅计入 Tier3 标签索引 + 按需 recall。
 const SUMMARY_IMPORTANCE = 6;
 const STORE_TIMEOUT_MS = 30000;
 

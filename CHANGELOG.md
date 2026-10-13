@@ -4,6 +4,19 @@
 
 ## 2026-10-13
 
+### 新增（会话上下文压缩增强）
+- **结构化双语摘要模板**：`src/shared/compaction-prompt.js` 由自由段落改为固定四小节（任务目标 / 已完成与关键结论 / 关键标识符 / 未决问题与下一步），修复既有 i18n 缺陷——指令块随背景语言走 `getLanguage()` 渲染中英两套，素材限量与总量保留逻辑不变。`【已有摘要】` 标记与语言无关，增量压缩仍可识别。
+- **注入链路单点收敛**：新增 `applyCompactionInjection()` 到 `src/shared/context-usage.js`，三条发送链路（`chat-manager.sendMessage` / `side_panel/index.js` 划词提示词 / `prompt-manager.sendPromptByCode`）改为同一出口，删除三处内联重复；锚点失效（`upToMessageId` 找不到）时只告警忽略、不污染系统提示词。以源码扫描守卫测试锁定三条链路不再各自漂移。
+- **阈值驱动的半自动压缩（默认关）**：新增 `src/side_panel/auto-compaction.js`，发送前若「开关开 + 非生成中 + 会话隔离 + 距上次压缩待处理消息 ≥ 4 + 上下文占用 ≥ 阈值（默认 85%）」则静默压缩一次；连续失败 2 次进入退避不再骚扰，手动压缩成功即复位。**任何失败都放行本次发送**，不因为增益功能阻塞对话。占用比取值走 thunk，取不到时按 `usage_unavailable` 不尝试。
+- **手动/自动共用单一压缩内核**：`context-indicator.js` 的 `triggerCompaction` 抽出 `runCompaction({ silent })`，静默模式跳过确认框与「压缩中」模态、只发 `autoCompactedToast`；两条入口不再各写一套流程。
+- **摘要按 memoryId 去重沉淀长期记忆（默认开）**：新增 `src/background/compaction-memory.js`，压缩成功后把摘要以 `type: summary` / `category: decision` / `importance: 6` / `tags: [compaction, session:<id>]` 写入 Agent 长期记忆；同一会话二次压缩走 `update`（不堆条目），沉淀失败仅 `logger.warn` 且保留原 `memoryId`，Agent 未连接或缺端点（404）时静默降级——摘要仍在会话内可用。
+- **两个开关**：记忆下拉新增「自动压缩」与「摘要存入记忆」两行（同一分组、共用一条分隔线），切换即写 `chrome.storage.local` 的 `chatAutoCompaction` / `chatPersistSummaryToMemory`，并同步 `storage.onChanged` 监听；`DEFAULT_CHAT_CONFIG` 与 `getChatConfig` 补 `autoCompaction`（默认 false）/ `autoCompactionThreshold`（默认 0.85）/ `persistSummaryToMemory`（默认 true）。
+
+### 工程质量与测试（压缩增强）
+- 新增 `compaction-prompt`（+6）、`auto-compaction`（18）、`compaction-memory-persist`（6）、`compaction-injection-wiring`（8，源码接线守卫）与 `context-usage`（+4）用例；扩展端全量 vitest 81 文件 / 1269 用例通过（原 78 文件 / 1227，2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
+- agent 侧代码未改动，回归 `node --test test/unit/*.unit.test.js` 仍 220/220；端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs` 补 4 项摘要沉淀断言（add 落 summaries → 不进常驻注入只计 Tier 3 → 跨会话按 `compaction` 标签可召回 → 同 id update 不新增条目），合计 16 项全通。
+- 实施计划：`docs/superpowers/plans/2026-10-13-context-compaction-effectiveness.md`（含执行偏差修正：发送链路实为三条；沉淀函数落独立模块而非 `background/index.js`；语言判定复用既有 `getLanguage()` 而非新增 `summaryLang` 配置）。版本号未手动修正。
+
 ### 变更（长期记忆逻辑下推 Agent 端）
 - **架构错位消除**：长期记忆的全部业务逻辑（存储、召回计分、会话去重、审查/淘汰、三级注入筛选）从扩展端 background 整体迁至 agent 包（`agent/src/memory/{injection,service,routes}.js`），与数据文件 `~/.ai-helper-agent/memory/global-memory.json` 同进程；agent 新增 `POST /api/memory/{store,recall,manage,inject}` 四个业务端点（签名与 i18n 沿用 rag 路由模式，零外部依赖、静态加载）。
 - **扩展端瘦身为转发层**：`src/background/tool-memory.js` 由 752 行降至 85 行（只做 `subAction → action` 映射、`sessionId` 透传与结果整形）；`GET_PERMANENT_NOTES` 改为请求 `/api/memory/inject`；删除 `src/background/memory-injection.js`（纯函数已迁 agent）与 `tool-executor.js`/`index.js` 的 `readMemoryFile` 死导入。
@@ -14,7 +27,7 @@
 ### 工程质量与测试
 - agent 新增 `memory-service`（25 例）/`memory-routes`（8 例）/`memory-injection`（18 例）单测，`node --test test/unit/*.unit.test.js` 220/220 通过（原 169）。
 - 扩展端新增 `test/unit/tool-memory-forward.unit.test.js`（12 例，含将旧“接线守卫”按新架构改写后保留的 4 条源码断言）；全量 vitest 78 文件 / 1227 用例通过（2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
-- 端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs`（12 项全通，手动 `node agent/test/smoke/memory-pushdown.smoke.mjs` 运行，不纳入常规单测）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
+- 端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs`（12 项全通，压缩增强后增至 16 项，手动 `node agent/test/smoke/memory-pushdown.smoke.mjs` 运行，不纳入常规单测）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
 - 实施计划：`docs/superpowers/plans/2026-10-13-agent-memory-pushdown.md`（含执行时的 5 处偏差修正记录）。版本号未手动修正：由 `npm run release:agent` 统一同步（单一版本流惯例）。
 
 ## 2026-10-11

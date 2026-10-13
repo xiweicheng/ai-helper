@@ -392,6 +392,7 @@ Cross-session long-term memory is owned by the agent: the storage file, the read
 - **Data location** — `~/.ai-helper-agent/memory/global-memory.json` (facts + summaries + stats)
 - **Concurrency** — an in-process promise-chain lock serializes every read-modify-write; the per-session recall cache (which memories were already surfaced in this conversation) lives in agent memory
 - **i18n** — response text is rendered from the request's `Accept-Language`
+- **Where summaries come from** — besides explicit tool writes, `type: "summary"` entries are sedimented automatically by the extension's session context compaction (tags `compaction` + `session:<id>`, `importance: 6`, `category: "decision"`); re-compacting the same session updates the same `memoryId` instead of piling up
 
 ### Record schema
 
@@ -430,6 +431,8 @@ Keywords are extracted with zero dependencies: a CJK run of ≤ 4 characters is 
 | 1 — resident | `importance >= 8` is always injected |
 | 2 — budgeted | ranked by value, capped at 1500 characters and 12 items |
 | 3 — index only | remaining memories surface as tag index lines; the model pulls them with a recall call |
+
+> Entries with `type: "summary"` are **never** part of Tier 1/2 injection — they count only toward Tier 3 (tag index + on-demand recall), so compaction summaries never eat system-prompt budget; the model pulls them when needed.
 
 Memory value = `importance x (1 + ln(accessCount + 1)) x timeDecay`; entries whose value falls below 10 are evicted by compaction (`/api/memory/manage` with `action: "compact"`).
 

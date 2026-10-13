@@ -4,7 +4,7 @@
 
 **Goal:** 让会话上下文压缩从「纯手动 + 中文硬编码 + 产物不沉淀」升级为「阈值半自动触发 + 结构化双语摘要 + 自动沉淀为跨会话长期记忆」。
 
-**Architecture:** 压缩的三个关注点分层收口——提示词模板与结构（`src/shared/compaction-prompt.js` 纯函数）、触发策略（新增 `src/side_panel/auto-compaction.js` 纯决策函数 + 发送链路前置钩子）、产物沉淀（`src/background/index.js` 在摘要成功后调用 Agent 的 `/api/memory/store`）。窗口/压缩/预算的选取逻辑继续由 `src/shared/context-usage.js` 单一出口负责，本计划只把两条发送链路重复的注入尾部收成一个函数，不改变选取语义。
+**Architecture:** 压缩的三个关注点分层收口——提示词模板与结构（`src/shared/compaction-prompt.js` 纯函数）、触发策略（新增 `src/side_panel/auto-compaction.js` 纯决策函数 + 发送链路前置钩子）、产物沉淀（新增 `src/background/compaction-memory.js`，由 `background/index.js` 在摘要成功后调用 Agent 的 `/api/memory/store`）。窗口/压缩/预算的选取逻辑继续由 `src/shared/context-usage.js` 单一出口负责，本计划只把三条发送链路重复的注入尾部收成一个函数，不改变选取语义。
 
 **Tech Stack:** 扩展端 ES modules + Vitest（`npx vitest run`）；Agent 端 `agent/src/memory/*`（已完成逻辑下推，见 Spec）+ `node --test`；chrome.storage.local 配置持久化；i18n 由各模块内 `registerTranslations(lang, dict)` 注册。
 
@@ -20,6 +20,28 @@
 - 任何压缩失败都不得阻断本次发送：自动压缩失败即降级为「按现有窗口/预算链路继续发送」。
 - 修改完成后必须执行 `npm run build:silent`（项目规范），Agent 侧改动跑 `node --test test/unit/*.unit.test.js`。
 - 不手动改版本号（由 `npm run release:agent` 统一同步）。
+
+## 执行状态（main 分支，逐 Task 提交）
+
+| Task | 提交 | 结果 |
+|------|------|------|
+| 1 提示词四小节 + 双语 | `99c8ae1` | 6 条新用例，1233 passed |
+| 2 注入单点收敛 | `aa64d74` | 实为**三条**发送链路（本计划原写两条，已就地更正）；1240 passed |
+| 3 阈值半自动压缩 | `aa6c6e2` | 18 条决策用例 + UI/配置/i18n；1260 passed |
+| 4 摘要按 memoryId 沉淀 | `2ed44ee` | 沉淀函数落**独立模块**（非 `background/index.js`）；1269 passed / 81 文件 |
+| 5 回归 + 冒烟 + 文档 | 本提交 | agent 220/220 未变；冒烟 12 → 16 项全通；CHANGELOG / README 中英 / wiki 中英 + Gitee 镜像已同步 |
+
+执行期对本计划的修正（均已写回上文对应 Task）：
+1. 发送链路是三条（漏了 `chat-manager.sendMessage` 主链路）。
+2. `shouldAutoCompact` 的 `minPending` 原写法是恒回落默认值的三元表达式，改为 `normalizeCount` 归一化。
+3. `computeUsageSafe` 自创了不存在的 `computeContextUsage` 参数名，改为复用已导出的 `computeCurrentUsage()`，并把 `ratio` 入参改成 `getRatio` thunk（取值失败按 `usage_unavailable` 不尝试）。
+4. 自动压缩钩子必须插在 `state.isGenerating = true` 守卫**之后**（chat-manager 提前 55 行置位），否则 `shouldAutoCompact` 永久被拦。
+5. 语言出口复用既有 `getLanguage()`（`src/shared/i18n.js`），不新增不存在的 `config.summaryLang`。
+6. 新测试统一用 `test(...)`（目标文件未 import `it`）。
+7. 沉淀函数落 `src/background/compaction-memory.js`，避免测试加载 2200 行的 `background/index.js`。
+8. `type: summary` 在 agent 端**永不进 Tier1/2 注入**（`injection.js` 只对 facts 分级），摘要沉淀只走 Tier3 标签索引 + 按需 recall；冒烟与文档口径均按此校正，`importance: 6` 只影响价值排序与清理候选。
+
+真机验证（Task 5 Step 4，需人工在 Chrome 重载 `dist/` 完成）：开启「自动压缩」→ 长会话把占用推到 85% 以上 → 发送应出现「已自动压缩」提示条与压缩分隔线；关闭后不再自动触发；压缩后 `~/.ai-helper-agent/memory/global-memory.json` 出现一条 `type: summary` 且 `tags` 含 `compaction`；连续两次压缩后该记忆仍只有一条（`update` 生效）；关掉「摘要存入记忆」则不再新增。
 
 ---
 

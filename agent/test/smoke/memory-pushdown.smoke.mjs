@@ -10,6 +10,7 @@
  * - 进程内直接 startServer()，不走 bin/agent.js 守护（避免写用户 config.json / pidfile）
  *
  * 链路：/api/pair 取 token → store(add) → recall → inject → manage(review) → 未知子路径 404
+ *       → 压缩摘要沉淀（store summary/update + inject + recall）→ delete
  */
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -119,7 +120,52 @@ try {
   const nopeRes = await authed('/api/memory/nope', {});
   check('未知记忆子路径 404', nopeRes.status === 404);
 
-  // 8) 清理：删除冒烟记忆后确认注入不再包含
+  // 8) 压缩摘要沉淀链路（会话压缩 → type=summary → 按需召回 → 同 id 复压缩去重）
+  //    口径以 injection.js 实际行为为准：summaries 永不进常驻注入，只计入 remainingCount/remainingTags
+  const sumAddRes = await authed('/api/memory/store', {
+    action: 'add',
+    type: 'summary',
+    category: 'decision',
+    content: '[会话压缩摘要 r1 · 已压缩 12 条]\n冒烟压缩摘要',
+    title: '会话摘要 smoke',
+    tags: ['compaction', 'session:smoke-sess'],
+    importance: 6,
+    sourceSessionId: 'smoke-sess',
+  });
+  const sumAdd = await sumAddRes.json();
+  const summaryId = sumAdd.memory?.id;
+  check('store(add) type=summary 进 summaries（id 前缀 sum_）',
+    sumAddRes.status === 200 && sumAdd.success === true && String(summaryId).startsWith('sum_') && sumAdd.memory.type === 'summary',
+    'id=' + summaryId);
+
+  const injectSum = await (await authed('/api/memory/inject', {})).json();
+  check('摘要不进常驻注入，转按需召回（remainingCount/remainingTags 可见）',
+    !(injectSum.injected || []).some((m) => m.id === summaryId)
+      && injectSum.remainingCount === 1
+      && (injectSum.remainingTags || []).includes('compaction'),
+    'remaining=' + injectSum.remainingCount + ', tags=' + JSON.stringify(injectSum.remainingTags));
+
+  const sumRecall = await (await authed('/api/memory/recall', { query: '冒烟压缩摘要', tags: ['compaction'], sessionId: 'other-sess' })).json();
+  check('跨会话按 compaction 标签可召回该摘要',
+    sumRecall.success === true && (sumRecall.results || []).some((m) => m.id === summaryId),
+    'total=' + sumRecall.total);
+
+  const sumUpdRes = await authed('/api/memory/store', {
+    action: 'update',
+    memoryId: summaryId,
+    type: 'summary',
+    content: '[会话压缩摘要 r2 · 已压缩 20 条]\n冒烟压缩摘要 v2',
+    importance: 6,
+  });
+  const sumUpd = await sumUpdRes.json();
+  const diskAfterUpdate = JSON.parse(await (await import('fs/promises')).readFile(join(agentDir, 'memory', 'global-memory.json'), 'utf8'));
+  check('同 memoryId 重复沉淀走 update（summaries 仍 1 条且内容已替换）',
+    sumUpd.success === true && sumUpd.action === 'updated'
+      && diskAfterUpdate.summaries.length === 1
+      && String(diskAfterUpdate.summaries[0].content).includes('r2'),
+    'summaries=' + diskAfterUpdate.summaries.length);
+
+  // 9) 清理：删除冒烟记忆后确认注入不再包含
   const delRes = await authed('/api/memory/store', { action: 'delete', memoryId });
   const delJson = await delRes.json();
   const injectAfter = await (await authed('/api/memory/inject', {})).json();

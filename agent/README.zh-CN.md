@@ -392,6 +392,7 @@ enabled: true
 - **数据位置** — `~/.ai-helper-agent/memory/global-memory.json`（facts + summaries + stats）
 - **并发** — 进程内 Promise 链互斥锁串行化每一次读-改-写；会话级召回缓存（本对话已呈现过哪些记忆）常驻 Agent 内存
 - **国际化** — 响应文案根据请求 `Accept-Language` 渲染
+- **摘要来源** — 除工具主动写入外，`type: "summary"` 条目可由插件的会话上下文压缩自动沉淀（标签 `compaction` + `session:<会话 ID>`，`importance: 6`，`category: "decision"`）；同一会话重复压缩按 `memoryId` 更新同一条，不堆积
 
 ### 记录结构
 
@@ -430,6 +431,8 @@ enabled: true
 | 1 — 常驻 | `importance >= 8` 总是注入 |
 | 2 — 预算 | 按价值排序，上限 1500 字符 + 12 条 |
 | 3 — 仅索引 | 其余记忆只以标签索引行呈现，由模型主动 recall 拉取 |
+
+> `type: "summary"` 的条目**不参与** Tier 1/2 注入，只计入 Tier 3（标签索引 + 按需召回）——会话压缩摘要因此不会挤占系统提示词预算，需要时由模型自己拉取。
 
 记忆价值 = `importance x (1 + ln(accessCount + 1)) x 时间衰减`；价值降到 10 以下的条目由压缩淘汰（`/api/memory/manage` 的 `action: "compact"`）。
 
