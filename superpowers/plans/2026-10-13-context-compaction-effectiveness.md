@@ -186,15 +186,16 @@ git commit -m "feat(compaction): 压缩摘要改为固定四小节结构化模�
 
 **Files:**
 - Modify: `src/shared/context-usage.js`（新增导出）
-- Modify: `src/side_panel/index.js:821-825`
-- Modify: `src/side_panel/prompt-manager.js:825-829`
+- Modify: `src/side_panel/chat-manager.js:1082-1088`
+- Modify: `src/side_panel/index.js:821-827`
+- Modify: `src/side_panel/prompt-manager.js:825-831`
 - Test: `test/unit/context-usage.unit.test.js`（追加）+ 新建 `test/unit/compaction-injection-wiring.unit.test.js`
 
 **Interfaces:**
 - Consumes: `selectHistoryForSend` 返回的 `{ compactionApplied }`；`appendCompactionToSystemPrompt(systemContent, compaction)`
 - Produces: `applyCompactionInjection(messages, selection, compaction, logger?) => messages`（就地返回同一数组引用，方便调用方一行接管）
 
-现状：`index.js` 与 `prompt-manager.js` 各有一段完全相同的 5 行注入 + 告警逻辑。这是「多发送链路上下文注入必须对齐」的已知陷阱面——将来任一侧改动都会静默漂移。
+现状：`chat-manager.js`、`index.js`、`prompt-manager.js` 各有一段完全相同的 5 行注入 + 告警逻辑（执行计划时核实为三处，原计划漏记 chat-manager 主链路）。这是「多发送链路上下文注入必须对齐」的已知陷阱面——将来任一侧改动都会静默漂移。
 
 - [ ] **Step 1: 写转发层的接线守卫（先失败）**
 
