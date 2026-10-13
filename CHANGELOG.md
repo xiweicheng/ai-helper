@@ -12,8 +12,11 @@
 - **摘要按 memoryId 去重沉淀长期记忆（默认开）**：新增 `src/background/compaction-memory.js`，压缩成功后把摘要以 `type: summary` / `category: decision` / `importance: 6` / `tags: [compaction, session:<id>]` 写入 Agent 长期记忆；同一会话二次压缩走 `update`（不堆条目），沉淀失败仅 `logger.warn` 且保留原 `memoryId`，Agent 未连接或缺端点（404）时静默降级——摘要仍在会话内可用。
 - **两个开关**：记忆下拉新增「自动压缩」与「摘要存入记忆」两行，采用与 11px 小字相称的 28×16 小滑动开关（与工具配置弹窗同款 `.toggle-switch` 视觉语言、独立一档尺寸：关=浅灰空槽滑块居左、开=紫色滑块右移 12px），标签恒为中性灰、状态只由滑轨表达，ⓘ 同步收到 11px，两行共用一条分隔线；切换即写 `chrome.storage.local` 的 `chatAutoCompaction` / `chatPersistSummaryToMemory`，并同步 `storage.onChanged` 监听；`DEFAULT_CHAT_CONFIG` 与 `getChatConfig` 补 `autoCompaction`（默认 false）/ `autoCompactionThreshold`（默认 0.85）/ `persistSummaryToMemory`（默认 true）。
 
+### 修复（压缩开关状态回填）
+- **开关刷新后回弹**：「自动压缩」「摘要存入记忆」两行的 `.checked` 原先只在 `DOMContentLoaded` 的 `initMemoryLimitDropdown()` 里按 `state.chatConfig` 盖一次，而那一刻 `GET_CHAT_CONFIG` 尚未往返完成，拿到的是模块默认值（`autoCompaction:false` / `persistSummaryToMemory:true`），之后没有任何代码再回填——于是打开的开关一刷新就变关（关闭的「摘要存入记忆」则反向回弹成开）。修复为在 `loadChatConfig().then()` 里调用 `syncAutoCompactToggle()` / `syncPersistSummaryToggle()`，勾选态以 storage 配置为唯一真源。行为侧此前未被污染：自动压缩判定读的是已加载的 `chatConfig`，只是 UI 与实际开关不一致。
+
 ### 工程质量与测试（压缩增强）
-- 新增 `compaction-prompt`（+6）、`auto-compaction`（18）、`compaction-memory-persist`（6）、`compaction-injection-wiring`（8，源码接线守卫）与 `context-usage`（+4）用例；扩展端全量 vitest 81 文件 / 1269 用例通过（原 78 文件 / 1227，2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
+- 新增 `compaction-prompt`（+6）、`auto-compaction`（18）、`compaction-memory-persist`（6）、`compaction-injection-wiring`（8，源码接线守卫）与 `context-usage`（+4）用例，后补开关回填守卫（+2，合计 10）；扩展端全量 vitest 81 文件 / 1271 用例通过（原 78 文件 / 1227，2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
 - agent 侧代码未改动，回归 `node --test test/unit/*.unit.test.js` 仍 220/220；端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs` 补 4 项摘要沉淀断言（add 落 summaries → 不进常驻注入只计 Tier 3 → 跨会话按 `compaction` 标签可召回 → 同 id update 不新增条目），合计 16 项全通。
 - 实施计划：`docs/superpowers/plans/2026-10-13-context-compaction-effectiveness.md`（含执行偏差修正：发送链路实为三条；沉淀函数落独立模块而非 `background/index.js`；语言判定复用既有 `getLanguage()` 而非新增 `summaryLang` 配置）。版本号未手动修正。
 

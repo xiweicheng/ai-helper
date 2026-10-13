@@ -355,6 +355,7 @@ function initMemoryLimitDropdown() {
   label.addEventListener('click', toggleMemoryLimitDropdown);
 
   // 自动压缩 / 摘要存入记忆开关：切换即持久化（遵循开关立即持久化规范）
+  // 此处的 checked 只是按当前 state 先画一版，真实配置由 loadChatConfig().then 回填
   const autoCompactBtn = document.getElementById('autoCompactBtn');
   if (autoCompactBtn) {
     autoCompactBtn.checked = state.chatConfig.autoCompaction === true;
@@ -4312,6 +4313,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 loadChatConfig().then(() => {
   updateMemoryLimitLabel();
   setMessageTimestampVisible(state.chatConfig.showMessageTimestamp !== false);
+  // 开关勾选态以 storage 配置为唯一真源：初始化早于本次往返，必须用真实值回填
+  syncAutoCompactToggle();
+  syncPersistSummaryToggle();
 });
 
 // 初始化记忆限制标签点击事件
