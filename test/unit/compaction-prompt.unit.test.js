@@ -3,6 +3,7 @@ import { describe, test, expect } from 'vitest';
 import {
   buildCompactionPrompt,
   sanitizeMaterialContent,
+  COMPACTION_SECTION_HEADINGS,
   MATERIAL_MAX_CHARS,
   MATERIAL_TOTAL_MAX_CHARS,
 } from '../../src/shared/compaction-prompt.js';
@@ -52,5 +53,48 @@ describe('buildCompactionPrompt', () => {
     expect(prompt).not.toContain('标签0-');
     // 总长受控（含提示词模板余量）
     expect(prompt.length).toBeLessThan(MATERIAL_TOTAL_MAX_CHARS + 2000);
+  });
+
+  test('zh 输出要求固定四小节结构', () => {
+    const prompt = buildCompactionPrompt([{ role: 'user', content: 'x' }], 'zh');
+    for (const heading of COMPACTION_SECTION_HEADINGS.zh) {
+      expect(prompt).toContain(heading);
+    }
+  });
+
+  test('en 输出为英文模板且不含中文小节标题', () => {
+    const prompt = buildCompactionPrompt([{ role: 'user', content: 'x' }], 'en');
+    for (const heading of COMPACTION_SECTION_HEADINGS.en) {
+      expect(prompt).toContain(heading);
+    }
+    expect(prompt).not.toContain('任务目标');
+  });
+
+  test('两种语言都保留已有摘要合并要求', () => {
+    const m = [{ role: 'user', content: 'x' }];
+    expect(buildCompactionPrompt(m, 'zh')).toContain('【已有摘要】');
+    expect(buildCompactionPrompt(m, 'en')).toContain('【已有摘要】');
+  });
+
+  test('未知语言回落中文模板', () => {
+    const m = [{ role: 'user', content: 'x' }];
+    expect(buildCompactionPrompt(m, 'fr')).toBe(buildCompactionPrompt(m, 'zh'));
+  });
+
+  test('默认调用与显式 zh 完全一致（向后兼容）', () => {
+    const m = [{ role: 'user', content: 'x' }];
+    expect(buildCompactionPrompt(m)).toBe(buildCompactionPrompt(m, 'zh'));
+  });
+
+  test('语言参数不影响素材选取（限量口径一致）', () => {
+    const chunk = 'y'.repeat(MATERIAL_MAX_CHARS);
+    const material = [];
+    for (let i = 0; i < 30; i++) material.push({ role: 'user', content: `标签${i}-` + chunk });
+    const zh = buildCompactionPrompt(material, 'zh');
+    const en = buildCompactionPrompt(material, 'en');
+    expect(zh).toContain('标签29-');
+    expect(en).toContain('标签29-');
+    expect(zh).not.toContain('标签0-');
+    expect(en).not.toContain('标签0-');
   });
 });

@@ -5,12 +5,21 @@ import { fetchWithRetry } from './tool-executor.js';
 import { getStoredConfig } from './config.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { buildCompactionPrompt } from '../shared/compaction-prompt.js';
+import { getLanguage } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
 
 // 摘要生成的最大输出 token 数（结构化摘要通常数百字）
 const COMPACT_MAX_TOKENS = 2048;
 // 超时（用户手动触发，允许比 ReAct 摘要更长）
 const COMPACT_TIMEOUT_MS = 60000;
+
+/**
+ * 摘要语言：跟随 UI 语言，仅 zh / en 两套模板，其余回落 zh
+ * @returns {'zh'|'en'}
+ */
+function resolveSummaryLang() {
+  return getLanguage() === 'en' ? 'en' : 'zh';
+}
 
 /**
  * 生成压缩摘要
@@ -29,7 +38,7 @@ export async function generateCompactionSummary({ material, model, sessionId } =
     return { success: false, error: 'config_missing' };
   }
 
-  const prompt = buildCompactionPrompt(material);
+  const prompt = buildCompactionPrompt(material, resolveSummaryLang());
   const apiUrl = `${config.apiBase}/chat/completions`;
   const useModel = model || config.modelName;
 
