@@ -194,3 +194,14 @@ test('POST /test-embedding 交给 provider 的配置已带 endpoint', async () =
   assert.ok(seen, 'provider 工厂必须被调用');
   assert.equal(seen.endpoint, 'https://mx.example.com/v1');
 });
+
+// 超窗检测的能力接缝：service 按 provider.tokenCounter 存不存在决定是否报告，
+// 而本地有 / 远端无这个事实只能在真实 EmbeddingProvider 上验——注入假工厂的钉看不见能力错位。
+test('接缝：本地档 provider 提供 tokenCounter，远端档不提供', () => {
+  const cfg = { ...DEFAULT_MEMORY_EMBEDDING_CONFIG, enabled: true };
+  const local = new EmbeddingProvider(toEmbeddingProviderConfig({ ...cfg, mode: 'local', modelName: 'Xenova/bge-small-zh-v1.5' }));
+  assert.equal(typeof local.tokenCounter, 'function', '本地档必须能从 tokenizer 拿真实长度');
+  const remote = new EmbeddingProvider(toEmbeddingProviderConfig({ ...cfg, mode: 'openai-compat', apiKey: 'k', modelName: 'm' }));
+  assert.equal(remote.tokenCounter, null, '远端档不得提供（厂商截断不可观测）');
+});
+

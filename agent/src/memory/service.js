@@ -750,13 +750,36 @@ export function createMemoryService({
       return { success: false, indexed: 0, error: errors[0] || 'no_vectors' };
     }
     await vectors.upsertVectors(pairs, memoryModelKey(cfg));
+
+    // 本地档的 pipeline 在 tokenizer.model_max_length（实测 512）处静默截断：超出部分根本不进向量，
+    // 原先零信号（实测真实库 41 条中 12 条已被砍尾，最短的一条只有 726 字）。
+    // 本轮只赢在「可见」：不改向量内容、不动索引成败，把条数与点名交给响应与日志。
+    // 按能力探测而非 tier 判：远端档不提供 tokenCounter，它的厂商截断行为不可观测，不得臆造。
+    let overWindow = null;
+    if (typeof provider.tokenCounter === 'function') {
+      try {
+        const { counts, window } = await embedWithTimeout(provider.tokenCounter(items.map(memorySearchText)));
+        const ids = items.filter((m, i) => window > 0 && counts[i] > window).map((m) => m.id);
+        overWindow = { count: ids.length, window, ids };
+        if (ids.length) {
+          // daemon stdout 不可见，与批失败同口径：响应给计数，日志给是谁
+          const head = ids.slice(0, 10).join(', ');
+          console.warn(`[Memory] ${ids.length} items exceed embedding context window (${window} tokens); tail not indexed: ${head}${ids.length > 10 ? ' …' : ''}`);
+        }
+      } catch {
+        // 计数抛错/超时一律不报：误报「没超窗」比拿不到数字更坏，但绝不能因此把索引报成失败
+        overWindow = null;
+      }
+    }
+
     // 响应只留首条原因（不把端点报错串堆成一片）；全量原因看进程日志
     return {
       success: true,
       indexed: pairs.length,
       total: items.length,
       failedBatches: errors.length,
-      ...(errors.length ? { lastError: errors[0] } : {})
+      ...(errors.length ? { lastError: errors[0] } : {}),
+      ...(overWindow ? { overWindow } : {})
     };
   }
 

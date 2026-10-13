@@ -27,6 +27,13 @@ export class EmbeddingProvider {
       ? new OpenAICompatEmbedding(resolved)
       : new LocalEmbedding(resolved);
 
+    // 长度可观测能力：只有本地档能拿到自己的 tokenizer。
+    // 远端档置 null（而非“猜一个窗口”）：厂商何时截断、截在哪，返回的向量里看不出来，
+    // 所以下游必须能区分「没有超窗」与「无从判断」。
+    this.tokenCounter = typeof this.backend.countTokens === 'function'
+      ? (texts) => this.backend.countTokens(texts)
+      : null;
+
     console.log(`[RAG] embedding mode: ${this.mode}, model: ${this.modelName}, queryPrefix: ${this.queryPrefix ? 'on' : 'off'}`);
   }
 

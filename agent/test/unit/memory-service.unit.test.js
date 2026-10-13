@@ -489,6 +489,67 @@ describe('recall 向量通道', () => {
     assert.ok(!('lastError' in r), '无失败时不得多出 lastError 字段');
   }));
 
+  // 本地档的 pipeline 在 tokenizer.model_max_length（实测 512）处静默截断：超出部分根本不进向量，
+  // 原先没有任何信号。这里只要求把它变成可见数字——不改向量、不影响建索引成败。
+  // 注意检测按「provider 是否具备 tokenCounter」能力探测，不按 tier 判（夹具用的是 remote 档假工厂）。
+  it('backfillVectors：超窗条目进响应也进日志（本地档静默截断必须可见）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async (texts) => ({ counts: texts.map(s => String(s).includes('超长') ? 900 : 120), window: 512 })
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '超长 那条记忆', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '正常条目', tags: [], importance: 5 }, T);
+    const longId = (await svc.readAll()).facts.find(m => m.content.includes('超长')).id;
+    const warns = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => { warns.push(args.join(' ')); };
+    let r;
+    try { r = await svc.backfillVectors(T); } finally { console.warn = originalWarn; }
+    assert.equal(r.indexed, 2, '超窗不得影响建索引结果');
+    assert.equal(r.overWindow.count, 1, '必须报出超出本地窗口的条数');
+    assert.deepEqual(r.overWindow.ids, [longId], '要能点名是哪一条');
+    assert.equal(r.overWindow.window, 512, '窗口值未自定，必须照搬 provider 给的真实值');
+    assert.ok(warns.some(w => w.includes('512') && w.includes(longId)), 'daemon stdout 不可见，原因要落进程日志');
+  }));
+
+  it('backfillVectors：零超窗时要明确报 0（不能与「无从判断」混淆）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async (texts) => ({ counts: texts.map(() => 50), window: 512 })
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.overWindow.count, 0);
+  }));
+
+  it('backfillVectors：provider 不具备计数能力时不得凭空造 overWindow', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.indexed, 1);
+    assert.ok(!('overWindow' in r), '远端档看不见厂商截断行为，不得装作知道');
+  }));
+
+  it('backfillVectors：计数失败不得拖垮索引结果（宁可不报也不误报）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async () => { throw new Error('tokenizer boom'); }
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.success, true);
+    assert.equal(r.indexed, 1);
+    assert.equal(r.failedBatches, 0, '计数失败不得算进嵌入失败批数');
+    assert.ok(!('overWindow' in r));
+  }));
+
   it('delete 淘汰记忆后不再被召回（向量缓存中的孤儿不影响结果）', () => withVectorService({
     embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
   }, async (svc) => {
