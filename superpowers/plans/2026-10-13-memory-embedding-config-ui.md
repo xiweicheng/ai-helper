@@ -37,12 +37,12 @@
 - Consumes: 同文件已有的 `vectors.read()`（`createVectorStoreFacade`，返回 `{modelKey, vectors}`）、`readMemoryFile()`、`embeddingConfigProvider()`、`tierResolver()`、`memoryModelKey(cfg)`（`vectors.js:13`）
 - Produces: `svc.vectorStatus(): Promise<{ indexed: number, total: number, storedModelKey: string, currentModelKey: string, stale: boolean, tier: string } | { success: false, error: string }>`
 
-- [ ] **Step 1: 记录基线**
+- [x] **Step 1: 记录基线**
 
 Run: `cd agent && node --test --test-reporter=tap test/unit/memory-service.unit.test.js 2>&1 | grep -E "^# (tests|pass|fail)"`
 Expected: 全绿。把 `# tests N` 的数字记下来（本段最近一次实测是 71），后续每步的「新增几条」以此为准。
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 在 `agent/test/unit/memory-service.unit.test.js` 末尾追加。注意用**可变的 cfg 闭包**（夹具默认的 `embeddingConfigProvider` 是常量，无法在测试中途改模型），`withVectorService` 的 `...opts` 在最后展开，所以自定义 provider 会覆盖默认值：
 
@@ -128,12 +128,12 @@ describe('vectorStatus 向量状态', () => {
 import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 ```
 
-- [ ] **Step 3: 跑测试确认失败**
+- [x] **Step 3: 跑测试确认失败**
 
 Run: `cd agent && node --test --test-reporter=tap test/unit/memory-service.unit.test.js 2>&1 | grep -E "not ok|vectorStatus|# (tests|pass|fail)"`
 Expected: 新增 3 条红，报 `svc.vectorStatus is not a function`；原有用例仍绿。
 
-- [ ] **Step 4: 最小实现**
+- [x] **Step 4: 最小实现**
 
 在 `agent/src/memory/service.js` 的 `backfillVectors` 函数结束（`}` 之后、`return {` 出口之前）插入。变量名避开外层 `vectors`（那是 facade）：
 
@@ -174,12 +174,12 @@ Expected: 新增 3 条红，报 `svc.vectorStatus is not a function`；原有用
     vectorStatus,
 ```
 
-- [ ] **Step 5: 跑测试确认通过**
+- [x] **Step 5: 跑测试确认通过**
 
 Run: `cd agent && node --test --test-reporter=tap test/unit/memory-service.unit.test.js 2>&1 | grep -E "^# (tests|pass|fail)"`
 Expected: 基线 + 3 全绿，0 fail。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add agent/src/memory/service.js agent/test/unit/memory-service.unit.test.js
@@ -198,7 +198,7 @@ git commit -m "feat(memory): vectorStatus 只读状态（条数 + 指纹陈旧�
 - Consumes: Task 1 的 `service.vectorStatus()`；`options.service || defaultService`（该函数已能拿到 `options`）；`jsonResponse(res, status, body)`
 - Produces: HTTP 契约 `GET /api/memory/vector-status` → `200 {success:true, indexed, total, storedModelKey, currentModelKey, stale, tier}`；取数失败 → `400 {success:false,error}`；非 GET → 落到通用分发（`vector-status` 不在 `ROUTE_METHODS`，故 404）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 追加到 `agent/test/unit/memory-routes.unit.test.js`。既有 `withRouter` 只传 `filePath`（向量会落到真实目录）、没注入配置、也没供假嵌入工厂（store 会懒补向量→碰真 provider），**必须**另写一个夹具：
 
@@ -267,12 +267,12 @@ describe('GET /api/memory/vector-status', () => {
 import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `cd agent && node --test --test-reporter=tap test/unit/memory-routes.unit.test.js 2>&1 | grep -E "not ok|# (tests|pass|fail)"`
 Expected: 前两条红（`GET /vector-status` 现在会掉进 404 分支，`statusCode` 断言失败），第三条绿——它是反向守卫钉，本就应通过。
 
-- [ ] **Step 3: 实现分支**
+- [x] **Step 3: 实现分支**
 
 在 `agent/src/memory/routes.js` 的 `handleEmbeddingEndpoints` 内，`if (key === 'test-embedding') { ... }` 之后、结尾 `return false;` 之前插入：
 
@@ -296,19 +296,19 @@ Expected: 前两条红（`GET /vector-status` 现在会掉进 404 分支，`stat
   }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `cd agent && node --test --test-reporter=tap test/unit/memory-routes.unit.test.js 2>&1 | grep -E "^# (tests|pass|fail)"`
 Expected: 基线 + 3 全绿。
 
-- [ ] **Step 5: 确认既有冒烟不受新分支影响**
+- [x] **Step 5: 确认既有冒烟不受新分支影响**
 
 不往冒烟里新增项（本地档真实跑一次要 20+ 分钟，不适合放进自动收口）；只验证新分支没弄坏现有分发：
 
 Run: `cd agent && node test/smoke/memory-pushdown.smoke.mjs 2>&1 | tail -3`
 Expected: `合计 21 项，失败 0 项`（冒烟是脚本式，`node --test` 跑它只会报 `# tests 1`，必须直接 `node`）。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add agent/src/memory/routes.js agent/test/unit/memory-routes.unit.test.js
@@ -330,7 +330,7 @@ git commit -m "feat(memory): GET /api/memory/vector-status 只读状态端点"
 - Produces: Task 4 依赖的 DOM id 契约（**id 名逐字对齐，不得改动**）：
   `memoryGate`、`memoryEnabled`（checkbox）、`memoryEmbeddingMode`（radio 组，value 为 `openai-compat` / `local`）、`memoryRemoteGroup`、`memoryBaseUrlInput`、`memoryApiKeyGroup`、`memoryApiKeyInput`、`memoryDimsGroup`、`memoryDimsInput`、`memoryPrefixGroup`、`memoryPrefixInput`、`memoryModelInput`、`memoryLocalNotice`、`memoryTestRow`、`memoryTestBtn`、`memoryTestResult`、`memorySaveBtn`、`memoryReindexBtn`、`memoryStatus`、`memoryResult`
 
-- [ ] **Step 1: 写失败的结构钉**
+- [x] **Step 1: 写失败的结构钉**
 
 新建 `test/unit/memory-panel-structure.unit.test.js`（node 环境即可，读文件文本断言；它同时兜住「仓库没有 i18n parity 测试」这个风险）：
 
@@ -378,12 +378,12 @@ test('memoryPanel 命名空间中英键完全对齐', () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx vitest run test/unit/memory-panel-structure.unit.test.js 2>&1 | tail -12`
 Expected: 4 条全红（`data-tab="memory"` 不存在）。
 
-- [ ] **Step 3: 加 tab 与面板 DOM**
+- [x] **Step 3: 加 tab 与面板 DOM**
 
 `options.html` 第 40 行 knowledge 按钮之后插入：
 
@@ -473,7 +473,7 @@ Expected: 4 条全红（`data-tab="memory"` 不存在）。
     </div><!-- /tab-memory -->
 ```
 
-- [ ] **Step 4: 补中英 i18n（键名与上面 data-i18n 逐字一致）**
+- [x] **Step 4: 补中英 i18n（键名与上面 data-i18n 逐字一致）**
 
 `src/shared/locales/zh.js` 在 `knowledge: {` 块之前插入：
 
@@ -577,7 +577,7 @@ Expected: 4 条全红（`data-tab="memory"` 不存在）。
   },
 ```
 
-- [ ] **Step 5: 补样式**
+- [x] **Step 5: 补样式**
 
 `src/options/styles.css` 末尾追加（其余复用 knowledge 现有类）：
 
@@ -598,12 +598,12 @@ Expected: 4 条全红（`data-tab="memory"` 不存在）。
 .memory-gate-body { font-size: 13px; color: var(--text-secondary, #666); }
 ```
 
-- [ ] **Step 6: 跑结构钉确认通过**
+- [x] **Step 6: 跑结构钉确认通过**
 
 Run: `npx vitest run test/unit/memory-panel-structure.unit.test.js 2>&1 | tail -8`
 Expected: 4 条全绿。
 
-- [ ] **Step 7: 接线并构建**
+- [x] **Step 7: 接线并构建**
 
 `src/options/index.js`：import 区补 `import { initMemoryPanel, refreshMemoryPanel } from './memory-panel.js';`（放在 knowledge-panel 那行之后），并在 `refreshKnowledgePanel` 的监听之后追加：
 
@@ -627,7 +627,7 @@ export function refreshMemoryPanel() {}
 Run: `npm run build:silent 2>&1 | tail -3`
 Expected: `BUILD_SUCCESS`
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add options.html src/shared/locales/zh.js src/shared/locales/en.js src/options/styles.css src/options/index.js src/options/memory-panel.js test/unit/memory-panel-structure.unit.test.js
@@ -646,7 +646,7 @@ git commit -m "feat(options): 记忆 Tab 骨架、i18n 双语与结构契约钉"
 - Consumes: Task 2 的 `GET /api/memory/vector-status` 字段；既有 `GET|POST /api/memory/embedding-config`、`POST /api/memory/test-embedding`、`POST /api/memory/reindex`；`agentApi` / `escapeHtml` / `showToast` / `showCustomConfirm`（`./toolbox-shared.js`）、`loadRagStatus`（`./toolbox-rag.js`，返回 `{connected, ragAvailable, nodeVersion}`）、`t`（`../shared/i18n.js`）
 - Produces: `initMemoryPanel()` / `refreshMemoryPanel()`
 
-- [ ] **Step 1: 写失败的行为测试**
+- [x] **Step 1: 写失败的行为测试**
 
 `test/unit/memory-panel.unit.test.js`（照 `knowledge-panel-disable.unit.test.js` 的夹具写法，DOM 与 Task 3 的真实 id 一致）：
 
@@ -823,12 +823,12 @@ describe('记忆面板：陈旧与重建', () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `npx vitest run test/unit/memory-panel.unit.test.js 2>&1 | tail -15`
 Expected: 全红（空壳什么都不做）。
 
-- [ ] **Step 3: 实现面板逻辑**
+- [x] **Step 3: 实现面板逻辑**
 
 用以下内容整体替换 `src/options/memory-panel.js`：
 
@@ -1063,17 +1063,17 @@ export async function refreshMemoryPanel() {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `npx vitest run test/unit/memory-panel.unit.test.js 2>&1 | tail -12`
 Expected: 全绿（约 10 条）。
 
-- [ ] **Step 5: 跑两条相关测试 + 构建**
+- [x] **Step 5: 跑两条相关测试 + 构建**
 
 Run: `npx vitest run test/unit/memory-panel.unit.test.js test/unit/memory-panel-structure.unit.test.js 2>&1 | tail -8 && npm run build:silent 2>&1 | tail -3`
 Expected: 全绿 + `BUILD_SUCCESS`
 
-- [ ] **Step 6: 反向验证**
+- [x] **Step 6: 反向验证**
 
 ```bash
 git stash push -- src/options/memory-panel.js agent/src/memory/service.js agent/src/memory/routes.js
@@ -1083,7 +1083,7 @@ git stash pop
 ```
 Expected: stash 后新增用例见红；pop 后全绿。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add src/options/memory-panel.js test/unit/memory-panel.unit.test.js
@@ -1099,15 +1099,15 @@ git commit -m "feat(options): 记忆向量面板行为逻辑（配置读写、�
 - Modify: `CHANGELOG.md`（新增小节）
 - Modify: `docs/superpowers/plans/`（本计划执行偏差写回）
 
-- [ ] **Step 1: agent README 中英各补**
+- [x] **Step 1: agent README 中英各补**
 
 端点表加一行 `GET /api/memory/vector-status — 向量索引状态（条数 + 指纹陈旧，只读，不触发模型加载）`；用户可见行为段补：「options 页新增「记忆」Tab：可开关语义召回、切换远端/本地、探活回填维度、保存配置、重建向量索引；状态卡会标出『模型已变更未重建』」；已知限制段沿用 512 截断与本地首次下载两条。
 
-- [ ] **Step 2: CHANGELOG 新增小节**
+- [x] **Step 2: CHANGELOG 新增小节**
 
 `### 新增（记忆向量配置界面）` 写扩展端面板 + 新端点 + 为什么不含 overWindow（只读端点不得触发模型下载）；`### 更正` 记 spec 自审抓到的一处错话：手改 config.json 即时生效（`loadConfig` 按 mtime 缓存），界面价值是可发现/可验证/防填错，不是免重启。
 
-- [ ] **Step 3: 全量回归**
+- [x] **Step 3: 全量回归**
 
 ```bash
 cd agent && node --test --test-reporter=tap 2>&1 | grep -E "^# (tests|pass|fail)"   # 基线 330，本次 +6
@@ -1117,7 +1117,7 @@ npm run build:silent 2>&1 | tail -3                                             
 git status --porcelain -uall | wc -l                                                   # 0
 ```
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add agent/README.md agent/README.zh-CN.md CHANGELOG.md docs/superpowers/plans/2026-10-13-memory-embedding-config-ui.md
@@ -1136,3 +1136,27 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 - `0.48` 地板换模型的重标定工具
 - 分段索引恢复超窗条目尾部（会使地板标定作废）
 - 既有债：agent 代码从未被 eslint 覆盖（根 `eslint.config.js` ignores 含 `agent/**`）、2 条既有集成失败、版本号仓库 2.2.0 vs 全局 2.1.0、main 上多个提交未推送、wiki 未同步
+
+---
+
+## 执行记录（2026-10-13，当前会话逐 Task TDD 执行完毕）
+
+提交序列（全在 main，**未推送**）：spec `6ddc88a` → 本计划 `4ec744d` → Task 1 `f285715` → Task 2 `353c62f` → Task 3 `d2e026c` → Task 4 `06631b6` → Task 5（文档与收口）。
+
+与计划有出入的 6 处（均已实测验证）：
+
+1. **Task 1 Step 1 基线：实测 53 例**，计划写的「最近一次 71」为错定（恪守「数字一律实测」这条约束）。最终 56/56。
+2. **Task 1 Step 2 第二条用例需改写**：原写「向量档开着 + 空库」，首跑见红（`indexed` 断 0 实得 1），根因是**向量档开着时 `store()` 会 fire-and-forget 懒补一个向量**——「开启态的空向量库」在真实系统里不成立。用例改为同时给 `tierResolver: () => 'none'` 并补断言 `s.tier === 'none'`，注释写明这一真实行为（同一原因也决定了 Task 2 路由夹具必须三重隔离 `vectorsFilePath` / `embeddingConfigProvider` / `embedderFactory`）。
+3. **Task 3 Step 5 样式变量去掉**：计划给的 `.memory-status*` / `.memory-gate*` 带 `var(--text-secondary, #666)` 等写法，而 `src/options/styles.css` 全文**无 `:root`、无 CSS 变量、无暗色模式**（`prefers-color-scheme` 零命中），变量永远退成 fallback → 改按项目实际调色板直接写死，渲染结果与计划一致。
+4. **Task 4 Step 3 删两个死变量**：`let busy` 与 `let cachedConfig` 只写不读（锁按钮以 DOM 的 `disabled` 为准），已从实现中去掉，长任务说明移到 `setBusy` 上方注释；行为测试不引用它们，10 例仍全绿。
+5. **Task 4 Step 6 反向验证范围缩小**：计划写 `git stash push -- src/options/memory-panel.js agent/src/memory/service.js agent/src/memory/routes.js`，但后两者已在 Task 1/2 提交、工作树无改动，stash 会落空并有误 pop 其他条目的风险 → 改为只 stash `src/options/memory-panel.js`（退回已提交的空壳），10 例全红、pop 后转绿；agent 侧的反向验证已在 Task 1/2 各自步里做过。
+6. **Task 5 Step 3 全量回归范围修正**：`cd agent && node --test --test-reporter=tap`（不带路径）会连带扫 `test/integration/*`（需连一个活在跑的 agent）、`test/smoke`、`test/eval`，实测挂住 4 分钟零输出→ 收口定为 **`test/unit/*.test.js` 336/336**，不跑集成测试（它会打到用户运行中的进程，违反「不擅自动用户 agent」）；新端点影响面由 `memory-routes` 单测 + 冒烟覆盖。
+
+计划外多做两件：
+
+- **第 8 个 Tab 的溢出探针**（临时脚本 `.tmp-tab-nav-check.mjs`，跑完已删）：静态复刻真实 `styles.css`，8 个宽度 × 中英——`tab-nav` 无溢出、页面无横向滚动、无按钮文案被省略号截断，沿用上一轮 `min-width:0` + 窄屏断点的修复即可，本次不需改 `.tab-nav`。
+- **`docs/zh|en/DOCUMENTATION.md` 补 `memory-panel.js` 一行**（本计划的 Files 未列，但这两个文件是逐文件的源码树地图，新增模块不登记就是文档不一致；已按列宽对齐（`#` 仍在第 40 列））。
+
+收口计数（全部实测）：`memory-service` **56/56**、`memory-routes` **15/15**、agent 单测 **336/336**（+6）、冒烟 **21/21**、根 vitest **1285/1285**（83 文件，+14）、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对扩展端改动文件零输出、`git status --porcelain -uall` 0 行。
+
+诚实记录两项非全绿：根 vitest 仍有 **2 处既有 unhandled rejection**（`apply-rag-tool-introduction.unit.test.js` 的 `document is not defined`），已用 `git stash push -u` 退回本次改动复验，确认与本计划无关；agent 集成测试本次未跑（见上文第 6 条）。

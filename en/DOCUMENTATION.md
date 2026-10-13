@@ -284,6 +284,7 @@ ai-helper/
 │   │   ├── profile-manager.js          # Provider profiles (new/copy/rename/switch)
 │   │   ├── model-fetcher.js            # Model list auto-fetch
 │   │   ├── knowledge-panel.js          # Knowledge base panel (create/import/disable)
+│   │   ├── memory-panel.js             # Memory vector config panel (probe/save/reindex/status)
 │   │   ├── toolbar-config.js           # Toolbar config (drag sort, domain blocklist)
 │   │   ├── toolbox-config.js           # Toolbox config entry
 │   │   ├── toolbox-shared.js           # Toolbox shared state & helpers
