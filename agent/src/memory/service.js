@@ -6,6 +6,7 @@ import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { MEMORY_DIR } from '../config.js';
 import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
+import { extractKeywords } from './tokens.js';
 
 // 记忆数据结构默认值（迁移自 tool-memory.js:137-144，字段与版本结构保持一致）
 const DEFAULT_MEMORY_DATA = () => ({
@@ -241,66 +242,6 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
     }
   }
 
-  // 停用词列表：常见中英文虚词，避免噪音匹配（迁移自 tool-memory.js:407-419）
-  const STOP_WORDS = new Set([
-    '的', '是', '了', '在', '我', '你', '他', '她', '它', '们', '这', '那', '不', '也', '就',
-    '都', '会', '要', '能', '可', '把', '被', '让', '给', '对', '从', '到', '和', '与', '或',
-    '但', '而', '还', '又', '只', '很', '更', '最', '有', '没', '吗', '呢', '吧', '啊',
-    '什么', '怎么', '为什么', '哪里', '哪个', '多少',
-    'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-    'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-    'may', 'might', 'can', 'shall', 'must', 'need', 'dare',
-    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
-    'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'into',
-    'and', 'or', 'not', 'but', 'if', 'then', 'else', 'when', 'where', 'why', 'how',
-    'so', 'no', 'up', 'out', 'just', 'now', 'here', 'there', 'all', 'each', 'every'
-  ]);
-
-  /**
-   * 中英文混合关键词提取（迁移自 tool-memory.js:427-465）
-   * - CJK 短文本（≤4字）：整段作为关键词保留，如"考试"→["考试"]
-   * - CJK 长文本（>4字）：bigram 提取 + 整段作为 fallback 关键词
-   * - 英文/数字：保持完整单词
-   */
-  function extractKeywords(text) {
-    const clean = text.toLowerCase().trim();
-    // 取前 200 字符避免 bigram 膨胀
-    const snippet = clean.length > 200 ? clean.slice(0, 200) : clean;
-    // 按语义边界拆分：CJK 连续块 | 字母连续块 | 数字连续块 | 分隔符
-    const segments = snippet.split(/([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+|[a-z]+|\d+|[^a-z\d\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)/i);
-
-    const tokens = [];
-    // 先将整段作为 fallback 关键词加入
-    if (snippet.length >= 2) {
-      tokens.push(snippet);
-    }
-
-    for (const seg of segments) {
-      if (!seg || seg.trim().length === 0) continue;
-
-      if (/^[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+$/.test(seg)) {
-        // CJK 字符块
-        if (seg.length <= 4) {
-          // 短文本：整段作为关键词
-          tokens.push(seg);
-        } else {
-          // 长文本：滑动窗口取二元组
-          for (let i = 0; i <= seg.length - 2; i++) {
-            tokens.push(seg.substring(i, i + 2));
-          }
-        }
-      } else if (/^[a-z\d]+$/.test(seg)) {
-        // 英文/数字：保持完整单词
-        if (seg.length >= 2) {
-          tokens.push(seg);
-        }
-      }
-    }
-    // 去重、过滤停用词、限制最多 30 个关键词（避免膨胀）
-    return [...new Set(tokens)]
-      .filter(k => k.length >= 1 && !STOP_WORDS.has(k))
-      .slice(0, 30);
-  }
 
   /**
    * recall：从长期记忆中检索相关信息（迁移自 executeAgentMemoryRecall tool-memory.js:369-608）

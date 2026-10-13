@@ -36,6 +36,8 @@
 
 service.js 里现有的 STOP_WORDS/extractKeywords 是从扩展端逐字平移来的，语义**一个字符都不许改**；本 Task 只搬位置，靠现有 25 条 memory-service 测试做安全网。
 
+实测补充（写计划时未核实到的两点）：① 两者定义在 `createMemoryService()` **闭包内部**（service.js:244-303，缩进两格），摘出到模块顶层时不依赖任何闭包变量，可安全搬迁；② `extractKeywords` 除 bigram 外还会把**整段清洗后的 snippet** 作为 fallback token 返回，长查询的第一个关键词因此可能远超 4 字——这是 recall 计分的一部分，后续 Task 不能"顺手优化"掉。
+
 - [ ] **Step 1: 写失败测试**
 
 新建 `agent/test/unit/memory-tokens.unit.test.js`：
@@ -61,20 +63,29 @@ test('短中文连续段整段保留', () => {
   assert.ok(extractKeywords('用户偏好').includes('用户偏好'));
 });
 
-test('长中文连续段拆 bigram', () => {
+test('长中文连续段既拆 bigram，也保留整段 fallback', () => {
   const kws = extractKeywords('请在后续回复中使用中文说明');
   assert.ok(kws.includes('后续'));
-  assert.ok(kws.every(k => k.length <= 4));
+  assert.ok(kws.includes('回复'));
+  // 实现会把清洗后的整段（snippet）也作为关键词加入，recall 计分依赖它，不得丢
+  assert.ok(kws.some(k => k.length > 4));
 });
 
 test('关键词数量封顶 30', () => {
-  const long = 'a '.repeat(80) + '测试 '.repeat(40);
-  assert.ok(extractKeywords(long).length <= KEYWORD_CAP);
+  // 40 个互不相同的汉字 → 39 个 unique bigram + 1 个整段 fallback，必须被截到 30
+  const run = Array.from({ length: 40 }, (_, i) => String.fromCharCode(0x4e00 + i)).join('');
+  assert.equal(extractKeywords(run).length, KEYWORD_CAP);
 });
 
-test('空输入返回空数组', () => {
+test('超过 200 字符只取前 200 字符参与提取', () => {
+  assert.ok(!extractKeywords('甲'.repeat(300) + '独特结尾').includes('独特结尾'));
+});
+
+test('空输入与假值输入返回空数组', () => {
   assert.deepEqual(extractKeywords(''), []);
+  assert.deepEqual(extractKeywords('   '), []);
   assert.deepEqual(extractKeywords(null), []);
+  assert.deepEqual(extractKeywords(undefined), []);
 });
 ```
 
@@ -96,7 +107,11 @@ export const KEYWORD_CAP = 30;
 
 export const STOP_WORDS = new Set([ /* 原内容逐字粘贴 */ ]);
 
-export function extractKeywords(query) { /* 原实现，仅把硬编码 30 换成 KEYWORD_CAP */ }
+export function extractKeywords(query) { /* 原实现，硬编码 30 换成 KEYWORD_CAP、200 换成 SNIPPET_MAX_LENGTH */ }
+
+// 实测偏差（执行时确认）：原实现开头是 `text.toLowerCase().trim()`，传 null 会 TypeError ——
+// 现网调用方 recall 有 `if (query && query.trim())` 守卫所以从未触发。独立成模块后会被 Task 3/4/5
+// 的新调用点复用，故补 `if (!text) return [];` + `String(text)` 归一化。非 null 输入逐字不变。
 ```
 
 `service.js` 顶部加 import 并删除本地定义：
@@ -110,7 +125,7 @@ import { extractKeywords } from './tokens.js';
 - [ ] **Step 4: 运行新旧测试全通过**
 
 Run: `cd agent && node --test test/unit/memory-tokens.unit.test.js test/unit/memory-service.unit.test.js`
-Expected: tokens 6 条 PASS，service 25 条 PASS（行为未变的安全证明）。
+Expected: tokens 7 条 + service 25 条 = 32 PASS（行为未变的安全证明）；全量 `node --test test/unit/*.unit.test.js` 由 220 → **227**。
 
 - [ ] **Step 5: Commit**
 
