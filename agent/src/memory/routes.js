@@ -115,6 +115,24 @@ async function handleEmbeddingEndpoints(req, res, key, t, requestBody, options =
     return true;
   }
 
+  // 只读状态：条数 + 指纹陈旧。走 GET（配置类端点同例，不受「非 POST 即 404」约束）。
+  // 放在这里而不是 ROUTE_METHODS：后者只收 POST 业务动作，且需要请求体。
+  if (key === 'vector-status') {
+    if (req.method !== 'GET') return false;
+    const service = options.service || defaultService;
+    try {
+      const data = await service.vectorStatus();
+      if (data && data.success === false) {
+        jsonResponse(res, 400, data);
+      } else {
+        jsonResponse(res, 200, { success: true, ...data });
+      }
+    } catch (err) {
+      jsonResponse(res, 400, { success: false, error: err.message || 'vector_status_failed' });
+    }
+    return true;
+  }
+
   return false;
 }
 
