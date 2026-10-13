@@ -8,7 +8,7 @@ import { join } from 'path';
 import { MEMORY_DIR } from '../config.js';
 import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
 import { extractKeywords } from './tokens.js';
-import { getMemoryEmbeddingConfig } from './embedding-config.js';
+import { getMemoryEmbeddingConfig, toEmbeddingProviderConfig } from './embedding-config.js';
 import { createVectorStoreFacade, memoryModelKey, cosine } from './vectors.js';
 import { resolveMemoryTier, isVectorTier, MEMORY_VECTOR_THRESHOLD } from './tier.js';
 import { isRagAvailable } from '../rag/detect.js';
@@ -97,7 +97,7 @@ export function createMemoryService({
     const cfg = embeddingConfigProvider();
     const key = memoryModelKey(cfg);
     if (!cachedProvider || cachedProviderKey !== key) {
-      cachedProvider = embedderFactory(cfg);
+      cachedProvider = embedderFactory(toEmbeddingProviderConfig(cfg));
       cachedProviderKey = key;
     }
     return { provider: cachedProvider, cfg };

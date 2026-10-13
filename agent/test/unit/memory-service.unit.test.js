@@ -545,3 +545,22 @@ describe('向量生命周期同步', () => {
     assert.equal(Object.keys(after.vectors).length, 1);
   }));
 });
+
+// 配置字段名适配：memoryEmbedding 存的是 baseUrl，而 rag/embedding 的 OpenAI 兼容后端读 endpoint。
+// 两者曾不一致 → 远端档永远 fetch('/embeddings')，单测因注入假工厂而看不见，只有真链路会炸。
+describe('provider 配置字段映射', () => {
+  let seenCfg = null;
+  it('交给 provider 工厂的配置带由 baseUrl 派生的 endpoint', () => withVectorService({
+    embeddingConfig: { baseUrl: 'https://api.example.com/v1' },
+    embedderFactory: (cfg) => {
+      seenCfg = cfg;
+      return { embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) };
+    }
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha', importance: 5 }, T);
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.ok(seenCfg, '向量档必须创建 provider');
+    assert.equal(seenCfg.endpoint, 'https://api.example.com/v1');
+  }));
+});

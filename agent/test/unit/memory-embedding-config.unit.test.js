@@ -17,6 +17,7 @@ const {
   getMemoryEmbeddingConfig,
   maskMemoryEmbeddingConfig,
   saveMemoryEmbeddingConfig,
+  toEmbeddingProviderConfig,
 } = await import('../../src/memory/embedding-config.js');
 
 const { memoryDispatch } = await import('../../src/memory/routes.js');
@@ -93,6 +94,19 @@ test('enabled 只认真 true，dimensions 规整为非负整数', async () => {
   assert.equal(b.dimensions, 0);
 });
 
+test('provider 配置出口把 baseUrl 映射成 rag/embedding 读取的 endpoint', () => {
+  const out = toEmbeddingProviderConfig({
+    mode: 'openai-compat', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', modelName: 'm1', dimensions: 1536
+  });
+  // 字段名不一致曾让远端档永远 fetch('/embeddings')：endpoint 必须由 baseUrl 派生，不能靠调用方记得映射
+  assert.equal(out.endpoint, 'https://api.example.com/v1');
+  assert.equal(out.baseUrl, 'https://api.example.com/v1');
+  assert.equal(out.mode, 'openai-compat');
+  assert.equal(out.apiKey, 'sk-x');
+  assert.equal(out.modelName, 'm1');
+  assert.equal(out.dimensions, 1536);
+});
+
 // ==================== 配置端点 ====================
 
 test('GET /embedding-config 返回脱敏配置', async () => {
@@ -141,4 +155,15 @@ test('POST /test-embedding 超时保护返回 400 embedding_timeout', async () =
   });
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.error, 'embedding_timeout');
+});
+
+test('POST /test-embedding 交给 provider 的配置已带 endpoint', async () => {
+  await saveMemoryEmbeddingConfig({ mode: 'openai-compat', baseUrl: 'https://mx.example.com/v1', apiKey: 'sk-map', modelName: 'm-map' });
+  let seen = null;
+  const res = await callRoute('POST', '/api/memory/test-embedding', {}, {
+    createProvider: (cfg) => { seen = cfg; return { embedQuery: async () => [1, 2] }; }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.ok(seen, 'provider 工厂必须被调用');
+  assert.equal(seen.endpoint, 'https://mx.example.com/v1');
 });

@@ -5,7 +5,8 @@ import { createMemoryService } from './service.js';
 import {
   resolveMemoryEmbeddingConfig,
   maskMemoryEmbeddingConfig,
-  saveMemoryEmbeddingConfig
+  saveMemoryEmbeddingConfig,
+  toEmbeddingProviderConfig
 } from './embedding-config.js';
 import { createEmbeddingProvider } from '../rag/embedding/index.js';
 
@@ -105,7 +106,7 @@ async function handleEmbeddingEndpoints(req, res, key, t, requestBody, options =
       ? Number(options.embeddingTimeoutMs)
       : DEFAULT_EMBEDDING_TIMEOUT_MS;
     try {
-      const provider = createProvider(cfg);
+      const provider = createProvider(toEmbeddingProviderConfig(cfg));
       const vec = await withTimeout(Promise.resolve(provider.embedQuery('ping')), timeoutMs);
       jsonResponse(res, 200, { success: true, dimensions: Array.isArray(vec) ? vec.length : 0 });
     } catch (err) {

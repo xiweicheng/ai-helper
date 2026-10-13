@@ -71,3 +71,15 @@ export function resolveMemoryEmbeddingConfig(override = {}) {
   if (!merged.apiKey) merged.apiKey = saved.apiKey;
   return merged;
 }
+
+/**
+ * 转成 rag/embedding provider 需要的形态：配置面统一叫 baseUrl（与扩展端表单一致），
+ * 而 OpenAI 兼容后端读的是 endpoint。缺这一映射会让远端档永远 fetch('/embeddings')。
+ * 单一出口：所有把记忆 embedding 配置交给 provider 的地方都必须过这里。
+ * @param {object} [cfg]
+ */
+export function toEmbeddingProviderConfig(cfg = {}) {
+  const baseUrl = cfg.baseUrl || '';
+  const endpoint = cfg.endpoint || '';
+  return { ...cfg, endpoint: endpoint || baseUrl, baseUrl: baseUrl || endpoint };
+}
