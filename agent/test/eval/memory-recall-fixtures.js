@@ -83,3 +83,31 @@ export const CASES = [
   { name: '摘要类可检索', query: '会话压缩摘要', top1: 'summary-1' },
   { name: '超短条目按整段命中', query: '中国和美国', top1: 'country' }
 ];
+
+/**
+ * 向量档（B 档）评测用例。与 A 档 `CASES` 的分工必须分开，两套期望不许合并：
+ * - A 档钉「词面门槛不把共享碎块的无关条目当成命中」；
+ * - B 档钉「换个说法能找到目标」**且**「本库无答案时必须空返」——后者是向量档今天完全缺失的能力。
+ *
+ * 期望写成与 cos 刻度无关的形式（名次 / 空返），换模型或换档位后仍然成立；
+ * 若写成具体 cos 数值，就退成了本计划要消灭的「绝对阈值」思路。
+ *
+ * 目标 id 依据：本文件 7 条 fixture 送进真实 BAAI/bge-m3 后实测，4 条换说法查询的目标 cos
+ * 均排第 1（0.5163 / 0.5831 / 0.5851 / 0.6283），2 条控制查询的 top1 只有 0.3122 / 0.4318。
+ * 具体名次要求见计划 Task 2 的网格实测结果。
+ */
+export const SEMANTIC_CASES = [
+  // ---- 词面零重叠但语义唯一：向量档的全部价值所在，必须命中 ----
+  { name: '换说法命中 Vue 偏好', query: '他习惯用哪种界面库写网页', target: 'vue-pref', maxRank: 3 },
+  { name: '换说法命中国家观点', query: '这两个国家的综合实力谁更强', target: 'country', maxRank: 2 },
+  { name: '换说法命中境外访问', query: '为什么我查不到海外的资料', target: 'proxy', maxRank: 2 },
+  { name: '换说法命中 store 缺陷', query: '写入假装成功其实没保存的老毛病', target: 'mem-bug', maxRank: 2 },
+
+  // ---- 控制组：与全库主题无关。正确行为是一条都不返回（今天 B 档会填满窗口）----
+  { name: '无关查询不得返回任何东西（菜谱）', query: '法式洋葱汤要放哪些材料', expectNone: true },
+  { name: '无关查询不得返回任何东西（电费）', query: '帮我算一下这台机器的电费', expectNone: true },
+
+  // ---- 词面命中在向量档不能被降级：A 档结果必须仍在前 2 ----
+  { name: '词面命中不因融合掉出前 2', query: 'Vue 前端偏好', target: 'vue-pref', maxRank: 2 },
+  { name: '子串误伤在向量档同样不允许', query: 'rag 框架', expectAbsent: ['mem-bug'] }
+];
