@@ -1119,6 +1119,17 @@ git add agent/README.md agent/README.zh-CN.md CHANGELOG.md agent/test/smoke/memo
 git commit -m "docs(memory): 语义召回通道文档、冒烟降级验证与 changelog"
 ```
 
+> **执行结果（已实施）** —— Step 1 按计划通过（`tool-memory.js:85` 的 `...rest` 透传仍在，`tier`/`vectorMatched` 自动出现在工具结果里），**因此 locales 与转发层均未改动**：计划 Files 里列的 `zh.json`/`en.json` 一项是条件性的（「若需要展示 tier 提示」），而本任务不引入新 UI，未做。实际落地与计划的三处偏差：
+>
+> 1. **Step 2 的 `reindex` 预期错了**：计划要求「断言 `POST /api/memory/reindex` 返回 `success: true`（fake 端点失败时也是 skipped/成功不抛）」，但 `skipped` 只在**档位不是向量档**时才返回；配置已启用而端点不可达时走的是全量嵌入失败路径，Task 6 的实现返回 `{success:false, indexed:0, error}` → HTTP **400**。冒烟按实现断言 400，并把「明确失败而不是 500」作为真正的运维性质。
+> 2. **冒烟挖出一个计划里没有、且会使 Tier B 完全不可用的真缺陷**：`memoryEmbedding` 配置面用 `baseUrl`，而 `rag/embedding/openai-compat.js` 读的是 `config.endpoint`（`rag/config.js` 的字段名）。两边从未对接过 → `endpoint` 永远为空 → `fetch('/embeddings')` → `Failed to parse URL from /embeddings`，**对任何真实端点 100% 失败**。单测看不见，因为 Task 5/6 全部注入 `embedderFactory`/`createProvider` 假工厂；只有走真实工厂的冒烟能暴露。
+>    修正：`embedding-config.js` 新增单点出口 `toEmbeddingProviderConfig(cfg)`（`baseUrl` ⇄ `endpoint` 双向归一），service 的 `getProvider()` 与 routes 的 `test-embedding` 两个创建点都过它。映射放在**调用工厂之前**而不是默认工厂内部，这样注入的假工厂也能观察到，新加了 3 条单测钉住（纯函数 1 + routes 1 + service 1）。冒烟额外断言错误文案**不得**是 `Failed to parse URL`，防止以后再退回到静默不可用。
+> 3. **wiki 同步未执行**：Step 3 的 `bash scripts/sync-wiki-to-gitee.sh` 会向 Gitee 远端推送，与本轮「暂不推，用户说了再推」的指示冲突，所以未跑；`.wiki-check/` 下的 `Agent-Service`/`Core-Features` 中英同步也一并待命。
+>
+> 冒烟从 16 项增至 **21 项**（配置脱敏、不可达时 recall 降级、不留半成品向量文件、reindex 400、test-embedding 400），全 PASS。Agent 全量 287 → **290 passed / fail 0**。
+>
+> Step 5 拆成两次提交（仓库 `git log` 是一目的一个的 conventional commit 风格，把行为修复和文档拧成一坨会看不清）：`fix(memory)` 带映射 + 3 条单测 + 冒烟，`docs(memory)` 带 README 中英 + CHANGELOG + 本计划写回。
+
 ## Self-Review 检查点
 
 - **覆盖度**：三级降级（none/remote/local）、依赖缺失自动降级、JSON 真源 + 向量派生、apiKey 脱敏、超时保护、生命周期一致性、reindex、文档——逐条有 Task 承接。
