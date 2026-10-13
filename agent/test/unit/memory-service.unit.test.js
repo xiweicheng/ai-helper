@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryService } from '../../src/memory/service.js';
+import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
 
@@ -718,4 +719,81 @@ describe('provider 配置字段映射', () => {
     assert.ok(seenCfg, '向量档必须创建 provider');
     assert.equal(seenCfg.endpoint, 'https://api.example.com/v1');
   }));
+});
+
+// 追加：vectorStatus 只读状态。核心约束——它只读文件，绝不构造 provider
+//（拿超窗计数要 await _getPipeline()，那会触发模型下载；一个只读状态查询不许有这种副作用）。
+describe('vectorStatus 向量状态', () => {
+  it('报告条数与指纹；换模型未重建 → stale', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-status-'));
+    const cfg = { ...EMBED_CFG, modelName: 'first-model' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => ({ ...cfg }),
+      tierResolver: () => 'remote',
+      embedTimeoutMs: 200,
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async () => [[0.98, 0.2, 0]]
+      })
+    });
+    return Promise.resolve((async () => {
+      await svc.store({ action: 'add', type: 'fact', content: '一条记忆', tags: [], importance: 5 }, T);
+      const bf = await svc.backfillVectors(T);
+      assert.equal(bf.indexed, 1);
+
+      const fresh = await svc.vectorStatus();
+      assert.equal(fresh.indexed, 1);
+      assert.equal(fresh.total, 1, 'total = facts + summaries');
+      assert.equal(fresh.stale, false, '刚建完不该陈旧');
+      assert.equal(fresh.storedModelKey, fresh.currentModelKey);
+      assert.equal(fresh.tier, 'remote');
+
+      cfg.modelName = 'second-model';        // 模拟用户在界面里换了模型但没重建
+      const stale = await svc.vectorStatus();
+      assert.equal(stale.stale, true, '换模型未重建必须可见');
+      assert.equal(stale.indexed, 1, '陈旧不等于向量消失，条数照实报');
+      assert.notEqual(stale.storedModelKey, stale.currentModelKey);
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
+
+  it('从未建过向量（空库）不算陈旧', () => withVectorService({
+    // 前提修正：向量档开着时 store 会懒补出一个向量，“空库”在开启态下根本不存在
+    //（实测 indexed 恒为 1）。真正需要不报警的是「向量档未开且从未建过」这种初始态。
+    // 假工厂仍要给：万一档位判定变了也不会去碰真 provider。
+    tierResolver: () => 'none',
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0, 1, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '还没有向量', tags: [], importance: 5 }, T);
+    const s = await svc.vectorStatus();
+    assert.equal(s.tier, 'none');
+    assert.equal(s.indexed, 0);
+    assert.equal(s.total, 1);
+    assert.equal(s.storedModelKey, '', '空库没有指纹');
+    assert.equal(s.stale, false, '首次启用时 indexed=0 是正常态，不得报警');
+  }));
+
+  it('向量档关着也照常返回统计（残留陈旧向量是需要看到的状态，不是错误）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-status-off-'));
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false, modelName: 'now-model' }),
+      tierResolver: () => 'none',
+      // 同上：store 会懒补向量，不给假工厂就会碰真 provider
+      embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0, 1, 0]) })
+    });
+    return Promise.resolve((async () => {
+      // 直接写一份与当前配置不符的向量缓存，模拟「以前开过、换了模型、现在关了」
+      const vectors = createVectorStoreFacade({ filePath: join(dir, 'memory-vectors.json') });
+      await vectors.upsertVectors([['fact_x', [1, 0, 0]]], 'remote|old-model|3');
+      await svc.store({ action: 'add', type: 'fact', content: '条目', tags: [], importance: 5 }, T);
+
+      const s = await svc.vectorStatus();
+      assert.equal(s.tier, 'none');
+      assert.equal(s.indexed, 1, '残留向量条数照实报');
+      assert.equal(s.stale, true, '关着也要能看出向量已作废');
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
 });

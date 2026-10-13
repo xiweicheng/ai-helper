@@ -783,12 +783,42 @@ export function createMemoryService({
     };
   }
 
+  /**
+   * 向量索引状态（只读）：条数 + 指纹陈旧判定，供配置界面自证「改了模型有没有重建」。
+   *
+   * 刻意不碰 provider：拿超窗计数要 await _getPipeline()，那会触发模型下载——
+   * 一个只读状态查询不许有这种副作用，所以 overWindow 只在 backfillVectors 里给。
+   * stale 只在「真存过向量」时成立：空库 + 任意配置不算陈旧（首次启用是正常态）。
+   * @returns {Promise<object>} {indexed,total,storedModelKey,currentModelKey,stale,tier}
+   */
+  async function vectorStatus() {
+    const cfg = embeddingConfigProvider();
+    const tier = tierResolver(cfg);
+    const currentModelKey = memoryModelKey(cfg);
+    // 外层 vectors 是 facade，局部量换了名字避开遮蔽
+    const [vecStore, readResult] = await Promise.all([vectors.read(), readMemoryFile()]);
+    if (!readResult.success) return { success: false, error: readResult.error };
+
+    const data = readResult.data;
+    const total = (data.facts || []).length + (data.summaries || []).length;
+    const storedModelKey = typeof vecStore.modelKey === 'string' ? vecStore.modelKey : '';
+    return {
+      indexed: Object.keys(vecStore.vectors || {}).length,
+      total,
+      storedModelKey,
+      currentModelKey,
+      stale: Boolean(storedModelKey) && storedModelKey !== currentModelKey,
+      tier
+    };
+  }
+
   return {
     store,
     recall,
     manage,
     injectSelect,
     backfillVectors,
+    vectorStatus,
     // 读全部记忆数据对象（失败抛错；仅供测试与内部逻辑使用，业务方法内部用 readMemoryFile）
     readAll: async () => {
       const r = await readMemoryFile();
