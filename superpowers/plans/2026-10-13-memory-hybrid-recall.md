@@ -715,7 +715,7 @@ searcher 侧只导出计划点名的 4 个常量、值逐字不变；`KEYWORD_MI
 **Interfaces:**
 - Consumes: `resolveMemoryTier`, `isVectorTier`, `createVectorStoreFacade`, `createEmbeddingProvider`, `getMemoryEmbeddingConfig`, `cosine`, `MEMORY_VECTOR_THRESHOLD`, `KEYWORD_BOOST_PER_HIT`, `SCORE_MAX`
 - Produces:
-  - `createMemoryService({ filePath, vectorsFilePath, embedderFactory, tierResolver, ragAvailableProvider } = {})`（后四个仅为可测性注入点，缺省用真实实现）
+  - `createMemoryService({ filePath, vectorsFilePath, embeddingConfigProvider, embedderFactory, tierResolver, embedTimeoutMs } = {})`（除 filePath 外均为可测性注入点，缺省走真实实现；执行时以 `embeddingConfigProvider` 取代计划里的 `ragAvailableProvider`，理由见本 Task 末尾）
   - `recall(args, sessionId, t)` 返回值新增 `tier: 'none'|'remote'|'local'` 与 `vectorMatched: number`；其余字段与今天逐字一致
 
 排序规则（写进注释，避免实现走偏）：
@@ -917,7 +917,7 @@ function memorySearchText(m) {
 - [ ] **Step 4: 运行测试**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
-Expected: 29 条全 PASS（原 25 条即 A 档回归锁）。
+Expected: 34 条全 PASS（原 25 条即 A 档回归锁，实测 34/34；agent 全量 275/275）。
 
 - [ ] **Step 5: 暴露 backfillVectors 并在响应里带 tier**
 
@@ -950,6 +950,26 @@ Expected: 29 条全 PASS（原 25 条即 A 档回归锁）。
 git add agent/src/memory/service.js agent/test/unit/memory-service.unit.test.js
 git commit -m "feat(memory): recall 叠加向量通道并按需补齐缓存，未启用时逐字保持关键词行为"
 ```
+
+> **执行结果（已实施）。本 Task 的计划与实际代码差异最大，4 处必须改计划本身，请按本节为准：**
+
+> **① 计划假想的 recall 内部结构不存在。**`service.js` 里没有 `keywordScore(m,…) → {score, hits}`、没有 `compareMemoryScore`，`candidates` 之外也没有独立候选池：计分是内联的**整数加权**（content +3 / title +2 / tags +2 / 全文精确 +5+3，随关键词个数累加、无上限），排序只有 `.sort((a,b) => b.score - a.score)`，**没有 importance / updatedAt 次级键**（V8 的 sort 稳定，同分保持文件顺序）。执行时把这段内联计分原样抽成模块级 `keywordScore(m, keywords, originalQuery)`（权重与判定顺序逐字不变），`hits` 概念不存在，融合分支不再依赖它。
+
+> **② 计划的融合公式与记忆侧分值不可比，因此 Task 4 的常量导出已回退。** 计划写 `finalScore = max(cos,0) + KEYWORD_BOOST_PER_HIT * hits` 并封顶 `SCORE_MAX`（0.99）——这是 RAG 的 [0,1] 刻度。直接套到整数分制上，所有条目分数都 < 1，而关键词档动辄 8、13，等于把排序交给浮点噪声；要救回来只能先把关键词分归一化，而那会**改写 A 档计分**，违反本 Task 的硬约束。最终改法是保持整数尺子：
+> `score = kwScore + (cos >= MEMORY_VECTOR_THRESHOLD ? VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS) : 0)`，其中 `VECTOR_HIT_BONUS = 3`（达阈值先保底一次 content 命中的权重）、`VECTOR_SCALE_POINTS = 4`（cos=1 时合计 7 ≈ content+title+tags 同时命中）。语义与词面都不沾的条目仍为 0 分被排除。
+> 因此 Task 4 为「复用」而给 `rag/searcher.js` 加的 4 个 `export` 已回退成私有：没有消费方的导出只会留下幻影耦合。真正的同口径只保留一处——`MEMORY_VECTOR_THRESHOLD` 仍引用 `rag/config.js` 的 `DEFAULT_SEARCH_CONFIG.threshold`。
+
+> **③ 注入点必须补 `embeddingConfigProvider`。** 计划版在单测里调用真实 `getMemoryEmbeddingConfig() → loadConfig()`，等于让 agent 单测去读用户机器上的 `~/.ai-helper-agent/config.json`：一旦用户真的配好了 embedding，modelKey/provider 行为会随用户配置漂移，测试不可重放。`ragAvailableProvider` 则取消——`tierResolver` 的缺省实现已经包住 `isRagAvailable()`，两个入口只会多出一个不一致的面。
+
+> **④ 嵌入调用挪到取锁之前。** 计划把 `embedQuery` 写在 `withMemoryLock` 内部：记忆锁是进程内 Promise 链，一次 8 秒超时的 embedding 请求会把同进程所有 store/manage 写入一起堵死。现在档位判定 + 查询向量在锁外算完（`fused = queryVec !== null`），锁内只做纯计算与向量缓存读写。条目向量的按需补齐仍在锁内（它是 fs 写入且每条记忆一生最多一次）。
+
+> **零漂移护栏的实际写法：**`if (keywords.length > 0 && !fused) { 原路径逐字保留 } else if (fused) { 融合 }`。所以 provider 抛错、`embedderFactory` 本身抛错、8 秒超时这三种情况下 `fused` 都是 false，走的正是今天这段代码——最坏情况等于没开向量，不会更差（3 条用例分别验证）。`fused` 为真但关键词切不出来时，语义达阈值的条目仍能单独命中（A 档拿不到的增量）。
+
+> **测试辅助与计划不符：** 真实文件用 `describe/it` 与 `withService(fn)`（临时目录注入 filePath），不是计划里的顶层 `test()` + `svc()`；新增向量用例配套 `withVectorService(opts, fn)`。计划第 4 条的 `assert.equal(typeof embedCalls, 'undefined')` 是恒真断言（该标识符在计划里从未定义），换成两件事：provider 工厂计数器必须为 0，以及 A 档不得生成 `memory-vectors.json`。用例按计划 4 条，落地 **9 条**：另补 embedderFactory 抛错、无 query 不做向量、按需补齐只发生一次、modelKey 变更整体作废、删除条目的向量孤儿不影响结果。
+
+> **`backfillVectors` 实现细节修正：** 计划版用 `await readAll()`（该方法失败会抛）拿数据，但执行时先照抄了 `readMemoryFile()` 的返回值——它返回的是 `{success, data}` 包装，`data.facts` 恒 undefined，于是 `indexed` 永远是 0；跑红后改为取 `.data`。分批大小用 `EMBED_BATCH_SIZE`（10，兼容阿里云百炼单次批量上限 10 条）而非硬编码，单批失败只记录不中断（能建多少算多少，剩下的 recall 时补）。A 档返回 `{success:true, skipped:true, reason: t('memory.embeddingDisabled')}`。
+
+**回归证据：agent 全量 266 → 275 passed / fail 0**（原 25 条记忆 service 用例一条未改、一条未红，即 A 档零漂移）。扩展端本 Task 未改动。
 
 ---
 
