@@ -918,6 +918,9 @@ function setVisibleMcpServicesOpen(checked) {
 }
 
 function updateToolsToggleState() {
+  // 无 DOM 环境（单测以 node 环境导入本模块）时模块初始化的 .then 回调仍会走到这里，
+  // 不在入口兜住就会浮出 "document is not defined" 的未处理 rejection
+  if (typeof document === 'undefined') return;
   const toolsToggleBtn = document.getElementById('toolsToggleBtn');
   const toolsBadge = document.getElementById('toolsBadge');
   const filteredTools = getAgentFilteredTools();

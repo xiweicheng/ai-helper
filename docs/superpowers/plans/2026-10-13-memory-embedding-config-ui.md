@@ -1135,7 +1135,12 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 - 词面碎块 vs 语义 top1 的名次取向（动 `RRF_K` 需重跑 Task 2+4 标定）
 - `0.48` 地板换模型的重标定工具
 - 分段索引恢复超窗条目尾部（会使地板标定作废）
-- 既有债：agent 代码从未被 eslint 覆盖（根 `eslint.config.js` ignores 含 `agent/**`）、2 条既有集成失败、版本号仓库 2.2.0 vs 全局 2.1.0、main 上多个提交未推送、wiki 未同步
+- ~~既有债：agent 代码从未被 eslint 覆盖、2 条既有集成失败、main 上多个提交未推送、wiki 未同步~~
+  → eslint 覆盖与集成失败已在**第三轮收口**解决；未推送 / wiki / 版本号（仓库 2.2.0 vs 全局 2.1.0）仍在等用户发话
+- ~~`toolbox` / `knowledge` 的 hash 直达不刷新缺口~~ → 已在第三轮收进注册表
+- **新发现且需用户动作**：`api.integration.test.js` 曾硬编码本机真实配对 token 并已进 git 历史（源码已改，
+  但历史仍在，且 token 本身需重新配对才算彻底失效）；`api.integration` 会打 `/api/config/workdir`、
+  `/api/exec`、`/api/fs/delete`，未经用户同意不得跑
 
 ---
 
@@ -1187,7 +1192,7 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 - ① 状态卡：`agentApi` 附 `data.httpStatus`（不用 `status` 以免与响应体冲突，沿用 `background/local-agent-client.js` 惯例；改前 grep 核过 43 个调用方）；面板改三态 + `statusOffline`。`loadAll()` 第一版改成串行 `await`，与既有「进面板并行拉配置与状态」的测试语义相背 → 改回 cfgTask/statusTask 两个并发 IIFE、各自独立降级。
 - ① 文案：用户指定「保存到Agent」改「**保存到代理**」。术语冲突已记录：仓库 zh 里「代理」同时是 `data-tab="agent"`（`tabAgent`）那个 Tab 的名字，故说明行显式写「代理（本地 agent 服务）」。
 - ① 测试写法约束：`t(key)` 不传 params 时原样返回模板串，所以断言 `toContain(t('memoryPanel.statusFail'))` 要求该键**无占位符** → `statusFail` 设计成无参标签，错误详情另用 `statusDetail` + `<code>` 渲染。
-- ② 刷新收敛为 `tabRefreshers` 注册表 + 在 `switchTab()` 末尾派发（四条激活路径全汇到它）；**注册必须早于 `activateByHash()`**，否则 F5 深链接那一条仍漏。`toolbox` / `knowledge` 的同类缺口只记录不修（不改它们 init 时序的风险）。
+- ② 刷新收敛为 `tabRefreshers` 注册表 + 在 `switchTab()` 末尾派发（四条激活路径全汇到它）；**注册必须早于 `activateByHash()`**，否则 F5 深链接那一条仍漏。（`toolbox` / `knowledge` 的同类缺口本轮只记录，已在第三轮收编）
 - ④ CSS：`row-gap:4px` 会被后面的 `gap:2px` 简写覆盖 → 必须写 `gap: 4px 2px`；去掉 `min-width:0` 交给 `flex-wrap` 兜底。
 - ③ 探针量法教训：标题行是 `align-items:center`，用「各子元素 top 是否相同」判换行会把 22px 按钮与 17px 文字误判成两行；正确信号是**行高 > 最高子元素**。
 
@@ -1195,4 +1200,79 @@ git commit -m "docs(memory): 记忆向量配置界面文档与计划执行记录
 
 根 vitest **1298/1298**（84 文件，+13）、agent 单测 **369/369**（336 + 33）、`memory-service` **56/56**、`npx eslint` 对 9 个改动 js 零输出、`npm run build:silent` BUILD_SUCCESS。探针：`_tab-nav-overflow.mjs` 16/16、`_memory-config-entry.mjs` 13/13、临时端到端探针 14/14（已删）。常驻探针留在 `test-results-probes/`（该目录已 gitignore）。
 
-仍有 2 处既有 unhandled rejection（`tool-panel.js:921` 的 `document is not defined`），已 `git stash push --` 本次全部改动后单跑复现，确认在干净 main 上就存在。
+仍有 2 处既有 unhandled rejection（`tool-panel.js:921` 的 `document is not defined`），已 `git stash push --` 本次全部改动后单跑复现，确认在干净 main 上就存在。（已在第三轮修掉）
+
+---
+
+## 执行记录第三轮（2026-10-13 深夜：技术债收口）
+
+用户要求「技术上欠缺的、能做的继续做」。本轮五项均为边界明确的既有代码修改，无新增设计决策。
+
+### 1. 凭据泄漏（本轮最重要的发现，非计划内）
+
+上轮登记「集成测试从未跑」后去核查运行条件，发现 `agent/test/integration/api.integration.test.js` 把
+**本机真实配对 token** 写成了 `process.env.AGENT_TOKEN || '<64hex>'` 的兜底值。全盘扫描（比对 `pairings.json`
+里的真值，跳过 node_modules/dist 等）确认**只有这一个文件**。该 token 是本地管理接口唯一鉴权凭据，
+随仓库推送即进公开历史（已有 1 个提交含它）。
+
+- 修法：`resolveToken()` 只从环境变量或本机 `~/.ai-helper-agent/pairings.json` 取，两者都拿不到就在
+  **发出任何请求之前** `process.exit(1)`。顺带把原本未使用的 `readFileSync` 用在实处。
+- 钉（`test/unit/agent-integration-token.unit.test.js`）：集成目录不得出现 64 位 hex 字面量；不得出现
+  本机真实 token；无凭据时非零退出且输出**不含 `ECONNREFUSED`/`fetch failed`**（这一条才能区分
+  「报错退出」与「带着兜底值真的去连了服务」）。
+- 反向验证：改前三条全红，且旧行为确实报 ECONNREFUSED；改后 3/3 绿。
+- **需用户动作**：历史里那份 token 仍在，且 token 本身仍有效——要彻底失效需重新配对；推送前需权衡是
+  否改写历史（本轮未动）。
+
+### 2. 集成测试首跑（拆开看能不能跑）
+
+四个 `rag-*.integration.test.js` 实测自带 `mkdtempSync` 隔离（`homedir()` 零命中），**不碰用户数据、不打
+运行中的 agent** → 首次运行 **24/24 通过**（3.29s）。`api.integration.test.js` 则会调
+`/api/config/workdir`、`/api/exec`、`/api/fs/delete`、`/api/trash/restore`、`/api/skill/reload`——会改用户
+正跑着的 agent 配置与文件系统，**本轮未跑，等用户点头**。
+
+### 3. toolbox / knowledge 的 hash 直达缺口（上轮只记录的）
+
+两者刷新原先只挂在按钮 click 上 → 收进 `tabRefreshers`（与其他三个面板同一条 `switchTab` 派发），并删掉两个
+click 监听避免双触发。安全性根据：`refreshToolbox` / `refreshKnowledgePanel` 都是自包含的（只读 storage 与
+静态 DOM，不依赖各自 init 里的临时状态），因此早于 `initToolbox()` 被调不会出错；包一层 `.catch(() => {})`
+防未处理 rejection。
+
+- 钉：`memory-panel-structure.unit.test.js` 新增一条，除注册/去监听外还断言**三个注册行的字符偏移均早于首个
+  `activateByHash();`**（晚了就漏 F5 那条路径）。改前该条红，改后 9/9 绿。
+- 真实扩展冒烟（`test-results-probes/_tab-refresh-smoke.mjs`）：**17/17**。四个 tab 各自 hash 直达加载 →
+  激活正确 + 面板非空壳（控件 16/8/11/87）+ 切走切回正常 + 零脚本错误。这一项专「早调用会不会把页面
+  搞崩」，单测判不了。
+- 为何没有更强的行为探针：MCP/Skill 列表数据来自 agent `/api/mcp/servers`，未配对的全新 profile 拿不到，
+  无法在真扩展里构造「刷新前为空/刷新后有内容」的可区分场景——因此行为只靠结构钉 + 冒烟，不假称已端到端验证。
+
+### 4. 那 2 处 unhandled rejection
+
+`updateToolsToggleState()` 被模块初始化的 `.then` 回调调用，在 node 环境导入本模块时无 DOM → 抛错且游离
+于断言之外。新文件 `test/unit/tool-panel-no-dom-import.unit.test.js` 监听 `unhandledRejection` 并动态 import，
+**精确抓到那 2 条**（改前红：`document is not defined` × 2）；修法是在函数入口 `if (typeof document === 'undefined') return;`。
+
+### 5. 测试不再写用户真实目录（上轮同因第二类风险）
+
+`agent/test/unit/rag-ingest-path-sandbox.unit.test.js` 的「应被放行」用例原先用真实 `~/.ai-helper-agent/workspace`
+造路径，每次跑单测都往用户数据目录里写文件（靠 `finally` 删，中途崩溃就留残留）。因 `AGENT_DIR` 在
+`config.js`/`security.js` 顶层由 `homedir()` 求值且**无环境变量开关**，改为先覆盖 `process.env.HOME`（含 Windows 的
+`USERPROFILE`）再**动态 import** 被测模块（静态 import 会先于顶层语句求值）。新增两条钉：沙箱数据根确实被创建
+（防止哪天删掉覆盖后静默退回写真实目录）+ `after()` 比对真实 workspace 目录清单未变。反向验证：抽掉 HOME 覆盖
+→ 4 例中 1 红；恢复 → 4/4 绿。
+
+### 6. eslint 覆盖 agent
+
+实测先排除假绿：`--no-ignore` 扫 `agent/**/*.js` **89 个文件，0 error 0 warning**；再放一个 `debugger` 探针
+确认扫描真的生效（探针被抓到）。因此纳入零代价：`eslint.config.js` 的 ignores 从 `agent/**` 改为
+`agent/node_modules/**` + `agent/dist/**`，`npm run lint` 改为 `eslint src/ agent/`。**负向对照**：不用 `--no-ignore`
+时探针同样被抓到（计数=1），删除后 `npm run lint` 干净通过（3.05s）。
+
+### 本轮收口计数（全部实测）
+
+根 vitest **1303/1303**（86 文件，+5）且**不再报 unhandled rejection**；agent 单测 **370/370**（+1）；
+rag 集成（隔离部分）**24/24**；`npm run lint` 干净；`npm run build:silent` BUILD_SUCCESS；
+`_tab-refresh-smoke.mjs` 17/17。提交：`c5ab456`（凭据）+ 本轮收口一个（全在 main，**未推送**）。
+
+本轮未动（需用户发话）：`api.integration` 实跑、token 重新配对/历史改写、推送与 wiki 同步、版本号对齐、
+以及语义层三项（碎块 vs top1 取向、地板重标定、分段索引）。

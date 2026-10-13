@@ -81,3 +81,22 @@ test('tab 激活时的数据刷新收敛到 switchTab（不只挂在点击上）
   // 记忆不得再留自己的点击监听：与 switchTab 双触发会并发发两轮请求
   expect(optionsJs).not.toMatch(/\[data-tab="memory"\]'\)\?\.addEventListener/);
 });
+
+// 同类缺口的收编钉：toolbox / knowledge 的数据源也在 agent / storage，
+// 曾经只挂在按钮 click 上 —— hash 直达与 F5 两条路径进来会停在空数据。
+test('toolbox / knowledge 的刷新也走注册表，且注册早于首次 activateByHash', () => {
+  for (const name of ['toolbox', 'knowledge']) {
+    expect(optionsJs, `${name} 未注册刷新入口`).toMatch(new RegExp(`tabRefreshers\\.${name} = `));
+    expect(optionsJs, `${name} 还留着点击监听，会与 switchTab 双触发`).not.toMatch(
+      new RegExp(`\\[data-tab="${name}"\\]'\\)\\?\\.addEventListener`)
+    );
+  }
+
+  const firstActivate = optionsJs.indexOf('activateByHash();');
+  expect(firstActivate, '找不到首次 activateByHash 调用').toBeGreaterThan(-1);
+  for (const name of ['memory', 'toolbox', 'knowledge']) {
+    const at = optionsJs.indexOf(`tabRefreshers.${name} =`);
+    expect(at, `${name} 未注册`).toBeGreaterThan(-1);
+    expect(at, `${name} 注册晚于首次 activateByHash：F5 直达该 tab 会漏刷新`).toBeLessThan(firstActivate);
+  }
+});

@@ -4,6 +4,24 @@
 
 ## 2026-10-13
 
+### 安全（集成测试硬编码了本机真实配对 token）
+> 上轮登记「agent 集成测试从未跑」后去核查运行条件时发现。属本轮最重要的改动，不是顺手清理。
+
+- `agent/test/integration/api.integration.test.js` 把本机配对 token 写成 `process.env.AGENT_TOKEN || '<64hex>'` 的兜底值且已入 git（1 个提交含它）。该 token 是本地管理接口唯一鉴权凭据（持有者可读写用户工作区、改配置、导知识库），**仓库一旦推送即进公开历史**。全盘比对 `pairings.json` 真值扫描确认只此一个文件。
+- 修：`resolveToken()` 只从环境变量或本机 `~/.ai-helper-agent/pairings.json` 取，两者都拿不到则在**发出任何请求之前** `process.exit(1)`（旧行为是带着兜底值真的去连服务）。
+- 钉：`test/unit/agent-integration-token.unit.test.js` 三条——集成目录不得出现 64 位 hex 字面量 / 不得出现本机真实 token / 无凭据时非零退出且输出不含 `ECONNREFUSED`、`fetch failed`（最后一条才能区分「报错退出」与「带默认值去连」）。
+- **需用户动作**：已入历史的 token 未改写（需显式授权），且该 token 本身仍有效，要彻底失效需重新配对。
+
+### 技术债收口（本轮清掉五项既有欠账）
+
+- **`toolbox` / `knowledge` 的 hash 直达不刷新**（上轮只记录不修的那两项）：刷新从按钮 click 迁到 `tabRefreshers` 注册表，与 `memory` 走同一条 `switchTab` 派发，并删除两个 click 监听避免双触发。两个 refresh 均为自包含实现（只读 storage 与静态 DOM），因此早于各自 `init*()` 被调安全；外层包 `.catch(() => {})` 防未处理 rejection。钉：`memory-panel-structure.unit.test.js` 新增一条断言**三个注册行字符偏移均早于首个 `activateByHash();`**。真实扩展冒烟 `_tab-refresh-smoke.mjs` 17/17（四 tab 各自 hash 直达：激活正确、面板非空壳、切换正常、零脚本错误）。
+- **根测试套件里那 2 处 `document is not defined`**：`updateToolsToggleState()` 被模块初始化的 `.then` 回调调用，node 环境无 DOM 时抛错且游离在断言之外（套件绿但每次埋两条噪音）。新增 `test/unit/tool-panel-no-dom-import.unit.test.js` 监听 `unhandledRejection` 动态导入本模块，**精确抱住那 2 条**；修法为函数入口 `if (typeof document === 'undefined') return;`。
+- **单测往用户真实目录写文件**（上轮向量泄漏的同因第二类风险）：`agent/test/unit/rag-ingest-path-sandbox.unit.test.js` 的「应被放行」用例原先用真实 `~/.ai-helper-agent/workspace` 造路径。因 `AGENT_DIR` 在 `config.js`/`security.js` 顶层由 `homedir()` 求值且无环境变量开关，改为先覆盖 `process.env.HOME`（含 `USERPROFILE`）再**动态 import** 被测模块。新增两条隔离生效的判据，防止哪天删掉覆盖后静默退回写真实目录。
+- **agent 代码纳入 eslint**：`eslint.config.js` 的 ignores 从整块 `agent/**` 改为只排除 `agent/node_modules/**` 与 `agent/dist/**`，`npm run lint` 改为 `eslint src/ agent/`。纳入前先排假绿：实扫 89 个文件 0 error 0 warning，并用 `debugger` 探针正反两次证明扫描确实生效。
+- **agent 集成测试首跑**：四个 `rag-*.integration.test.js` 实测自带 `mkdtempSync` 隔离（不碰用户数据、不打运行中的 agent），首次运行 **24/24 通过**；`api.integration.test.js` 会改运行中 agent 的配置与文件系统，**仍未跑，需用户点头**。
+
+收口计数（全部实测）：根 vitest **1303/1303**（86 文件）且不再报 unhandled rejection、agent 单测 **370/370**、rag 集成 **24/24**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
+
 ### 变更（记忆向量配置界面：四项体验反馈 + 一次数据污染事故的修复）
 > 用户实机使用后回报四项体验问题，另在收口时发现上一轮留下的 agent 测试夹具会写坏用户的真实向量缓存（见本节末「事故」）。
 
