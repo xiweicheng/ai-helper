@@ -88,6 +88,14 @@ describe('与知识库同口径的两条硬性质', () => {
     assert.ok(keywordScore(m, terms, 'rag', () => true).score > 0);
   });
 
+  it('超长查询不再只取前 200 字（碎块方案遗留的截断已随其退场）', () => {
+    // 旧实现把查询截到 200 字再拆词，尾部整词会丢；单元制下窗口按片段长度走，无此截断
+    const longQuery = '无意义填充'.repeat(60) + '关键标识';   // 304 字
+    const m = { content: '本文末尾记了关键标识一项', title: '', tags: [] };
+    const terms = T(longQuery);
+    assert.ok(keywordScore(m, terms, '', () => true).score > 0, '尾部整词命中必须参与计分');
+  });
+
   it('高频单元不参与计分（df 过半剔除），低频命中保留', () => {
     const terms = T('项目文档');
     const candidates = Array.from({ length: 9 }, (_, i) => ({
