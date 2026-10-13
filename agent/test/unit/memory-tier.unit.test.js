@@ -2,8 +2,7 @@
 // 召回通道分级决策：纯函数、无 IO。核心不变量是「默认必须落到 none」——none 的行为要与今天逐字一致。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveMemoryTier, isVectorTier, MEMORY_VECTOR_THRESHOLD } from '../../src/memory/tier.js';
-import { DEFAULT_SEARCH_CONFIG } from '../../src/rag/config.js';
+import { resolveMemoryTier, isVectorTier } from '../../src/memory/tier.js';
 
 const remote = { enabled: true, mode: 'openai-compat', apiKey: 'sk', modelName: 'm', dimensions: 0 };
 const local = { enabled: true, mode: 'local', apiKey: '', modelName: 'bge', dimensions: 512 };
@@ -49,7 +48,6 @@ test('isVectorTier 只对 remote/local 为真', () => {
   assert.equal(isVectorTier(undefined), false);
 });
 
-test('向量阈值与 RAG 默认检索阈值同源（不复制常量，避免两处漂移）', () => {
-  assert.equal(MEMORY_VECTOR_THRESHOLD, DEFAULT_SEARCH_CONFIG.threshold);
-  assert.equal(MEMORY_VECTOR_THRESHOLD, 0.3);
-});
+// 本文件原有一条「向量阈值与 RAG 默认检索阈值同源」的断言，随计划四删除：
+// 逐条候选的绝对余弦阈值（0.3）已被实测否定（见 memory/fusion.js 文件头），
+// 采信条件现在全部在 fusion.js 里，由 memory-fusion.unit.test.js 钉住。

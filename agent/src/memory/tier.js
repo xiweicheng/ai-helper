@@ -1,11 +1,8 @@
 // agent/src/memory/tier.js - 记忆召回通道分级决策（纯函数，无 IO）
 // none = 只走关键词通道（与下推完成后的历史行为逐字一致，默认档）；
-// remote/local = 在关键词之上叠加向量通道。判定只看配置 + RAG 依赖是否就位。
-
-import { DEFAULT_SEARCH_CONFIG } from '../rag/config.js';
-
-// 与 RAG 默认检索阈值同口径：直接引用同一常量，不复制数值（否则两处调参会静默漂移）
-export const MEMORY_VECTOR_THRESHOLD = DEFAULT_SEARCH_CONFIG.threshold;
+// remote/local = 走双通道排名融合（关键词名次 + 语义名次，见 fusion.js）。
+// 判定只看配置 + RAG 依赖是否就位。本模块不管采信条件：逐条候选的绝对余弦阈值已被实测否定，
+// 采信规则单点在 fusion.js，不在这里留任何常量。
 
 /**
  * 决定当前配置能用到哪一档召回通道。

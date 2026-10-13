@@ -299,6 +299,43 @@ describe('recall 向量通道', () => {
     assert.equal(r.results[0].content, '目标条目');
   }));
 
+  // 计划四主缺陷的回归钉：cos 落在旧绝对阈值（0.3）之上、查询级地板（0.48）之下的条目，
+  // 旧规则会当成「语义命中」并绕过词面门槛、填满 limit；新规则整通道不采信。
+  // 上面那条用 0.98/0 的手搓向量钉住不了这个区间——两档规则在那种距离上结论相同。
+  it('本库对该查询没有落点时，向量档不再填满窗口（旧阈值区间的噪声被挡掉）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      // [0.4, 0.9165151, 0] 模长 1，与查询的 cos 恰为 0.4：≥ 0.3（旧规则命中）但 < 0.48（新规则否决）
+      embedDocuments: async (texts) => texts.map(() => [0.4, 0.9165151, 0])
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '条目甲', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '条目乙', tags: [], importance: 5 }, T);
+    assert.equal((await svc.backfillVectors(T)).indexed, 2);
+
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true, '无落点应是正常空返，不是失败');
+    assert.equal(r.vectorMatched, 0);
+    assert.equal(r.total, 0, '两条 0.4 相似度的条目都不该被采信');
+    assert.deepEqual(r.results, []);
+  }));
+
+  it('同库内既有落点也有勉强相关时，只返回落点那条', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('目标') ? [0.98, 0.2, 0] : [0.4, 0.9165151, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '勉强条目', tags: [], importance: 5 }, T);
+    assert.equal((await svc.backfillVectors(T)).indexed, 2);
+
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, '目标条目');
+    assert.equal(r.vectorMatched, 1);
+  }));
+
   it('缺向量的条目在 recall 中按需补齐，第二次召回不再调用 embedDocuments', () => withVectorService({
     embedderFactory: () => {
       const calls = { q: 0, d: 0 };

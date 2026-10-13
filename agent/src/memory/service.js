@@ -11,7 +11,8 @@ import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
 import { extractMemoryTerms, keywordScore, buildDocFreqFilter, memorySearchText, KEYWORD_MIN_UNITS } from './tokens.js';
 import { getMemoryEmbeddingConfig, toEmbeddingProviderConfig } from './embedding-config.js';
 import { createVectorStoreFacade, memoryModelKey, cosine } from './vectors.js';
-import { resolveMemoryTier, isVectorTier, MEMORY_VECTOR_THRESHOLD } from './tier.js';
+import { resolveMemoryTier, isVectorTier } from './tier.js';
+import { selectSemanticHits, rrfFuse } from './fusion.js';
 import { isRagAvailable } from '../rag/detect.js';
 import { EMBED_BATCH_SIZE } from '../rag/config.js';
 import { createEmbeddingProvider } from '../rag/embedding/index.js';
@@ -38,13 +39,6 @@ function generateMemoryId(type) {
 
 // 查询向量的一次嵌入上限（与 embedding 探活端点同口径）：超时即降级到关键词单通道
 const MEMORY_EMBED_TIMEOUT_MS = 8000;
-
-// 向量命中折算到记忆侧整数分值上的加分。记忆关键词分是 tokens.js 的「单元数 × 字段权重（content 3 /
-// title 2 / tags 2）+ 整句原样命中 +5+3」整数累加，RAG searcher 用的是 [0,1] 余弦 + 0.1 加分，
-// 两把尺子不可比：把 searcher 的常量搬过来等于改写关键词档的计分。因此向量分落在同一把整数尺子上：
-// 达阈值先保底一次 content 命中的权重，相似度满值再折 4 分（合计 7 ≈ content+title+tags 同时命中）。
-const VECTOR_HIT_BONUS = 3;
-const VECTOR_SCALE_POINTS = 4;
 
 /**
  * 词面命中门槛：整词/整段命中可直接成命中；只碰碎块时需单元素 ≥ 2 才算。
@@ -425,13 +419,13 @@ export function createMemoryService({
             // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
             // 上一行赋值清空的 candidates 数组，恒返回空，属死代码，未随迁——行为等价。
           } else {
-            // 双通道融合：词面分照算，语义达阈值的条目在其词面分之上叠加整数向量分。
-            // 关键词零命中但语义达阈值的条目由此能被召回——这是 A 档拿不到的增量。
+            // 双通道排名融合（RRF）：关键词与向量各排各的名次，只按名次合并。
+            // 不再叠加绝对相似度分数的原因见 memory/fusion.js 文件头——cos 绝对值在条目级不可判别。
             const vecMap = (await vectors.read()).vectors;
 
             const missing = candidates.filter(m => m.id && !(m.id in vecMap));
             if (missing.length) {
-              // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义分，不影响正确性
+              // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义名次，不影响正确性
               try {
                 const { provider, cfg } = getProvider();
                 const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
@@ -445,23 +439,28 @@ export function createMemoryService({
               }
             }
 
-            const scored = candidates.map(m => {
-              const { score, units, full } = keywordScore(m, terms, originalQuery, dfFilter);
-              const vec = m.id ? vecMap[m.id] : null;
-              const cos = vec ? cosine(queryVec, vec) : 0;
-              const vectorHit = cos >= MEMORY_VECTOR_THRESHOLD;
-              if (vectorHit) {
-                vectorMatched++;
-                return { memory: m, score: score + VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS), units, full, vectorHit };
-              }
-              return { memory: m, score, units, full, vectorHit };
-            });
+            // 关键词路：口径与 A 档逐字一致（同一门槛、同一排序），只是取名次
+            const kwRanked = candidates
+              .map(m => ({ memory: m, ...keywordScore(m, terms, originalQuery, dfFilter) }))
+              .filter(isKeywordHit)
+              .sort((a, b) => b.score - a.score);
 
-            // 语义达阈值的条目不受词面门槛限制——「关键词零命中但语义命中」正是向量通道的全部价值
-            candidates = scored
-              .filter(s => s.vectorHit || isKeywordHit(s))
-              .sort((a, b) => b.score - a.score)
-              .map(s => s.memory);
+            // 语义路：全候选算 cos 后过采信门（查询级地板 + 条目级相对落差 + 条数封顶）。
+            // 词面零命中但语义达标的条目由此能被召回；而本库无落点时整通道空返，不再填满窗口。
+            const cosPairs = candidates
+              .map(m => (m.id && vecMap[m.id] ? [m.id, cosine(queryVec, vecMap[m.id])] : null))
+              .filter(Boolean);
+            const semantic = selectSemanticHits(cosPairs);
+            const vecRank = new Map(semantic.map(([id], i) => [id, i + 1]));
+            // vectorMatched 语义变更：由「过了绝对阈值的条数」变为「被采信进语义路的条数」（上限 SEMANTIC_MAX_TAKE）
+            vectorMatched = semantic.length;
+
+            const byId = new Map(candidates.map(m => [m.id, m]));
+            const kwRank = new Map(kwRanked.map((s, i) => [s.memory.id, i + 1]));
+            candidates = rrfFuse([
+              [...kwRank.entries()],
+              [...vecRank.entries()]
+            ]).map(([id]) => byId.get(id)).filter(Boolean);
           }
         }
       }
