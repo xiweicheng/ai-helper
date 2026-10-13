@@ -303,7 +303,7 @@ git commit -m "refactor(memory): port recall logic (keyword scoring, session ded
 
 **Interfaces:**
 - Consumes: Task 1 `selectMemoriesForInjection` / `calcMemoryValue`（`../memory/injection.js`）；Task 2 存储核心
-- Produces: 实例方法 `manage(args)` → `{success, message, scored?, candidates?, stats}`；`injectSelect()` → `{success, injected, remainingCount, remainingTags}`
+- Produces: 实例方法 `manage(args, t)` → `{success, message, scored?, candidates?, stats, removedFacts?, removedSummaries?}`（`args.action` 取值 `review|compact`，与 store 一致由转发层做 subAction→action 映射）；`injectSelect(t)` → `{success, injected, remainingCount, remainingTags}`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -411,23 +411,34 @@ Expected: FAIL（模块不存在）
 
 - [ ] **Step 3: 实现 routes.js**
 
-模式对齐 `rag/routes.js`（本地 `jsonResponse`/`getAllowedOrigin` 直接抄其 :39-63；**不需要**动态 import——零外部依赖）：
+模式对齐 `rag/routes.js`（本地 `jsonResponse`/`getAllowedOrigin` 直接抄其 :39-63，依赖 Node 原生挂接的 `res.req`）。service 方法签名为 `(args, t)`，因此路由层必须把请求级 `t` 透传下去；末位加 `options` 供测试注入 tmp 目录实例（避免读写真实 `~/.ai-helper-agent` 记忆文件）：
 
 ```js
 // agent/src/memory/routes.js - /api/memory/* 业务端点（认证/语言解析由 server.js 完成后转发）
 import { createMemoryService } from './service.js';
 
-const service = createMemoryService(); // 进程级单例：文件锁与 session 缓存复用（同 rag manager）
+const defaultService = createMemoryService(); // 进程级单例：文件锁与 session 缓存复用（同 rag manager）
+const ROUTE_METHODS = { store: 'store', recall: 'recall', manage: 'manage', inject: 'injectSelect' };
 
-export async function memoryDispatch(req, res, pathname, url, t, requestBody) {
-  const action = pathname.slice('/api/memory/'.length);
-  const handlers = { store: 'store', recall: 'recall', manage: 'manage', inject: 'injectSelect' };
-  const method = handlers[action];
+export async function memoryDispatch(req, res, pathname, url, t, requestBody = {}, options = {}) {
+  const service = options.service || defaultService;
+  const key = pathname.slice('/api/memory/'.length).replace(/\/+$/, '');
+  const method = ROUTE_METHODS[key];
   if (!method || req.method !== 'POST') {
     return jsonResponse(res, 404, { success: false, error: t('error.unknownApiPath') });
   }
+  const body = requestBody || {};
   try {
-    const data = await service[method](requestBody); // recall 需要 sessionId：requestBody.sessionId 已在 args 内，见下
+    let data;
+    if (method === 'recall') {
+      data = await service.recall(body, body.sessionId ?? null, t);
+    } else if (method === 'injectSelect') {
+      data = await service.injectSelect(t);
+    } else {
+      data = await service[method](body, t);
+    }
+    // 业务失败（参数缺失 / 读写失败）回 400，与抛错同侧；404 仅用于路径不匹配（旧版本探测）
+    if (data && data.success === false) return jsonResponse(res, 400, data);
     return jsonResponse(res, 200, { success: true, ...data });
   } catch (err) {
     console.error('[Memory] route error:', err);
@@ -440,16 +451,15 @@ export async function memoryRouter(req, res, pathname, url, t, requestBody) {
 }
 ```
 
-注意：`service.recall(args, sessionId)` 的第二参数在路由层从 `requestBody.sessionId` 取出并以 `action === 'recall'` 分支单独调用（`memoryDispatch` 内 `method === 'recall'` 时 `service.recall(requestBody, requestBody.sessionId)`，其余走 `service[method](requestBody)`）。service 各方法内部若 `readFile` 失败返回 `{success:false,error}` 时，路由仍回 200 且在 body 标 `success:false`——**与扩展端 `agentRequest` 现有消费方式一致（调用方看 body.success 而非 HTTP 码）**，与 rag 的 400 场景仅用于抛错不同；实现时在 `memoryDispatch` 中判断 `data.success === false` 时改回 `jsonResponse(res, 400, data)`，保持 HTTP 语义与扩展端 404 检测互不干扰（404 仅用于旧版本 agent 探测）。
+注意：`service.recall(args, sessionId, t)` 的第二参数在路由层从 `requestBody.sessionId` 取出（扩展转发层负责把会话 ID 放进 body）。service 各方法内部失败返回 `{success:false,error}` 时统一回 HTTP 400（与 rag 惯例一致），而扩展端仍以 `body.success` 为准判断业务结果；404 只用于旧版本 agent 无该端点的探测，两者语义互不干扰。
 
 - [ ] **Step 4: server.js 接线**
 
-在 `agent/src/server.js` 的 RAG 块（:2043-2058）之后、404 兜底（:2061）之前加入（静态 import 文件头）：
+在 `agent/src/server.js` 的 RAG 块（:2043-2058）之后、404 兜底（:2061）之前加入。**执行时改为静态 import**（记忆层零外部依赖，无需像 RAG 那样按可用性动态加载，也省掉每请求 import 开销）：文件头加 `import { memoryRouter } from './memory/routes.js';`，路由块为：
 
 ```js
-    // 长期记忆业务端点（逻辑与文件同侧；无外部依赖，静态加载）
+    // 长期记忆业务端点（逻辑与数据文件同侧；零外部依赖，静态加载）
     if (pathname.startsWith('/api/memory/')) {
-      const { memoryRouter } = await import('./memory/routes.js');
       return memoryRouter(req, res, pathname, url, t, requestBody);
     }
 ```
