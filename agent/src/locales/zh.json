@@ -298,6 +298,9 @@
   "memory": {
     "missingAction": "缺少 action 参数",
     "missingType": "缺少 type 参数",
+    "invalidImportance": "importance 必须是 1-10 之间的数字，收到 \"{value}\"",
+    "invalidMemoryType": "memoryType \"{type}\" 无效，只支持 all / fact / summary",
+    "invalidType": "记忆类型 \"{type}\" 无效，只支持 fact 或 summary",
     "missingContent": "缺少 content 参数",
     "readFailed": "读取记忆文件失败: {error}",
     "writeFailed": "写入记忆文件失败: {error}",

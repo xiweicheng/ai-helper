@@ -814,3 +814,104 @@ describe('vectorStatus 向量状态', () => {
     })().finally(() => rmSync(dir, { recursive: true, force: true })));
   });
 });
+
+// 追加：入参校验。钉住用户在真实对话里就能触发的那些脏数据路径（侧边栏记忆能力验证报告 D2/D3/D4）。
+// 重点不只是「拒不拒」，而是拒绝的形态：旧代码 `type === 'fact' ? facts : summaries` 会把任何非 fact
+// 的值写进 summaries（抢摘要配额）；旧代码 recall 遇到无效 memoryType 会说「记忆库为空」。
+describe('store / recall 入参校验', () => {
+
+  it('add 拒绝白名单外的 type，且不落进 summaries 兜底数组', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'add', type: 'note', content: 'x' }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidType/);
+    const data = await svc.readAll();
+    assert.equal(data.facts.length + data.summaries.length, 0, '无效类型不得写进任何数组');
+  }));
+
+  it('update 拒绝白名单外的 type（不再被 typeMismatch 误导成「类型不匹配」）', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.store({ action: 'update', type: 'bogus', content: 'x', memoryId: a.memory.id }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidType/);
+  }));
+
+  it('delete 照旧不要求 type', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    assert.equal(r.success, true);
+  }));
+
+  it('importance 钳到 1..10：0 不再被 `|| 5` 吞成 5，999 落到上限', () => withService(async (svc) => {
+    const lo = await svc.store({ action: 'add', type: 'fact', content: 'L', importance: 0 }, T);
+    assert.equal(lo.memory.importance, 1, '0 是越界值，应钳到下限而不是被当没传退成默认 5');
+    const hi = await svc.store({ action: 'add', type: 'fact', content: 'H', importance: 999 }, T);
+    assert.equal(hi.memory.importance, 10);
+    const str = await svc.store({ action: 'add', type: 'fact', content: 'S', importance: '8' }, T);
+    assert.equal(str.memory.importance, 8, '字符串数字可解析，照钳制流程走');
+    const def = await svc.store({ action: 'add', type: 'fact', content: 'D' }, T);
+    assert.equal(def.memory.importance, 5, '未传仍取默认 5');
+  }));
+
+  it('importance 非数字直接报错，不写 NaN 进去毁掉价值排序', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'add', type: 'fact', content: 'x', importance: 'high' }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidImportance/);
+    const data = await svc.readAll();
+    assert.equal(data.facts.length, 0);
+  }));
+
+  it('update 与 add 的 importance 口径一致（旧代码 add 传 0 得 5、update 传 0 得 0）', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F', importance: 3 }, T);
+    const u = await svc.store({ action: 'update', type: 'fact', content: 'F2', importance: 0, memoryId: a.memory.id }, T);
+    assert.equal(u.success, true);
+    assert.equal(u.memory.importance, 1);
+    const bad = await svc.store({ action: 'update', type: 'fact', content: 'F3', importance: 'x', memoryId: a.memory.id }, T);
+    assert.equal(bad.success, false);
+    assert.match(bad.error, /memory\.invalidImportance/);
+    const after = await svc.readAll();
+    assert.equal(after.facts[0].content, 'F2', '拒绝非数字不得把已写入的内容改掉');
+  }));
+
+  it('去重分支同样走钳制（旧代码 `importance || duplicate.importance` 会吞掉低值）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'dup', importance: 8 }, T);
+    const r = await svc.store({ action: 'add', type: 'fact', content: 'dup', importance: 0 }, T);
+    assert.equal(r.action, 'updated');
+    assert.equal(r.memory.importance, 1);
+  }));
+
+  it('recall 无效 memoryType 明确报错，不再谎称「记忆库为空」', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.recall({ query: 'F', memoryType: 'garbage' }, null, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidMemoryType/);
+    assert.doesNotMatch(JSON.stringify(r), /memoryEmpty/);
+  }));
+
+  it('有效 memoryType 仍照常工作（all / fact / summary 三值）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '事实甲' }, T);
+    await svc.store({ action: 'add', type: 'summary', content: '摘要乙', title: 'T' }, T);
+    // 不传 query：避开词面/语义打分，只验「新加的白名单没把正常类型一并拒掉」
+    for (const [mt, expectTotal] of [['all', 2], ['fact', 1], ['summary', 1]]) {
+      const r = await svc.recall({ memoryType: mt }, null, T);
+      assert.equal(r.success, true, mt);
+      assert.equal(r.total, expectTotal, mt);
+    }
+  }));
+
+  // 校验必须放在嵌入请求之前：否则一次参数写坏的记忆检索会白打一发远端嵌入
+  it('无效 memoryType 的校验早于嵌入请求（不浪费一次网络往返）', () => {
+    let queryCalls = 0;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedQuery: async () => { queryCalls++; return [1, 0, 0]; },
+        embedDocuments: async (texts) => texts.map(() => [1, 0, 0])
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: '目标', tags: [], importance: 5 }, T);
+      const r = await svc.recall({ query: '目标', memoryType: 'garbage' }, null, T);
+      assert.equal(r.success, false);
+      assert.match(r.error, /memory\.invalidMemoryType/);
+      assert.equal(queryCalls, 0, '参数非法时不得发起查询嵌入');
+    });
+  });
+});

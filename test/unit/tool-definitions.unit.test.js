@@ -182,3 +182,32 @@ describe('agent_skill 防误加载守卫（技能意图路由加固）', () => {
     expect(skill.function.description).toMatch(/never preload/i);
   });
 });
+
+// agent_memory 的 schema 只是给模型看的提示：全链路没有任何地方按 properties 校验入参
+// （tool-executor 直接 JSON.parse(arguments) 交给 handler）。所以这里的声明必须与 agent 端
+// service 的真实钳制口径一致——否则模型被引导写出的值正好是被服务端拒掉的值。
+describe('agent_memory schema 与 service 校验口径一致', () => {
+  const mem = MEMORY_TOOLS.find(t => t.id === 'agent_memory');
+  const props = () => mem.function.parameters.properties;
+
+  test('type / memoryType 枚举与白名单一致', () => {
+    // 枚举顺序是给模型的提示，不是语义；按集合比，避免白名单顺序一改就假红
+    const asSet = (list) => [...list].sort();
+    expect(asSet(props().type.enum)).toEqual(['fact', 'summary']);
+    expect(asSet(props().memoryType.enum)).toEqual(['all', 'fact', 'summary']);
+  });
+
+  test('importance 声明了 1-10 的数值边界（旧版只有描述文字，无 minimum/maximum）', () => {
+    const importance = props().importance;
+    expect(importance.type).toBe('integer');
+    expect(importance.minimum).toBe(1);
+    expect(importance.maximum).toBe(10);
+  });
+
+  test('importance 描述里的区间与数值边界不矛盾', () => {
+    const importance = props().importance;
+    const nums = importance.description.match(/\d+/g).map(Number);
+    expect(Math.min(...nums)).toBe(importance.minimum);
+    expect(Math.max(...nums)).toBe(importance.maximum);
+  });
+});

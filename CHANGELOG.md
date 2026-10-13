@@ -4,6 +4,19 @@
 
 ## 2026-10-13
 
+### 变更（记忆入参校验：侧边栏自测报告的 D2/D3/D4 收口）
+> 用户在侧边栏让 AI 自测长期记忆后产出「长期记忆能力验证报告（第二轮）」，9 条用例 + 4 个已知缺陷。逐条对代码核验后本轮修 D2/D3/D4，D1 挂起等用户定检索取向。
+
+- **D3 无效 `type` 不再兜底成摘要**：`agent/src/memory/service.js` 原 `type === 'fact' ? facts : summaries` 会把任何非 `fact` 值（模型打错的 `note` / `Fact` / `fact1`）当摘要写入，并挤占 `maxSummaries = 20` 配额。现在 `MEMORY_TYPES` 白名单显式拒绝；`delete` 照旧不要求 `type`，未知 `action` 仍先走 `unsupportedAction`，不让类型校验抢去把错误换成误导性的 `invalidType`。
+- **D4 无效 `memoryType` 不再谎称「记忆库为空」**：原路径 `candidates = 0` → 返回空库文案，把参数错误伪装成数据状态。现在 `all / fact / summary` 之外直接报错，且**校验早于嵌入请求**——否则一次坏参数的检索会白打一发远端嵌入（钉住：断言注入的 `embedQuery` 调用次数为 0）。
+- **D2 `importance` 三套口径收到一处**：add 的 `importance || 5`（传 0 静默变 5）、去重分支的 `importance || duplicate.importance`（吞低值）、update 的 `!== undefined`（0 原样写入）统一为 `normalizeImportance()`：可解析数字钳到 1..10（区间依据取自 locales 的 `{importance}/10` 与注入侧阈值 8/6/5），不可解析**报错而不是写 NaN**（NaN 会毁掉价值排序与注入选择）。
+- **工具 schema 补边界**：`memory-tools.js` 的 `importance` 原先只有描述文字写着 1-10 而无 `minimum`/`maximum`（同仓 `media-tools.js` 有此惯例）。关键事实核对：全链路**没有任何地方按 schema 校验入参**（`tool-executor.js` 直接 `JSON.parse(arguments)` 交给 handler），所以 `enum` 只是给模型的提示——这也是报告 D2/D3/D4 在普通对话里就能触发、而非「手工构造请求才能触发」的原因。新增钉：schema 声明的区间必须与 service 钳制口径一致，描述里的数字与 `minimum`/`maximum` 不矛盾。
+- **本轮作废报告的一处归因**：D1 被归因为「多标签才触发」。实际 tags 是打分前的硬过滤，之后词面还要过 `isKeywordHit`、语义还要过 0.48 地板——两个硬门槛 AND 叠加，**单标签也能触发**。
+- **本轮自己的假绿灯（必须记下）**：落盘脚本把模板串 `${QJ}` 的一个 `$` 写丢，6 行 locale 文案里进了字面量 `{QJ}`，而当时 agent 单测 66/66 全绿。根因不是「运气差没进到」，而是**文案层完全没有测试覆盖**：service 测试的 `t` 是 stub（返回 key），校验分支只被验了「拒不拒」。补 `agent/test/unit/memory-validation-messages.unit.test.js`：用真实 i18n 渲染 + 给 service 注入真实 `t`（断言拒绝信息里能看到模型传来的原始值、渲染后不残留任何 `{xxx}` 占位符）+ 两份语言包 327 个叶子键的键集合与占位符集合一致。先跑出 4 红再修，修后 6/6。
+- 未做（需用户发话）：D1 的标签硬过滤是否降为加分项，属检索取向选择。
+
+收口计数（全部实测）：根 vitest **1306/1306**（86 文件，+3）、agent 单测 **387/387**（+17）、rag 集成（隔离部分）**24/24**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。`api.integration.test.js` 经静态核对不涉及 `/api/memory/*`，本轮改动与它无关，仍未实跑。
+
 ### 安全（集成测试硬编码了本机真实配对 token）
 > 上轮登记「agent 集成测试从未跑」后去核查运行条件时发现。属本轮最重要的改动，不是顺手清理。
 

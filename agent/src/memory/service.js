@@ -40,6 +40,29 @@ function generateMemoryId(type) {
 // 查询向量的一次嵌入上限（与 embedding 探活端点同口径）：超时即降级到关键词单通道
 const MEMORY_EMBED_TIMEOUT_MS = 8000;
 
+// 记忆类型白名单。旧实现用 type === "fact" ? facts : summaries 分桶，于是任何非 fact 的值
+// （包括模型打错的 note / Fact / fact1）都会被当成摘要写进 summaries，还抢走它的配额
+// （maxSummaries 只有 20）。校验必须显式，不能靠三元表达式的 else 兜底。
+const MEMORY_TYPES = ["fact", "summary"];
+
+// recall 的过滤维度比写入多一个 all
+const RECALL_MEMORY_TYPES = ["all", ...MEMORY_TYPES];
+
+// importance 的量纲由展示文案定：locales 里写的是 {importance}/10；注入侧 Tier1 常驻阈值 8、
+// 摘要默认 6、缺省 5 全落在 1..10 内，因此钳制区间取 1..10。
+const IMPORTANCE_MIN = 1;
+const IMPORTANCE_MAX = 10;
+const IMPORTANCE_DEFAULT = 5;
+
+// 0 是越界值而不是"未传"。旧代码 add 用 importance || 5（0 被静默吞成 5），update 用
+// !== undefined（0 原样写入）——同一字段两条路径口径不一致；本函数把两边收到同一处。
+// 返回 null 表示"未提供或不可解析"，由调用方区分这两种情况。
+function normalizeImportance(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(IMPORTANCE_MAX, Math.max(IMPORTANCE_MIN, Math.round(n)));
+}
+
 /**
  * 词面命中门槛：整词/整段命中可直接成命中；只碰碎块时需单元素 ≥ 2 才算。
  * 这一条是碎 bigram 噪声的真正出口（旧实现里「写网」「个国」这类随机 2 字块也能凑出分）。
@@ -184,6 +207,19 @@ export function createMemoryService({
     if (!type && action !== 'delete') return { success: false, error: t('memory.missingType') };
     if (!content && action !== 'delete') return { success: false, error: t('memory.missingContent') };
 
+    // 只校验 add / update：delete 按全局唯一 id 查找本就不需要 type，未知 action 仍由下面的
+    // unsupportedAction 报错，不让类型校验抢在它前面把错误换成误导性的 invalidType
+    if ((action === 'add' || action === 'update') && !MEMORY_TYPES.includes(type)) {
+      return { success: false, error: t('memory.invalidType', { type: String(type) }) };
+    }
+    // importance 只解析一次：add 的默认值、去重分支的覆盖、update 的写入共用同一个结果，
+    // 这是三条路径此前口径不一致的根因
+    const importanceGiven = importance !== undefined;
+    const importanceValue = importanceGiven ? normalizeImportance(importance) : null;
+    if (importanceGiven && importanceValue === null) {
+      return { success: false, error: t('memory.invalidImportance', { value: String(importance) }) };
+    }
+
     return withMemoryLock(async () => {
       const readResult = await readMemoryFile();
       if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
@@ -199,7 +235,7 @@ export function createMemoryService({
           category: category || 'custom',
           content,
           tags: tags || [],
-          importance: importance || 5,
+          importance: importanceValue ?? IMPORTANCE_DEFAULT,
           accessCount: 0,
           lastAccessAt: null,
           createdAt: now,
@@ -215,7 +251,7 @@ export function createMemoryService({
         if (duplicate) {
           duplicate.updatedAt = now;
           duplicate.tags = tags || duplicate.tags;
-          duplicate.importance = importance || duplicate.importance;
+          duplicate.importance = importanceValue ?? duplicate.importance;
           duplicate.sourceSessionId = sourceSessionId || duplicate.sourceSessionId;
           const writeResult = await writeMemoryFile(memoryData);
           if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
@@ -270,7 +306,7 @@ export function createMemoryService({
         const existing = targetArray[idx];
         if (content !== undefined) existing.content = content;
         if (tags !== undefined) existing.tags = tags;
-        if (importance !== undefined) existing.importance = importance;
+        if (importanceValue !== null) existing.importance = importanceValue;
         if (category !== undefined) existing.category = category;
         if (type === 'summary' && title !== undefined) existing.title = title;
         existing.updatedAt = now;
@@ -345,6 +381,10 @@ export function createMemoryService({
 
     // 档位判定与查询向量在取锁之前完成：embedding 是外部网络调用，放进互斥锁里会让一次慢请求
     // 阻塞同进程的所有记忆写入（锁是进程内 Promise 链，没有超时逃生口）。
+    if (!RECALL_MEMORY_TYPES.includes(memoryType)) {
+      return { success: false, error: t('memory.invalidMemoryType', { type: String(memoryType) }) };
+    }
+
     const tier = tierResolver(embeddingConfigProvider());
     let queryVec = null;
     if (isVectorTier(tier) && query && query.trim()) {

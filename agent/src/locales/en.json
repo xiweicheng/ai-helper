@@ -298,6 +298,9 @@
   "memory": {
     "missingAction": "Missing action parameter",
     "missingType": "Missing type parameter",
+    "invalidImportance": "importance must be a number between 1-10, received \"{value}\"",
+    "invalidMemoryType": "Invalid memoryType \"{type}\", only all / fact / summary are supported",
+    "invalidType": "Invalid memory type \"{type}\", only fact or summary are supported",
     "missingContent": "Missing content parameter",
     "readFailed": "Failed to read memory file: {error}",
     "writeFailed": "Failed to write memory file: {error}",
