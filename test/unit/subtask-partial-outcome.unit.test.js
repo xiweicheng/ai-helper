@@ -152,7 +152,10 @@ describe('接线守卫：方案1 UI', () => {
     expect(CHAT_MANAGER_SRC).toMatch(/subtask-fail-reason/);
     expect(CHAT_MANAGER_SRC).toMatch(/t\('chatMsg\.subtaskFailReason'/);
     // 中断原因来源：nodeType==='subtask' 主行的 error 字段
-    expect(CHAT_MANAGER_SRC).toMatch(/nodeType\s*===?\s*'subtask'[\s\S]{0,200}?\.error|\.error[\s\S]{0,200}?nodeType\s*===?\s*'subtask'/);
+    expect(CHAT_MANAGER_SRC).toMatch(
+      /const subtaskMainLog = executionLog\.find\(e => e\.subtaskIndex === si && e\.nodeType === 'subtask'\)/
+    );
+    expect(CHAT_MANAGER_SRC).toMatch(/subtaskMainLog && subtaskMainLog\.error/);
   });
 
   test('「部分完成」与「中断原因」文案中英文均已注册', () => {

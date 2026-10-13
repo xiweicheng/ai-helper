@@ -193,6 +193,46 @@ describe('notifyPanelDetached / notifyAutoResumeExhausted 行为', () => {
   });
 });
 
+// ==================== 面板断开通知抑制判定 ====================
+
+describe('shouldNotifyPanelDetached 面板断开通知抑制判定', () => {
+  let shouldNotifyPanelDetached;
+
+  beforeEach(async () => {
+    vi.stubGlobal('chrome', {
+      notifications: { create: vi.fn(), clear: vi.fn(), onClicked: { addListener: vi.fn() } },
+      runtime: { lastError: null, getURL: (p) => p },
+      storage: { local: { get: (k, cb) => { cb && cb({}); return Promise.resolve({}); }, set: () => Promise.resolve() } },
+    });
+    const m = await import('../../src/background/notifier.js');
+    shouldNotifyPanelDetached = m.shouldNotifyPanelDetached;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('任务真在跑 + 未被取消 + 面板没重开 → 该弹（原设计意图）', () => {
+    expect(shouldNotifyPanelDetached({ active: true, cancelled: false, panelReconnected: false })).toBe(true);
+  });
+
+  test('用户手动终止 → 不弹（端口同一 tick 断开，任务只是还在收尾）', () => {
+    expect(shouldNotifyPanelDetached({ active: true, cancelled: true, panelReconnected: false })).toBe(false);
+  });
+
+  test('复核时任务已不在跑（正常完成/已收尾）→ 不弹', () => {
+    expect(shouldNotifyPanelDetached({ active: false, cancelled: false, panelReconnected: false })).toBe(false);
+  });
+
+  test('面板已重连（关了又马上打开）→ 不弹，用户已经看得到任务', () => {
+    expect(shouldNotifyPanelDetached({ active: true, cancelled: false, panelReconnected: true })).toBe(false);
+  });
+
+  test('缺参/空对象按保守处理不弹', () => {
+    expect(shouldNotifyPanelDetached({})).toBe(false);
+    expect(shouldNotifyPanelDetached()).toBe(false);
+  });
+});
 // ==================== 接线守卫（源码正则） ====================
 
 describe('接线守卫', () => {
@@ -212,16 +252,25 @@ describe('接线守卫', () => {
     expect(INDEX_SRC).toMatch(/getAllReactCheckpoints\(/);
   });
 
-  test('index.js keepalive onDisconnect：任务执行中（activeReactLoops.has）才弹面板关闭通知', () => {
-    expect(INDEX_SRC).toMatch(/notifyPanelDetached/);
+  test('index.js keepalive onDisconnect：不直接弹，延迟复核后由 shouldNotifyPanelDetached 决定', () => {
     const disconnectIdx = INDEX_SRC.indexOf("port.onDisconnect.addListener");
     expect(disconnectIdx).toBeGreaterThan(-1);
-    // 从断开回调位置往后找（首次出现可能在 import 行）
-    const guardIdx = INDEX_SRC.indexOf('notifyPanelDetached', disconnectIdx);
-    expect(guardIdx).toBeGreaterThan(disconnectIdx);
-    const seg = INDEX_SRC.slice(disconnectIdx, disconnectIdx + 800);
-    expect(seg).toMatch(/activeReactLoops\.has\(sessionId\)/);
-    expect(seg).toMatch(/notifyPanelDetached/);
+    const seg = INDEX_SRC.slice(disconnectIdx, disconnectIdx + 1400);
+    expect(seg).toMatch(/setTimeout\(/);
+    expect(seg).toMatch(/PANEL_DETACH_NOTIFY_DELAY_MS/);
+    expect(seg).toMatch(/shouldNotifyPanelDetached\(\{/);
+    expect(seg).toMatch(/active:\s*activeReactLoops\.has\(sessionId\)/);
+    expect(seg).toMatch(/cancelled:\s*isCancelled\(sessionId\)/);
+    expect(seg).toMatch(/panelReconnected:\s*hasKeepalivePort\(sessionId\)/);
+    expect(seg).toMatch(/notifyPanelDetached\(\{ sessionId \}\)/);
+    // 老写法（命中 activeReactLoops 就直接弹）必须消失，否则误报回归
+    expect(seg).not.toMatch(/if \(activeReactLoops\.has\(sessionId\)\)\s*\{\s*notifyPanelDetached/);
+  });
+
+  test('index.js 补齐判定所需依赖导入（isCancelled / hasKeepalivePort / shouldNotifyPanelDetached）', () => {
+    expect(INDEX_SRC).toMatch(/import\s*\{[^}]*\bisCancelled\b[^}]*\}\s*from\s*'\.\/state\.js'/);
+    expect(INDEX_SRC).toMatch(/import\s*\{[^}]*hasKeepalivePort[^}]*\}\s*from\s*'\.\/state\.js'/);
+    expect(INDEX_SRC).toMatch(/import\s*\{[^}]*shouldNotifyPanelDetached[^}]*\}\s*from\s*'\.\/notifier\.js'/);
   });
 
   test('notifier 新文案 i18n 中英文均已注册', () => {

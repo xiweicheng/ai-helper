@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity } from './state.js';
+import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -9,7 +9,7 @@ import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import { restoreDetachWindowId } from './detach-window.js';
-import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResumeExhausted } from './notifier.js';
+import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResumeExhausted, shouldNotifyPanelDetached } from './notifier.js';
 import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
@@ -98,6 +98,21 @@ Promise.all([
 // chrome.runtime.sendMessage 单条消息最大 64MiB，此常量用于截断大消息
 const MAX_LOG_ENTRIES_FOR_MSG = 1000;
 
+// 面板断开通知的延迟复核窗口：给「取消 / 刚好完成」留出收尾时间，
+// 避免把正在 teardown 的任务误判为仍在后台执行（真·关闭只是晚几秒知情）
+const PANEL_DETACH_NOTIFY_DELAY_MS = 2000;
+
+// 最终消息日志截断：超过上限时保留尾部 N 条，但 subtask_plan 条目必须留下——
+// 它是"计划了哪些子任务"的唯一载体且位于日志最前端，纯尾部切片会必然丢弃，
+// 导致历史视图无法展示从未执行的子任务。
+function truncateLogForMessage(log, limit = MAX_LOG_ENTRIES_FOR_MSG) {
+  if (!Array.isArray(log) || log.length <= limit) return log || [];
+  const tail = log.slice(-limit);
+  const tailIds = new Set(tail.map((e) => e && e.id));
+  const plans = log.filter((e) => e && e.nodeType === 'subtask_plan' && !tailIds.has(e.id));
+  return plans.length ? [...plans, ...tail] : tail;
+}
+
 // MCP 工具查询缓存，避免每次 GET_MCP_TOOLS 都向 Agent 发网络请求
 let mcpToolsCache = null;
 
@@ -185,11 +200,20 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     port.onDisconnect.addListener(() => {
       unregisterKeepalivePort(sessionId, port);
       logger.debug('[Background] keepalive port disconnected, sessionId:', sessionId);
-      // 【面板关闭提醒】任务仍在执行中才弹：心跳/自动续跑已尽力保住任务，
-      // 通知的职责是"知情"——告诉用户任务还在跑，真被系统中断可在面板「继续执行」恢复
-      if (activeReactLoops.has(sessionId)) {
-        notifyPanelDetached({ sessionId });
-      }
+      // 【面板关闭提醒】不在这一刻直接弹，延迟复核后再决定：
+      // 面板点「停止」会在同一 tick 内 disconnect 端口，而 reactLoop 的 finally
+      // （activeReactLoops.delete）要等取消信号逐层冒泡才执行，此刻读到「仍在执行」是假阳性；
+      // CANCEL_REACT 与端口断开是两条不保证顺序的通道，此刻 isCancelled 也可能尚未置位。
+      // 真·面板关闭只是晚几秒知情，而作废 / 刚好完成 / 关了又立刻打开都在窗口内被挡掉。
+      setTimeout(() => {
+        if (shouldNotifyPanelDetached({
+          active: activeReactLoops.has(sessionId),
+          cancelled: isCancelled(sessionId),
+          panelReconnected: hasKeepalivePort(sessionId),
+        })) {
+          notifyPanelDetached({ sessionId });
+        }
+      }, PANEL_DETACH_NOTIFY_DELAY_MS);
     });
   }
 });
@@ -1038,9 +1062,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           return;
         }
         logger.debug('[Background] RESUME_REACT complete,content length:', result.content?.length);
-        const truncatedLog = (result.executionLog || []).length > MAX_LOG_ENTRIES_FOR_MSG
-          ? result.executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
-          : (result.executionLog || []);
+        const truncatedLog = truncateLogForMessage(result.executionLog);
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId,
@@ -1059,7 +1081,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         const isAborted = error.name === 'AbortError' || error.message === t('bg.requestCancelled') || error.message === t('bg.reactCancelled');
         logger.debug('[Background] RESUME_REACT failed:', isAborted ? '(usercancel)' : error.message);
         const errLog = error.executionLog || [];
-        const truncatedErrLog = errLog.length > MAX_LOG_ENTRIES_FOR_MSG ? errLog.slice(-MAX_LOG_ENTRIES_FOR_MSG) : errLog;
+        const truncatedErrLog = truncateLogForMessage(errLog);
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId,
@@ -1443,9 +1465,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         logger.debug('[Background] API call complete,content length:', content.length, 'execution logcount:', executionLog.length);
         console.log('[Background API_COMPLETE] useTools:', useTools, '| executionLog entries:', executionLog.length, '| agent_file entries:', executionLog.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| first few types:', executionLog.slice(0, 5).map(e => `${e.nodeType}${e.action ? `(${e.action.name})` : ''}`));
         // 安全截断：防止 executionLog 超过 chrome.runtime.sendMessage 的 64MiB 限制
-        const truncatedLog = executionLog.length > MAX_LOG_ENTRIES_FOR_MSG
-          ? executionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
-          : executionLog;
+        const truncatedLog = truncateLogForMessage(executionLog);
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId: sessionId,
@@ -1468,9 +1488,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         }
         // 获取 executionLog（如果可用），安全截断防止 64MiB 限制
         const errExecutionLog = error.executionLog || [];
-        const truncatedErrLog = errExecutionLog.length > MAX_LOG_ENTRIES_FOR_MSG
-          ? errExecutionLog.slice(-MAX_LOG_ENTRIES_FOR_MSG)
-          : errExecutionLog;
+        const truncatedErrLog = truncateLogForMessage(errExecutionLog);
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId: sessionId,

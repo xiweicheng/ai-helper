@@ -46,6 +46,8 @@ registerTranslations('zh', {
     labelTokenUsage: 'Token 使用:',
     sectionError: '❌ 错误信息',
     sectionSubtaskResult: '✅ 子任务结果',
+    sectionSubtaskDesc: '📝 任务描述',
+    subtaskPendingNode: '（待执行）',
     sectionReflectionPrompt: '📊 评估提示词',
     sectionReflectionRaw: '📤 评估结果（原始响应）',
     sectionTokenUsage: '📊 Token 使用',
@@ -110,6 +112,8 @@ registerTranslations('en', {
     labelTokenUsage: 'Token Usage:',
     sectionError: '❌ Error',
     sectionSubtaskResult: '✅ Subtask Result',
+    sectionSubtaskDesc: '📝 Task Description',
+    subtaskPendingNode: '(pending)',
     sectionReflectionPrompt: '📊 Reflection Prompt',
     sectionReflectionRaw: '📤 Reflection Result (raw)',
     sectionTokenUsage: '📊 Token Usage',
@@ -205,8 +209,67 @@ function getToolCommandPreview(entry) {
   return getToolCallPreview(entry);
 }
 
+/**
+ * 把后台下发的权威子任务清单（nodeType='subtask_plan'）展开成"从未启动的子任务"行，
+ * 让历史视图也能看全计划。清单条目本身不参与渲染（否则会多出一行无意义节点）；
+ * 已启动的下标以真实日志为准不重复生成；多份清单按 index 去重，后出现的优先；
+ * 无清单（旧消息 / 未拆分任务）原样返回，零影响。
+ */
+export function expandSubtaskPlanEntries(executionLog) {
+  const list = Array.isArray(executionLog) ? executionLog : [];
+  const plans = list.filter((e) => e && e.nodeType === 'subtask_plan' && Array.isArray(e.items));
+  if (plans.length === 0) return list;
+  const rest = list.filter((e) => e && e.nodeType !== 'subtask_plan');
+  const startedIndexes = new Set(
+    rest
+      .filter((e) => e.nodeType === 'subtask' && typeof e.subtaskIndex === 'number')
+      .map((e) => e.subtaskIndex)
+  );
+  const latestByIndex = new Map();
+  plans.forEach((plan) => {
+    plan.items.forEach((item) => {
+      if (!item || typeof item.index !== 'number') return;
+      latestByIndex.set(item.index, { item, plan });
+    });
+  });
+  const pendingRows = [];
+  Array.from(latestByIndex.keys())
+    .sort((a, b) => a - b)
+    .forEach((index) => {
+      if (startedIndexes.has(index)) return;
+      const { item, plan } = latestByIndex.get(index);
+      const label = t('execLog.subtaskPendingNode');
+      pendingRows.push({
+        id: `plan_pending_${plan.id || 'x'}_${index}`,
+        nodeType: 'subtask',
+        status: 'pending',
+        iteration: 0,
+        // 借用清单时间戳作为数据时间；展示位置由 compareLogEntries 统一排到末尾
+        timestamp: plan.timestamp,
+        subtaskIndex: index,
+        subtaskId: item.id,
+        subtaskName: item.name,
+        description: item.description || '',
+        nodeName: item.name ? `${item.name} ${label}` : label,
+        taskGroup: `subtask_group_${index}`,
+        taskGroupIndex: index + 1,
+        taskGroupName: item.name,
+        isSubtask: true,
+      });
+    });
+  return rest.concat(pendingRows);
+}
+
+/**
+ * 时间线排序：待执行行（由清单推导、并非真实执行记录）一律排到末尾，
+ * 避免其借用的清单时间戳早于所有已执行条目，插到已执行行前面。
+ */
+function compareLogEntries(a, b) {
+  const key = (e) => (e.status === 'pending' ? Number.MAX_SAFE_INTEGER : new Date(e.timestamp).getTime());
+  return key(a) - key(b);
+}
 export function renderExecutionTimeline(executionLog) {
-  const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const sortedLog = expandSubtaskPlanEntries(executionLog).sort(compareLogEntries);
   const totalCount = sortedLog.length;
   
   let result = '';
@@ -376,6 +439,13 @@ export function renderExecutionTimeline(executionLog) {
             </div>
             ` : ''}
             
+            ${entry.description ? `
+            <div class="timeline-section">
+              <div class="section-title">${t('execLog.sectionSubtaskDesc')}</div>
+              <div class="section-content">${escapeHtml(entry.description)}</div>
+            </div>
+            ` : ''}
+
             ${entry.result ? `
             <div class="timeline-section">
               <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>
@@ -449,7 +519,7 @@ export function renderExecutionTimeline(executionLog) {
 }
 
 export function renderExecutionLogForPanel(executionLog) {
-  const sortedLog = [...executionLog].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const sortedLog = expandSubtaskPlanEntries(executionLog).sort(compareLogEntries);
   
   // 检测是否有任务组信息
   const hasTaskGroups = sortedLog.some(entry => entry.taskGroup);
@@ -729,6 +799,13 @@ function renderSingleEntry(entry, index, totalCount) {
           </div>
           ` : ''}
           
+          ${entry.description ? `
+          <div class="timeline-section">
+            <div class="section-title">${t('execLog.sectionSubtaskDesc')}</div>
+            <div class="section-content">${escapeHtml(entry.description)}</div>
+          </div>
+          ` : ''}
+
           ${entry.result ? `
           <div class="timeline-section">
             <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>
@@ -945,6 +1022,13 @@ function renderExecutionLogOriginal(sortedLog) {
             </div>
             ` : ''}
             
+            ${entry.description ? `
+            <div class="timeline-section">
+              <div class="section-title">${t('execLog.sectionSubtaskDesc')}</div>
+              <div class="section-content">${escapeHtml(entry.description)}</div>
+            </div>
+            ` : ''}
+
             ${entry.result ? `
             <div class="timeline-section">
               <div class="section-title">${t('execLog.sectionSubtaskResult')}</div>

@@ -247,8 +247,32 @@ export function clearInteractionNotification(sessionId) {
 }
 
 /**
+ * 面板断开后是否该弹「任务仍在后台执行」通知（延迟复核后的纯判定）。
+ *
+ * 为什么不能只看 activeReactLoops：面板点「停止」时在同一 tick 内就 disconnect 了
+ * keepalive 端口，而 reactLoop 的 finally（activeReactLoops.delete）要等取消信号
+ * 逐层冒泡才执行；CANCEL_REACT 消息与端口断开又是两条不保证顺序的通道。
+ * 因此 index.js 延迟一个窗口后复核三项事实，任一不成立即静默：
+ *   active          任务确实还在跑（挡掉刚完成 / 已收尾）
+ *   cancelled       未被用户取消（挡掉手动作废——本次误报的根因）
+ *   panelReconnected 面板未重连（挡掉关了又马上打开，用户已看得到）
+ * @param {Object} [state]
+ * @param {boolean} [state.active] 会话仍在 activeReactLoops 中
+ * @param {boolean} [state.cancelled] 会话已被用户取消（含子任务派生 id）
+ * @param {boolean} [state.panelReconnected] 复核时已重新注册 keepalive port
+ * @returns {boolean} 是否应弹通知；缺参按保守的 false 处理
+ */
+export function shouldNotifyPanelDetached({
+  active = false,
+  cancelled = false,
+  panelReconnected = false,
+} = {}) {
+  return Boolean(active) && !cancelled && !panelReconnected;
+}
+
+/**
  * 面板关闭但任务仍在执行中的桌面通知（问题②提醒半边）
- * 仅在 keepalive port 断开且 activeReactLoops 命中时由 index.js 调用：
+ * 由 index.js 在 keepalive port 断开并通过 shouldNotifyPanelDetached 复核后调用：
  * 心跳/自动续跑已尽力保住任务，本通知的职责是"知情"——告诉用户任务仍在跑，
  * 若真被系统中断可通过面板「继续执行」恢复。不做可见性抑制（面板此刻已关闭）。
  * @param {Object} opts

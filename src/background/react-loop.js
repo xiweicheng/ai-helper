@@ -31,6 +31,7 @@ registerTranslations('zh', {
     subtaskRolledBack: '子任务 {name} (已回滚)',
     subtaskRollbackFailed: '子任务 {name} (回滚失败)',
     subtaskCount: '已拆解为 {count} 个子任务',
+    subtaskPlanNode: '子任务计划（共 {count} 个）',
     subtaskNode: '子任务 {index}: {name}',
     subtaskCompleted: '子任务 {index}: {name} (完成)',
     subtaskFailed: '子任务 {index}: {name} (失败)',
@@ -70,6 +71,7 @@ registerTranslations('en', {
     subtaskRolledBack: 'Subtask {name} (rolled back)',
     subtaskRollbackFailed: 'Subtask {name} (rollback failed)',
     subtaskCount: 'Broken down into {count} subtasks',
+    subtaskPlanNode: 'Subtask plan ({count} subtasks)',
     subtaskNode: 'Subtask {index}: {name}',
     subtaskCompleted: 'Subtask {index}: {name} (completed)',
     subtaskFailed: 'Subtask {index}: {name} (failed)',
@@ -293,6 +295,8 @@ const EXECUTION_LOG_MEMORY_LIMIT = 1000;
  * - 距窗口 1000 条以前的条目早已在各自迭代内完成状态流转，必为终态；
  *   status 判断作为双重保险
  * - 同步清理 snapshotMap（增量发送快照）中对应记录，防止快照 Map 本身泄漏
+ * - subtask_plan 条目豁免裁剪：它是"计划了哪些子任务"的唯一载体，被裁掉后历史视图
+ *   无法展示从未执行的子任务
  * @param {Array} executionLog - 执行日志数组（原地裁剪）
  * @param {Map} [snapshotMap] - 增量发送快照 Map（id -> { status, nodeName }）
  * @param {number} [limit] - 窗口上限
@@ -303,7 +307,7 @@ function trimExecutionLogMemory(executionLog, snapshotMap, limit = EXECUTION_LOG
   const overflow = executionLog.length - limit;
   let removed = 0;
   for (let i = 0; i < executionLog.length && removed < overflow; i++) {
-    if (executionLog[i].status !== 'processing') {
+    if (executionLog[i].status !== 'processing' && executionLog[i].nodeType !== 'subtask_plan') {
       if (snapshotMap) snapshotMap.delete(executionLog[i].id);
       executionLog.splice(i, 1);
       removed++;
@@ -2297,6 +2301,23 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
   const sortedSubtasks = strategy === 'dependency' 
     ? sortSubtasksByDependencies(subtasks) 
     : subtasks;
+
+  // 权威子任务清单：让界面能展示"计划了哪些、还没执行到哪些"（顺序取拓扑排序后，
+  // 与 subtaskIndex 语义严格一致）。条目走既有增量日志通道进面板，并随 executionLog
+  // 持久化进消息记录，历史恢复无需额外协议字段。
+  parentExecutionLog.push({
+    id: crypto.randomUUID(),
+    iteration: 0,
+    timestamp: new Date().toISOString(),
+    status: 'success',
+    nodeType: 'subtask_plan',
+    nodeName: t('reactLoop.subtaskPlanNode', { count: sortedSubtasks.length }),
+    subtaskTotal: sortedSubtasks.length,
+    strategy,
+    taskDescription: taskDescription || '',
+    items: sortedSubtasks.map((st, i) => ({ index: i, id: st.id, name: st.name, description: st.description || '' })),
+  });
+  sendSubtaskStatusUpdate(t('reactLoop.subtaskPlanNode', { count: sortedSubtasks.length }), 'success', parentExecutionLog);
   
   // 筛选每个子任务需要的工具（继承父任务工具范围）
   const toolSets = await prepareToolSetsForSubtasks(sortedSubtasks, tools);
@@ -2401,6 +2422,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       subtaskId: subtask.id,
       subtaskName: subtask.name,
       subtaskIndex: subtaskIndex,
+      description: subtask.description || '',
       taskGroup: taskGroup,
       taskGroupIndex: subtaskIndex + 1,
       taskGroupName: subtask.name,
@@ -2513,7 +2535,7 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
             ...parentExecutionLog[logIndex],
             status: 'success',
             duration: Date.now() - new Date(parentExecutionLog[logIndex].timestamp).getTime(),
-            result: subtaskResult.content.substring(0, 200) + (subtaskResult.content.length > 200 ? '...' : '')
+            result: subtaskResult.content.substring(0, 600) + (subtaskResult.content.length > 600 ? '...' : '')
           };
         }
         

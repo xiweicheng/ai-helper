@@ -4137,6 +4137,41 @@ body {
   color: #9ca3af;
   text-align: center;
 }
+/* 待执行子任务行：由后台权威清单补齐，尚未轮到执行（灰色弱化以区别活动行） */
+.subtask-progress-pending {
+  background: rgba(150, 150, 150, 0.06);
+  border-color: rgba(150, 150, 150, 0.22);
+}
+.subtask-progress-pending .subtask-icon,
+.subtask-progress-pending .subtask-chevron {
+  color: #9ca3af;
+}
+.subtask-progress-pending .subtask-name {
+  color: #6b7280;
+  font-weight: 400;
+}
+.subtask-status-pending {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9ca3af;
+}
+/* 详情区：任务描述 / 产出摘要 两段（与节点列表同区展示） */
+.subtask-detail-desc,
+.subtask-detail-result {
+  padding: 2px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #4b5563;
+  word-break: break-word;
+}
+.subtask-detail-result {
+  color: #374151;
+}
+.subtask-detail-label {
+  margin-right: 4px;
+  font-weight: 600;
+  color: #8b5cf6;
+}
 /* 完成/失败时的进度行 */
 .subtask-progress-line.done {
   color: #22c55e;
@@ -10707,6 +10742,17 @@ body {
   animation: spin 0.8s linear infinite;
 }
 
+/* 待执行（由子任务清单推导、从未启动）：空心灰点，不带旋转动画 */
+.execution-log-panel .timeline-dot.pending {
+  background: transparent;
+  border: 2px solid #b0b4bb;
+  color: #9ca3af;
+}
+
+.execution-log-panel .timeline-item[data-status="pending"] .node-name {
+  color: #9ca3af;
+}
+
 .execution-log-panel .timeline-dot.reflection.success {
   background: #6366f1;
 }
@@ -11029,6 +11075,12 @@ body {
 
 .task-group-dot.failed {
   background: #e53e3e;
+}
+
+/* 待执行子任务组：灰色静态，与执行中区分 */
+.task-group-dot.pending {
+  background: #d1d5db;
+  color: #6b7280;
 }
 
 .task-group-dot.processing {
