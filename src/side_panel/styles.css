@@ -1571,16 +1571,25 @@ body {
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
 }
-.auto-compact-row {
+.memory-switch-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.auto-compact-row + .auto-compact-row {
-  margin-top: 6px;
+.memory-switch-row + .memory-switch-row {
+  margin-top: 7px;
 }
-.auto-compact-row .tool-toggle-label {
+.memory-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  min-width: 0;
+}
+.memory-switch-label {
   font-size: 11px;
+  color: #666;
 }
 .memory-limit-custom-label {
   font-size: 11px;
@@ -6226,7 +6235,8 @@ body {
   gap: 12px;
 }
 
-.tool-preselect-toggle .toggle-switch {
+.tool-preselect-toggle .toggle-switch,
+.memory-switch .toggle-switch {
   position: relative;
   width: 36px;
   height: 20px;
@@ -6236,7 +6246,8 @@ body {
   transition: background 0.2s;
   flex-shrink: 0;
 }
-.tool-preselect-toggle .toggle-switch::after {
+.tool-preselect-toggle .toggle-switch::after,
+.memory-switch .toggle-switch::after {
   content: '';
   position: absolute;
   top: 2px;
@@ -6254,7 +6265,8 @@ body {
   line-height: 1;
   transition: transform 0.2s;
 }
-.tool-preselect-toggle input:checked ~ .toggle-switch {
+.tool-preselect-toggle input:checked ~ .toggle-switch,
+.memory-switch input:checked ~ .toggle-switch {
   background: #667eea;
 }
 /* 工具弹窗底部两个开关开启时的滑轨配色 = 按钮角标颜色
@@ -6274,7 +6286,8 @@ body {
   content: '✓';
   color: #22c55e;
 }
-.tool-preselect-toggle input:checked ~ .toggle-switch::after {
+.tool-preselect-toggle input:checked ~ .toggle-switch::after,
+.memory-switch input:checked ~ .toggle-switch::after {
   transform: translateX(16px);
 }
 
