@@ -5,6 +5,7 @@
 import { readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { MEMORY_DIR } from '../config.js';
+import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
 
 // 记忆数据结构默认值（迁移自 tool-memory.js:137-144，字段与版本结构保持一致）
 const DEFAULT_MEMORY_DATA = () => ({
@@ -470,9 +471,156 @@ export function createMemoryService({ filePath = join(MEMORY_DIR, 'global-memory
     });
   }
 
+  /**
+   * manage：审查（review）与压缩淘汰（compact）
+   * （迁移自 executeAgentMemoryManage tool-memory.js:613-720；淘汰线 value<10 数值不变）
+   * @param {object} args { action: 'review' | 'compact' }（扩展转发层已将 subAction 映射到 action）
+   * @param {Function} t 请求语言翻译函数
+   */
+  async function manage(args, t) {
+    const { action } = args;
+
+    if (!action) return { success: false, error: t('memory.missingAction') };
+
+    return withMemoryLock(async () => {
+      const readResult = await readMemoryFile();
+      if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
+
+      const memoryData = readResult.data;
+      const now = Date.now();
+
+      if (action === 'review') {
+        // 审查所有记忆，计算价值分数，返回淘汰建议
+        const allMemories = [
+          ...memoryData.facts.map(m => ({ ...m, _source: 'facts' })),
+          ...memoryData.summaries.map(m => ({ ...m, _source: 'summaries' }))
+        ];
+
+        const scored = allMemories.map(m => ({
+          id: m.id,
+          type: m.type,
+          category: m.category,
+          content: m.content,
+          title: m.title,
+          tags: m.tags,
+          importance: m.importance,
+          accessCount: m.accessCount || 0,
+          lastAccessAt: m.lastAccessAt,
+          createdAt: m.createdAt,
+          value: calcMemoryValue(m, now).toFixed(2),
+          _source: m._source
+        })).sort((a, b) => parseFloat(a.value) - parseFloat(b.value));
+
+        const factsCount = memoryData.facts.length;
+        const summariesCount = memoryData.summaries.length;
+        const maxFacts = memoryData.meta.maxFacts;
+        const maxSummaries = memoryData.meta.maxSummaries;
+
+        const lowValueThreshold = 10; // 价值分数低于此值标记为候选淘汰
+        const candidates = scored.filter(s => parseFloat(s.value) < lowValueThreshold);
+
+        const reviewText =
+          t('memory.reviewTitle') + '\n\n' +
+          t('memory.reviewOverview', { facts: factsCount, maxFacts, summaries: summariesCount, maxSummaries }) + '\n' +
+          t('memory.reviewLastReview', { date: memoryData.stats.lastReviewAt || t('memory.reviewNeverReviewed') }) + '\n\n' +
+          t('memory.reviewCandidates', { threshold: lowValueThreshold }) + '\n\n' +
+          (candidates.length === 0
+            ? t('memory.reviewNoCandidates') + '\n'
+            : candidates.map((c, i) =>
+                `${i + 1}. ` + t('memory.memoryItemHeader', { index: i + 1, type: c.type, id: c.id }) + ` (value: ${c.value})\n` +
+                t('memory.memoryItemContent', { content: c.content }) + '\n' +
+                t('memory.reviewItemCreated', { createdAt: c.createdAt, lastAccess: c.lastAccessAt || t('memory.neverAccessed'), accessCount: c.accessCount }) + '\n'
+              ).join('\n')
+          ) +
+          '\n' + t('memory.reviewSuggestion') + '\n' +
+          t('memory.reviewSuggestionDelete') + '\n' +
+          t('memory.reviewSuggestionMerge') + '\n' +
+          t('memory.reviewSuggestionKeep');
+
+        return {
+          success: true,
+          message: reviewText,
+          scored: scored.map(s => { const { _source, ...rest } = s; return rest; }),
+          candidates: candidates.map(s => { const { _source, ...rest } = s; return rest; }),
+          stats: memoryData.stats
+        };
+      }
+
+      if (action === 'compact') {
+        // 压缩：移除低价值记忆
+        const threshold = 10;
+        let removedFacts = 0;
+        let removedSummaries = 0;
+
+        const compactRemoved = [];
+        memoryData.facts = memoryData.facts.filter(m => {
+          const value = calcMemoryValue(m, now);
+          if (value < threshold) {
+            removedFacts++;
+            compactRemoved.push(m.id);
+            return false;
+          }
+          return true;
+        });
+
+        memoryData.summaries = memoryData.summaries.filter(m => {
+          const value = calcMemoryValue(m, now);
+          if (value < threshold) {
+            removedSummaries++;
+            compactRemoved.push(m.id);
+            return false;
+          }
+          return true;
+        });
+
+        memoryData.stats.lastReviewAt = new Date().toISOString();
+
+        const writeResult = await writeMemoryFile(memoryData);
+        if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
+
+        // 已淘汰记忆从会话召回缓存中移除，避免后续会话永久占位
+        for (const id of compactRemoved) removeFromRecalledCache(id);
+
+        return {
+          success: true,
+          message: t('memory.compactDone', { facts: removedFacts, summaries: removedSummaries, threshold, totalFacts: memoryData.stats.totalFacts, totalSummaries: memoryData.stats.totalSummaries }),
+          removedFacts,
+          removedSummaries,
+          stats: memoryData.stats
+        };
+      }
+
+      return { success: false, error: t('memory.unsupportedAction', { action }) };
+    });
+  }
+
+  /**
+   * injectSelect：为系统提示词“永久注意事项”选出分级注入记忆（迁移自扩展端 GET_PERMANENT_NOTES handler）
+   * 三级策略与预算参数由 injection.js 的 MEMORY_INJECTION_CONFIG 固定控制。
+   * @param {Function} t 请求语言翻译函数
+   */
+  async function injectSelect(t) {
+    return withMemoryLock(async () => {
+      const readResult = await readMemoryFile();
+      if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
+
+      const memoryData = readResult.data;
+      const selection = selectMemoriesForInjection(memoryData.facts, memoryData.summaries);
+
+      return {
+        success: true,
+        injected: selection.injected,
+        remainingCount: selection.remainingCount,
+        remainingTags: selection.remainingTags
+      };
+    });
+  }
+
   return {
     store,
     recall,
+    manage,
+    injectSelect,
     // 读全部记忆数据对象（失败抛错；仅供测试与内部逻辑使用，业务方法内部用 readMemoryFile）
     readAll: async () => {
       const r = await readMemoryFile();
