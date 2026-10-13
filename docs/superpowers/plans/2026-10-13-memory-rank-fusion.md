@@ -69,6 +69,9 @@ cos 0.3750 → 5 分   cos 0.5000 → 5 分   cos 0.5253 → 5 分   cos 0.5467 
 - ✅ **可用信号是分离度**（`top1 − top2`）。上表里相关查询的分离度 0.208 / 0.108（除 Q1），
   无关查询 0.001 / 0.037 / 0.000 / 0.001 —— 两者在分离度轴上分得很开，在 cos 绝对值轴上分不开。
 
+> **⚠ 本节的上表有一条数据在 Task 2 被推翻，见下方「Task 2 执行结果」的更正。**
+> 结论中「条目级绝对 cos 不可用」仍然成立；「查询级 top1 不可用」**不成立**。
+
 ### 3. 计划三留下的真实缺陷：语义档整体绕过词面门槛
 
 `service.js:462` 的过滤条件是 `s.vectorHit || isKeywordHit(s)`，而 `vectorHit = cos ≥ 0.3` 在真实库上
@@ -98,7 +101,7 @@ B 档：5 条查询一律填满 limit              ← 门槛被 vectorHit 旁�
 | `agent/test/eval/memory-recall-vector-golden.json` | 7 条 fixture + 6 条查询的真实 bge-m3 向量（5 位小数） | Create |
 | `agent/test/eval/memory-recall-fixtures.js` | 追加语义档期望（`semantic` 用例组：目标 id + 控制查询必须空返） | Modify |
 | `agent/test/unit/memory-recall-eval-b.unit.test.js` | 向量档评测：注入黄金向量，零联网，跑改动前红→改动后绿 | Create |
-| `agent/src/memory/fusion.js` | 纯函数：语义采信门（分离度 + 相对落差）与 RRF 融合，无 IO | Create |
+| `agent/src/memory/fusion.js` | 纯函数：语义采信门（查询级落点地板 + 条目级相对落差）与 RRF 融合，无 IO | Create |
 | `agent/test/unit/memory-fusion.unit.test.js` | fusion 纯函数单测（含边界：单条、全并列、空表） | Create |
 | `agent/src/memory/service.js` | fused 分支改走 fusion.js（427-465 行区间）；`vectorMatched` 语义变更 | Modify |
 | `agent/src/memory/tier.js` | 删除 `MEMORY_VECTOR_THRESHOLD`（无绝对阈值可言） | Modify |
@@ -340,6 +343,84 @@ gap  margin  take | 合成: ctrl/排名和/均值 | 真实: ctrl/排名和/均�
 rm -f agent/.tmp-rule-grid.mjs && git status --porcelain -uall   # 必须为空
 ```
 
+### Task 2 执行结果（2026-10-13）
+
+**三个发现，前两个推翻了本节写好的东西。**
+
+**1. 判据 1 的口径一开头就写错了，且它掩盖了一个误分类数据。**
+按原口径（控制查询总返回条数之和 = 0）跑完整 80 组合网格（5 gap × 4 margin × 4 take，两套库），
+**没有任何一个组合能同时让合成库与真实库都为 0**。原因不是方案不行，是我把两个通道的返回混计了：
+真实库上「电费」查询在**词面通道本来就该命中**（`kw命中 = 1`），因为库里真有一条水电费记忆。
+→ 口径改为**语义路净新增**（融合结果减去纯词面结果），同时把「电费」从控制组踢出，换成
+「敦煌莫高窟一共有多少个洞窟」（词面 0 命中）。
+
+**这一改同时抽空了前置实测 §2 的一块地基**：那条 top1 = 0.5285 的「重叠证据」本来就不是无关查询。
+剔除四条**真正**无关的查询后，真实库 41 条上的分布是：
+
+| 类别 | 查询 | top1 cos | top1−top2 |
+|---|---|---|---|
+| 无关 | 珠穆朗玛峰海拔 | 0.3340 | 0.0006 |
+| 无关 | 法式洋葱汤 | 0.3436 | 0.0000 |
+| 无关 | 敦煌莫高窟 | 0.3656 | 0.0397 |
+| 无关 | 今天北京天气 | **0.4506** | 0.0361 |
+| 相关 | 他习惯用哪种界面库 | **0.5467** | 0.0214 |
+| 相关 | 为什么查不到海外资料 | 0.5724 | 0.0558 |
+| 相关 | 这两个国家综合实力 | 0.5823 | 0.2083 |
+| 相关 | 前端选型最中意哪个库 | 0.5899 | 0.0970 |
+| 相关 | 写入假装成功 | 0.6353 | 0.1079 |
+
+**无关 top1 区间 0.3340~0.4506，相关 top1 区间 0.5467~0.6353，间隙 0.096 —— 查询级 top1 完全可分。**
+原立论只对**条目级**成立（≥ 0.3 放过 40/41、≥ 0.45 仍放过 20/41）。
+区分开这两个层级是本次定数的全部实质：**绝对值用在查询级（本库对该查询有无落点），
+相对落差用在条目级（哪几条入选）**。
+
+**2. 分离度门不可跨库规模外推，必须去掉，不是调常数。**
+实测 gap 值：无关查询 0.0000~0.0397（最高「敦煌」 0.0397、天气 0.0361），
+相关查询下界是 Q1 的 0.0214。**0.0214 落在两条无关的 gap 之下** —— 在 gap 单轴上 Q1 和噪声
+分不开：取 gap ≤ 0.02 救回 Q1、代价是两条无关各漏 1 条 top1；取 gap ≥ 0.04 那么控制全 0、
+代价是 Q1 永久丢。合成库（7 条）同题查询的 gap 只有 0.0128，而其两条控制的 gap 是 0.0082/0.0055
+—— 小库上反而可以兼得。**库越大，无关查询的 top1−top2 越可能偶然变大**，所以上面 Step 3
+写的「以真实库为准放宽合成集期望」方向不对：不存在一个 gap 常数能同时适配两库。
+→ gap 门从设计中**整块移除**。
+
+**3. 定数：查询级绝对门 + 条目级相对落差 + 条数封顶。两个判据同时满足，Step 3 预期的结构性二选一消失。**
+
+安全窗口（margin=0.03 take=2，在 abs 轴上逐点扫 0.44~0.53）：
+
+- 下界 **0.4506**：天气控制查询 top1 刚好等于它 → abs ≤ 0.4506 开始漏 1 条；0.46 起降为 0
+- 上界 **0.5163**：合成库 Q1（vue-pref）的 top1 → abs 超过它合成目标即丢（0.52 行合成目标名次和从 5 跳到 103）
+- 窗口 (0.4506, 0.5163] 宽 0.0657，取中点 **0.48**（下余量 0.0294 / 上余量 0.0363）
+
+margin 与 take 在同一 abs 上的对比（均为两库净新增 0）：
+
+| margin | take | 合成目标名次和 | 真实目标名次和 | 真实均返 |
+|---|---|---|---|---|
+| 0.03 | 2 | 5 | 8 | 0.89 |
+| 0.05 | 2 | 5 | 8 | 0.89 |
+| 0.08 | 2 | 5 | 8 | 1.00 |
+| 0.05 | 3 | 5 | 8 | 1.00 |
+
+选定 **abs = 0.48、margin = 0.05、take = 2**，`RRF_K = 60`（不变）：
+
+- margin 取 0.05 而非 0.03：两库指标完全相同，但 0.03 对真实 Q1（目标落后 top1 0.0214）只剩 0.0086 余量，太脆
+- take 取 2 而非 3：名次不变、均返从 1.00 降到 0.89
+- abs 取窗口中点而非端点：0.46 距下界只剩 0.0094，不可靠
+
+**选定组合的逐条实测**（合成 5 个目标全部第 1 名；真实 5/5 全召回）：
+
+```
+合成 「他习惯用哪种界面库写网页」 融合第 1（语义 1，词面 -）
+合成 「Vue 前端偏好」              融合第 1（语义 1，词面 1）
+真实 「他习惯用哪种界面库写网页」  融合第 3（语义 2，词面 -）  ← top1 被噪声占，目标仍在窗口内
+真实 「写入假装成功…」            融合第 2（语义 1，词面 -）
+真实 「前端选型最中意哪个库」      融合第 1（语义 1，词面 1）
+两库 4 条无关查询：语义路净新增 0 条
+```
+
+**遗留风险（写进代码注释与文档，不许谎）**：0.48 是在 `BAAI/bge-m3` + 41 条库 + 9 条查询上标定的。
+它不可跨模型平移（尤其换成cos 刻度不同的模型），换模型必须重跑网格；9 条查询的样本量小，
+下界靠 3 条无关查询撑住。`SEMANTIC_GAP_MIN` 相关设计全部作废，Task 3 按新三门实现。
+
 ---
 
 ## Task 3: 实现排名融合与语义采信门
@@ -355,9 +436,12 @@ rm -f agent/.tmp-rule-grid.mjs && git status --porcelain -uall   # 必须为空
 **Interfaces:**
 - Consumes: `keywordScore`（计划三，返回 `{score, units, full}`）、`cosine`、Task 2 定下的三个常量。
 - Produces:
-  - `selectSemanticHits(pairs, { gapMin, margin, maxTake }) → Array<[id, cos]>`，`pairs` 为 `[id, cos][]`
+  - `selectSemanticHits(pairs, { floor, margin, maxTake }) → Array<[id, cos]>`，`pairs` 为 `[id, cos][]`
   - `rrfFuse(lists, k) → Array<[id, number]>`
-  - `SEMANTIC_GAP_MIN` / `SEMANTIC_MARGIN` / `SEMANTIC_MAX_TAKE` / `RRF_K`
+  - `SEMANTIC_QUERY_FLOOR` / `SEMANTIC_MARGIN` / `SEMANTIC_MAX_TAKE` / `RRF_K`
+
+> 本 Task 的原设计以**分离度（gap）为主门**，已被 Task 2 实测否定（见上方执行结果发现 2）。
+> 下文的门形式、常量与单测都是**修订后**的版本：查询级绝对地板 + 条目级相对落差，无 gap 门。
 
 - [ ] **Step 1: 写 fusion 单测（先红）**
 
@@ -365,34 +449,46 @@ rm -f agent/.tmp-rule-grid.mjs && git status --porcelain -uall   # 必须为空
 // agent/test/unit/memory-fusion.unit.test.js
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { selectSemanticHits, rrfFuse, RRF_K } from '../../src/memory/fusion.js';
+import { selectSemanticHits, rrfFuse, RRF_K, SEMANTIC_QUERY_FLOOR } from '../../src/memory/fusion.js';
 
 describe('selectSemanticHits', () => {
-  const G = { gapMin: 0.05, margin: 0.05, maxTake: 3 };
+  const G = { floor: 0.48, margin: 0.05, maxTake: 2 };
 
-  it('分离度不足整通道否决：本库没有明确答案时不返回任何语义命中', () => {
-    assert.deepEqual(selectSemanticHits([['a', 0.5285], ['b', 0.5275], ['c', 0.4]], G), []);
+  it('查询级地板：top1 低于地板时整通道否决（本库对该查询没有落点）', () => {
+    // 实测形式：无关查询「今天北京天气」top1=0.4506，库内落差达 0.036 仍应全部不采信
+    assert.deepEqual(selectSemanticHits([['a', 0.4506], ['b', 0.4145], ['c', 0.4120]], G), []);
   });
 
-  it('分离度达标时采信，且相对落差之外的尾部被砍', () => {
+  it('top1 恰等于地板时放行（边界取 ≥ 不取 >）', () => {
+    assert.deepEqual(selectSemanticHits([['a', G.floor], ['b', 0.1]], G).map(h => h[0]), ['a']);
+  });
+
+  it('地板达标后，相对落差之外的尾部被砍', () => {
     const hits = selectSemanticHits([['a', 0.63], ['b', 0.52], ['c', 0.51]], G);
     assert.deepEqual(hits.map(h => h[0]), ['a'], 'b/c 距 top1 超过 margin，不得采信');
   });
 
+  it('分离度不参与判定：top1 达标且 gap 极小时照样采信头部', () => {
+    // 这一条钉住 Task 2 去掉 gap 门的决定。将来谁要「顺手把分离度加回去」，
+    // 这条会红：真实库 Q1（gap 0.0214）与无关查询天气（gap 0.0361）在 gap 轴上分不开，
+    // 任何能救回 Q1 的 gap 下限都会同时放过噪声。
+    const hits = selectSemanticHits([['a', 0.600], ['b', 0.599], ['c', 0.30]], G);
+    assert.deepEqual(hits.map(h => h[0]), ['a', 'b']);
+  });
+
   it('采信条数受 maxTake 封顶（防止高分查询填满窗口）', () => {
     const many = Array.from({ length: 10 }, (_, i) => [`x${i}`, 0.7 - i * 0.001]);
-    assert.equal(selectSemanticHits(many, { ...G, gapMin: 0.0001 }).length, 3);
+    assert.equal(selectSemanticHits(many, G).length, 2);
   });
 
-  it('单条候选与空表不抛错（记忆库只有 1 条时无法算分离度，按否决处理）', () => {
+  it('空表不抛错；单条候选达地板时采信（极小库只有一条相关记忆，语义必须生效）', () => {
     assert.deepEqual(selectSemanticHits([], G), []);
-    assert.deepEqual(selectSemanticHits([['only', 0.6]], G), []);
+    assert.deepEqual(selectSemanticHits([['only', 0.6]], G).map(h => h[0]), ['only']);
+    assert.deepEqual(selectSemanticHits([['only', 0.2]], G), []);
   });
 
-  it('绝对 cos 高低不参与判定：同分布整体平移结果不变', () => {
-    const low = [['a', 0.31], ['b', 0.11], ['c', 0.10]];
-    const high = [['a', 0.81], ['b', 0.61], ['c', 0.60]];
-    assert.deepEqual(selectSemanticHits(low, G).map(h => h[0]), selectSemanticHits(high, G).map(h => h[0]));
+  it('非有限 cos 被过滤（维度不匹配时 cosine 返回 NaN）', () => {
+    assert.deepEqual(selectSemanticHits([['a', NaN], ['b', 0.9]], G).map(h => h[0]), ['b']);
   });
 });
 
@@ -420,32 +516,42 @@ Expected: FAIL with `Cannot find module ... fusion.js`
 
 ```js
 // agent/src/memory/fusion.js - 语义采信门与排名融合（纯函数，无 IO）
-// 为什么不用绝对阈值：真实记忆库实测「无关查询的 top1 cos 区间 0.3340~0.5285」与
-// 「相关查询的目标 cos 区间 0.5253~0.6355」直接重叠，cos 绝对值在本数据域不可判别
-// （证据见 docs/superpowers/plans/2026-10-13-memory-rank-fusion.md 前置实测 2）。
-// 改用两个与刻度无关的量：本次查询的分离度（top1-top2）与相对落差（top1-cos）。
-// 常量取值来自同一份实测网格，改动需重跑该测量（见计划 Task 2）。
+//
+// 【为什么绝对 cos 阀值在这里又出现了，而计划开头说它不可用】
+// 关键在于**两个层级不能混用**（真实记忆库 41 条实测，见计划前置实测 §2 与 Task 2 执行结果）：
+//  • 条目级（问「这条记忆算不算命中」）：绝对值**不可用**。≥ 0.3 放过 40/41 条，≥ 0.45 仍放过 20/41。
+//  • 查询级（问「本库对该查询有无落点」）：绝对值**可用且必要**。无关查询 top1 区间
+//    0.3340~0.4506，相关查询 top1 区间 0.5467~0.6353，间隙 0.096。旧公式把尺子用在了条目级，
+//    这是噪声泛滥的根；纯相对门槛则表达不了「本库无答案」。
+// 分离度（top1-top2）曾是本模块的原设计主门，已实测否定：它不可跨库规模外推（库越大，
+// 无关查询的 top1-top2 越可能偶然变大），且真实库目标查询 Q1 的 gap 0.0214 低于两条无关查询的
+// 0.0361/0.0397——在 gap 轴上分不开。**不要把它加回来。**
+//
+// SEMANTIC_QUERY_FLOOR 的可用窗口是 (0.4506, 0.5163]，取中点 0.48（上下余量各约 0.03）。
+// 它**不可跨模型平移**：在 BAAI/bge-m3 上标定；换 embedding 模型或改变记忆文本拼接方式后，
+// 必须重跑计划的 Task 2 网格重定，不能直接沿用。
 
-export const SEMANTIC_GAP_MIN = 0.05;   // ← Task 2 实测选定，替换占位值
-export const SEMANTIC_MARGIN = 0.05;    // ← 同上
-export const SEMANTIC_MAX_TAKE = 3;     // ← 同上
-export const RRF_K = 60;                // 排名融合的平滑常数（业界默认值，本计划不重调）
+export const SEMANTIC_QUERY_FLOOR = 0.48;  // 查询级落点地板：top1 低于此值则整通道不采信
+export const SEMANTIC_MARGIN = 0.05;       // 条目级相对落差：只采信距 top1 不超过此值的头部
+export const SEMANTIC_MAX_TAKE = 2;        // 每次查询最多采信几条语义命中
+export const RRF_K = 60;                   // 排名融合的平滑常数（业界默认值，本计划不重调）
 
 /**
- * 语义通道采信哪些条目。
- * ① 分离度门：top1 与 top2 差不足 gapMin → 整通道否决（本库对该查询没有明确答案）。
- *    记忆召回的结果会被注入提示词，"全都勉强相关" 等于 "没有相关"，此时宁可不给。
- * ② 相对落差门：只采信 cos ≥ top1 - margin 的头部，砍掉高分查询的长尾。
+ * 语义通道采信哪些条目。三道门依次为：
+ * ① 查询级地板：top1 < floor → 本库对该查询没有落点，整通道否决（宁可不给）。
+ *    记忆召回结果直接注入提示词，「全都勉强相关」等于「没有相关」。
+ * ② 条目级相对落差：只采信 cos ≥ top1 - margin 的头部，砍掉高分查询的长尾。
  * ③ 条数封顶 maxTake：防止一次语义命中填满 limit。
+ * 注意：**不看 top1-top2 分离度**（理由见文件头）。
  * @param {Array<[string, number]>} pairs [id, cos]，顺序任意
- * @param {{gapMin:number, margin:number, maxTake:number}} gate
+ * @param {{floor:number, margin:number, maxTake:number}} gate
  * @returns {Array<[string, number]>} 按 cos 降序的采信结果（可为空）
  */
-export function selectSemanticHits(pairs = [], gate = { gapMin: SEMANTIC_GAP_MIN, margin: SEMANTIC_MARGIN, maxTake: SEMANTIC_MAX_TAKE }) {
+export function selectSemanticHits(pairs = [], gate = { floor: SEMANTIC_QUERY_FLOOR, margin: SEMANTIC_MARGIN, maxTake: SEMANTIC_MAX_TAKE }) {
   const ranked = [...pairs].filter(([, c]) => Number.isFinite(c)).sort((a, b) => b[1] - a[1]);
-  if (ranked.length < 2) return [];
+  if (!ranked.length) return [];
   const top = ranked[0][1];
-  if (top - ranked[1][1] < gate.gapMin) return [];
+  if (top < gate.floor) return [];
   const floor = top - gate.margin;
   return ranked.filter(([, c]) => c >= floor).slice(0, gate.maxTake);
 }
@@ -506,7 +612,7 @@ Expected: PASS 8/8（用例数以实际写出的为准，逐条报告数字）
               .filter(isKeywordHit)
               .sort((a, b) => b.score - a.score);
 
-            // 语义路：全候选算 cos 后过采信门（分离度 + 相对落差 + 条数封顶）
+            // 语义路：全候选算 cos 后过采信门（查询级地板 + 条目级相对落差 + 条数封顶）
             const cosPairs = candidates
               .map(m => (m.id && vecMap[m.id] ? [m.id, cosine(queryVec, vecMap[m.id])] : null))
               .filter(Boolean);
@@ -536,12 +642,15 @@ Expected: PASS 8/8（用例数以实际写出的为准，逐条报告数字）
 仅转发层原样透传，故无需改扩展端。`memory-service.unit.test.js` 中依赖旧含义的断言逐条按新语义改，
 并在执行结果里写明每条为什么是预期的行为改变。
 
-**两条必须是此语义、不得中途「顺手修好」的设计决定：**
+**三条必须是此语义、不得中途「顺手修好」的设计决定：**
 
-1. **候选不足 2 条时语义路整条不采信**（`selectSemanticHits` 里 `ranked.length < 2 → []`）。
-   库里只有 1 条记忆时分离度无从谈起，此时若改用绝对 cos 地板就违背了本计划的核心立论。已知代价：
-   极小库下语义档不生效，只有 A 档关键词通道工作 —— 该行为由 fusion 单测显式钉住，是有意为之。
-2. **`SEMANTIC_MAX_TAKE` 封顶优先于 `limit`**：一次语义命中最多 N 条，不因调用方给了大 limit 就放更多。
+1. **不看分离度（top1-top2）**。单测里「分离度不参与判定」那条就是为钉住这一点写的。
+   它看着像「应该加」的合理性措施，但实测上不存在能同时适配 7 条库与 41 条库的 gap 常数，
+   且会永久否决真实库 Q1。要改动必须先重跑 Task 2 网格。
+2. **单条候选且达地板时采信**（旧设计是 `ranked.length < 2 → []` 整条否决）。理由：查询级地板
+   已经承担了「本库有无落点」的判定，分离度不在判据里，所有一候选库也能正常语义生效。
+   代价反转：旧设计下极小库只靠 A 档，现在单条库也能走语义 —— 这是有意为之，由单测钉住。
+3. **`SEMANTIC_MAX_TAKE` 封顶优先于 `limit`**：一次语义命中最多 N 条，不因调用方给了大 limit 就放更多。
    记忆召回的结果是直接注入提示词的上下文，预算比「宁多勿少」重要。
 
 - [ ] **Step 6: 三套评测与全量单测一起跑**
@@ -562,7 +671,7 @@ Expected: 全绿。若 B 档仍有失败，回到 Task 2 用网格重选常量�
 git add agent/src/memory/fusion.js agent/test/unit/memory-fusion.unit.test.js \
         agent/src/memory/service.js agent/src/memory/tier.js \
         agent/test/unit/memory-tier.unit.test.js agent/test/unit/memory-service.unit.test.js
-git commit -m "feat(memory): 语义档改排名融合，绝对阈值换分离度门"
+git commit -m "feat(memory): 语义档改排名融合，条目级绝对阈值换查询级地板"
 ```
 
 ---
