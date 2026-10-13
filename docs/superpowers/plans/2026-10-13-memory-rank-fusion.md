@@ -1026,26 +1026,35 @@ git commit -m "fix(memory): 本地档嵌入长度上限、查询前缀回落与�
 - [ ] **Step 1: 更正既有文档中被本轮推翻的说法**
 
 计划三写入的「两路同尺」「关键词零命中但语义达阈值的条目由此能被召回」等表述在本轮被证伪 ——
-达阈值的条目是**几乎全部**，不是「零命中的语义条目」。README 中英的「召回计分」段必须改成：
+达阈值的条目是**几乎全部**，不是「零命中的语义条目」。README 中英的「语义召回通道」段必须改成
+（**本条原定形的「分离度达标」已由 Task 2 实测作废，按下述三门写**）：
 
-- 语义档采信条件：本次查询 top1 与 top2 的分离度达标，且条目落在 top1 − margin 内，且不超过 N 条；
-- 明确写出**为什么没有绝对相似度阈值**（附前置实测 2 的重叠区间，一句一行）；
-- 写出已知限制：目标在 cos 榜上不是第 1、且与第 1 名差小于分离度下限时，语义档不返回它（真实库 Q1 即此例）。
+- 语义档采信条件：本次查询的 **top1 达查询级落点地板**，且条目落在 top1 − margin 内，且不超过 N 条；
+- 明确写出**为什么没有条目级的绝对相似度阈值**（附前置实测 2 的重叠区间，并说明绝对 cos 只在查询级 top1 上可用）；
+- 写出已知限制：地板不可跨模型平移（换 embedding 模型必须重标定）；分离度门已被实测否定且不得加回；
+  目标不在 cos 头部（落在 top1 − margin 之外）时语义路不返回它。
 
 - [ ] **Step 2: CHANGELOG 新增「变更（记忆语义档改排名融合）」小节**
 
-逐条列出：阈值→分离度、`round(cos×4)` 量化退场、`vectorHit` 旁路修复、本地档截断、queryPrefix 回落、
-`reindex` 响应新增 `lastError`、`vectorMatched` 语义变更。
+逐条列出：分数相加→名次融合、`round(cos×4)` 量化退场、`vectorHit` 旁路修复、
+queryPrefix 回落、`reindex` 响应新增 `lastError`、`vectorMatched` 语义变更；
+并写明**本地档截断经实测取消**与两个转计划五的 provider 缺陷。
+（原文本行包含「阈值→分离度」与「本地档截断」，均已被 Task 2 / Task 5 实测推翻。）
 
 - [ ] **Step 3: 全量回归（数字必须实测，不许凭记忆）**
 
 ```bash
 cd agent && node --test "test/unit/*.unit.test.js"        # 记录 passed/failed 真数
-node test/memory-pushdown.smoke.mjs                        # 冒烟
+cd agent && node --test "test/unit/memory-*.unit.test.js"  # 记忆相关分文件计数
+cd agent && node test/smoke/memory-pushdown.smoke.mjs       # 冒烟（实际路径在 test/smoke/ 下）
+cd agent && node --test "test/integration/*.test.js"        # 集成（注意有 2 条既有失败）
 npx vitest run                                             # 仓库单测（2 个既有 document is not defined 不变）
 npm run build:silent                                        # BUILD_SUCCESS
-npx eslint src/memory/fusion.js src/memory/service.js src/memory/tokens.js src/memory/embedding-config.js
 ```
+
+> 原文的 `node test/memory-pushdown.smoke.mjs` 路径不存在（实际在 `test/smoke/`）；
+> 原文的 `npx eslint src/memory/*.js` 是**空跑**：根 `eslint.config.js` 的 `ignores` 含 `agent/**`，
+> 且 agent 无自己的 eslint 配置——不得把「File ignored 警告」当作 lint 通过。
 
 分文件计数也要实测（照 `node --test <file>` 的 `ℹ tests` 取），计划三曾因我凭记忆写错
 `embedding-config 16`（实为 14）被当场发现。
@@ -1063,13 +1072,65 @@ gitee/atomgit 落后更多，推送与 wiki 同步须用户明确发话。
 
 ---
 
+### Task 6 执行结果（2026-10-13）
+
+#### Step 1–2：文档更正与 CHANGELOG
+
+- `agent/README.zh-CN.md` / `agent/README.md`（中英对称）：删退场的「两路同尺 / One scale for both channels」
+  （`+3 + round(cos × 4)` 与绝对余弦阈值），换成四条：**双通道只融合名次**、**语义采信门是两道**（查询级地板 0.48 +
+  条目级落差 0.05 + 封顶 2 条）、**为什么没有条目级绝对阈值**（附实测重叠区间）、**已知限制**
+  （窗口 `(0.4506, 0.5163]`、不可跨模型平移、几百条后需重测、分离度门已被否定且「不要加回来」、
+  以及目标落在头部落差之外的具体后果）。`vectorMatched` 描述改为「被语义路采信、上限 2 条」；
+  运维条目补 `failedBatches` + `lastError`。
+- `CHANGELOG.md`：新增两节「变更（记忆语义档改排名融合）」与「工程质量与测试（同上）」，
+  并在首行显式声明**作废同日「两路计分同尺」条目的实现描述**（历史条目不遭改）。
+- 全盘 grep 校对：`MEMORY_VECTOR_THRESHOLD` / `round(cos` / `两路同尺` 除本计划与历史计划文档外仅剩
+  CHANGELOG 新节的「已退场」描述，**代码里零残留**；扩展端 `docs/` 与 `.wiki-check/` 对
+  `memoryEmbedding` / 「语义召回」**零引用**，所以无陈旧说法需改（wiki 同步仍未做，等发话）。
+
+#### Step 3：全量回归（逐文件实测）
+
+| 项 | 结果 |
+|---|---|
+| `node --test "test/unit/memory-*.unit.test.js"` | **150/150** |
+| ├ 分文件 | fusion 12 / tokens 12 / vectors 12 / tier 8 / embedding-config 17 / service 49 / routes 12 / injection 18 / keyword-match 8 / eval-A 1 / eval-B 1 |
+| `node --test "test/unit/*.unit.test.js"` | **325 passed / 0 failed**（62 suites） |
+| `node test/smoke/memory-pushdown.smoke.mjs` | **21/21**（含新日志 `[Memory] reindex batch failed: fetch failed` 实证） |
+| `node --test "test/integration/*.test.js"` | **84/86**，2 条失败为既有（`~ 展开到用户主目录`、`路径穿越 .. 被限制在沙箱内`） |
+| `npx vitest run` | **81 文件 / 1271 用例全通**，2 个既有 `document is not defined` 未处理 rejection 不变 |
+| `npm run build:silent` | **BUILD_SUCCESS** |
+| eslint | **不适用**：`eslint.config.js` 的 `ignores` 含 `agent/**` 且 agent 无自有配置（见上方命令块的更正） |
+
+#### Step 4：用户环境复查（均只读）
+
+```
+config.json memoryEmbedding = { enabled: false, mode: openai-compat, model: BAAI/bge-m3, queryPrefix: "" }
+memory-vectors.json       = 41 条，modelKey openai-compat|BAAI/bge-m3|1024，891705 B
+备份                      = config.json.bak-20261013-180007（仍在）
+.tmp-* 残留               = 0；工作树提交后 git status --porcelain -uall 为空
+agent 进程              = PID 28292，127.0.0.1:18910，版本 2.2.0，
+                         启于 10/13 18:40（Task 4 重启），代码为 Task 3 版
+```
+
+**如实说明一处残留差异**：Task 5 的两处代码改动（queryPrefix 回落、reindex 日志）**尚未被运行中的进程加载**。
+不擅自重启的理由：当前配置是 `enabled: false` + `mode: openai-compat`，两处改动在此状态下无行为差异
+（前者只在 `mode: local` 生效，后者只在 `reindex` 失败时多一段日志）。用户下次自行重启或跑 `release:agent` 即自然含入。
+
+#### Step 5：收尾
+
+按 finishing-a-development-branch 执行：集成决策交由用户，本计划全程未推送
+（`origin/main..HEAD` 现 24 个提交，gitee/atomgit 落后更多），也未动过任何远端与 wiki。
+
+---
+
 ## 已知限制与不做什么
 
 - **不做记忆向量配置界面**。扩展端对 `memoryEmbedding` 零引用，界面是一块独立工作（计划五）；
   且界面复用知识库表单时必须先统一 `baseUrl`（记忆侧）与 `endpoint`（知识库侧）的字段命名。
 - **不引入向量数据库**。41 条量级暴力余弦实测无性能压力，进程内 JSON 派生缓存维持不变。
 - **不改 A 档任何行为**。计划三的单元制与 `full || units >= 2` 门槛原样保留，本计划只重写 fused 分支。
-- **gap 规则在 7 条小库与 41 条大库上不可外推**（Task 2 Step 3），因此常量以真实库为准，
+- **采信门在 7 条小库与 41 条大库上不可外推**（Task 2 Step 3），因此常量以真实库为准，
   合成集期望必要时放宽并写明。
-- 分离度门是**分布形状**判据，记忆条目数变化会改变 top1−top2 的分布。库规模到几百条后本规则需重测，
-  这一点写进 README 的限制段而不是假装永久成立。
+- 查询级地板是**分布形状**判据，记忆条目数与 embedding 模型都会改变 top1 的分布。
+  库规模到几百条后本规则需重测，换模型后必须重跑 Task 2 网格 —— 这两点已写进 README 的限制段而不是假装永久成立。
+- ~~分离度门是分布形状判据~~ → **已被实测否定并从实现中移除**（见 Task 2 执行结果）。
