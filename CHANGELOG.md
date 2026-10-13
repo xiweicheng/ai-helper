@@ -10,7 +10,7 @@
 - **阈值驱动的半自动压缩（默认关）**：新增 `src/side_panel/auto-compaction.js`，发送前若「开关开 + 非生成中 + 会话隔离 + 距上次压缩待处理消息 ≥ 4 + 上下文占用 ≥ 阈值（默认 85%）」则静默压缩一次；连续失败 2 次进入退避不再骚扰，手动压缩成功即复位。**任何失败都放行本次发送**，不因为增益功能阻塞对话。占用比取值走 thunk，取不到时按 `usage_unavailable` 不尝试。
 - **手动/自动共用单一压缩内核**：`context-indicator.js` 的 `triggerCompaction` 抽出 `runCompaction({ silent })`，静默模式跳过确认框与「压缩中」模态、只发 `autoCompactedToast`；两条入口不再各写一套流程。
 - **摘要按 memoryId 去重沉淀长期记忆（默认开）**：新增 `src/background/compaction-memory.js`，压缩成功后把摘要以 `type: summary` / `category: decision` / `importance: 6` / `tags: [compaction, session:<id>]` 写入 Agent 长期记忆；同一会话二次压缩走 `update`（不堆条目），沉淀失败仅 `logger.warn` 且保留原 `memoryId`，Agent 未连接或缺端点（404）时静默降级——摘要仍在会话内可用。
-- **两个开关**：记忆下拉新增「自动压缩」与「摘要存入记忆」两行，采用 36×20 小滑动开关（复用工具配置弹窗同款 `.toggle-switch` 视觉：关=浅灰空槽滑块居左、开=紫色滑块右移），标签恒为中性灰、状态只由滑轨表达，两行共用一条分隔线；切换即写 `chrome.storage.local` 的 `chatAutoCompaction` / `chatPersistSummaryToMemory`，并同步 `storage.onChanged` 监听；`DEFAULT_CHAT_CONFIG` 与 `getChatConfig` 补 `autoCompaction`（默认 false）/ `autoCompactionThreshold`（默认 0.85）/ `persistSummaryToMemory`（默认 true）。
+- **两个开关**：记忆下拉新增「自动压缩」与「摘要存入记忆」两行，采用与 11px 小字相称的 28×16 小滑动开关（与工具配置弹窗同款 `.toggle-switch` 视觉语言、独立一档尺寸：关=浅灰空槽滑块居左、开=紫色滑块右移 12px），标签恒为中性灰、状态只由滑轨表达，ⓘ 同步收到 11px，两行共用一条分隔线；切换即写 `chrome.storage.local` 的 `chatAutoCompaction` / `chatPersistSummaryToMemory`，并同步 `storage.onChanged` 监听；`DEFAULT_CHAT_CONFIG` 与 `getChatConfig` 补 `autoCompaction`（默认 false）/ `autoCompactionThreshold`（默认 0.85）/ `persistSummaryToMemory`（默认 true）。
 
 ### 工程质量与测试（压缩增强）
 - 新增 `compaction-prompt`（+6）、`auto-compaction`（18）、`compaction-memory-persist`（6）、`compaction-injection-wiring`（8，源码接线守卫）与 `context-usage`（+4）用例；扩展端全量 vitest 81 文件 / 1269 用例通过（原 78 文件 / 1227，2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
