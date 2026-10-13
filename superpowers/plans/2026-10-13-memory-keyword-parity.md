@@ -146,6 +146,13 @@ Expected: searcher 关键词 18/18 未改一条且全 PASS；全量 290 passed /
 
 - [ ] **Step 6: Commit**
 
+> **执行结果（已实施）** —— Step 1 按计划通过：`extractKeywords` / `extractQueryTerms` 的定义体整体搬迁，`_boostByKeywords` 的匹配循环改调 `matchLatin` / `matchCjk`，df 统计与抬分留在 searcher。**与计划的两处差异**：
+>
+> 1. Step 5 的 grep 结果：**`test/unit/searcher-keyword.unit.test.js:6` 从 `searcher.js` 导入 `extractKeywords`**，所以必须保留再导出。写法是 `export { extractKeywords } from './keyword-match.js';` + `export { extractQueryTerms };`（后者是再导出已 import 的绑定，不能写成 `export { extractKeywords, extractQueryTerms } from ...`——那样会与本地绑定冲突）。
+> 2. `KEYWORD_MIN_LEN` / `KEYWORD_MAX_FRAGMENT_LEN` 在 searcher.js 内已无使用点，**不保留导入**（否则 eslint 报未使用）；`KEYWORD_MAX_HITS` 仍在抬分行使用，从共享模块导入。
+>
+> 护栏：**既有 18 条 `searcher-keyword` 用例一条未改且全 PASS**（行为未变）。新增 `memory-keyword-match.unit.test.js` **8 条**（常量锁定 / 切段去重 / 词边界三例 / 最长片段 / null 分支 / 封顶 / 长短共存取最长）。Agent 全量 290 → **298 passed / fail 0**；`npm run build:silent` BUILD_SUCCESS。提交：`9dcedc9`。
+
 ```bash
 git add agent/src/rag/keyword-match.js agent/src/rag/searcher.js agent/test/unit/memory-keyword-match.unit.test.js
 git commit -m "refactor(rag): 关键词片段化匹配抽为共享模块，记忆侧可复用同一实现"
@@ -239,9 +246,32 @@ test('评测集：每条 case 断言其期望', async () => {
 Run: `cd agent && node --test test/unit/memory-recall-eval.unit.test.js`
 Expected: **FAIL**，且失败项必须逐条对应本计划「已知缺陷」表 —— 特别是碎 bigram 捞回噪声（`maxResults` 超限）与 `expectAbsent` 违例。若首轮全绿，说明合成条目没造出真实的重叠形态，回 Step 1 加严，**不许改断言凑绿**。
 
-- [ ] **Step 4: 记录基线数字并 Commit**
+> **执行结果（已实施：基线 4 项红）** —— 合成条目 7 条（超短 7/32 字、中等 120~200 字、长条目 600/1300 字量级）+ 查询 10 条。**关键补强**：计划原写的「子串不得误伤」用例在首版 fixture 下是**假通过**（库里没有 `storage`，`rag` 无从误伤）——给 `mem-bug` 内容加入 `（storage persistence）` 后该用例才真正量出缺陷。
 
-把 Step 3 的失败项原文抄进本计划 Task 2 的「执行结果」，作为改动前基线。
+改动前基线（旧碎 bigram 计分，`node --test test/unit/memory-recall-eval.unit.test.js`）：
+
+```
+[eval] 零重叠不应捞噪声（Vue 偏好换说法） → webpage, long-zhihu
+[eval] 零重叠不应捞噪声（国家观点换说法） → (无命中)
+[eval] 零重叠不应捞噪声（境外访问换说法） → mem-bug
+[eval] 整词命中排第一 → vue-pref
+[eval] 长句中的目标词不失配 → mem-bug
+[eval] 子串不得误伤（rag ∉ 存储） → vue-pref, mem-bug
+[eval] 英文专名按词边界命中 → proxy
+[eval] 标签命中进前 2 → long-zhihu, webpage, summary-1
+[eval] 摘要类可检索 → summary-1
+[eval] 超短条目按整段命中 → country, proxy
+
+评测失败 4 项：
+  - 零重叠不应捞噪声（Vue 偏好换说法）：返回 2 条（webpage,long-zhihu），上限 1
+  - 零重叠不应捞噪声（Vue 偏好换说法）：含应 absent 的 long-zhihu
+  - 零重叠不应捞噪声（境外访问换说法）：含应 absent 的 mem-bug
+  - 子串不得误伤（rag ∉ 存储）：含应 absent 的 mem-bug
+```
+
+**基线读法**：4 项失败全部落在两类已知缺陷上（碎块噪声 3 + 子串误伤 1），而 6 条正向用例（top1 / expectTop / 摘要 / 超短条目）**全绿** —— 它们就是 Task 3 不得倒退的底线。`标签命中` 那条第 3 位混进 `summary-1`（因 “自动测试” 共享 bigram “自动”）是同一类噪声，当前未被断言捕捉，Task 3 后应消失。
+
+- [x] **Step 4: 记录基线数字并 Commit**
 
 ```bash
 git add agent/test/eval/memory-recall-fixtures.js agent/test/unit/memory-recall-eval.unit.test.js docs/superpowers/plans/2026-10-13-memory-keyword-parity.md
