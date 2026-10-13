@@ -111,3 +111,45 @@ describe('memoryDispatch 分发', () => {
     assert.equal(res.body.error, 'boom');
   }));
 });
+
+describe('reindex 端点', () => {
+  const callReindex = (method = 'POST', service) => {
+    const res = mkRes();
+    return memoryDispatch(
+      mkReq(method), res, '/api/memory/reindex',
+      new URL('http://127.0.0.1/api/memory/reindex'), T, {}, { service }
+    ).then(() => res);
+  };
+
+  it('POST /api/memory/reindex 透传 backfillVectors 结果（t 作为唯一参数）', async () => {
+    let gotT = null;
+    const res = await callReindex('POST', {
+      backfillVectors: async (t) => { gotT = t; return { success: true, indexed: 3 }; }
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.indexed, 3);
+    assert.equal(typeof gotT, 'function', '必须把请求语言的 t 传进去渲染跳过原因');
+  });
+
+  it('A 档返回 skipped 仍是 200（未启用不是错误）', async () => {
+    const res = await callReindex('POST', {
+      backfillVectors: async () => ({ success: true, skipped: true, reason: 'memory.embeddingDisabled' })
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.skipped, true);
+  });
+
+  it('嵌入整体失败时返回 400 与 error', async () => {
+    const res = await callReindex('POST', {
+      backfillVectors: async () => ({ success: false, indexed: 0, error: 'embedding_timeout' })
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, 'embedding_timeout');
+  });
+
+  it('reindex 只接受 POST', async () => {
+    const res = await callReindex('GET', { backfillVectors: async () => ({ success: true, indexed: 0 }) });
+    assert.equal(res.statusCode, 404);
+  });
+});

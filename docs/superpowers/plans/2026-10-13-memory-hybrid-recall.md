@@ -1057,7 +1057,7 @@ Expected: 新增用例 FAIL。
 - [ ] **Step 4: 运行全部 Agent 测试**
 
 Run: `cd agent && node --test test/unit/*.unit.test.js`
-Expected: `fail 0`（原 220 + 本计划新增用例）。
+Expected: `fail 0`（实测 287 passed / fail 0；本 Task 新增 8 条 service + 4 条 routes）。
 
 - [ ] **Step 5: Commit**
 
@@ -1065,6 +1065,16 @@ Expected: `fail 0`（原 220 + 本计划新增用例）。
 git add agent/src/memory/service.js agent/src/memory/routes.js agent/test/unit/memory-service.unit.test.js agent/test/unit/memory-routes.unit.test.js
 git commit -m "feat(memory): 向量与记忆生命周期对齐（懒补/删除/淘汰摘除）并新增 reindex 端点"
 ```
+
+> **执行结果（已实施）。4 处与计划不同：**
+> 1. **`reindex` 不能靠现有的通用分发分支。**`ROUTE_METHODS` 的兜底调用形态是 `service[method](body, t)`，而 `backfillVectors(t)` 的第一个参数是翻译函数——直接映射会把请求体当成 `t`。已按 `injectSelect` 的先例加显式分支 `service.backfillVectors(t)`（不接请求体）。
+> 2. **懒补的实现形态：**计划给的代码在 `getMemoryEmbeddingConfig()` 上直接取配置，执行时改用 Task 5 引入的 `embeddingConfigProvider` 注入点（否则单测里的懒补用例会去读用户真实 `config.json`）。档位判定与 `cfg` 在 `queueMicrotask` 之前算完，微任务内只做嵌入与落盘，两处各自 try/catch——`getProvider()` 同步抛错也不会变成 unhandled rejection。
+> 3. **去重命中（`add` 转 `update`）也要懒补**：计划的接线清单只列了 add/update/delete/compact，但该分支会改写 `duplicate.tags`，而 tags 参与 embedding 文本，不重算就留下陈旧向量。已一并接上。
+> 4. **`dropVectors` 在 delete/compact 里是 await 的（不懒删）**：这两处只涉及 fs 写、没有网络调用，留在记忆锁内反而能保证「真源删了、缓存也删了」在同一个临界区内完成；懒删会开出一段`向量已摘除但响应还没返回`的空窗，测试也无法确定时序。
+
+用例按计划 3 条（其中第 3 条在计划里是空壳注释），落地 **8 条 service + 4 条 routes**：补了「懒补失败不留半成品文件」「delete 未落向量的条目不报错」「update 不存在的 id 不触发嵌入」「reindex 只接受 POST」「reindex 的 `skipped` 仍是 200」「嵌入整体失败才 400」。`EMBED_CFG` 与 `withVectorService` 从 Task 5 的 `describe` 内提到模块级，两个 describe 共用同一套注入辅助。
+
+**不变量已验证：每条记忆至多一个向量（update 同 id 覆盖）、删除与压缩淘汰后不残留向量。**Agent 全量 275 → 287 passed / fail 0。
 
 ---
 

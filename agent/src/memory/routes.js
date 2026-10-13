@@ -20,7 +20,9 @@ const ROUTE_METHODS = {
   store: 'store',
   recall: 'recall',
   manage: 'manage',
-  inject: 'injectSelect'
+  inject: 'injectSelect',
+  // 重建向量缓存：派生缓存的显式重建入口（模型变更/首次启用语义通道后调一次）
+  reindex: 'backfillVectors'
 };
 
 /**
@@ -146,6 +148,9 @@ export async function memoryDispatch(req, res, pathname, url, t, requestBody = {
       data = await service.recall(body, body.sessionId ?? null, t);
     } else if (method === 'injectSelect') {
       data = await service.injectSelect(t);
+    } else if (method === 'backfillVectors') {
+      // 不接受请求体：只做「按当前配置把全部记忆补进向量缓存」，t 用于渲染跳过原因
+      data = await service.backfillVectors(t);
     } else {
       data = await service[method](body, t);
     }

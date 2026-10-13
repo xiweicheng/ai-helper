@@ -246,22 +246,23 @@ describe('injectSelect', () => {
 // 追加：recall 的向量通道（Tier B/C）。
 // 关键约束：A 档（tier === 'none'）必须逐字维持现状——既不能触碰 provider，也不能创建向量缓存文件。
 // 注入点用 embeddingConfigProvider / tierResolver / embedderFactory，测试绝不读用户真实 config.json，也绝不联网。
-describe('recall 向量通道', () => {
-  const EMBED_CFG = { enabled: true, mode: 'openai-compat', baseUrl: '', modelName: 'm', apiKey: 'k', dimensions: 3, queryPrefix: '' };
+const EMBED_CFG = { enabled: true, mode: 'openai-compat', baseUrl: '', modelName: 'm', apiKey: 'k', dimensions: 3, queryPrefix: '' };
 
-  function withVectorService(opts, fn) {
-    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-test-'));
-    const vectorsFilePath = join(dir, 'memory-vectors.json');
-    const svc = createMemoryService({
-      filePath: join(dir, 'global-memory.json'),
-      vectorsFilePath,
-      embeddingConfigProvider: () => ({ ...EMBED_CFG, ...(opts.embeddingConfig || {}) }),
-      tierResolver: () => 'remote',
-      embedTimeoutMs: 200,
-      ...opts
-    });
-    return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
-  }
+function withVectorService(opts, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'mem-vec-test-'));
+  const vectorsFilePath = join(dir, 'memory-vectors.json');
+  const svc = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath,
+    embeddingConfigProvider: () => ({ ...EMBED_CFG, ...(opts.embeddingConfig || {}) }),
+    tierResolver: () => 'remote',
+    embedTimeoutMs: 200,
+    ...opts
+  });
+  return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+describe('recall 向量通道', () => {
 
   // 语义近、词面零重合的条目应被召回；无关条目两条通道都不沾，应被排除
   it('向量通道召回语义相近但关键词零命中的条目，并标注 tier/vectorMatched', () => withVectorService({
@@ -403,5 +404,144 @@ describe('recall 向量通道', () => {
     const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
     assert.equal(r.success, true);
     assert.equal(r.total, 0);
+  }));
+});
+
+describe('向量生命周期同步', () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+  it('store(add) 在向量档懒补：响应不等待嵌入，之后落盘', () => withVectorService({
+    embedderFactory: () => ({
+      embedDocuments: async (texts) => {
+        await new Promise((r) => setTimeout(r, 10));   // 慢端点：若被 await，store 响应会一起慢
+        return texts.map(() => [1, 0, 0]);
+      }
+    })
+  }, async (svc, { vectorsFilePath }) => {
+    const t0 = Date.now();
+    const r = await svc.store({ action: 'add', type: 'fact', content: '懒补条目', tags: [], importance: 5 }, T);
+    assert.equal(r.success, true);
+    assert.ok(Date.now() - t0 < 10, 'store 响应不得等待嵌入');
+    await settle();
+    const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    assert.deepEqual(Object.keys(stored.vectors), [r.memory.id]);
+  }));
+
+  it('懒补失败（嵌入抛错）不影响 store 的成功响应', () => withVectorService({
+    embedderFactory: () => ({ embedDocuments: async () => { throw new Error('endpoint down'); } })
+  }, async (svc, { vectorsFilePath }) => {
+    const r = await svc.store({ action: 'add', type: 'fact', content: '补不上', tags: [], importance: 5 }, T);
+    assert.equal(r.success, true);
+    await settle();
+    assert.equal(existsSync(vectorsFilePath), false, '嵌入失败不应留下半成品向量文件');
+  }));
+
+  it('store(add) 在 A 档完全不触碰向量侧', () => {
+    let factoryCalls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-a-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false }),
+      tierResolver: () => 'none',
+      embedderFactory: () => { factoryCalls++; throw new Error('A 档不该建 provider'); }
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const r = await s.store({ action: 'add', type: 'fact', content: 'x', tags: [], importance: 5 }, T);
+      assert.equal(r.success, true);
+      await new Promise((res) => setImmediate(res));
+      assert.equal(factoryCalls, 0);
+      assert.equal(existsSync(vectorsFilePath), false);
+      assert.equal((await s.recall({ query: 'x' }, null, T)).vectorMatched, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('delete 同步摘除向量，其他记忆不受牵连', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc, { vectorsFilePath }) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: '待删', tags: [], importance: 5 }, T);
+    const b = await svc.store({ action: 'add', type: 'fact', content: '留下', tags: [], importance: 5 }, T);
+    await settle();   // 先让懒补落定，再验证删除的摘除
+    await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    assert.ok(!(a.memory.id in stored.vectors), '已删记忆不得残留向量');
+    assert.ok(b.memory.id in stored.vectors, '其他记忆向量不受牵连');
+  }));
+
+  it('delete 未落向量的记忆也不报错（向量侧缺项是常态）', () => withVectorService({
+    embedderFactory: () => ({ embedDocuments: async () => { throw new Error('no embed available'); } })
+  }, async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: '只有词面', tags: [], importance: 5 }, T);
+    await settle();
+    const r = await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    assert.equal(r.success, true);
+  }));
+
+  it('update 内容变化后重算向量（同 id 覆盖，不新增条目）', () => {
+    const embeddedTexts = [];
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-upd-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, modelName: 'mu' }),
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts) => {
+          texts.forEach((s) => embeddedTexts.push(s));
+          return texts.map(() => [1, 0, 0]);
+        }
+      })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const a = await s.store({ action: 'add', type: 'fact', content: '初稿', tags: [], importance: 5 }, T);
+      await new Promise((r) => setTimeout(r, 30));
+      assert.ok(embeddedTexts.some(x => x.includes('初稿')));
+
+      await s.store({ action: 'update', type: 'fact', memoryId: a.memory.id, content: '终稿', tags: [], importance: 5 }, T);
+      await new Promise((r) => setTimeout(r, 30));
+      assert.ok(embeddedTexts.some(x => x.includes('终稿')), 'update 后必须按新内容重算');
+
+      const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      assert.deepEqual(Object.keys(stored.vectors), [a.memory.id], '同 id 覆盖，不得新增条目');
+      assert.equal(stored.modelKey, 'openai-compat|mu|3');
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('update 不存在的 id 不触发嵌入', () => {
+    let calls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-miss-'));
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => EMBED_CFG,
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({ embedDocuments: async (t) => { calls += t.length; return t.map(() => [1, 0, 0]); } })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const r = await s.store({ action: 'update', type: 'fact', memoryId: 'fact_nope', content: 'x' }, T);
+      assert.equal(r.success, false);
+      await new Promise((res) => setTimeout(res, 20));
+      assert.equal(calls, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('compact 淘汰的记忆同步摘除向量', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc, { vectorsFilePath }) => {
+    const low = await svc.store({ action: 'add', type: 'fact', content: '低价值', importance: 1 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
+    await settle();
+    const before = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    assert.equal(Object.keys(before.vectors).length, 2);
+
+    const r = await svc.manage({ action: 'compact' }, T);
+    assert.equal(r.success, true);
+    assert.equal(r.removedFacts, 1);
+    const after = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    assert.ok(!(low.memory.id in after.vectors), '被淘汰记忆不得残留向量');
+    assert.equal(Object.keys(after.vectors).length, 1);
   }));
 });

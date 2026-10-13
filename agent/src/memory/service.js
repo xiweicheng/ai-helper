@@ -118,6 +118,31 @@ export function createMemoryService({
     }
   }
 
+  /**
+   * 新增/改写记忆后异步补一个向量（懒补）。
+   * 绝不 await：嵌入是外部网络调用，等它就等于给每次 store 多加一个往返。
+   * 失败只 warn——派生缓存缺项不影响正确性，recall 命中该条目时还会再补一次。
+   */
+  function queueVectorBackfill(id, memory) {
+    let cfg;
+    try {
+      cfg = embeddingConfigProvider();
+      if (!isVectorTier(tierResolver(cfg))) return;
+    } catch (err) {
+      console.warn('[Memory] tier resolve failed, skip lazy vector backfill:', err.message);
+      return;
+    }
+    queueMicrotask(async () => {
+      try {
+        const vecs = await embedWithTimeout(getProvider().provider.embedDocuments([memorySearchText(memory)]));
+        const vec = Array.isArray(vecs) ? vecs[0] : null;
+        if (Array.isArray(vec) && vec.length) await vectors.upsertVectors([[id, vec]], memoryModelKey(cfg));
+      } catch (err) {
+        console.warn('[Memory] lazy vector backfill failed:', err.message);
+      }
+    });
+  }
+
   // 进程内互斥锁：保护 read-modify-write（替代扩展端 SW 内存锁，tool-memory.js:111-130 语义）
   let lockChain = Promise.resolve();
   function withMemoryLock(task) {
@@ -217,6 +242,7 @@ export function createMemoryService({
           duplicate.sourceSessionId = sourceSessionId || duplicate.sourceSessionId;
           const writeResult = await writeMemoryFile(memoryData);
           if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
+          queueVectorBackfill(duplicate.id, duplicate);
           return {
             success: true,
             message: t('memory.updatedDuplicate', { id: duplicate.id }),
@@ -240,6 +266,7 @@ export function createMemoryService({
           warning = t('memory.nearLimitWarning', { facts: memoryData.facts.length, maxFacts, summaries: memoryData.summaries.length, maxSummaries });
         }
 
+        queueVectorBackfill(newMemory.id, newMemory);
         return {
           success: true,
           message: t('memory.added', { id: newMemory.id, type, warning }),
@@ -274,6 +301,7 @@ export function createMemoryService({
         const writeResult = await writeMemoryFile(memoryData);
         if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
 
+        queueVectorBackfill(memoryId, existing);
         return {
           success: true,
           message: t('memory.updated', { id: memoryId }),
@@ -295,6 +323,8 @@ export function createMemoryService({
             removeFromRecalledCache(memoryId);
             const writeResult = await writeMemoryFile(memoryData);
             if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
+            // 记忆真源已删，向量缓存必须同步摘除（否则孤儿向量会在下次召回里指向不存在的条目）
+            await vectors.dropVectors([memoryId]);
             return {
               success: true,
               message: t('memory.deleted', { id: memoryId }),
@@ -647,6 +677,9 @@ export function createMemoryService({
 
         // 已淘汰记忆从会话召回缓存中移除，避免后续会话永久占位
         for (const id of compactRemoved) removeFromRecalledCache(id);
+
+        // 淘汰项的向量一并摘除：派生缓存可以整删重建，但不能指向已被压缩掉的条目
+        if (compactRemoved.length) await vectors.dropVectors(compactRemoved);
 
         return {
           success: true,
