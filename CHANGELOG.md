@@ -13,8 +13,8 @@
 
 ### 工程质量与测试
 - agent 新增 `memory-service`（25 例）/`memory-routes`（8 例）/`memory-injection`（18 例）单测，`node --test test/unit/*.unit.test.js` 220/220 通过（原 169）。
-- 扩展端新增 `test/unit/tool-memory-forward.unit.test.js`（12 例，含将旧“接线守卫”按新架构改写后保留的4 条源码断言）；全量 vitest 78 文件 / 1227 用例通过（2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
-- 端到端冒烟 `test-results-probes/_memory-pushdown/smoke.mjs`（12 项全通）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
+- 扩展端新增 `test/unit/tool-memory-forward.unit.test.js`（12 例，含将旧“接线守卫”按新架构改写后保留的 4 条源码断言）；全量 vitest 78 文件 / 1227 用例通过（2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
+- 端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs`（12 项全通，手动 `node agent/test/smoke/memory-pushdown.smoke.mjs` 运行，不纳入常规单测）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
 - 实施计划：`docs/superpowers/plans/2026-10-13-agent-memory-pushdown.md`（含执行时的 5 处偏差修正记录）。版本号未手动修正：由 `npm run release:agent` 统一同步（单一版本流惯例）。
 
 ## 2026-10-11
