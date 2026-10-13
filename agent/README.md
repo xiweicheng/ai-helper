@@ -419,15 +419,22 @@ Cross-session long-term memory is owned by the agent: the storage file, the read
 
 ### Recall scoring
 
+A memory's keyword score is `Σ (matched units in a field × that field's weight)`, plus whole-query bonuses:
+
 | Signal | Score |
 |--------|-------|
-| keyword hit in `content` | +3 |
-| keyword hit in `title` | +2 |
-| keyword hit in `tags` | +2 |
+| matched unit in `content` | × 3 per unit |
+| matched unit in `title` | × 2 per unit |
+| matched unit in `tags` | × 2 per unit |
 | full query (≥ 2 chars) found in `content` | +5 |
 | full query (≥ 2 chars) found in `title` | +3 |
 
-Keywords are extracted with zero dependencies: a CJK run of ≤ 4 characters is kept whole, longer runs split into bigrams, latin/digit runs become word tokens, stop words filtered, capped at 30 keywords.
+Units come from the **longest matching fragment**, not from chopping the query into pieces: a CJK fragment of length 2 counts as 1 unit, 3 counts as 2, ≥ 4 counts as 3 (top of the scale), and each whole latin/digit word counts as 1 — capped at 3 units per field. Extraction and matching are zero-dependency and **shared with knowledge-base retrieval** (`rag/keyword-match.js`), so a query means the same thing in both subsystems.
+
+Two gates keep irrelevant memories out:
+
+- **Document frequency** — a unit found in over half of the candidates (and in more than 2 of them) carries no discriminating power and scores nothing.
+- **Hit threshold** — a memory counts as a hit only when it matched a *whole* unit (an entire latin word or an entire CJK run) or at least 2 units. Sharing only a random 2-character fragment is no longer a hit; the exact-match bonuses alone cannot rescue such an entry.
 
 ### Semantic recall channel (tiers)
 
@@ -442,7 +449,7 @@ A vector channel can be layered on top of keyword scoring. It runs at one of thr
 - **Vectors are a derived cache** — `~/.ai-helper-agent/memory/memory-vectors.json` can be deleted at any time; `global-memory.json` is the single source of truth. A missing or corrupt cache is treated as empty and refilled on demand during recall — it never throws.
 - **Changing the model invalidates everything** — the cache key is `mode|modelName|dimensions`; if any part changes the old vectors are dropped rather than compared (mismatched dimensions cannot be compared). No manual cleanup needed.
 - **Failure degrades, it does not break memory** — when the embedding endpoint errors or exceeds its 8s timeout, that recall falls back to Tier A and still answers 200. `tier` and `vectorMatched` in the recall response say which tier actually ran and how many hits were semantic.
-- **One scale for both channels** — a semantic hit adds `+3 + round(cos × 4)` on top of the integer keyword score, with the cosine threshold shared with the knowledge-base default; keyword scoring itself is unchanged to the letter.
+- **One scale for both channels** — a semantic hit adds `+3 + round(cos × 4)` on top of the integer keyword score, with the cosine threshold shared with the knowledge-base default; a memory that passes the cosine threshold is returned even when the keyword gates reject it.
 - **Operations entry point** — after first enabling the channel or switching models, call `POST /api/memory/reindex` once to backfill existing memories (it returns `skipped` when the channel is off, and a clear 400 — not 500 — when the endpoint is unreachable).
 
 ### Injection tiers (system prompt)

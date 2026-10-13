@@ -20,6 +20,16 @@
 - 文档：`agent/README.md` / `README.zh-CN.md` 中英对称补「语义召回通道（Tier）」小节与三个新端点行，配置表加 `memoryEmbedding`。扩展端代码未改动，`npm run build:silent` BUILD_SUCCESS。版本号未手动修正（由 `npm run release:agent` 统一同步）。
 - 实施计划：`docs/superpowers/plans/2026-10-13-memory-hybrid-recall.md`（每个 Task 附「执行结果（已实施）」，记录融合刻度不可比、searcher 导出回退、reindex 不可走通用分发、冒烟期望从 `success: true` 更正为 400 等偏差）。
 
+### 变更（记忆关键词通道对齐知识库）
+- **计分口径换血**：`agent/src/memory/tokens.js` 从「把 query 炸成最多 30 个碎 bigram、每个命中 +3」改为「最长命中片段的单元制」（L=2→1 单元 / L=3→2 / L≥4 顶格 3，每字段封顶后×字段权重）。旧口径下「写网」「个国」这类随机 2 字块几乎必然命中某些长条目，且命中 4 个碎块（+12）高于命中一个 4 字整词（+3），**排序方向是反的**；知识库侧 2026-09 已修掉这两点，记忆侧一直沿用更早方案。
+- **与知识库共用一份匹配实现**：匹配语义（切段 / 英文词边界 / 中文最长片段）上收为 `agent/src/rag/keyword-match.js`，`rag/searcher.js` 逐字平移复用（**既有 18 条 searcher 关键词用例一条未改**），记忆与知识库不再各写一套。`rag` 命中 `storage` 这类子串误伤随词边界统一而消失。
+- **两道噪声闸门**：① 文档频率剔除——命中过半候选的单元（如「项目」）无区分度不参与计分，`df ≤ 2` 恒豁免，与知识库同参数；② 命中门槛 `full || units >= 2`——整词/整段命中可直接成立，只碰 2 字碎块时需 ≥ 2 单元。门槛故意不看 `score`，否则整句 +5 仍会因 `rag ⊂ storage` 子串包含而误伤。
+- **停用词表删除**：`STOP_WORDS` / `KEYWORD_CAP` / `SNIPPET_MAX_LENGTH` 随碎块方案一同退场——单元数按命中长度分层后，虚词无法单独构成长片段，两侧共用一份切段口径比再叠一层词表更不易漂移。
+- **行为影响（用 41 条真实记忆只读副本实测）**：5 条换说法查询的无关返回从 **43 条 → 3 条**（单条查询 8/6/3/16/10 → 1/0/0/1/1），词面可命中的 Vue 偏好仍稳定排 top1；`pnpm`、`依赖`、`rag` 三类单关键词短查询均仍能命中（门槛设计时专门避开误杀）。**代价**：词面只沾 2 字碎块的条目在 A 档不再被返回——「换个说法也能找到记忆」不是关键词通道能兑现的，属于向量通道（待做）的责任。
+- **新增记忆召回评测集** `agent/test/eval/memory-recall-fixtures.js` + `memory-recall-eval.unit.test.js`：合成 7 条形态对齐真实库（超短 7~32 字 / 中等 200~600 字 / 长条目 1300 字量级）的记忆 + 10 条查询，把改动前基线量成 4 项红（碎块噪声 3 + 子串误伤 1）、后全绿。上一轮正是因为只测实现未测效果，才把「向量无可测收益」的错误结论写进了文档。
+- 回归：agent 单测 **298 → 305 passed / fail 0**（既有 A 档 service 用例全绿不改）；冒烟 21/21；vitest 81 文件 / 1271 用例；`npm run build:silent` BUILD_SUCCESS。扩展端零改动。
+- 实施计划：`docs/superpowers/plans/2026-10-13-memory-keyword-parity.md`（含真机更正与截断规则实测表：`score>0`/`units>=2`/相对截断/整句限定 四组候选的失败子项数）。
+
 ### 新增（会话上下文压缩增强）
 - **结构化双语摘要模板**：`src/shared/compaction-prompt.js` 由自由段落改为固定四小节（任务目标 / 已完成与关键结论 / 关键标识符 / 未决问题与下一步），修复既有 i18n 缺陷——指令块随背景语言走 `getLanguage()` 渲染中英两套，素材限量与总量保留逻辑不变。`【已有摘要】` 标记与语言无关，增量压缩仍可识别。
 - **注入链路单点收敛**：新增 `applyCompactionInjection()` 到 `src/shared/context-usage.js`，三条发送链路（`chat-manager.sendMessage` / `side_panel/index.js` 划词提示词 / `prompt-manager.sendPromptByCode`）改为同一出口，删除三处内联重复；锚点失效（`upToMessageId` 找不到）时只告警忽略、不污染系统提示词。以源码扫描守卫测试锁定三条链路不再各自漂移。
