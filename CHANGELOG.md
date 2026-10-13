@@ -4,6 +4,24 @@
 
 ## 2026-10-13
 
+### 新增（本地档嵌入静默截断转为可见）
+- **真缺陷：本地档在 512 token 处静默截断**。`feature-extraction` pipeline 内部带 `truncation: true`，而 `Xenova/bge-small-zh-v1.5` 的 `tokenizer.model_max_length = 512`：超出部分**根本不进向量且原先零信号**。走真实接缝（`toEmbeddingProviderConfig` → `EmbeddingProvider.tokenCounter` → `memorySearchText`）实测真实库 41 条：**13 条超窗**，最大一条 1111 token 只吃进 512（**覆盖率 46%，599 token 直接丢弃**），全库 token 中位数 385。知识库侧不受影响（默认 `chunkSize: 400` 已在窗口内）。
+- **本轮只赢在「可见」**：`agent/src/rag/embedding/local.js` 新增 `countTokens(texts)` → `{ counts, window }`（关键：必须带 `truncation: false`，跟着 pipeline 的口径只会永远数到 512）；`EmbeddingProvider` 以 `tokenCounter` 暴露能力，**远端档置 null**（厂商截断行为从返回的向量里看不出来，不得臆造一个窗口）；`backfillVectors` 响应新增 `overWindow: { count, window, ids }` 并向进程日志点名（`[Memory] N items exceed embedding context window ...`）。检测按能力探测而非 tier 判；计数抛错/超时一律不报，**不得因此把索引报成失败**；零超窗时报 `count: 0`（与「无从判断」区分）。`POST /api/memory/reindex` 原样透传，扩展端零改动。
+- **未采纳的两个选项**（均已向用户列出并拍板不做）：分段索引（一条多向量、需改 `vectors.js` 的 id 语义与删除传播、强制全量重建、还得重标定 0.48 地板）与「窗口内保头尾」压缩（同样触发重标定）。本轮不改向量内容 → **分布未变，上一节标定的 0.48 地板继续有效**。
+- **已知噪声（非缺陷）**：同一条记忆的向量确实随分批组合漂移，但不是 mask 的问题（`mean_pooling` 逐位置乘 mask、按 mask 计数求平均）：实测逐条 vs 同批 cos 0.9940–0.9974（元素级最大差 ~1e-2），**与同批有无长文本无关**，短条目最明显——属 `dtype: 'q8'` 量化核的数值噪声，只能靠换精度缓解。
+
+### 工程质量与测试（本地档截断可见化）
+- 新增 5 例：`memory-service` 4 例（超窗进响应与日志・零超窗报 0・无能力时不凭空造字段・计数抛错不拖垮索引）+ `memory-embedding-config` 1 例**能力接缝钉**（真 `EmbeddingProvider`：本地档有 `tokenCounter`、远端档为 null）。
+- 计数（均实测）：两个改动文件 **71/71**；`memory-*` **155/155**（上一节 150 + 5）；agent 全量单测 **330/330**（上一节 325 + 5）；冒烟 **21/21**；`npm run build:silent` BUILD_SUCCESS。
+- **反向验证**：`git stash` 退回 `service.js` / `embedding/index.js` / `embedding/local.js` 三处实现后 71 例中 **3 红**（两条行为钉 + 接缝钉；两条反向守卫钉本来就应绿，实现前即通过），pop 后 71/71。真实接缝验证在 `/tmp` 模型缓存副本上跑（`AI_HELPER_RAG_ROOT` 重定向），**未写用户真实数据目录**。
+
+### 更正（作废同日上一节的两条错记录）
+> 下列两条为**取证走了另一条路**导致的错定，原文已在本文件同日「记忆语义档改排名融合」小节就地改写。
+
+- **错定 ①**：「`local.js` 未开 truncation → 1900 字被喂 1902 token，position id 越界」。**不成立**：`src/pipelines/feature-extraction.js:97` 就是 `{ padding: true, truncation: true }`；经真实 pipeline 实测 1852 字条目 `input_ids dims = [1, 512]`。当时的 1902 是用独立的 `tokenizer.encode()` 数的，**那不是真实调用路径**。
+- **错定 ②**：「mean pooling 未使用 attention mask」。**不成立**：已安装入口 `dist/transformers.node.mjs:14888` 逐位置乘 mask、除 mask 计数。真正存在的只是上面那条 q8 量化数值噪声（以及被误归因的 512 token 截断）。
+- **错定 ③**：「本地模型有效信息窗口约 1200 字」。**不成立**：`cos(全文, 前 1200 字) = 1.0000` 的真正原因是两者都被截到**同一个前 512 token**；那组数据从一开头就是「存在 512 token 截断」的证据。当年据此取消截断的**决定仍然正确**（库已在 512 token 截，按 400 字再截只是把同一刀往前推），但当时给的理由是错的。
+
 ### 变更（记忆语义档改排名融合）
 > 本节**作废**同日「长期记忆语义召回通道」中「两路计分同尺」一条的实现描述：`+3 + round(cos × 4)` 与绝对余弦阈值已退场。
 
@@ -12,10 +30,10 @@
 - **删除 `MEMORY_VECTOR_THRESHOLD` 与 `vectorHit` 旁路**：`service.js` 的 `s.vectorHit || isKeywordHit(s)` 让语义命中绕过关键词门槛，计划三建立的降噪成果只在向量关闭时成立（A 档 5 条查询返 1/0/0/1/1，B 档一律填满 limit）；`tier.js` 随之不再依赖 `DEFAULT_SEARCH_CONFIG.threshold`。
 - **`vectorMatched` 语义变更**：由「过阈值条数」改为「被语义路采信的条数」（上限 2）。扩展端转发层 `...rest` 透传，**零改动**。
 - **真机复测（41 条真实库，临时开、测完收回 `enabled=false`）**：控制组 4 条无关查询**全部 0 返回**（首要判据达成），填满 limit 的查询数 0，A 档开关前后逐字一致 `1/0/0/1/1`；4 条换说法查询目标均命中。**未达成项如实记录**：目标名次之和 8 > 计划的 6，逐条读记忆原文定位到那 2 名损失全部来自**词面路**（碎块与整词命中把语义 top1 压后）——用纯 cos 单通道理想值考核双通道融合属口径错定，取向问题转计划五。
-- **本地档嵌入长度截断经实测取消**（原计划 Task 5 Step 2/3）：本地 `Xenova/bge-small-zh-v1.5` 对真实库 41 条（最长 1901 字）与合成 1900 字阶梯**全部嵌入成功、零失败**，计划所依据的「超长报 `400 {"code":20015}` 静默丢失」实为**远端** `BAAI/bge-large-zh-v1.5` 的证据（张冠李戴）；而按 400 字截断会让最长条目向量偏 cos 0.9105 并强制重建，超出模型有效窗口（实测约 1200 字）的部分也几乎不额外耗时。`tokens.js` 本轮未改。
+- **本地档嵌入长度截断经实测取消**（原计划 Task 5 Step 2/3）：本地 `Xenova/bge-small-zh-v1.5` 对真实库 41 条（最长 1901 字）与合成 1900 字阶梯**全部嵌入成功、零失败**，计划所依据的「超长报 `400 {"code":20015}` 静默丢失」实为**远端** `BAAI/bge-large-zh-v1.5` 的证据（张冠李戴）；而按 400 字截断只会把同一刀往前推。`tokens.js` 本轮未改。（本条原先写的「超出模型有效窗口（实测约 1200 字）」为错定，见上方「更正」③：实际在 512 token 处截断。）
 - **修复查询前缀回落权**：`memoryEmbedding.queryPrefix` 缺省是空串，而 provider 用 `??` 判空（空串不是 nullish）→ 本地档 BGE 的非对称检索前缀**永远加不上**（实测 provider 日志 `queryPrefix: off`）。`toEmbeddingProviderConfig()` 现在交出空白前缀时删除该键，把回落权还给 provider；显式前缀照常透传，远端档行为不变。
 - **`reindex` 部分失败原因可见**：`backfillVectors` 原先只报 `failedBatches` 计数（原因既不入响应也不入日志，只有全部批失败才露首条），现在响应带 `lastError`（仅首条）、进程日志记全量 `[Memory] reindex batch failed: ...`。
-- **新发现两个 provider 层缺陷（本计划不动，转计划五）**：① `rag/embedding/local.js` 未开 truncation，`max_position_embeddings = 512` 的模型被喂进 1902 token（实测 1900 字 → 1902 token），position id 越界；② mean pooling 未使用 attention mask，**同一条记忆的向量随分批组合漂移**（逐条 vs 10 条/批：41 条中仅 1 条逐位一致，最低 cos 0.9883），知识库侧同样命中。
+- ~~新发现两个 provider 层缺陷（本计划不动，转计划五）~~ —— **本条为错定，已由同日「更正」①②作废**（未开 truncation / mask 未用均不成立）；当时的观测数据本身属实，只是归因归错了：那两条其实是 512 token 静默截断与 q8 量化噪声的症状。
 
 ### 工程质量与测试（记忆语义档改排名融合）
 - 新增 `memory-fusion`（12 例，含一条专门钉住「不许把分离度加回来」的用例）与 **B 档效果评测**：`agent/test/eval/memory-recall-vector-golden.json`（真实 bge-m3 生成的 7 文档 + 8 查询黄金向量，128KB）+ `memory-recall-eval-b.unit.test.js`，测试内 `embedDocuments` 直接抛错 → 零联网复现真实 cos 分布形状。此前只测机制不测效果，才把「向量无可测收益」的错误结论写进文档。
@@ -23,7 +41,7 @@
 - **回归钉的反向验证**：`memory-service` 原有 45 例对新旧规则**完全不敏感**（手搓向量是 0.98/0 的极端距离，结论不变）→ 新增 2 条 cos=0.4（≥旧 0.3、<新 0.48）的服务层钉，`git stash` 退回旧实现时**两条均红**；Task 5 的 3 条新钉同样在旧实现上红（66 例中 3 红）。新增走真实 `EmbeddingProvider` 的**接缝钉**（注入假工厂看不见配置字段错位）。
 - 计数（均实测）：`memory-*` 单测 **150/150**；agent 全量单测 **325/325**（本轮起点 220 → 计划三 306 → 320 → 325）；A 档评测 10 例与原有 service 用例**一条未改**（零漂移护栏）；冒烟 `test/smoke/memory-pushdown.smoke.mjs` **21/21**；`npm run build:silent` BUILD_SUCCESS。扩展端 vitest **81 文件 / 1271 用例全通**（2 个预先存在的 `document is not defined` 未处理 rejection 不变）。
 - 已知未修：agent 集成测试 **84/86**，2 条失败为**既有失败**（`~ 展开到用户主目录`、`路径穿越 .. 被限制在沙箱内`），用同一 `git stash` 法在旧实现上复现，与本轮无关；`eslint.config.js` 的 `ignores` 包含 `agent/**` 且 agent 无自己的配置，agent 代码**实际未被 lint**。
-- 实施计划：`docs/superpowers/plans/2026-10-13-memory-rank-fusion.md`（含 Task 1~5 执行结果；前置实测 §2 的一条数据在 Task 2 被推翻并已就地更正，Task 5 的立论在 Step 1 实测被推翻）。
+- 实施计划：`docs/superpowers/plans/2026-10-13-memory-rank-fusion.md`（含 Task 1~5 执行结果；前置实测 §2 的一条数据在 Task 2 被推翻并已就地更正，Task 5 的立论在 Step 1 实测被推翻，而 Task 5 执行结果自 §2/§3 又被后续取证二次更正）。
 
 ### 新增（长期记忆语义召回通道）
 - **三档降级召回**：`recall` 在既有关键词计分之上可叠加一路向量召回。Tier A `none`（缺省，`memoryEmbedding.enabled: false`）行为与计分逐字不变、零新增网络调用；Tier B `remote` 走 OpenAI 兼容 embedding + 进程内余弦比对（≤ 70 条量级 brute-force，不引入向量库依赖）；Tier C `local` 需本机具备 RAG 依赖，依赖缺失静默降回 A。档位由纯函数 `agent/src/memory/tier.js` 判定，apiKey / modelName 均 trim 后判空（空白不得误判为已启用远端）。
