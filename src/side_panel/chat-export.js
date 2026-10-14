@@ -2,7 +2,7 @@
 // 从 chat-manager.js 拆分，负责将助手消息导出为多种格式
 
 import { showToast } from './utils.js';
-import { formatMarkdown } from './markdown-render.js';
+import { formatMarkdown, splitTableCells } from './markdown-render.js';
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -428,7 +428,8 @@ function parseMdTable(md) {
   for (const line of lines) {
     // 跳过分隔行 (|---|---|)
     if (/^[\s\|:\-]+$/.test(line.replace(/\|/g, ''))) continue;
-    const cells = line.split('|').map(c => c.trim()).filter(c => c !== '');
+    // 按未转义竖线拆分（支持单元格内转义竖线）
+    const cells = splitTableCells(line).slice(1, -1).map(c => c.trim());
     if (cells.length > 0) rows.push(cells);
   }
   return rows;
