@@ -29,6 +29,16 @@
 收口计数（全部实测）：agent 单测 **409/409**（+4：service 层净 +2〔删旧钉 1、新增 3〕+ tokens 层 +2）、黄金评测 `memory-recall-eval` / `-eval-b` 2/2 原样绿且未重钉期望、rag 集成（隔离部分）**24/24**、记忆冒烟 **21 项 0 失败**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。标定与落盘临时件已删，工作树无残留；`api.integration.test.js` 仍未实跑（会干扰用户正在运行的 agent）。
 
 
+### 变更（文档：记忆检索「现行口径」收到单一来源，计划存档就地声明）
+> 用户反馈「越改越复杂」。量化后确认死重在计划存档本身：5 份记忆计划共 4957 行，其中 2319 行是实施前的预写代码，如今与真正的源文件重复了一遍。本轮纯文档，产品代码 / 测试 / 构建产物零改动。
+
+- 新建 `docs/Memory-Retrieval-Design.md`（129 行，命名沿用既有的 `docs/RAG-Knowledge-Retrieval-Design.md`）：只回答「现在是怎么判定的、为什么定成这样」——真源与派生缓存、`tier` 三档、词面计分单元与 df 全塌兜底、语义采信三门（0.48 地板 / 0.05 落差 / 封顶 2）、RRF 只融名次、标签从硬过滤降为名次加成、向量与记忆生命周期对齐、配置面 `baseUrl → endpoint` 字段映射、§9「已被实测否定过的方案（不得加回来）」、§10 每条判据钉在哪个用例、§11 记忆线与上下文压缩线的文件归属（两条线同期落在同一分支，看改动时别混）。
+- 5 份计划（`agent-memory-pushdown` / `memory-hybrid-recall` / `memory-keyword-parity` / `memory-rank-fusion` / `memory-embedding-config-ui`）各加文件头「存档状态」声明：已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`）、现行口径见上面那份、**不要按本文件实施**。**不删**是刻意的：那 5 份里共 45 处「作废 / 更正 / 推翻 / 错定」（分离度门不成立、条目级绝对 cos 不可用、两路同尺被推翻……），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据；目录也**不**移到 `plans/done/`——`docs/superpowers/plans/` 里另有 11 份别的线的计划，一移就诱发第二次大扫除。
+- 文档写完后用一次性探针核对「每个反引号标识符都能落地」，抓到两处真问题并改掉：① 探针语料含计划存档自身，写歪的旧符号能靠存档**自证存在**（负向对照实测：往文档里注入假标识符后仍然判绿），改用只含源码与测试的语料复跑后，剩余 4 个符号确实不在源码里——`mean_pooling` / `attention_mask` 属 transformers.js 实现内部、`MEMORY_VECTOR_THRESHOLD` / `vectorHit` 已被删除——已在文中就地标明出处与删除发生的提交 `47c31d7`（`git log -S` 可查）；② §11 归属表漏了 `src/background/tool-memory.js`（扩展端转发层，正是搬运本身的交付物）与压缩线的 `src/background/context-summarizer.js`。
+- 探针自身的可信度也做了负向对照：注入假标识符 → 判红 3 处，还原 → 判绿，md5 与备份一致。探针与落盘脚本都是临时件（`test-results-probes/` 不入库），跑完即删。
+
+收口计数（本轮实测）：agent 单测 **409/409**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。rag 集成与记忆冒烟本轮未重跑——它们验的是产品代码，而本轮 `git diff --stat` 只含 `docs/` 与 `CHANGELOG.md`。
+
 ## 2026-10-13
 
 ### 变更（记忆入参校验：侧边栏自测报告的 D2/D3/D4 收口）

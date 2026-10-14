@@ -1,5 +1,9 @@
 # 记忆关键词通道对齐知识库 Implementation Plan
 
+> **存档状态（2026-10-14 加注）**：本计划已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`），**不要按本文件实施**。
+> 现行口径见 [`docs/Memory-Retrieval-Design.md`](../../Memory-Retrieval-Design.md)。文中的预写代码块与 Step 清单属实施前内容，已与源码不再同步。
+> 不删的理由：本文件末尾的执行记录里有 45 处「作废 / 更正 / 推翻 / 错定」结论（哪些判据被实测否定、为什么），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让长期记忆的关键词召回复用知识库已验证的片段化匹配（英文词边界 + 中文最长命中片段 + df 高频剔除），消除碎 bigram 噪声。
