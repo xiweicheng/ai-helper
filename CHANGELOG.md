@@ -4,268 +4,146 @@
 
 ## 2026-10-14
 
-### 修复（记忆线评审收口：score 字段级封顶回归 + 标定工具窄窗口越界 + 本地档残留清空）
-> 承上一轮 CodeReview 结论，用户裁定「确认是问题的先修，不确定的先核实」：两条确认问题（#1/#2）修复；第三点先核实——核实结果亦为真（queryPrefix/dimensions 都会参与本地档行为），一并修。全部先红后绿。
+### 修复（知识库工具勾选在代理离线期间被误清理）
+> 用户实测：勾选三个知识库工具 → 断开代理（工具从列表消失属预期）→ 重连代理后三个工具全部未勾选，须手动重勾。
 
-- **#1 `keywordScore` 恢复字段级封顶（真回归）**：`6e2a22f` 重构时 `fieldUnitHits()` 丢掉了旧 `fieldUnits()` 内部的 `Math.min(units, KEYWORD_MAX_HITS)`，`score` 从「字段内单元和先封顶再乘权重」变成逐单元线性累加——长文档碰多个碎块被按单元放大（红跑实测 18，恰为旧实现 9 的两倍）。`units` 轴封顶未丢（门槛/深度判定不变），但同深度档内排序被改写，与 README「单字段封顶 3 个单元」等声明矛盾。修：字段内累加后 `Math.min(fieldUnits, KEYWORD_MAX_HITS)` 再乘权重（跨字段仍各自累加）；改正 `tokens.js` 那条说「封顶口径与原实现一致」却无封顶的错误注释。旧钉只断言 `units` 没断言 `score`——正是它没拦住这次回归，本轮补上 score 轴断言。
-- **#2 标定工具窄窗口越界（边界缺口）**：`semantic-window.js` 的 `recommend = snapToGrid(中点)` 未校验归整后仍落窗口内，窗口窄于栅格时会越出上界（构造 `(0.454,0.456]` → 归整成 0.46），照它设地板会拒掉最低分的相关查询。修：归整值不在 `(下界, 上界]` 内时退回未归整中点（窗口可用时中点必然在窗内），并补「窗口过窄 / 推荐值未落栅格」两条告警。bge-m3 真实窗口宽 0.084 不触发，属换模型场景的前置护栏。
-- **#3 本地档残留清空扩到 queryPrefix/dimensions（核实后确认是问题）**：`collectPayload` 本地分支此前只清 `modelName`。两条残留链路核实为真：`queryPrefix` 残留顶替本地 BGE 默认前缀（`EmbeddingProvider` 的 `??` 只认 nullish，非空残留原样生效，漏前缀对中文召回是实质质量损失）；`dimensions` 不参与本地向量但进 `memoryModelKey` 指纹（`upsertVectors` 键变即整体作废旧向量），残留值随远端历史漂移会让同一份本地配置冒报 stale、白跑一次 23 分钟本地重建。修：本地分支显式 `queryPrefix:''` + `dimensions:0`（保存层收空串/0、provider 层删空键回落默认前缀）；`baseUrl`/`apiKey` 在本地档完全惰性，保持省略。改写旧钉（原「dimensions 不提交」钉的是旧行为）为「三项残留显式清空 + 惰性字段省略」，并用隐藏输入框里的真实残留值驱动。
+- **根因**：代理离线时 background 调 `unloadRagTools()` 清空 `storage.ragTools`；侧边栏 4 处（面板加载 / 切换助手 / 切换会话 / 弹窗保存）用「内置 + 当前已注册 ragTools」过滤用户已存的 `agentEnabledTools_*` 并**把过滤结果持久化写回**——离线时 `knowledge_*` 不在全集内，被当残留无效 ID 清理；重连后 `ragToolsIntroduced=true` 不再重新引入，勾选永久丢失。
+- **修**：新增 `RAG_TOOL_IDS` 静态全集（`constants.js`，从 `src/background/tools/rag-tools.js` 的 `RAG_TOOLS` 派生，单一数据源）+ `getValidToolIdUniverse()`（内置 + RAG 静态全集 + 已注册 RAG 工具），4 处有效性判定与弹窗保存遍历统一改走它；真正无效的残留 ID（旧版 `mcp_*`）仍被清理，主动取消勾选的工具不会被重新加入。
+- **测试**：新增 `tool-valid-id-universe.unit.test.js` 6 例（先红后绿：离线过滤不丢 `knowledge_search/ingest/list`、残留 `mcp_*` 仍清理、已注册工具并入去重、非法入参安全降级）。
 
-收口计数（全部实测）：agent 单测 **427/427**（含两套黄金评测）、根 vitest **1315/1315**、`npm run build:silent` BUILD_SUCCESS。口径写回 `docs/Memory-Retrieval-Design.md` §3/§4/§7；一律未推送。
+### 修复（Markdown 表格：单元格内转义竖线支持）
+> 用户截图报告：表格一行被拆成多列。渲染/导出走朴素 `split('|')`，单元格内的 `\|`（GFM 字面竖线）被当成列分隔符——一行 2 列被拆成 4 列。
 
-### 变更（记忆向量配置界面：远端命名对齐知识库 + 本地档模型固定不可编辑）
-> 用户两个界面优化点，核实后均成立，开挖时顺带发现一个正确性坑。只动 `src/options` 与文案/布局，不碰代理逻辑。
+- **修**：`markdown-render.js` 新增 `splitTableCells()`（奇数个 `\` + `|` 为字面竖线、偶数个为分隔符），表格渲染 / Excel 导出 / 复制（`extractTableFromDOM` 反向把单元格竖线转义回 `\|`）统一走它；Word 导出（`chat-export.js`）与工作目录预览导出（`workspace-panel.js`）同步接入。
+- **测试**：新增 `markdown-table-escape.unit.test.js` 8 例（splitTableCells 语义 5 + 渲染列数 2 + Word 导出单元格数 1）。
 
-- **命名统一**：记忆面板「嵌入来源」的远端选项从`远端 API`/`Remote API` 改为`远端服务（OpenAI 兼容接口）`/`Remote service (OpenAI-compatible API)`，与知识库单选逐字一致（`zh.js`/`en.js` 的 `memoryPanel.modeRemote` + `options.html` 回退文本）。
-- **本地档不再可编辑模型名**（真实缺陷）：知识库把所有远端字段（含模型名）包进 `kbVecRemoteFields`，选本地时整块隐藏；记忆面板的 `applyModeVisibility` 却漏了模型框（是个无 id 的独立 `form-group`），导致本地档仍给编辑。代理端本地档本应用固定内置 `Xenova/bge-small-zh-v1.5`。修：模型框加 id `memoryModelGroup` 并纳入隐藏清单。
-- **正确性坑（只改可见性反而更危险，必须一并修）**：记忆配置保存是「字段不传就沿用旧值」。若仅隐藏模型框而不提交，之前配远端时存下的 `BAAI/bge-m3` 会残留；而 `local.js` 是 `modelName || 内置默认`，残留值非空就会劫持默认、拿它去 transformers 下载。修：`collectPayload` 本地分支**显式发 `modelName:''`** 清空（非省略）。
-- **测试**：结构测加 `memoryModelGroup` id 钉；行为测夹具把模型框包进组，「切本地隐藏」补断模型组隐藏；**改写旧钉**（原「本地档提交用户输入模型名」钉的是旧行为）为「本地档提交 `modelName:''`」，并新增一条远端档可见+按输入提交的对照钉。**反向验证**：旧源码+新测 → 恰 3 红（结构缺 id / 本地没藏模型 / 本地仍提交输入值），新源码 → 33/33 绿。
+### 修复（记忆线二轮评审收口：recall 锁外补齐 + provider 全配置缓存键 + 配置所见即所存）
+> 评审确认问题收口；口径写回 `docs/Memory-Retrieval-Design.md` §2/§7/§10。
 
-口径写回 `docs/Memory-Retrieval-Design.md` §7；根 vitest **1315/1315**、`npm run build:silent` BUILD_SUCCESS；一律未推送。
+- **recall 改三段式（锁内只读 → 锁外补齐缺失向量 → 锁内收尾）**：补齐的嵌入是外部 IO（最长 8s 超时），原先在记忆互斥锁内执行——锁是进程内 Promise 链、无超时逃生口，一次挂起会堵死同进程所有记忆写入。补齐失败按 modelKey 冷却 60s（`RECALL_BACKFILL_COOLDOWN_MS`），冷却期内只用手上向量算名次。
+- **向量缓存读出加指纹校验**：缓存 `modelKey` 与当前模型不符时整份视空、当轮按当前模型重建（旧实现会把换模型前的旧向量拿去算 cos，噪声名次混入语义路）。
+- **provider 缓存键改为全生效配置 JSON**（原为 `mode|modelName|dimensions`）：改 `baseUrl`/`apiKey`/`queryPrefix` 也会重建 provider，不再拿旧端点打新配置。
+- **访问计数 RMW 重读真源**：阶段 1 到收尾之间可能已有 store/compact/delete 落盘，避免拿旧快照写回抹掉并发变更。
+- **store(update) 锚点失效可机器判定**：不存在 id 返回 `code: 'not_found'`；扩展端压缩摘要沉淀据此降级为 `add` 重建并回传新 id（此前会 update 一个不存在的 id，摘要沉淀静默断供）。
+- **配置界面「所见即所存」**：远端档 baseUrl / modelName / queryPrefix / dimensions 始终提交（含空值 / 0，清空字段不再被「缺席即不改」静默吞掉）；apiKey 是唯一例外（明文不回显、留空=不修改），新增「清除已存 Key」按钮（`clearApiKey:true` 为唯一显式清除通道）；配置读取失败时拒绝保存（`configLoadFailed` 守卫，防空表单覆盖真配置）。中英补 5 键 + staleHint 补注。
+- **测试**：agent `memory-service` +5 例（not_found / 换模型整份失配重建 / 补齐在锁外·store 不阻塞 / 冷却 / 全配置缓存键）、`memory-embedding-config` 补 clearApiKey 优先；根 vitest `memory-panel` +8 例（所见即所存 / 清除 Key 五态 / 保存守卫两态）、`compaction-memory-persist` +3 例（not_found 降级 / 降级也失败仍静默 / 其他 400 不误重建）。
 
-### 新增（记忆检索：语义地板 0.48 的换模型重标定工具）
-> 计划五收尾项。`SEMANTIC_QUERY_FLOOR = 0.48` 不是通用常数，而是「无关查询 top1 最大值 < 地板 ≤ 相关查询 top1 最小值」这段安全窗口的中点；整段窗口随 embedding 模型平移，换模型必须重算。此前这套网格方法只写在归档的计划四里、不可执行——本轮把它固化成一条命令。
+### 修复（工具栏分组选中态误触发：只认组内直属主开关）
+- 记忆组把条数下拉嵌在组内，下拉里的「自动压缩 / 摘要存入记忆」子开关会误触发整组高亮（关掉记忆主开关后选中态仍残留）；`:has(input:checked)` 收窄为 `:has(> label.check-toggle > input:checked)`。
 
-- **数学拆成纯函数 `agent/test/eval/semantic-window.js`**（无 IO / 无网络）：`computeSemanticWindow({docs, queries, cases, currentFloor})` 按标注（相关=有 `target`、无关=有 `expectNone`，其余忽略）量出新窗口 `(下界, 上界]`、中点建议值、现值是否仍在内与上下余量，并在窗口空 / 无关样本 < 3 / 目标未排 top1 时告警。
-- **联网标定脚本 `recalibrate-semantic-floor.mjs`**（人工执行、绝不进测试链路，风格对齐 `gen-vector-golden.mjs`）：用当前 config 的模型逐条嵌入 fixture 与标注查询，喂给同一纯函数，打印建议地板与「是否该改 `SEMANTIC_QUERY_FLOOR`」。生产常数本轮不动（现仍 bge-m3）。
-- **离线测试 `memory-semantic-window.unit.test.js` 7 例（零联网）**：用已提交 bge-m3 黄金向量复现合成语料窗口 `(0.4322, 0.5163]`、中点建议 0.47、现值 0.48 在内（下余量 0.048 / 上余量 0.036）。**反向验证**：把「下界取无关 max、上界取相关 min」这条关键取向互换 → 7 例中 **4 红**，还原后 7/7 绿，证实用例有牙非装饰。
+### 修复（记忆线评审收口：score 字段级封顶回归 + 窄窗口越界 + 残留清空 + 语义档转纯 top-K）
+> 承 CodeReview「确认是问题的先修，不确定的先核实」；全部先红后绿。
 
-口径与「如何重标定」写回 `docs/Memory-Retrieval-Design.md` §4；一律未推送。
+- **`keywordScore` 恢复字段级封顶（真回归）**：`6e2a22f` 重构时丢了 `Math.min(units, KEYWORD_MAX_HITS)`，`score` 变逐单元线性累加（红跑实测 18，恰为旧实现 9 的两倍）；修回「字段内先封顶再乘权重」。旧钉只断言 `units` 未断言 `score`，本轮补上 score 轴。
+- **标定工具窄窗口越界**：`recommend = snapToGrid(中点)` 归整后可能越出窗口上界（构造 `(0.454,0.456]` → 0.46），照它设地板会拒掉最低分的相关查询；改为归整值出窗时退回未归整中点 + 两条告警。bge-m3 真实窗口 0.084 不触发，属换模型前置护栏。
+- **本地档残留清空扩到 queryPrefix/dimensions**：残留 `queryPrefix` 会顶替本地 BGE 默认前缀（`??` 只认 nullish）；残留 `dimensions` 进 `memoryModelKey` 指纹会让同一份本地配置冒报 stale、白跑一次 23 分钟本地重建。本地分支显式清空 + 惰性字段省略。
+- **语义档转纯 top-K（删查询级绝对地板）**：0.48 只在 bge-m3 上标定、不可跨模型平移——本地档实测噪声 top1=**0.5599** 逃过地板被误返、真相关 top1=**0.4888** 反被绞杀。线上不再施加，只留随模型自动平移的两道相对门（条目级落差 0.05 + 条数封顶 2）；B 档验收从「无关查询必须空返」改为「至多 maxTake 条、不填满 limit」（放弃「无匹配空返」换取任意模型开箱即用）；`SEMANTIC_QUERY_FLOOR` 常量保留仅供离线标定。
 
-### 变更（记忆检索：词面门槛按去重片段判定 + 深度命中优先排序）
-> 目标单一——记忆检索准确性。承计划四 Task 4 遗留、显式转本计划的产品取向问题「词面碎块该不该压过语义 / 排在前面的该不该是浅碎块」。本轮只动词面通道的门槛判定与名次取向，语义打分、融合常量、A 档其余行为均不动。
+### 变更（记忆检索四轮迭代 + 口径文档收口：重标定工具 / 词面门槛去重 / 标签加成 / df 兜底）
 
-- **门槛按去重片段判定（`tokens.js`）**：单元身份从「命中片段」收到「**查询单元**」（拉丁按词、中文按连续段），同一单元跨正文/标题/标签取**最强值**而非累加。旧实现把一个 2 字片段（如「配置」）在正文与标签各命中一次凑成 `units=2`，正好顶过 `KEYWORD_MIN_UNITS`——门槛「至少两个不同词块」的本意被跨字段重复计数旁路（真实库实测：查询「配置远端模型」把一条既不含「远端」也不含「模型」的 QQ 邮箱记忆顶到第 1）。新增 `best` 轴（单个查询单元自身达到的最强单元数）。
-- **`score` 排序轴不动**：一个词既在正文又在标签出现本就是更强的信号，本轮只让**门槛**不再吃重复计数，`score` 仍按各字段权重累加。取向是**降权不是剔除**，浅碎块条目仍在结果里、只是往后排。
-- **深度命中优先排序（`service.js`）**：新增 `isDeepKeywordHit = full || best ≥ 2` 与唯一比较器 `byKeywordRank`（深度命中优先，其后按分数）。**A 档单通道与融合档 `kwRanked` 两处排序同步改走它**——各写一份会让「开没开向量档」改变碎块条目的地位，那是比噪声更难查的行为分叉。
-- **TDD 反向验证**：新增 tokens 3 组钉 + service 2 组钉（含融合档那条用 `cos=0` 让语义整通道否决，使断言只吃词面名次）。`git stash` 退回旧实现跑新钉 → **8 例中 7 红**，恢复后 8/8 绿，证实不是跟着实现写的装饰。
-- **离线标定代价（旧实现当对照臂）**：A 档黄金评测「超短条目按整段命中」查询「中国和美国」对 country 的唯一词面证据是两个 2 字碎块（「中国」「美国」被 `matchCjk` 压成 `units=1`），旧实现靠上述跨字段重复才过门槛——门槛去重后它不再算词面命中。该语义查询本就属向量档：B 档「换说法命中国家观点」实测 country 召回未变。按「保留用例本意（整段命中）、不依赖被移除的缺陷」改查询为「中国 美国」（两个完整单元、靠 `full=true` 干净过门槛），并就地写明这是预期行为变更。
+- **重标定工具**：把「安全窗口 = 无关 top1 最大值 < 地板 ≤ 相关 top1 最小值」固化成一条命令——纯函数 `agent/test/eval/semantic-window.js`（无 IO/网络）+ 人工执行的联网标定脚本 `recalibrate-semantic-floor.mjs`（不进测试链路）；离线测试用 bge-m3 黄金向量复现窗口 `(0.4322, 0.5163]`、中点 0.47、现行 0.48 在内（下余量 0.048 / 上余量 0.036），7 例零联网，反向验证 4 红。
+- **词面门槛按去重片段判定 + 深度命中优先排序**：单元身份从「命中片段」收到「查询单元」，同一单元跨正文/标题/标签取**最强值**而非累加（旧实现靠跨字段重复计数旁路门槛：查询「配置远端模型」把一条既不含「远端」也不含「模型」的 QQ 邮箱记忆顶到第 1）；新增 `best` 轴与唯一比较器 `byKeywordRank`（深度命中优先），A 档与融合档两处同步改走它——开没开向量档不能改变碎块条目的地位。门槛去重是**降权不是剔除**，`score` 仍按各字段权重累加。
+- **标签从硬过滤降为名次加成**（新模块 `tags.js`，上抬上限 2 位）：有 query 时不再剔除候选、只在最终序上按重叠比例上抬；无 query 时保持枚举硬过滤。真实库离线标定（41 条 / 151 标签）：枚举路径新旧差异 **0/151**、相关型 36 例**捞回 24 例**、少返回 3 例——3 例代价全部落在全库过半词一格（旧行为是被 df 豁免下限意外救到的，非设计正确）。
+- **df 全塌兜底**：查询所有单元都判无区分度时忽略 df、宁按词面强度排（不放宽命中门槛，全库无人碰该词仍 0 条；尚有低频单元幸存就照旧剔高频词）。重跑标定：捞回 **24 → 28**、少返回 **3 → 0（代价清零）**、裸查 `ai` **0 → 10 条**、裸查 `配置`/`agent` 不触发兜底。
+- **向量测试脆弱等待治理**：根因不是挂钟而是**撕裂读**（`writeFile` 先 truncate 再落内容，测试轮询撞进半截 JSON）——只修测试读盘（`waitUntil` 等四件有界轮询助手）、未改产品代码；修复前 **3 红 / 61 跑** → 修复后 **0 红 / 100 跑**（仅在全套件并发负载下复现，单文件跑不出来）。
+- **文档收口**：现行口径收到单一来源 `docs/Memory-Retrieval-Design.md`（含「已被实测否定过的方案（不得加回来）」清单与每条判据的用例索引）；5 份已执行计划就地加「存档状态」声明、**不删**——保留 45 处「作废/更正/推翻/错定」作防回退的书面依据。
 
-收口计数（全部实测）：agent 单测 **417/417**、记忆相关 **241/241**、黄金评测 A/B 档 **2/2** 绿（A 档那条按上文预期变更后）、记忆冒烟 **21 项 0 失败**、rag 集成 **84/86**（2 条既有失败 `~ 展开到用户主目录` / `路径穿越 .. 被限制在沙箱内`，与本改动无关）、根 vitest **1314/1314**、`npm run build:silent` BUILD_SUCCESS。`eslint` 对 agent 不适用（根 `eslint.config.js` 的 `ignores` 含 `agent/**`，agent 无自有配置）。现行口径写回 `docs/Memory-Retrieval-Design.md` §3；上一轮的 patch 中转临时件（`_patch-keyword-units.cjs` / `_*.tmp.js`）已删，一律未推送。
+### 变更（记忆向量配置界面：命名对齐知识库 + 本地档模型固定 + 总开关即改即存）
+- **命名统一**：远端选项改为「远端服务（OpenAI 兼容接口）」，与知识库单选逐字一致。
+- **本地档不再可编辑模型名 + 残留显式清空**：模型框加 id `memoryModelGroup` 纳入隐藏清单；`collectPayload` 本地分支**显式发 `modelName:''`**（若只隐藏不提交，此前配远端存下的 `BAAI/bge-m3` 会残留并劫持本地默认模型）。
+- **总开关切换即持久化**：原「表单制」下关掉开关不落盘、刷新被真值回填（用户报「好像这个开关我控制不了」）；改为 `change` 即 POST（请求体严格只有 `enabled`），成功后只重拉状态卡、**绝不 `loadAll()`**（防盖掉未保存草稿），失败回滚勾选框 + toast，写入在途锁开关；门控两把锁合并下放到开关本身；标签文案改由面板按开关态唯一渲染（原静态 i18n 键在语言切换后会说谎）。
+- **测试**：结构钉 + 行为钉同步改写（33/33 与 22/22 两批全绿）；四条变异证明用例有牙——改发全量体 → 2 红、成功后走 `loadAll()` → 2 红、失败不回滚 → 1 红、门控不锁开关 → 1 红。
 
-### 变更（记忆检索 D1：标签从「打分前硬过滤」降为「名次加成」）
-> 上一轮 D2/D3/D4 挂起的 D1 由用户定取向（选了「降为加分项」）。本轮只改标签在检索里的角色，词面/语义打分本身不动。
-
-- **新模块 `agent/src/memory/tags.js` 作口径单一来源**：`hasTagRequest` / `tagOverlapRatio` / `filterByTags` / `applyTagRankLift` / `TAG_RANK_LIFT = 2`。原缺陷是标签过滤发生在任何打分之前，与「词面命中门槛」·「语义地板」构成三个硬门槛的 AND 叠加——一条内容与语义都正确的记忆，只因没打上请求里的标签就被整条抹掉。
-- **分工**：有 `query` 时标签不再剔除候选，只在两条通道的最终序上按重叠比例上抬有限名次（分母取**请求标签数**，「请求三个中一个」弱于「请求三个中三个」）；无 `query` 时标签是唯一选择器，属枚举语义，**保持硬过滤不变**。
-- **上限取 2 位的理由**：1 位几乎抬不动，3 位以上就退化成「标签命中一律排前」，那正是本次要避开的形态。`applyTagRankLift` 同排序键下优先被抬上来的那条，否则抬 1 位会与让开的那条并列、稳定序下等于没抬。
-- **df 统计池保持全候选**（用户批准的原设计）。中途我一度改判「用标签子集更安全」并声明了偏离，后按 `d > 0 && d <= limit` 的语义算回：只出现在非标签条目里的词在子集上 `d` 为 `undefined` 会被直接拒，等于新方案想捞回的条目只能靠与子集共享的词命中——**偏离已回退作废**，代价改为明文钉住。
-- **真实库离线标定**（只读副本、tier none、零网络；41 条 / 151 标签）：枚举路径新旧差异 **0/151**；相关型 36 例中**捞回 24 例**（最大单例旧 2 → 新 8）、**少返回 3 例**、完全一致 9 例。3 例代价全部落在同一格：查询词全库过半（`df(ai) = 30 > limit 20.5`）时，旧实现靠标签把候选缩到极小池、被 `KEYWORD_DF_EXEMPT = 2` 兜住才词面存活——即旧行为是被豁免下限意外救到的，不是设计正确。
-- 测试：新增 `memory-tag-rank.unit.test.js` 12 例（纯机制层）+ `memory-service.unit.test.js` 新增 6 例并**改写旧钉**（原「命中任一标签才保留」→「两条都保留、标签命中项上抬」），含把上述代价明文钉成用例防后续误改。负向对照 `TAG_RANK_LIFT = 0` → 4 红（含向量档那条）；第一次跑时向量档用例没红，查夹具是假敏感，换后才有牙。两份黄金评测原样绿、未重钉期望。另补一轮**同实现自对照**（新实现分别以 lift=2 / lift=0 各跑 72 例）：名次变化 17 例、集合变化 0 例——上一轮旧 vs 新的「名次变化 0」不能读成加成没生效，而是那批用例的查询词全取自带标签条目、标签项天然词面最强。
-- **发现既有 flake（本轮引入前就有，未修）**：`store(add) 在向量档懒补` 用 `Date.now() - t0 < 10` 对抗 `setTimeout(10)` 的假端点，纯靠挂钟分「有没有被 await」，实测 HEAD 态 3/20 红、改动后 4/20 红（同一条、同量级）。建议换成手动 resolve 的 promise，属另一条改动，等用户点头。
-
-收口计数（全部实测）：agent 单测 **405/405**（+18）、黄金评测 2/2 原样绿、rag 集成（隔离部分）**24/24**、记忆冒烟 **21 项 0 失败**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。标定用临时件已删。
-
-### 变更（记忆检索：df 全塌兜底 + 向量测试的脆弱等待治理）
-> 用户就上一轮汇报的四条待办点前两条：① 修掉上一轮标定得到的唯一真代价；② 修上一轮登记「未修」的那条 flake。后两条（换模型重标定 0.48 地板、provider 嵌入层缺陷）仍未动。
-
-- **df 全塌兜底**：`buildDocFreqFilter` 由返回函数改为返回 `{ keep, hasDiscriminative }`（破坏性 API 变更，全仓仅 `service.js:448` 与 tokens 单测使用，改前 grep 核过），调用侧 `const dfFilter = hasDiscriminative ? dfKeep : () => true`——查询里**所有**单元都被判为无区分度时忽略 df，宁可按词面强度排，也不把用户明确输入的那个词整条判死。两条反向护栏各自钉住：兜底**不放宽词面命中门槛**（全库无人碰该词时仍 0 条、仍报 `memory.noMatch` 而不谎称空库）；**只在整体塌陷时生效**（还有任一低频单元幸存就照旧剔高频词，否则高频词会把返回窗口填满、挤掉有效信号）。
-- **上一轮明文钉的「已知代价」作废**：`已知代价：查询词在全库过半时判无区分度，标签全命中也返回空` 这条用例就地改写为兜底行为（不新增一条更正记录）；同时新增 2 例 tokens 层全塌判定。
-- **真实库离线标定重跑**（同一批 41 条 / 151 标签，只读副本、tier none、零网络）：枚举路径新旧差异仍 **0 / 151**（「无 query 保持硬过滤」这条承诺仍成立）；相关型 36 例捞回 **24 → 28**、**少返回 3 → 0（代价清零）**、完全一致 8；触发全塌的查询词 4 个；不带标签裸查 `ai` **0 → 10 条**；裸查 `配置` / `agent` **不触发兜底**（这些词在全库不过半、仍具区分度）——最后一条是「兜底没被写成把 df 关掉的橡皮图章」的关键证据。
-- **向量测试的脆弱等待治理**：先把懒补用例改成门闩式（夹具持手动 resolve 的 promise，断言测**因果序**而非耗时）并加 `{ timeout: 3000 }`；但 25 / 30 次全量循环继续抓到红，拿到真实错误栈才定位根因**不是挂钟而是撕裂读**——`writeFile` 先 truncate 再落内容，而测试的轮询恰好发生在后台懒补写入途中，`existsSync` 在 truncate 之后就已成真，此刻 `JSON.parse(readFileSync())` 读到空串/半截 JSON 抛 `SyntaxError: Unexpected end of JSON input`。产品侧没有这个窗口（向量读排在门面串行链 `serialized()` 内，不会与自己的写交叉），故**只修测试读盘、未改任何产品代码**：模块级 `waitUntil`（有界轮询）/ `readVectorPayload`（读不通按「还没写好」处理）/ `waitVectorPayload` / `vectorIds` 四件助手，全文七处断言读盘加 `vectorIds` 内部一处全部收口。四处「必须已发生」的 `settle()` 正向等待换有界轮询（`settle()` 只保留给方向容错的「不得发生」类断言）。**同族缺陷不止用户点的那一条**：`delete` / `update` / `compact` 三处与懒补同源，compact 那条并补上「未淘汰记忆的向量不得被误删」——原用例只验「被删的摘干净」，验不出误删。
-- **循环证据与两条失败的对照臂（如实记）**：修复前（严格读盘）**3 红 / 61 跑**，修复后（容错读盘）**0 红 / 100 跑**（60 次 + 追加 40 次，每次 409 例全跑）。对照臂两版都不成立：第一版把 `catch { return null }` 改成 `throw err` → 40/40 全红，因为严格版连「文件还不存在」的 ENOENT 也抛，不是修复前的等价物；第二版只让半截 JSON 抛 → 0/40 全绿没复现红，撕裂窗口太窄**无法按需复现**。所以承重证据是「修复前实测到 SyntaxError 栈 + 修复后 0/100」，不是对照臂。另：**单文件孤立跑 40 次 0 红**，这条 flake 只在全套件并发负载下出现——往后验 flake 必须跑全量，拿单文件绿当证据会漏。
-
-收口计数（全部实测）：agent 单测 **409/409**（+4：service 层净 +2〔删旧钉 1、新增 3〕+ tokens 层 +2）、黄金评测 `memory-recall-eval` / `-eval-b` 2/2 原样绿且未重钉期望、rag 集成（隔离部分）**24/24**、记忆冒烟 **21 项 0 失败**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。标定与落盘临时件已删，工作树无残留；`api.integration.test.js` 仍未实跑（会干扰用户正在运行的 agent）。
-
-
-### 变更（文档：记忆检索「现行口径」收到单一来源，计划存档就地声明）
-> 用户反馈「越改越复杂」。量化后确认死重在计划存档本身：5 份记忆计划共 4957 行，其中 2319 行是实施前的预写代码，如今与真正的源文件重复了一遍。本轮纯文档，产品代码 / 测试 / 构建产物零改动。
-
-- 新建 `docs/Memory-Retrieval-Design.md`（129 行，命名沿用既有的 `docs/RAG-Knowledge-Retrieval-Design.md`）：只回答「现在是怎么判定的、为什么定成这样」——真源与派生缓存、`tier` 三档、词面计分单元与 df 全塌兜底、语义采信三门（0.48 地板 / 0.05 落差 / 封顶 2）、RRF 只融名次、标签从硬过滤降为名次加成、向量与记忆生命周期对齐、配置面 `baseUrl → endpoint` 字段映射、§9「已被实测否定过的方案（不得加回来）」、§10 每条判据钉在哪个用例、§11 记忆线与上下文压缩线的文件归属（两条线同期落在同一分支，看改动时别混）。
-- 5 份计划（`agent-memory-pushdown` / `memory-hybrid-recall` / `memory-keyword-parity` / `memory-rank-fusion` / `memory-embedding-config-ui`）各加文件头「存档状态」声明：已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`）、现行口径见上面那份、**不要按本文件实施**。**不删**是刻意的：那 5 份里共 45 处「作废 / 更正 / 推翻 / 错定」（分离度门不成立、条目级绝对 cos 不可用、两路同尺被推翻……），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据；目录也**不**移到 `plans/done/`——`docs/superpowers/plans/` 里另有 11 份别的线的计划，一移就诱发第二次大扫除。
-- 文档写完后用一次性探针核对「每个反引号标识符都能落地」，抓到两处真问题并改掉：① 探针语料含计划存档自身，写歪的旧符号能靠存档**自证存在**（负向对照实测：往文档里注入假标识符后仍然判绿），改用只含源码与测试的语料复跑后，剩余 4 个符号确实不在源码里——`mean_pooling` / `attention_mask` 属 transformers.js 实现内部、`MEMORY_VECTOR_THRESHOLD` / `vectorHit` 已被删除——已在文中就地标明出处与删除发生的提交 `47c31d7`（`git log -S` 可查）；② §11 归属表漏了 `src/background/tool-memory.js`（扩展端转发层，正是搬运本身的交付物）与压缩线的 `src/background/context-summarizer.js`。
-- 探针自身的可信度也做了负向对照：注入假标识符 → 判红 3 处，还原 → 判绿，md5 与备份一致。探针与落盘脚本都是临时件（`test-results-probes/` 不入库），跑完即删。
-
-收口计数（本轮实测）：agent 单测 **409/409**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。rag 集成与记忆冒烟本轮未重跑——它们验的是产品代码，而本轮 `git diff --stat` 只含 `docs/` 与 `CHANGELOG.md`。
-
-### 修复（记忆向量总开关：切换即持久化，不再被回填盖回去）
-> 用户实测报告：配置页把「记忆向量」总开关关掉，一刷新页面又变成开启，「好像这个开关我控制不了」。
-
-- **根因在扩展侧，不在 agent 侧**（先取证再动手）：读真实 `~/.ai-helper-agent/config.json` 看到 `memoryEmbedding.enabled` 仍是 `true` —— 那次「关闭」从未写进去；再用隔离 HOME 的探针实测配置层**完全能**把 true 改成 false，且只发 `{enabled:false}` 的最小体不会抹掉 `baseUrl` / `modelName` / `dimensions`，也不改动 `memoryModelKey` 指纹。真因是面板的**表单制**：开关 `change` 只改「已启用/已停用」文案、不落盘，必须再点「保存到代理」；而 `refreshMemoryPanel` 每次刷新/切 Tab 都 GET 配置回填，未保存的关闭态被真值盖回去。文案立刻变成「已停用」是在骗用户，也与仓库既有惯例（顶层开关 `change` 即持久化）相反。当初的设计文档**没写**这条开关的持久化时机，属实施时自选的表单制，不是按规格做错。
-- **改成切换即持久化**（`src/options/memory-panel.js`）：`change` → `POST /api/memory/embedding-config`，请求体**严格只有 `enabled`**；成功后只重拉状态卡（档位会从 `remote`/`local` 变 `none`，状态必须跟着收敛），**绝不调 `loadAll()`** —— 全量回填会把用户尚未保存的地址/模型草稿盖掉，这是本方案唯一的真陷阱。失败回滚勾选框并报错 toast（留下「界面已关、代理还开着」比原缺陷更坏）；写入在途锁住开关防连点，结束后必须解锁。
-- **门控原先漏掉了这颗开关**：`renderGate` 只禁三个按钮，代理未连接时开关照样能点，而点了必然落不了盘 —— 现在把两把锁（门控 + 写入在途）合并下发到开关本身。
-- **同一颗开关的第二个缺陷顺手修掉**：`options.html` 里那个标签挂着静态 i18n 键 `memoryPanel.disabled`，而语言切换只跑 `applyI18n()`、不重跑面板刷新 —— 勾选态还是「开」，文案却被硬写成「已停用」。改为标签文案由面板按开关态唯一渲染（`syncEnabledLabel()`），HTML 初值留空。
-- 新增中英 `memoryPanel.toggleOnSaved` / `toggleOffSaved` / `toggleFail` 三键（中英对齐由既有结构测试兜住）；新增 7 例行为钉 + 1 例结构钉。
-- **四条变异证明用例有牙**：改发全量体 → 2 红；成功后改走 `loadAll()` → 2 红；失败不回滚 → 1 红；门控不锁开关 → 1 红。逐条还原后 22/22 绿，`md5` 与备份一致。取证与变异用的临时件已删。
-
-收口计数（全部实测）：根 vitest **1314/1314**（+8）、agent 单测 **409/409**（agent 侧零改动，重跑只为确认没被牵连）、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
+**当日收口（全部实测）**：根 vitest **1340/1340**（88 文件）、agent 单测 **433/433**（含两套黄金评测）、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
 
 ## 2026-10-13
 
-### 变更（记忆入参校验：侧边栏自测报告的 D2/D3/D4 收口）
-> 用户在侧边栏让 AI 自测长期记忆后产出「长期记忆能力验证报告（第二轮）」，9 条用例 + 4 个已知缺陷。逐条对代码核验后本轮修 D2/D3/D4，D1 挂起等用户定检索取向。
+### 变更（记忆入参校验收口：D2/D3/D4 + 文案层测试补齐）
+> 侧边栏自测报告 9 条用例 + 4 个缺陷，逐条核验后修 D2/D3/D4；D1（标签硬过滤是否降为加分项）挂起等用户定取向。
 
-- **D3 无效 `type` 不再兜底成摘要**：`agent/src/memory/service.js` 原 `type === 'fact' ? facts : summaries` 会把任何非 `fact` 值（模型打错的 `note` / `Fact` / `fact1`）当摘要写入，并挤占 `maxSummaries = 20` 配额。现在 `MEMORY_TYPES` 白名单显式拒绝；`delete` 照旧不要求 `type`，未知 `action` 仍先走 `unsupportedAction`，不让类型校验抢去把错误换成误导性的 `invalidType`。
-- **D4 无效 `memoryType` 不再谎称「记忆库为空」**：原路径 `candidates = 0` → 返回空库文案，把参数错误伪装成数据状态。现在 `all / fact / summary` 之外直接报错，且**校验早于嵌入请求**——否则一次坏参数的检索会白打一发远端嵌入（钉住：断言注入的 `embedQuery` 调用次数为 0）。
-- **D2 `importance` 三套口径收到一处**：add 的 `importance || 5`（传 0 静默变 5）、去重分支的 `importance || duplicate.importance`（吞低值）、update 的 `!== undefined`（0 原样写入）统一为 `normalizeImportance()`：可解析数字钳到 1..10（区间依据取自 locales 的 `{importance}/10` 与注入侧阈值 8/6/5），不可解析**报错而不是写 NaN**（NaN 会毁掉价值排序与注入选择）。
-- **工具 schema 补边界**：`memory-tools.js` 的 `importance` 原先只有描述文字写着 1-10 而无 `minimum`/`maximum`（同仓 `media-tools.js` 有此惯例）。关键事实核对：全链路**没有任何地方按 schema 校验入参**（`tool-executor.js` 直接 `JSON.parse(arguments)` 交给 handler），所以 `enum` 只是给模型的提示——这也是报告 D2/D3/D4 在普通对话里就能触发、而非「手工构造请求才能触发」的原因。新增钉：schema 声明的区间必须与 service 钳制口径一致，描述里的数字与 `minimum`/`maximum` 不矛盾。
-- **本轮作废报告的一处归因**：D1 被归因为「多标签才触发」。实际 tags 是打分前的硬过滤，之后词面还要过 `isKeywordHit`、语义还要过 0.48 地板——两个硬门槛 AND 叠加，**单标签也能触发**。
-- **本轮自己的假绿灯（必须记下）**：落盘脚本把模板串 `${QJ}` 的一个 `$` 写丢，6 行 locale 文案里进了字面量 `{QJ}`，而当时 agent 单测 66/66 全绿。根因不是「运气差没进到」，而是**文案层完全没有测试覆盖**：service 测试的 `t` 是 stub（返回 key），校验分支只被验了「拒不拒」。补 `agent/test/unit/memory-validation-messages.unit.test.js`：用真实 i18n 渲染 + 给 service 注入真实 `t`（断言拒绝信息里能看到模型传来的原始值、渲染后不残留任何 `{xxx}` 占位符）+ 两份语言包 327 个叶子键的键集合与占位符集合一致。先跑出 4 红再修，修后 6/6。
-- 未做（需用户发话）：D1 的标签硬过滤是否降为加分项，属检索取向选择。
-
-收口计数（全部实测）：根 vitest **1306/1306**（86 文件，+3）、agent 单测 **387/387**（+17）、rag 集成（隔离部分）**24/24**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。`api.integration.test.js` 经静态核对不涉及 `/api/memory/*`，本轮改动与它无关，仍未实跑。
+- **D3 无效 `type` 不再兜底成摘要**：原 `type === 'fact' ? facts : summaries` 会把非 `fact` 值（模型打错的 `note` / `Fact` / `fact1`）当摘要写入并挤占 `maxSummaries = 20` 配额；现 `MEMORY_TYPES` 白名单显式拒绝（`delete` 照旧不要求 `type`，未知 `action` 仍先走 `unsupportedAction`）。
+- **D4 无效 `memoryType` 不再谎称「记忆库为空」**：`all / fact / summary` 之外直接报错，且校验早于嵌入请求（钉住注入的 `embedQuery` 调用次数为 0，坏参数不白打一发远端嵌入）。
+- **D2 `importance` 三套口径收到一处**：`normalizeImportance()` 统一 add 的 `|| 5`、去重的 `|| duplicate.importance`、update 的 `!== undefined`；可解析数字钳到 1..10，不可解析报错而不是写 NaN。`memory-tools.js` schema 补 `minimum`/`maximum` 并钉住「声明区间与 service 钳制口径一致」（关键核实：全链路不按 schema 校验入参，`enum` 只是给模型的提示）。
+- **文案层测试盲区补齐**：曾有落盘脚本把 `${QJ}` 的 `$` 写丢，6 行 locale 进了字面量 `{QJ}` 而单测全绿（service 的 `t` 是 stub）——补 `memory-validation-messages` 6 例：真实 i18n 渲染 + 拒绝信息可见模型传来的原始值 + 两份语言包 327 个叶子键键集与占位符集一致（先 4 红后 6/6）。
 
 ### 安全（集成测试硬编码了本机真实配对 token）
-> 上轮登记「agent 集成测试从未跑」后去核查运行条件时发现。属本轮最重要的改动，不是顺手清理。
+- `api.integration.test.js` 曾把本机配对 token 写成 `process.env.AGENT_TOKEN || '<64hex>'` 兜底值并入 git——该 token 是本地管理接口唯一鉴权凭据（可读写用户工作区、改配置、导知识库），**推送即进公开历史**；全盘比对 `pairings.json` 扫描确认只此一处。
+- 修：`resolveToken()` 只从环境变量或本机 `pairings.json` 取，两者都拿不到则在**发出任何请求之前** `exit(1)`；钉 3 条（集成目录不得出现 64 位 hex 字面量 / 不得出现真实 token / 无凭据时非零退出且输出不含连接类错误）。
+- **需用户动作**：已入历史的 token 未改写（需显式授权），要彻底失效需重新配对。
 
-- `agent/test/integration/api.integration.test.js` 把本机配对 token 写成 `process.env.AGENT_TOKEN || '<64hex>'` 的兜底值且已入 git（1 个提交含它）。该 token 是本地管理接口唯一鉴权凭据（持有者可读写用户工作区、改配置、导知识库），**仓库一旦推送即进公开历史**。全盘比对 `pairings.json` 真值扫描确认只此一个文件。
-- 修：`resolveToken()` 只从环境变量或本机 `~/.ai-helper-agent/pairings.json` 取，两者都拿不到则在**发出任何请求之前** `process.exit(1)`（旧行为是带着兜底值真的去连服务）。
-- 钉：`test/unit/agent-integration-token.unit.test.js` 三条——集成目录不得出现 64 位 hex 字面量 / 不得出现本机真实 token / 无凭据时非零退出且输出不含 `ECONNREFUSED`、`fetch failed`（最后一条才能区分「报错退出」与「带默认值去连」）。
-- **需用户动作**：已入历史的 token 未改写（需显式授权），且该 token 本身仍有效，要彻底失效需重新配对。
+### 技术债收口（清掉五项既有欠账）
+- **`toolbox` / `knowledge` 的 hash 直达不刷新**：刷新迁到 `tabRefreshers` 注册表（**注册须早于 `activateByHash()`**，已加字符偏移断言），删除双 click 监听；真实扩展冒烟 `_tab-refresh-smoke.mjs` 17/17。
+- **根套件 2 处 `document is not defined` 噪音**：`updateToolsToggleState()` 入口加 DOM 守卫，新增 `unhandledRejection` 测试精确抱住那 2 条。
+- **单测写用户真实目录**：`rag-ingest-path-sandbox` 改为先覆盖 `process.env.HOME`（含 `USERPROFILE`）再动态 import 被测模块，新增两条隔离生效判据。
+- **agent 代码纳入 eslint**：ignores 从整块 `agent/**` 收窄到只排 `agent/node_modules/**` 与 `agent/dist/**`；纳入前实扫 89 个文件 0 error 0 warning 并用探针正反验证。
+- **agent 集成测试首跑**：四个 `rag-*.integration.test.js` 自带 `mkdtempSync` 隔离，**24/24 通过**；`api.integration.test.js` 会改运行中 agent 的配置，**仍未跑、需用户点头**。
 
-### 技术债收口（本轮清掉五项既有欠账）
+### 变更（记忆向量配置界面：四项体验反馈 + 数据污染事故修复）
+- **状态卡三态（加载中 / 成功 / 失败）**：`agentApi` 原先丢掉状态码、404 与「尚未请求」合并成同一句「读取中…」（永久读取中）；现在 `toolbox-shared.js` 给解析对象附 `data.httpStatus`（避开响应体同名字段），404 → 「重启代理」提示、其余附真实错误、未连接另给 `statusOffline`；`loadAll()` 拆 cfgTask / statusTask 两个并发且各自独立降级的请求（状态读失败不得拖垮配置回填）。
+- **两颗同名不同物的保存按钮改名区分**：面板那颗写 agent `config.json`（页面底部 `#saveBtn` 写扩展自身设置）——改名「**保存到代理**」+ 职责说明行 `.memory-scope-hint`（显式写「代理（本地 agent 服务）」避开术语冲突）。
+- **修「刷新配置页后记忆 Tab 跳回基础」**：根因 `validTabs` 硬编码白名单漏了新增的 `#memory`；刷新收敛成 `tabRefreshers` 注册表并在 `switchTab()` 末尾派发（覆盖按钮 click / hash 直达 / `optionsInitialTab` / `SWITCH_TAB` 四条激活路径，**注册须早于 `activateByHash()`**）。
+- **记忆弹层新增「＋」跳配置快捷入口**：`#memoryLimitConfigEntry`，图标与 MCP/Skill 那颗逐字一致，走 `OPEN_OPTIONS_PAGE` + `hash: 'memory'`。
+- **英文整排 Tab 省略号**：实测内宽 540px vs 英文 8 个 Tab 自然宽 550px，仅差 10px 致整排截断；去掉 `min-width:0` + `.tab-nav` 加 `flex-wrap` + padding 收窄，任何宽度零截断。**旧溢出探针记录作废**（`setContent()` + file:// 是 `about:blank`、样式根本没加载，属假绿灯；改用仓库内 file:// 夹具 + `goto` 重测，先断言 `cssApplied`）。
+- **事故（上一轮测试夹具写坏用户真实数据，本轮修复）**：`withService` / `withRouter` 只注入 `filePath`，`embeddingConfigProvider` 默认读用户真实 `config.json`、向量落真实 `VECTORS_FILE`——用户 `memory-vectors.json` 41 条被覆盖成 2 条测试条目（单条实打真 key 联网 827ms；真源 `global-memory.json` 未碰，属派生缓存）；经用户授权 `reindex` 两次重建（均 `indexed:41 failedBatches:0`）+ 清 7 条孤儿后恢复，跑全量单测确认该文件 mtime 与字节数前后逐字相同。防复发：`memory-test-isolation` 33 例扫全部测试源码，要求五个注入点（`filePath`/`vectorsFilePath`/`embeddingConfigProvider`/`tierResolver`/`embedderFactory`）齐备，当场拓出第三处（`memory-recall-eval` 缺 `vectorsFilePath`）；`withVectorService` 补默认抛错的 `embedderFactory`。反向验证：退回三个旧夹具 → 结构钉 3 红且碎块用例仍联网回红；恢复后 369/369。
+- **测试**：改写/新增 22 例（状态卡三态 5 + 快捷入口结构钉 4 + 结构钉 +4 + 隔离钉 33）；常驻探针 `_tab-nav-overflow` 16/16、`_memory-config-entry` 13/13、端到端 14/14。
 
-- **`toolbox` / `knowledge` 的 hash 直达不刷新**（上轮只记录不修的那两项）：刷新从按钮 click 迁到 `tabRefreshers` 注册表，与 `memory` 走同一条 `switchTab` 派发，并删除两个 click 监听避免双触发。两个 refresh 均为自包含实现（只读 storage 与静态 DOM），因此早于各自 `init*()` 被调安全；外层包 `.catch(() => {})` 防未处理 rejection。钉：`memory-panel-structure.unit.test.js` 新增一条断言**三个注册行字符偏移均早于首个 `activateByHash();`**。真实扩展冒烟 `_tab-refresh-smoke.mjs` 17/17（四 tab 各自 hash 直达：激活正确、面板非空壳、切换正常、零脚本错误）。
-- **根测试套件里那 2 处 `document is not defined`**：`updateToolsToggleState()` 被模块初始化的 `.then` 回调调用，node 环境无 DOM 时抛错且游离在断言之外（套件绿但每次埋两条噪音）。新增 `test/unit/tool-panel-no-dom-import.unit.test.js` 监听 `unhandledRejection` 动态导入本模块，**精确抱住那 2 条**；修法为函数入口 `if (typeof document === 'undefined') return;`。
-- **单测往用户真实目录写文件**（上轮向量泄漏的同因第二类风险）：`agent/test/unit/rag-ingest-path-sandbox.unit.test.js` 的「应被放行」用例原先用真实 `~/.ai-helper-agent/workspace` 造路径。因 `AGENT_DIR` 在 `config.js`/`security.js` 顶层由 `homedir()` 求值且无环境变量开关，改为先覆盖 `process.env.HOME`（含 `USERPROFILE`）再**动态 import** 被测模块。新增两条隔离生效的判据，防止哪天删掉覆盖后静默退回写真实目录。
-- **agent 代码纳入 eslint**：`eslint.config.js` 的 ignores 从整块 `agent/**` 改为只排除 `agent/node_modules/**` 与 `agent/dist/**`，`npm run lint` 改为 `eslint src/ agent/`。纳入前先排假绿：实扫 89 个文件 0 error 0 warning，并用 `debugger` 探针正反两次证明扫描确实生效。
-- **agent 集成测试首跑**：四个 `rag-*.integration.test.js` 实测自带 `mkdtempSync` 隔离（不碰用户数据、不打运行中的 agent），首次运行 **24/24 通过**；`api.integration.test.js` 会改运行中 agent 的配置与文件系统，**仍未跑，需用户点头**。
+### 新增（记忆向量配置界面 + 结构契约钉）
+- **options 页新增「记忆」Tab**（`src/options/memory-panel.js`）：开关语义召回、远端/本地单选、读写 `memoryEmbedding` 配置、探活并自动回填维度、保存、重建向量索引；配置真值仍只在 agent `config.json`，扩展端全部经 HTTP 打既有端点（`/api/memory/embedding-config`・`test-embedding`・`reindex`），**agent 业务逻辑零改动**。
+- **新只读端点 `GET /api/memory/vector-status`**：`{indexed, total, storedModelKey, currentModelKey, stale, tier}`；**空库不算陈旧**、`tier === 'none'` 照返 200、非 GET 落 404；刻意不含 `overWindow`（算它要 `_getPipeline()` 会触发模型下载，只读查询不得有副作用）。
+- **提交体守「缺席」语义**：看不见的字段从请求体缺席、绝不交空值或 0（把已存 512 覆盖成 0 会改指纹、白逼一次重建）；apiKey 留空=不修改、明文永不回显；本地档隐藏探活按钮（冷启动实测 106 秒）改指路「保存后直接重建」；重建走确认弹窗（本地档 41 条约 23 分钟 / 远端约 2 分钟）并如实展示 `failedBatches`/`overWindow`，不锁按钮防并发双跑。
+- **结构契约钉**（`memory-panel-structure` 4 例）：直接读 `options.html` 与两份语言包——Tab 已挂载、15 个 id 逐个存在、mode 值与 agent 白名单逐字一致、`memoryPanel` **中英键集完全相等**（仓库史上无 i18n parity 测试，就地补上）。
+- **测试**：新增 20 例（agent `memory-service` +3 / `memory-routes` +3 / 扩展端结构钉 4 + 行为钉 10）；反向验证（stash 退回实现分别 3 红 / 2 红 / 10 红且红因准确，pop 后转绿）。
+- **更正（spec 自审）**：「用户改模型只能改文件再重启 agent」不成立——`loadConfig()` 按文件 mtime 缓存、`getProvider()` 又以 `memoryModelKey` 为键，手改即生效；界面价值是**可发现、可验证、防填错、防漏重建**。样式写 `src/options/styles.css`（options.html 只加载它）；计划偏差：Task 1 基线实测 53 例、「开启态空库」在真实系统不存在（store 会懒补向量）、去掉了两个只写不读的模块变量、样式改用项目实际调色板。
 
-收口计数（全部实测）：根 vitest **1303/1303**（86 文件）且不再报 unhandled rejection、agent 单测 **370/370**、rag 集成 **24/24**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
+### 变更（本地档 512 token 截断从静默转为可见）
+- **真缺陷**：`feature-extraction` pipeline 内部带 `truncation: true` 且 `tokenizer.model_max_length = 512`；超出部分**根本不进向量且原先零信号**。走真实接缝实测真实库 41 条：**13 条超窗**，最大一条 1111 token 只吃进 512（**覆盖率 46%**），全库 token 中位数 385；知识库侧不受影响（默认 `chunkSize: 400` 已在窗口内）。
+- **本轮只赢在「可见」**：`local.js` 新增 `countTokens(texts)` → `{counts, window}`（关键：必须带 `truncation: false`，跟 pipeline 口径只会永远数到 512）；`EmbeddingProvider` 以 `tokenCounter` 暴露能力、**远端档置 null**（不得臆造窗口）；`backfillVectors` 响应出 `overWindow: {count, window, ids}` + 进程日志点名；计数抛错不拖垮索引，零超窗报 `count: 0`。
+- **未采纳（已拍板不做）**：分段索引（需改 id 语义与删除传播、强制全量重建）与「窗口内保头尾」压缩（同样触发重标定）——本轮不改向量内容 → **分布未变，0.48 地板继续有效**。
+- **已知噪声（非缺陷）**：同条记忆向量随分批组合漂移，实测逐条 vs 同批 cos 0.9940–0.9974，**与同批有无长文本无关**，属 `dtype: 'q8'` 量化核数值噪声（mask 逐位置乘、按 mask 计数求平均均正确），只能靠换精度缓解。
+- **测试**：新增 5 例（超窗进响应与日志 / 零超窗报 0 / 无能力不造字段 / 计数抛错不拖垮索引 + 能力接缝钉：本地有 `tokenCounter`、远端 null）；反向验证 stash 退回三处实现 3 红，pop 后 71/71；接缝验证在 `/tmp` 模型缓存副本上跑，**未写用户真实数据目录**。
 
-### 变更（记忆向量配置界面：四项体验反馈 + 一次数据污染事故的修复）
-> 用户实机使用后回报四项体验问题，另在收口时发现上一轮留下的 agent 测试夹具会写坏用户的真实向量缓存（见本节末「事故」）。
+### 变更（记忆语义档改名次融合 RRF + 三条错定作废）
+- **融合从「分数相加」改为「名次融合（RRF）」**：新增 `agent/src/memory/fusion.js`（纯函数、无 IO），关键词路与语义路各排各的名次，按 `1/(60 + 名次)` 相加后重排。旧公式把不可比的两套刻度相加（41 条 cos 全落 0.26~0.64 被 `round(cos × 4)` 压成 4~6 三个整数 → 大量并列由词面打破 → 目标纯 cos 排第 1、融合后掉出前 12）。
+- **语义采信门改为「查询级落点地板 + 条目级相对落差 + 条数封顶」**：`SEMANTIC_QUERY_FLOOR = 0.48` / `SEMANTIC_MARGIN = 0.05` / `SEMANTIC_MAX_TAKE = 2`。绝对 cos 条目级不成立（≥0.3 放过 40/41、≥0.45 仍放过 20/41），但查询级 top1 可分（无关 0.3340~0.4506 vs 相关 0.5467~0.6353，间隙 0.096）。删除 `MEMORY_VECTOR_THRESHOLD` 与 `vectorHit` 旁路（它让语义命中绕过关键词门槛，A 档降噪成果只在向量关闭时成立）；`vectorMatched` 语义改为「被语义路采信的条数」（上限 2），转发层 `...rest` 透传零改动。
+- **真机复测（41 条真实库，测完收回 `enabled=false`）**：4 条无关查询**全部 0 返回**（首要判据达成）、填满 limit 0 条、A 档开关前后逐字一致 `1/0/0/1/1`、4 条换说法查询目标均命中；目标名次之和 8 > 计划的 6——2 名损失全部来自词面路（用纯 cos 单通道理想值考核双通道融合属口径错定，取向转计划五）。
+- **配套修复**：① 本地档嵌入长度截断取消（1900 字实测零失败；计划所依据的「超长报 400」实为**远端**模型证据，张冠李戴）；② 查询前缀回落权修复——`queryPrefix` 空串被 `??` 判为非 nullish，本地 BGE 前缀永远加不上，现空白前缀删键还权（实测 provider 日志 `queryPrefix: off` → 修复后生效）；③ `reindex` 响应带 `lastError` + 日志记全量批失败。
+- **三条错定作废**（取证走了另一条路导致的错定，原文已就地改写）：①「`local.js` 未开 truncation → position id 越界」→ `feature-extraction.js:97` 就是 `{padding:true, truncation:true}`，实测 `input_ids dims=[1,512]`，1902 是独立 `tokenizer.encode()` 数的非真实路径；②「mean pooling 未用 attention mask」→ 已安装入口逐位置乘 mask、除 mask 计数；③「有效信息窗口约 1200 字」→ `cos(全文, 前 1200 字) = 1.0000` 是两者都被截到同一前 512 token。当年取消截断的决定正确，但理由是错的。
+- **工程质量**：新增 `memory-fusion` 12 例（含一条「不许把分离度加回来」钉）与 **B 档效果评测**（真实 bge-m3 生成的 7 文档 + 8 查询黄金向量，128KB；测试内 `embedDocuments` 直接抛错 → 零联网复现真实 cos 分布形状）；常量经「gap × margin × take」与「abs × margin × take」两轮网格标定（分离度门被数据否定）；回归钉反向验证：旧实现上 3 红、pop 后转绿；A 档评测 10 例零漂移。**已知未修（如实记录）**：agent 集成测试 84/86（2 条既有失败，与本轮无关）；agent 代码当时实际未被 lint（已由同日「技术债收口」修掉）。
 
-- **状态卡不再把「读失败」伪装成「读取中」**（上一轮的缺陷）：`agentApi` 原先 `return resp.json()` 丢掉状态码，`renderStatus(null)` 又把 404 与「尚未请求」合并成同一句 `statusLoading` → 永久「读取中…」。现在 `toolbox-shared.js` 给解析后的对象附 `data.httpStatus`（**字段名不用 `status`**，避开响应体已有的同名字段，与 `background/local-agent-client.js` 同一惯例；改前 grep 核过 43 个调用方无整体展开/回塞），面板改三态：加载中 / 成功 / 失败（`httpStatus === 404` → 提示「当前代理版本没有这个状态接口，请重启代理后再看」，其余失败附 `返回信息: <code>` 真实错误），未连接另给 `statusOffline`，不谎称读取中。`loadAll()` 拆成 cfgTask / statusTask **两个并发但各自独立降级**的请求：状态读失败不得拖垮配置回填（先改成了串行 await，与既有「并行拉取」语义相背，已改回）。
-- **两颗同名不同物的保存按钮改成可区分**：底部 `#saveBtn` 写 chrome.storage 扩展设置，面板那颗写 agent 的 `config.json`——不是重复功能，故不删除而是**改名 + 加职责说明行**：按钮文案改「**保存到代理**」（用户指定措辞）/ `Save to Agent`，面板新增 `.memory-scope-hint`（「本 Tab 的配置写入代理（本地 agent 服务）的 config.json；页面底部的「保存」只存扩展自身设置，两者互不影响」）。**术语冲突已记录**：仓库 zh 里「代理」同时也是 `data-tab="agent"` 那个 Tab（`tabAgent`）的名字，说明行因此显式写成「代理（本地 agent 服务）」降低歧义。
-- **修掉「刷新配置页后记忆 Tab 跳回基础」**（用户描述为「那个 G 的 tab 不正常」，即「记」）：根因是 `src/options/index.js:55` 的 `validTabs` 是硬编码白名单，上一轮新增记忆 Tab 时忘了同步 → `#memory` 被判非法 → 掉回 HTML 默认 active 的「基础」。同时把刷新收敛成 `tabRefreshers` 注册表并在 `switchTab()` 末尾派发：激活一共有四条路径（按钮 click、hash 直达、`optionsInitialTab`、`SWITCH_TAB` 消息），刷新若只挂在按钮 click 上，F5 与从侧边栏跳进来这两条会停在空数据。**注册必须早于 `activateByHash()`**，否则深链接那一条仍漏。
-- **记忆弹层新增「＋」跳配置快捷入口**：`side_panel.html` 标题行右侧新增 `#memoryLimitConfigEntry`，**图标与 MCP/Skill 那颗逐字一致**（同一 `M12 5v14` / `M5 12h14` 加号、22×22、同一 hover 色），走同一通道 `OPEN_OPTIONS_PAGE` + `hash: 'memory'`。定位用 `margin-left:auto; flex:none`，不抢 `stopPropagation`（它在 dropdown 内部，文档监听靠 `contains(e.target)` 不会关掉弹层）。中英各新键 `memory.configEntry`。
-- **英文整排 Tab 省略号**：实测容器内宽 540px，英文 8 个 Tab 自然宽合计 **550px**，只差 10px 就让整排全部截断 2–4px（中文 526px 放得下，所以只在英文复现）。修法不是继续缩字号而是**去掉 `min-width:0` + 给 `.tab-nav` 加 `flex-wrap:wrap` + `padding: 10px 6px → 10px 4px`**：`min-width:0` 允许按钮缩到文字以下，代价就是整排省略号；现在宽窗单行、真放不下才换行，任何宽度零截断。
-
-### 事故（上一轮留下的 agent 测试夹具写坏用户真实数据，本轮修复）
-- **泄漏方式**：`memory-service.unit.test.js` 的 `withService` 与 `memory-routes.unit.test.js` 的 `withRouter` **只注入了 `filePath`**。`createMemoryService` 的 `embeddingConfigProvider` 默认就是 `getMemoryEmbeddingConfig` → `loadConfig()` 读用户真实 `~/.ai-helper-agent/config.json`，`vectorsFilePath` 缺省 → facade 默认落 `VECTORS_FILE`。本机一开记忆向量，这些“单测”就会**拿真 key 联网**（实测单条耗时 827ms）并把向量**写进用户真实缓存**。
-- **后果（实测）**：用户 `memory-vectors.json` 的 41 条被覆盖成 2 条测试条目（`upsertVectors` 在 `cur.modelKey !== modelKey` 时整体作废旧向量）。真源 `global-memory.json` **未被碰**（mtime 20:22、41 条完好），属派生缓存，可重建。
-- **恢复**：经用户授权后调 `POST /api/memory/reindex` 两次重建（均 `indexed:41 total:41 failedBatches:0`），再用 `dropVectors` 清掉测试残留的 7 条孤儿；端点实测 `GET /api/memory/vector-status` 回 `200 {indexed:41,total:41,stale:false,tier:"remote"}`。**泄漏已堵的硬证据**：修复后跑全量 agent 单测，该文件的 mtime 与字节数跑前后逐字相同（`14:04:55.328Z` / 1043714B）。
-- **上一轮的记录在此作废一条**：`withStatusRoute` 的注释当时已写明「复用 withRouter 会读真实缓存」，但**只隔离了新夹具、没回头修老 harness**，属于已知风险未堵。
-- **防复发**：新增 `agent/test/unit/memory-test-isolation.unit.test.js`（33 例）——**扫全部 `test/unit/*.test.js` 源码**，按括号配对取出每个 `createMemoryService(...)` 的实参，要求五个注入点（`filePath`/`vectorsFilePath`/`embeddingConfigProvider`/`tierResolver`/`embedderFactory`）齐备，并禁 `vectorsFilePath: VECTORS_FILE` 与无参 `createVectorStoreFacade()`。它当场又拓出第三处：`memory-recall-eval.unit.test.js` 缺 `vectorsFilePath`（靠 `enabled:false` 遮蔽，结构上仍是开的）。`withVectorService` 补上**默认抛错的 `embedderFactory`**（写在 `...opts` 之前，用例自带的照旧覆盖）：忘了供假 provider 应当当场炸，而不是静默回落去联网。
-- **反向验证**：`git checkout HEAD --` 临时退回三个旧夹具文件 → 结构钉 3 红（逐个点名缺哪个注入点）且碎块用例回红（569ms，仍在联网）；恢复后 369/369 绿。**意外收获**：`只碰到 2 字碎块的条目不当成命中` 这条红不是召回实现被改坏，而是断言从「纯词面通道」漂成了「词面 + 语义」双通道——隔离回 A 档后它**本就该绿**（临时脚本实测 `tier=none total=1`）。
-- **未采纳**：不动 `withStatusRoute` 的现有形态，不改 `RRF` 实现（碎块 vs 语义 top1 的名次取向仍是上一轮已登记的遗留项，本轮只消除测试环境的干扰）。
-
-### 工程质量与测试（四项体验反馈）
-- 新增/改写 22 例：`memory-panel.unit.test.js` 状态卡三态 describe 5 例 + harness 加 `nextStatus`/`statusThrows`；新文件 `memory-popup-quick-entry.unit.test.js` 4 例结构钉（按钮位置/type、＋ 图标与 manage 逐字一致、`OPEN_OPTIONS_PAGE` hash、中英 `configEntry`）；`memory-panel-structure.unit.test.js` +4 例（`validTabs` 子集钉、刷新收敛钉、保存文案/说明行钉、三态文案键钉）；agent 侧 `memory-test-isolation.unit.test.js` 33 例。
-- 计数（均实测）：根 vitest **1298/1298**（84 文件，上一节 1285 + 13）、agent 单测 **369/369**（336 + 33）、`memory-service` **56/56**、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对 9 个改动文件零输出。
-- **常驻探针三件**（`test-results-probes/`，已被 .gitignore 盖）：`_tab-nav-overflow.mjs` **16/16**（从 `options.html` + 两份语言包解析真实标签，8 宽度 × 中英零截断零横向溢出）；`_memory-config-entry.mjs` **13/13**（加载真实 dist 扩展：＋ 在 360px 弹层里 22×22、贴标题行右、与文字同行不截断，点击真打开 options 并停在 `#memory`，未连代理时状态卡是「代理未连接」而非「读取中」）；临时端到端探针 **14/14**（8 条 Tab 的 F5 全中、深链接回填、404 → 旧代理提示且不含「读取中」、vw=1440 单行零截断）。
-- **上一轮的溢出探针记录作废**：当时用 `page.setContent()` + file:// 样式表，那其实是个 `about:blank` 文档、**样式根本没加载**（本轮前置断言 `cssApplied=false` 暴露），那次「全绿」结论不成立。本轮改用仓库内 file:// 夹具 + `goto` 重测，并把「先断言样式确实生效」写进探针；`git stash` 退回旧样式后同一探针退出码 1（en vw=1440 整排截断），新样式 0。
-- **已知非全绿（与本改动无关）**：根 vitest 仍有 **2 处既有 unhandled rejection**（`apply-rag-tool-introduction.unit.test.js` 的 `document is not defined`，源头 `src/side_panel/tool-panel.js:921`）。已 `git stash push --` 本次全部改动后单跑该文件复现同一 2 错（1 文件 passed / 9 例全过但带 2 错），确认在干净 main 上就存在，本轮不背这个改动。
-- **未跑项如实记录**：`agent/test/integration/*.test.js` 仍未运行（需连一个真实在跑的 agent，会打到用户正在运行的进程）；本轮用户授权的是一次 `reindex`，不是重启。
-
-### 新增（记忆向量配置界面）
-- **options 页新增「记忆」Tab**（`src/options/memory-panel.js`）：开关语义召回、远端/本地单选、读写 `memoryEmbedding` 配置、探活并自动回填维度、保存、重建向量索引。配置真值仍只在 agent 的 `config.json`，扩展端全部经 HTTP 打既有端点（`/api/memory/embedding-config`、`/api/memory/test-embedding`、`/api/memory/reindex`），**agent 业务逻辑零改动**。
-- **新只读端点 `GET /api/memory/vector-status`**（`service.vectorStatus()` + `handleEmbeddingEndpoints` 分支）：`{ indexed, total, storedModelKey, currentModelKey, stale, tier }`。`stale = Boolean(storedModelKey) && storedModelKey !== currentModelKey`，**空库不算陈旧**（首次启用是正常态）；`tier === 'none'` 照返 200（「关着但有陈旧残留」是要看到的状态）。走 GET 而非 `ROUTE_METHODS`（后者只收 POST 业务动作）。路由上非 GET 落回通用分发（404），不新增业务路由。
-- **刻意不含 `overWindow`**：拿超窗计数要 `await _getPipeline()`，那会**触发模型下载**——一个只读状态查询不得有这种副作用，所以 `overWindow` 仍只在 `reindex` 响应里给。
-- **本地档隐藏探活按钮**：探活上限恒 `DEFAULT_EMBEDDING_TIMEOUT_MS = 8000`，而本地档首次调用要先加载模型（实测首批冷启动 106 秒）——与其给一个必定红色的「超时」，不如不给按钮，改由说明文案指路「保存后直接重建」。
-- **提交体守「缺席」语义**（表单核心规则，`collectPayload()`）：看不见的字段从请求体里**缺席**，绝不交空值或 `0`。因为 `memoryModelKey = mode|modelName|dimensions` 且 dimensions 取 `Number(d) > 0 ? floor : 0` —— 把已存 512 覆盖成 0 会改变指纹、界面冒报 `stale`、逼用户做一次无谓重建；`apiKey` 留空同理（agent 语义：不传即不改，且明文 key 永不回显）。
-- **重建走确认弹窗**（`showCustomConfirm`），提示里写实测耗时（本地档 41 条约 23 分钟 / 远端约 2 分钟）——`agentApi` 是裸 fetch 无超时，长任务期间不锁按钮会并发两个全量重建。结果区如实展示 `indexed/total`、`failedBatches`、`overWindow`（藏掉批失败与超窗等于骗人），`skipped` 说成「向量档未启用」而不是报错。
-- **i18n 中英各 45 键齐补**（`memoryPanel:`）；面板沿用 knowledge 的既有类（`tab-panel`/`form-group`/`global-toggle`/`kb-vec-test-row`/`toolbox-add-btn`），新增 `.memory-status*` 与 `.memory-gate*` 写在 `src/options/styles.css`（options.html 只引用该文件，写根 `styles/styles.css` 不生效）。
-
-### 新增（结构契约钉：弥补仓库无 i18n parity 测试）
-- `test/unit/memory-panel-structure.unit.test.js`（4 例）直接读 `options.html` 与两份语言包文本：Tab 已挂载、面板所需 15 个 id 逐个存在、mode 单选两个值与 agent 白名单逐字一致、`memoryPanel:` **中英键集完全相等**。行为测试用的是自拷 DOM 夹具，真实页面漏 id 它看不见；中英漏键仓库历史上没有 parity 测试，本例就地补上这一类风险。
-
-### 工程质量与测试（记忆向量配置界面）
-- 新增 20 例：agent `memory-service` +3（条数与换模型 stale、空库不算陈旧、向量档关着照返统计）、agent `memory-routes` +3（GET 合法 200、stale 透传、非 GET 落 404）、扩展端结构钉 4 + 行为钉 10。
-- 计数（均实测）：`memory-service` **56/56**（基线 53 + 3）、`memory-routes` **15/15**（基线 12 + 3）、agent 全量单测 **336/336**、冒烟 **21/21**、根 vitest **1285/1285**（83 文件，本次 +14）、`npm run build:silent` BUILD_SUCCESS、`npx eslint` 对新增/修改的扩展端文件零输出。
-- **反向验证**：Task 1/2 分别 `git stash` 退回 `service.js` / `routes.js` 实现后见红（3 红 / 2 红）且红因准确（`svc.vectorStatus is not a function` / `statusCode 404 ≠ 200`），pop 后转绿；Task 4 stash 退回 `memory-panel.js` 空壳后 10 例全红。全部 agent 测试用 `mkdtempSync` 临时目录 + 注入 `embeddingConfigProvider` / `tierResolver` / `embedderFactory`，**零联网、零下载模型、不碰 `~/.ai-helper-agent`**。 —— **本句末段为错定**（已由同日「事故」节推翻）：只适用于 `withVectorService` 与 `withStatusRoute` 两个新夹具，`withService` / `withRouter` / `memory-recall-eval` 三处开的是真网、写的是用户真实向量缓存，本轮已修。
-- **tab 栏溢出探针**（用完即删）：第 8 个 Tab 加入后，静态复刻真实 `styles.css` 跑 8 个宽度 × 中英，`tab-nav` 无溢出、页面无横向滚动、无一个按钮文案被省略号截断（沿用上一轮 `min-width:0` + 窄屏断点的修复，本次无需再改）。 —— **本条结论作废**：探针用的 `setContent()` + file:// 样式表在 `about:blank` 下根本不加载样式，那是一次假绿灯；英文整排在真实页面上是截断的，已由同日上方「四项体验反馈」节的 `flex-wrap` 修复与重测探针处理。
-- **未跑项如实记录**：`agent/test/integration/*.test.js` 本次未运行——它需连一个真实在跑的 agent（`127.0.0.1:18910` + token），会打到用户正在运行的进程上；新端点的影响面已由 `memory-routes` 单测 + 冒烟覆盖。
-
-### 更正（记忆向量配置界面：spec 自审抓到的错话）
-- **「用户改模型只能改文件再重启 agent」不成立**：`agent/src/config.js:116-119` 的 `loadConfig()` 按文件 **mtime** 缓存，手改 `config.json` 即时生效；`service.js:73 getProvider()` 又以 `memoryModelKey(cfg)` 为缓存键，改模型会自动重建 provider。因此这个界面的价值是**可发现、可验证、防填错、防漏重建**，不是「免重启」（spec 已就地改写）。
-- **样式文件归属**：spec 初稿写 `styles/styles.css`，而 `options.html:824` 只加载 `src/options/styles.css`，写错位置不会生效。
-- **计划执行偏差（详见 `docs/superpowers/plans/2026-10-13-memory-embedding-config-ui.md` 末尾「执行记录」）**：Task 1 基线实测 **53 例**（计划写的 71 为错定）；Task 1 第二条用例前提修正——向量档开着时 `store()` 会 fire-and-forget **懒补一个向量**，所以「开启态空库」在真实系统里不存在，该用例必须同时供上 `tierResolver: () => 'none'`；Task 4 实现去掉了两个只写不读的模块变量（`busy` / `cachedConfig`，锁按钮以 DOM 状态为准）；新增样式改用项目实际调色板（options 页无 CSS 变量也无暗色模式，`var(--text-secondary, #666)` 这类写法只会退成硬编码值）。
-
-### 新增（本地档嵌入静默截断转为可见）
-- **真缺陷：本地档在 512 token 处静默截断**。`feature-extraction` pipeline 内部带 `truncation: true`，而 `Xenova/bge-small-zh-v1.5` 的 `tokenizer.model_max_length = 512`：超出部分**根本不进向量且原先零信号**。走真实接缝（`toEmbeddingProviderConfig` → `EmbeddingProvider.tokenCounter` → `memorySearchText`）实测真实库 41 条：**13 条超窗**，最大一条 1111 token 只吃进 512（**覆盖率 46%，599 token 直接丢弃**），全库 token 中位数 385。知识库侧不受影响（默认 `chunkSize: 400` 已在窗口内）。
-- **本轮只赢在「可见」**：`agent/src/rag/embedding/local.js` 新增 `countTokens(texts)` → `{ counts, window }`（关键：必须带 `truncation: false`，跟着 pipeline 的口径只会永远数到 512）；`EmbeddingProvider` 以 `tokenCounter` 暴露能力，**远端档置 null**（厂商截断行为从返回的向量里看不出来，不得臆造一个窗口）；`backfillVectors` 响应新增 `overWindow: { count, window, ids }` 并向进程日志点名（`[Memory] N items exceed embedding context window ...`）。检测按能力探测而非 tier 判；计数抛错/超时一律不报，**不得因此把索引报成失败**；零超窗时报 `count: 0`（与「无从判断」区分）。`POST /api/memory/reindex` 原样透传，扩展端零改动。
-- **未采纳的两个选项**（均已向用户列出并拍板不做）：分段索引（一条多向量、需改 `vectors.js` 的 id 语义与删除传播、强制全量重建、还得重标定 0.48 地板）与「窗口内保头尾」压缩（同样触发重标定）。本轮不改向量内容 → **分布未变，上一节标定的 0.48 地板继续有效**。
-- **已知噪声（非缺陷）**：同一条记忆的向量确实随分批组合漂移，但不是 mask 的问题（`mean_pooling` 逐位置乘 mask、按 mask 计数求平均）：实测逐条 vs 同批 cos 0.9940–0.9974（元素级最大差 ~1e-2），**与同批有无长文本无关**，短条目最明显——属 `dtype: 'q8'` 量化核的数值噪声，只能靠换精度缓解。
-
-### 工程质量与测试（本地档截断可见化）
-- 新增 5 例：`memory-service` 4 例（超窗进响应与日志・零超窗报 0・无能力时不凭空造字段・计数抛错不拖垮索引）+ `memory-embedding-config` 1 例**能力接缝钉**（真 `EmbeddingProvider`：本地档有 `tokenCounter`、远端档为 null）。
-- 计数（均实测）：两个改动文件 **71/71**；`memory-*` **155/155**（上一节 150 + 5）；agent 全量单测 **330/330**（上一节 325 + 5）；冒烟 **21/21**；`npm run build:silent` BUILD_SUCCESS。
-- **反向验证**：`git stash` 退回 `service.js` / `embedding/index.js` / `embedding/local.js` 三处实现后 71 例中 **3 红**（两条行为钉 + 接缝钉；两条反向守卫钉本来就应绿，实现前即通过），pop 后 71/71。真实接缝验证在 `/tmp` 模型缓存副本上跑（`AI_HELPER_RAG_ROOT` 重定向），**未写用户真实数据目录**。
-
-### 更正（作废同日上一节的两条错记录）
-> 下列两条为**取证走了另一条路**导致的错定，原文已在本文件同日「记忆语义档改排名融合」小节就地改写。
-
-- **错定 ①**：「`local.js` 未开 truncation → 1900 字被喂 1902 token，position id 越界」。**不成立**：`src/pipelines/feature-extraction.js:97` 就是 `{ padding: true, truncation: true }`；经真实 pipeline 实测 1852 字条目 `input_ids dims = [1, 512]`。当时的 1902 是用独立的 `tokenizer.encode()` 数的，**那不是真实调用路径**。
-- **错定 ②**：「mean pooling 未使用 attention mask」。**不成立**：已安装入口 `dist/transformers.node.mjs:14888` 逐位置乘 mask、除 mask 计数。真正存在的只是上面那条 q8 量化数值噪声（以及被误归因的 512 token 截断）。
-- **错定 ③**：「本地模型有效信息窗口约 1200 字」。**不成立**：`cos(全文, 前 1200 字) = 1.0000` 的真正原因是两者都被截到**同一个前 512 token**；那组数据从一开头就是「存在 512 token 截断」的证据。当年据此取消截断的**决定仍然正确**（库已在 512 token 截，按 400 字再截只是把同一刀往前推），但当时给的理由是错的。
-
-### 变更（记忆语义档改排名融合）
-> 本节**作废**同日「长期记忆语义召回通道」中「两路计分同尺」一条的实现描述：`+3 + round(cos × 4)` 与绝对余弦阈值已退场。
-
-- **融合从「分数相加」改为「名次融合（RRF）」**：新增 `agent/src/memory/fusion.js`（纯函数、无 IO），关键词路与语义路各排各的名次，按 `1/(60 + 名次)` 相加后重排。旧公式把不可比的两套刻度相加（关键词是 content+3/title+2/tags+2 的整数分，余弦是 `[0,1]`），真实库上 41 条的 cos 全落在 0.26~0.64，被 `round(cos × 4)` 压成 4~6 三个整数 → 大量并列 → 并列由词面分打破 → 词面零命中的正确目标沉底（目标纯 cos 排第 1，融合后掉出前 12）。
-- **语义采信门改为「查询级落点地板 + 条目级相对落差 + 条数封顶」**：`SEMANTIC_QUERY_FLOOR = 0.48`、`SEMANTIC_MARGIN = 0.05`、`SEMANTIC_MAX_TAKE = 2`。绝对 cos 用在条目级不成立（≥0.3 放过 40/41、≥0.45 仍放过 20/41），但用在**查询级 top1** 可分（无关查询 0.3340~0.4506 vs 相关查询 0.5467~0.6353，间隙 0.096）——top1 不过地板即判定「本库对这个查询没有答案」，整条语义路不给。
-- **删除 `MEMORY_VECTOR_THRESHOLD` 与 `vectorHit` 旁路**：`service.js` 的 `s.vectorHit || isKeywordHit(s)` 让语义命中绕过关键词门槛，计划三建立的降噪成果只在向量关闭时成立（A 档 5 条查询返 1/0/0/1/1，B 档一律填满 limit）；`tier.js` 随之不再依赖 `DEFAULT_SEARCH_CONFIG.threshold`。
-- **`vectorMatched` 语义变更**：由「过阈值条数」改为「被语义路采信的条数」（上限 2）。扩展端转发层 `...rest` 透传，**零改动**。
-- **真机复测（41 条真实库，临时开、测完收回 `enabled=false`）**：控制组 4 条无关查询**全部 0 返回**（首要判据达成），填满 limit 的查询数 0，A 档开关前后逐字一致 `1/0/0/1/1`；4 条换说法查询目标均命中。**未达成项如实记录**：目标名次之和 8 > 计划的 6，逐条读记忆原文定位到那 2 名损失全部来自**词面路**（碎块与整词命中把语义 top1 压后）——用纯 cos 单通道理想值考核双通道融合属口径错定，取向问题转计划五。
-- **本地档嵌入长度截断经实测取消**（原计划 Task 5 Step 2/3）：本地 `Xenova/bge-small-zh-v1.5` 对真实库 41 条（最长 1901 字）与合成 1900 字阶梯**全部嵌入成功、零失败**，计划所依据的「超长报 `400 {"code":20015}` 静默丢失」实为**远端** `BAAI/bge-large-zh-v1.5` 的证据（张冠李戴）；而按 400 字截断只会把同一刀往前推。`tokens.js` 本轮未改。（本条原先写的「超出模型有效窗口（实测约 1200 字）」为错定，见上方「更正」③：实际在 512 token 处截断。）
-- **修复查询前缀回落权**：`memoryEmbedding.queryPrefix` 缺省是空串，而 provider 用 `??` 判空（空串不是 nullish）→ 本地档 BGE 的非对称检索前缀**永远加不上**（实测 provider 日志 `queryPrefix: off`）。`toEmbeddingProviderConfig()` 现在交出空白前缀时删除该键，把回落权还给 provider；显式前缀照常透传，远端档行为不变。
-- **`reindex` 部分失败原因可见**：`backfillVectors` 原先只报 `failedBatches` 计数（原因既不入响应也不入日志，只有全部批失败才露首条），现在响应带 `lastError`（仅首条）、进程日志记全量 `[Memory] reindex batch failed: ...`。
-- ~~新发现两个 provider 层缺陷（本计划不动，转计划五）~~ —— **本条为错定，已由同日「更正」①②作废**（未开 truncation / mask 未用均不成立）；当时的观测数据本身属实，只是归因归错了：那两条其实是 512 token 静默截断与 q8 量化噪声的症状。
-
-### 工程质量与测试（记忆语义档改排名融合）
-- 新增 `memory-fusion`（12 例，含一条专门钉住「不许把分离度加回来」的用例）与 **B 档效果评测**：`agent/test/eval/memory-recall-vector-golden.json`（真实 bge-m3 生成的 7 文档 + 8 查询黄金向量，128KB）+ `memory-recall-eval-b.unit.test.js`，测试内 `embedDocuments` 直接抛错 → 零联网复现真实 cos 分布形状。此前只测机制不测效果，才把「向量无可测收益」的错误结论写进文档。
-- 常量不靠拍脑袋：`gap × margin × take` 与 `abs × margin × take` 两轮网格（合成 7 条库 + 真实 41 条库同时判定），分离度门被数据否定（无关查询 gap 0.0361/0.0397 高于真实目标查询的 0.0214，且不可跨库规模外推），地板取安全窗口 `(0.4506, 0.5163]` 中点。
-- **回归钉的反向验证**：`memory-service` 原有 45 例对新旧规则**完全不敏感**（手搓向量是 0.98/0 的极端距离，结论不变）→ 新增 2 条 cos=0.4（≥旧 0.3、<新 0.48）的服务层钉，`git stash` 退回旧实现时**两条均红**；Task 5 的 3 条新钉同样在旧实现上红（66 例中 3 红）。新增走真实 `EmbeddingProvider` 的**接缝钉**（注入假工厂看不见配置字段错位）。
-- 计数（均实测）：`memory-*` 单测 **150/150**；agent 全量单测 **325/325**（本轮起点 220 → 计划三 306 → 320 → 325）；A 档评测 10 例与原有 service 用例**一条未改**（零漂移护栏）；冒烟 `test/smoke/memory-pushdown.smoke.mjs` **21/21**；`npm run build:silent` BUILD_SUCCESS。扩展端 vitest **81 文件 / 1271 用例全通**（2 个预先存在的 `document is not defined` 未处理 rejection 不变）。
-- 已知未修：agent 集成测试 **84/86**，2 条失败为**既有失败**（`~ 展开到用户主目录`、`路径穿越 .. 被限制在沙箱内`），用同一 `git stash` 法在旧实现上复现，与本轮无关；`eslint.config.js` 的 `ignores` 包含 `agent/**` 且 agent 无自己的配置，agent 代码**实际未被 lint**。
-- 实施计划：`docs/superpowers/plans/2026-10-13-memory-rank-fusion.md`（含 Task 1~5 执行结果；前置实测 §2 的一条数据在 Task 2 被推翻并已就地更正，Task 5 的立论在 Step 1 实测被推翻，而 Task 5 执行结果自 §2/§3 又被后续取证二次更正）。
-
-### 新增（长期记忆语义召回通道）
-- **三档降级召回**：`recall` 在既有关键词计分之上可叠加一路向量召回。Tier A `none`（缺省，`memoryEmbedding.enabled: false`）行为与计分逐字不变、零新增网络调用；Tier B `remote` 走 OpenAI 兼容 embedding + 进程内余弦比对（≤ 70 条量级 brute-force，不引入向量库依赖）；Tier C `local` 需本机具备 RAG 依赖，依赖缺失静默降回 A。档位由纯函数 `agent/src/memory/tier.js` 判定，apiKey / modelName 均 trim 后判空（空白不得误判为已启用远端）。
-- **向量是派生缓存**：新增 `agent/src/memory/vectors.js`，`~/.ai-helper-agent/memory/memory-vectors.json` 可整删、可损坏、缺失一律当空且不抛错；`global-memory.json` 仍是唯一真源。缓存键 `mode|modelName|dimensions` 任一变化即整体作废（维度不同无法比对），字符串 `'512'` 与数字 `512` 归一为同键。
-- **两路计分同尺**：语义命中在整数关键词分之上叠加 `+3 + round(cos × 4)`，余弦阈值直接复用知识库默认值（`DEFAULT_SEARCH_CONFIG.threshold`）而不复制常数。未做归一化：关键词分是 content+3/title+2/tags+2 的整数刻度，RAG 检索是 `[0,1]` 余弦刻度，两套刻度不可比——归一会改写 A 档计分、破坏零漂移硬约束。
-- **嵌入调用移出记忆互斥锁**：档位判定与查询向量在取锁之前完成（锁是进程内 Promise 链、无超时逃生口，一次 8s 挂起会堵死同进程所有写入），锁内只做纯计算与向量缓存读写；嵌入报错/超时该次召回静默退回关键词通道且仍返回 200。
-- **生命周期对齐**：store 的新增、去重命中改写、update 成功后以 microtask 懒补向量（绝不 `await`——那等于给每次写入多加一个网络往返；去重分支也会改 tags，而 tags 参与 embedding 文本，不重算即留陈旧向量）；delete 与 compact 淘汰的条目同步 `dropVectors`，不残留陈旧向量。
-- **三个新端点**：`POST /api/memory/reindex`（按当前配置全量重建缓存：未启用返回 `skipped` 且仍 200，嵌入整体失败才 400）、`GET|POST /api/memory/embedding-config`（明文 key 永不回显，附 `hasApiKey`）、`POST /api/memory/test-embedding`（探活，8s 超时保护）。`recall` 响应新增 `tier` 与 `vectorMatched`，扩展端转发层经 `...rest` 原样透传，**零改动**。
-- **修复配置字段名错位**：`memoryEmbedding` 存的是 `baseUrl`，而 `rag/embedding` 的 OpenAI 兼容后端读 `endpoint`——缺这一映射时远端档永远请求 `/embeddings`（报 `Failed to parse URL`），对任何真实端点都 100% 不可用。现由 `toEmbeddingProviderConfig()` 单点映射，service 与 routes 两个 provider 创建点都过它。该缺陷只在真链路上暴露：单测注入的是假工厂，只有冒烟走真实 provider 才炸出来。
-- 附带修复：`updateConfigField` 自锁（保存配置时死锁）；记忆关键词提取从 service 内联抽出为 `agent/src/memory/tokens.js`（纯搬迁锁行为，为向量文本口径留出单点）。
-
-### 工程质量与测试（记忆语义召回）
-- 新增 `memory-tokens`（7）/`memory-vectors`（12）/`memory-tier`（9）/`memory-embedding-config`（14）单测，`memory-service` 追加向量通道 17 例（recall 融合 9 + 生命周期 8）、`memory-routes` 追加 reindex 4 例；记忆相关合计 115 例。Agent 全量 `node --test test/unit/*.unit.test.js` 220 → 290 passed / fail 0，原有 25 条 A 档记忆用例一条未改、一条未红（零漂移护栏）。
-- 端到端冒烟 `memory-pushdown.smoke.mjs` 16 → 21 项：预置「已启用但端点不可达」的 embedding 配置（`http://127.0.0.1:1/v1`，不真联网），断言配置脱敏、不可达时 `recall` 仍 200 且 `tier=remote`/`vectorMatched=0`、不留半成品向量文件、`reindex` 与 `test-embedding` 明确 400 而非 500，并断言错误文案不是 `Failed to parse URL`（证明配置的 baseUrl 真到了 fetch 层）。真连 provider 的正向验证由单测的假 provider 承担。
-- 文档：`agent/README.md` / `README.zh-CN.md` 中英对称补「语义召回通道（Tier）」小节与三个新端点行，配置表加 `memoryEmbedding`。扩展端代码未改动，`npm run build:silent` BUILD_SUCCESS。版本号未手动修正（由 `npm run release:agent` 统一同步）。
-- 实施计划：`docs/superpowers/plans/2026-10-13-memory-hybrid-recall.md`（每个 Task 附「执行结果（已实施）」，记录融合刻度不可比、searcher 导出回退、reindex 不可走通用分发、冒烟期望从 `success: true` 更正为 400 等偏差）。
+### 新增（长期记忆语义召回通道：三档降级）
+- **Tier A / B / C**：`none`（缺省，行为与计分逐字不变、零新增网络调用）/ `remote`（OpenAI 兼容 embedding + 进程内 brute-force 余弦，≤ 70 条量级不引向量库依赖）/ `local`（依赖缺失静默降回 A）；档位由纯函数 `tier.js` 判定（apiKey / modelName trim 后判空，空白不得误判）。
+- **向量是派生缓存**：`vectors.js` → `memory-vectors.json` 可整删、可损坏、缺失一律当空且不抛错；`global-memory.json` 仍是唯一真源；缓存键 `mode|modelName|dimensions` 任一变化即整体作废（`'512'` 与 `512` 归一为同键）。
+- **两路计分同尺（初版，后由同日 RRF 节作废）**：语义命中叠加 `+3 + round(cos × 4)`、阈值复用知识库默认值——后被名次融合替代。
+- **嵌入调用移出记忆互斥锁**：档位判定与查询向量在取锁之前完成（锁是进程内 Promise 链、无超时逃生口，一次 8s 挂起会堵死同进程所有写入）；嵌入报错/超时该次召回静默退回关键词通道且仍返回 200。
+- **生命周期对齐**：store 的新增、去重命中改写、update 成功后以 microtask 懒补向量（绝不 `await`）；delete 与 compact 淘汰同步 `dropVectors`。
+- **三个新端点**：`POST /api/memory/reindex`（未启用返 `skipped` 仍 200）/ `GET|POST /api/memory/embedding-config`（明文 key 永不回显 + `hasApiKey`）/ `POST /api/memory/test-embedding`（探活 8s 超时）；`recall` 响应新增 `tier` 与 `vectorMatched`，转发层 `...rest` 零改动。
+- **修复配置字段名错位**：`memoryEmbedding.baseUrl` 与 provider 读的 `endpoint` 不一致 → 远端档永远请求 `/embeddings`（`Failed to parse URL`），由 `toEmbeddingProviderConfig()` 单点映射修复；该缺陷只在真链路暴露（单测注入假工厂看不见，冒烟走真实 provider 才炸出来）。附带修 `updateConfigField` 自锁；关键词提取抽为 `tokens.js`。
+- **工程质量**：新增 `memory-tokens`（7）/`memory-vectors`（12）/`memory-tier`（9）/`memory-embedding-config`（14）与 `memory-service` 向量通道 17 例、`memory-routes` reindex 4 例（记忆相关合计 115 例）；agent 全量 **220 → 290**，原有 25 条 A 档用例一条未改（零漂移护栏）；冒烟 16 → 21 项（预置「已启用但端点不可达」不真联网，断言配置脱敏、不可达时 `recall` 仍 200、不留半成品向量、`reindex`/`test-embedding` 明确 400、错误文案不是 `Failed to parse URL`）；README 中英对称补 Tier 小节与三端点行。
 
 ### 变更（记忆关键词通道对齐知识库）
-- **计分口径换血**：`agent/src/memory/tokens.js` 从「把 query 炸成最多 30 个碎 bigram、每个命中 +3」改为「最长命中片段的单元制」（L=2→1 单元 / L=3→2 / L≥4 顶格 3，每字段封顶后×字段权重）。旧口径下「写网」「个国」这类随机 2 字块几乎必然命中某些长条目，且命中 4 个碎块（+12）高于命中一个 4 字整词（+3），**排序方向是反的**；知识库侧 2026-09 已修掉这两点，记忆侧一直沿用更早方案。
-- **与知识库共用一份匹配实现**：匹配语义（切段 / 英文词边界 / 中文最长片段）上收为 `agent/src/rag/keyword-match.js`，`rag/searcher.js` 逐字平移复用（**既有 18 条 searcher 关键词用例一条未改**），记忆与知识库不再各写一套。`rag` 命中 `storage` 这类子串误伤随词边界统一而消失。
-- **两道噪声闸门**：① 文档频率剔除——命中过半候选的单元（如「项目」）无区分度不参与计分，`df ≤ 2` 恒豁免，与知识库同参数；② 命中门槛 `full || units >= 2`——整词/整段命中可直接成立，只碰 2 字碎块时需 ≥ 2 单元。门槛故意不看 `score`，否则整句 +5 仍会因 `rag ⊂ storage` 子串包含而误伤。
-- **停用词表删除**：`STOP_WORDS` / `KEYWORD_CAP` / `SNIPPET_MAX_LENGTH` 随碎块方案一同退场——单元数按命中长度分层后，虚词无法单独构成长片段，两侧共用一份切段口径比再叠一层词表更不易漂移；旧实现还会把查询截到前 200 字使尾部整词丢失，现在不截（最坏情形 1852 字查询 × 41 条候选实测 46ms）。
-- **行为影响（用 41 条真实记忆只读副本实测）**：5 条换说法查询的无关返回从 **43 条 → 3 条**（单条查询 8/6/3/16/10 → 1/0/0/1/1），词面可命中的 Vue 偏好仍稳定排 top1；`pnpm`、`依赖`、`rag` 三类单关键词短查询均仍能命中（门槛设计时专门避开误杀）。**代价**：词面只沾 2 字碎块的条目在 A 档不再被返回——「换个说法也能找到记忆」不是关键词通道能兑现的，属于向量通道（待做）的责任。
-- **新增记忆召回评测集** `agent/test/eval/memory-recall-fixtures.js` + `memory-recall-eval.unit.test.js`：合成 7 条形态对齐真实库（超短 7~32 字 / 中等 200~600 字 / 长条目 1300 字量级）的记忆 + 10 条查询，把改动前基线量成 4 项红（碎块噪声 3 + 子串误伤 1）、后全绿。上一轮正是因为只测实现未测效果，才把「向量无可测收益」的错误结论写进了文档。
-- 回归：agent 单测 **298 → 306 passed / fail 0**（既有 A 档 service 用例全绿不改）；冒烟 21/21；vitest 81 文件 / 1271 用例；`npm run build:silent` BUILD_SUCCESS。扩展端零改动。
-- 实施计划：`docs/superpowers/plans/2026-10-13-memory-keyword-parity.md`（含真机更正与截断规则实测表：`score>0`/`units>=2`/相对截断/整句限定 四组候选的失败子项数）。
+- **计分口径换血**：从「query 炸成最多 30 个碎 bigram、每个命中 +3」改为「最长命中片段的单元制」（L=2→1 单元 / L=3→2 / L≥4 顶格 3，每字段封顶后 × 字段权重）。旧口径下「写网」「个国」这类随机 2 字块几乎必然命中，命中 4 个碎块（+12）高于命中一个 4 字整词（+3），**排序方向是反的**。
+- **与知识库共用一份匹配实现**：匹配语义上收为 `rag/keyword-match.js`，`rag/searcher.js` 逐字平移复用（**既有 18 条关键词用例一条未改**）；`rag` 命中 `storage` 的子串误伤随词边界统一而消失。
+- **两道噪声闸门**：① 文档频率剔除（命中过半候选的单元不计分，`df ≤ 2` 恒豁免）；② 命中门槛 `full || units >= 2`（门槛故意不看 `score`）。停用词表随碎块方案退场；查询不再截到前 200 字（最坏情形 1852 字 × 41 条候选实测 46ms）。
+- **真实库实测（41 条只读副本）**：5 条换说法查询的无关返回 **43 条 → 3 条**（单查询 8/6/3/16/10 → 1/0/0/1/1），Vue 偏好仍稳 top1，`pnpm`/`依赖`/`rag` 短查询仍可命中。**代价**：只沾 2 字碎块的条目 A 档不再返回——「换个说法也能找到」属向量通道的责任。
+- **新增评测集**：`memory-recall-fixtures.js` + `memory-recall-eval.unit.test.js`（合成 7 条形态对齐真实库 + 10 条查询），改动前基线量成 4 项红、后全绿；agent 单测 **298 → 306**，vitest 81 文件 / 1271 用例，扩展端零改动。
 
-### 新增（会话上下文压缩增强）
-- **结构化双语摘要模板**：`src/shared/compaction-prompt.js` 由自由段落改为固定四小节（任务目标 / 已完成与关键结论 / 关键标识符 / 未决问题与下一步），修复既有 i18n 缺陷——指令块随背景语言走 `getLanguage()` 渲染中英两套，素材限量与总量保留逻辑不变。`【已有摘要】` 标记与语言无关，增量压缩仍可识别。
-- **注入链路单点收敛**：新增 `applyCompactionInjection()` 到 `src/shared/context-usage.js`，三条发送链路（`chat-manager.sendMessage` / `side_panel/index.js` 划词提示词 / `prompt-manager.sendPromptByCode`）改为同一出口，删除三处内联重复；锚点失效（`upToMessageId` 找不到）时只告警忽略、不污染系统提示词。以源码扫描守卫测试锁定三条链路不再各自漂移。
-- **阈值驱动的半自动压缩（默认关）**：新增 `src/side_panel/auto-compaction.js`，发送前若「开关开 + 非生成中 + 会话隔离 + 距上次压缩待处理消息 ≥ 4 + 上下文占用 ≥ 阈值（默认 85%）」则静默压缩一次；连续失败 2 次进入退避不再骚扰，手动压缩成功即复位。**任何失败都放行本次发送**，不因为增益功能阻塞对话。占用比取值走 thunk，取不到时按 `usage_unavailable` 不尝试。
-- **手动/自动共用单一压缩内核**：`context-indicator.js` 的 `triggerCompaction` 抽出 `runCompaction({ silent })`，静默模式跳过确认框与「压缩中」模态、只发 `autoCompactedToast`；两条入口不再各写一套流程。
-- **摘要按 memoryId 去重沉淀长期记忆（默认开）**：新增 `src/background/compaction-memory.js`，压缩成功后把摘要以 `type: summary` / `category: decision` / `importance: 6` / `tags: [compaction, session:<id>]` 写入 Agent 长期记忆；同一会话二次压缩走 `update`（不堆条目），沉淀失败仅 `logger.warn` 且保留原 `memoryId`，Agent 未连接或缺端点（404）时静默降级——摘要仍在会话内可用。
-- **两个开关**：记忆下拉新增「自动压缩」与「摘要存入记忆」两行，采用与 11px 小字相称的 28×16 小滑动开关（与工具配置弹窗同款 `.toggle-switch` 视觉语言、独立一档尺寸：关=浅灰空槽滑块居左、开=紫色滑块右移 12px），标签恒为中性灰、状态只由滑轨表达，ⓘ 同步收到 11px，两行共用一条分隔线；切换即写 `chrome.storage.local` 的 `chatAutoCompaction` / `chatPersistSummaryToMemory`，并同步 `storage.onChanged` 监听；`DEFAULT_CHAT_CONFIG` 与 `getChatConfig` 补 `autoCompaction`（默认 false）/ `autoCompactionThreshold`（默认 0.85）/ `persistSummaryToMemory`（默认 true）。
-
-### 修复（压缩开关状态回填）
-- **开关刷新后回弹**：「自动压缩」「摘要存入记忆」两行的 `.checked` 原先只在 `DOMContentLoaded` 的 `initMemoryLimitDropdown()` 里按 `state.chatConfig` 盖一次，而那一刻 `GET_CHAT_CONFIG` 尚未往返完成，拿到的是模块默认值（`autoCompaction:false` / `persistSummaryToMemory:true`），之后没有任何代码再回填——于是打开的开关一刷新就变关（关闭的「摘要存入记忆」则反向回弹成开）。修复为在 `loadChatConfig().then()` 里调用 `syncAutoCompactToggle()` / `syncPersistSummaryToggle()`，勾选态以 storage 配置为唯一真源。行为侧此前未被污染：自动压缩判定读的是已加载的 `chatConfig`，只是 UI 与实际开关不一致。
-
-### 工程质量与测试（压缩增强）
-- 新增 `compaction-prompt`（+6）、`auto-compaction`（18）、`compaction-memory-persist`（6）、`compaction-injection-wiring`（8，源码接线守卫）与 `context-usage`（+4）用例，后补开关回填守卫（+2，合计 10）；扩展端全量 vitest 81 文件 / 1271 用例通过（原 78 文件 / 1227，2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
-- agent 侧代码未改动，回归 `node --test test/unit/*.unit.test.js` 仍 220/220；端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs` 补 4 项摘要沉淀断言（add 落 summaries → 不进常驻注入只计 Tier 3 → 跨会话按 `compaction` 标签可召回 → 同 id update 不新增条目），合计 16 项全通。
-- 实施计划：`docs/superpowers/plans/2026-10-13-context-compaction-effectiveness.md`（含执行偏差修正：发送链路实为三条；沉淀函数落独立模块而非 `background/index.js`；语言判定复用既有 `getLanguage()` 而非新增 `summaryLang` 配置）。版本号未手动修正。
+### 变更（会话上下文压缩增强 + 开关回填修复）
+- **结构化双语摘要模板**：`compaction-prompt.js` 由自由段落改为固定四小节（任务目标 / 已完成与关键结论 / 关键标识符 / 未决问题与下一步），指令块随背景语言走 `getLanguage()` 渲染中英两套；`【已有摘要】`标记语言无关，增量压缩仍可识别。
+- **注入链路单点收敛**：新增 `applyCompactionInjection()`（`context-usage.js`），三条发送链路（`chat-manager.sendMessage` / 划词提示词 / `sendPromptByCode`）改为同一出口，锚点失效只告警不污染系统提示词；源码扫描守卫锁定不再漂移。
+- **阈值驱动的半自动压缩（默认关）**：`auto-compaction.js` 发送前满足「开关开 + 非生成中 + 会话隔离 + 待处理消息 ≥ 4 + 上下文占用 ≥ 85%」则静默压缩一次；连续失败 2 次退避、手动成功即复位；**任何失败都放行本次发送**；手动/自动共用 `runCompaction({ silent })` 单一内核。
+- **摘要按 memoryId 去重沉淀长期记忆（默认开）**：`compaction-memory.js` 以 `type: summary` / `importance: 6` / `tags: [compaction, session:<id>]` 写入；同会话二次压缩走 `update`（不堆条目）；沉淀失败仅 warn 且保留原 `memoryId`，Agent 未连接或 404 静默降级。
+- **两个开关 + 回填修复**：记忆下拉新增「自动压缩」「摘要存入记忆」两行 28×16 小滑动开关，切换即写 storage 并同步 `storage.onChanged`；修复「刷新后回弹」——`.checked` 原先只在 `DOMContentLoaded` 盖一次（那一刻 `GET_CHAT_CONFIG` 尚未往返，拿到的是模块默认值），改为 `loadChatConfig().then()` 回填、以 storage 为唯一真源。
+- **测试**：新增 `compaction-prompt`（+6）/`auto-compaction`（18）/`compaction-memory-persist`（6）/`compaction-injection-wiring`（8）/`context-usage`（+4）/ 开关回填守卫（+2）；vitest 81 文件 / 1271 用例；冒烟补 4 项摘要沉淀断言（16 项全通）。
 
 ### 变更（长期记忆逻辑下推 Agent 端）
-- **架构错位消除**：长期记忆的全部业务逻辑（存储、召回计分、会话去重、审查/淘汰、三级注入筛选）从扩展端 background 整体迁至 agent 包（`agent/src/memory/{injection,service,routes}.js`），与数据文件 `~/.ai-helper-agent/memory/global-memory.json` 同进程；agent 新增 `POST /api/memory/{store,recall,manage,inject}` 四个业务端点（签名与 i18n 沿用 rag 路由模式，零外部依赖、静态加载）。
-- **扩展端瘦身为转发层**：`src/background/tool-memory.js` 由 752 行降至 85 行（只做 `subAction → action` 映射、`sessionId` 透传与结果整形）；`GET_PERMANENT_NOTES` 改为请求 `/api/memory/inject`；删除 `src/background/memory-injection.js`（纯函数已迁 agent）与 `tool-executor.js`/`index.js` 的 `readMemoryFile` 死导入。
-- **原子性与生命周期修复**：记忆 read-modify-write 的互斥锁从扩展 SW 内存锁改为 agent 进程内 Promise 链锁，不再受 MV3 Service Worker 重启影响，也不再存在“跨 HTTP 两次文件 API 调用非原子”的丢写风险；会话召回缓存（`sessionRecalledMemoryIds`）随逻辑常驻 agent 内存，不再因 SW 休眠丢失；`manage compact` 淘汰的记忆同步从会话召回缓存摘除。
-- **不兼容提示**：不做新旧版本兼容（插件与 Agent 对应发布）。插件遇到旧版 Agent 无记忆端点（HTTP 404）时直接返回升级指引（`toolMemory.memoryEndpointMissing`），**不再回退通用文件 API 读写记忆**；Agent 未连接时记忆能力整体不可用（不建本地双存储）。文案由 agent 按请求 `Accept-Language` 渲染，转发层仅保留 6 条本地校验文案。
-- 行为保持：记忆数据结构、三级注入参数（常驻阈值 importance≥8 / 预算 1500 字符 + 12 条）、召回计分（content+3 / title+2 / tags+2 / 原句+5）、价值公式与淘汰线（value<10）均逐字平移，未新增功能；`recall` 响应中的 `accessCount` 仍为召回前副本（与原实现一致，递增值以落盘为准）。
+- **架构错位消除**：记忆全部业务逻辑（存储、召回计分、会话去重、审查/淘汰、三级注入筛选）从扩展端 background 整体迁入 agent 包（`agent/src/memory/{injection,service,routes}.js`），与数据文件 `global-memory.json` 同进程；agent 新增 `POST /api/memory/{store,recall,manage,inject}` 四端点。
+- **扩展端瘦身为转发层**：`tool-memory.js` 752 行 → 85 行（只做 subAction→action 映射、sessionId 透传与结果整形）；`GET_PERMANENT_NOTES` 改请求 `/api/memory/inject`；删除 `memory-injection.js` 与死导入。
+- **原子性与生命周期修复**：互斥锁从扩展 SW 内存锁改为 agent 进程内 Promise 链锁（不再受 MV3 SW 重启影响、不再有跨 HTTP 两次文件调用非原子的丢写）；会话召回缓存常驻 agent 内存；`manage compact` 淘汰同步摘除召回缓存。
+- **不兼容提示**：不做新旧版本兼容（插件与 Agent 对应发布）；旧版 Agent 遇记忆端点 404 直接返回升级指引、**不回退通用文件 API**；Agent 未连接时记忆整体不可用（不建本地双存储）。
+- 行为逐字平移：数据结构、三级注入参数（importance ≥ 8 / 1500 字符 + 12 条）、召回计分（content+3 / title+2 / tags+2 / 原句+5）、价值公式与淘汰线（value<10）均未变。
+- **测试**：agent 新增 `memory-service`（25）/`memory-routes`（8）/`memory-injection`（18），全量 **169 → 220**；扩展端新增 `tool-memory-forward`（12）；冒烟 `memory-pushdown.smoke.mjs` 12 项（临时 HOME + 独立端口 18977 拉起真实 server：配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入），压缩增强后增至 16 项。
 
-### 工程质量与测试
-- agent 新增 `memory-service`（25 例）/`memory-routes`（8 例）/`memory-injection`（18 例）单测，`node --test test/unit/*.unit.test.js` 220/220 通过（原 169）。
-- 扩展端新增 `test/unit/tool-memory-forward.unit.test.js`（12 例，含将旧“接线守卫”按新架构改写后保留的 4 条源码断言）；全量 vitest 78 文件 / 1227 用例通过（2 个预先存在的 `document is not defined` 报错不变）；`npm run build:silent` BUILD_SUCCESS。
-- 端到端冒烟 `agent/test/smoke/memory-pushdown.smoke.mjs`（12 项全通，压缩增强后增至 16 项，手动 `node agent/test/smoke/memory-pushdown.smoke.mjs` 运行，不纳入常规单测）：临时 HOME + 独立端口 18977 进程内拉起真实 server，跑通配对→store→recall（含会话去重）→inject→manage(review)→落盘位置→400/404 语义→delete 后不再注入。
-- 实施计划：`docs/superpowers/plans/2026-10-13-agent-memory-pushdown.md`（含执行时的 5 处偏差修正记录）。版本号未手动修正：由 `npm run release:agent` 统一同步（单一版本流惯例）。
+**当日收口（全部实测）**：agent 单测 **387/387**、根 vitest **1306/1306**（86 文件）、rag 集成（隔离部分）**24/24**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
 
 ## 2026-10-11
 
