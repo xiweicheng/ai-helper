@@ -156,6 +156,7 @@ Configuration file path: `~/.ai-helper-agent/config.json`
 | `pairCodeTTL` | Pairing code validity (seconds) | 30 |
 | `commandTimeout` | Command execution timeout (ms) | 300000 (5 min) |
 | `fileMaxSize` | Max file read/write size (bytes) | 52428800 (50 MB) |
+| `memoryEmbedding` | Semantic memory recall channel config — see [Semantic recall channel](#semantic-recall-channel-tiers). Managed through `/api/memory/embedding-config`; `enabled: false` keeps recall keyword-only | disabled |
 
 ## File Search
 
@@ -247,6 +248,11 @@ Results are returned in reverse chronological order (newest first).
 | POST | `/api/memory/recall` | Recall long-term memory by keyword scoring (with per-session dedup) |
 | POST | `/api/memory/manage` | Memory review (`action: review`) / compaction (`action: compact`) |
 | POST | `/api/memory/inject` | Three-tier injection selection for the system prompt |
+| POST | `/api/memory/reindex` | Rebuild the memory vector cache for every entry using the current embedding config |
+| GET | `/api/memory/embedding-config` | Read the semantic recall channel config (plain key never echoed; `hasApiKey` included) |
+| POST | `/api/memory/embedding-config` | Save the semantic recall channel config |
+| POST | `/api/memory/test-embedding` | Probe the embedding endpoint (returns vector dimensions on success) |
+| GET | `/api/memory/vector-status` | Read-only vector index status: `indexed` / `total`, stored vs current fingerprint (`storedModelKey` / `currentModelKey`), `stale`, `tier`. Never builds a provider, so querying it cannot trigger a model download |
 | POST | `/api/exec` | Execute system command |
 | POST | `/api/exec/stop` | Stop command execution |
 | GET | `/api/exec/running` | List running processes |
@@ -414,15 +420,45 @@ Cross-session long-term memory is owned by the agent: the storage file, the read
 
 ### Recall scoring
 
+A memory's keyword score is `Σ (matched units in a field × that field's weight)`, plus whole-query bonuses:
+
 | Signal | Score |
 |--------|-------|
-| keyword hit in `content` | +3 |
-| keyword hit in `title` | +2 |
-| keyword hit in `tags` | +2 |
+| matched unit in `content` | × 3 per unit |
+| matched unit in `title` | × 2 per unit |
+| matched unit in `tags` | × 2 per unit |
 | full query (≥ 2 chars) found in `content` | +5 |
 | full query (≥ 2 chars) found in `title` | +3 |
 
-Keywords are extracted with zero dependencies: a CJK run of ≤ 4 characters is kept whole, longer runs split into bigrams, latin/digit runs become word tokens, stop words filtered, capped at 30 keywords.
+Units come from the **longest matching fragment**, not from chopping the query into pieces: a CJK fragment of length 2 counts as 1 unit, 3 counts as 2, ≥ 4 counts as 3 (top of the scale), and each whole latin/digit word counts as 1 — capped at 3 units per field. Extraction and matching are zero-dependency and **shared with knowledge-base retrieval** (`rag/keyword-match.js`), so a query means the same thing in both subsystems.
+
+Two gates keep irrelevant memories out:
+
+- **Document frequency** — a unit found in over half of the candidates (and in more than 2 of them) carries no discriminating power and scores nothing.
+- **Hit threshold** — a memory counts as a hit only when it matched a *whole* unit (an entire latin word or an entire CJK run) or at least 2 units. Sharing only a random 2-character fragment is no longer a hit; the exact-match bonuses alone cannot rescue such an entry.
+
+### Semantic recall channel (tiers)
+
+A vector channel can be layered on top of keyword scoring. It runs at one of three tiers and **the default is always Tier A**:
+
+| Tier | Condition | Behaviour |
+|------|-----------|-----------|
+| A `none` | Unconfigured or `enabled: false` (default) | Keyword scoring only, exactly as above; no new network calls |
+| B `remote` | `mode: "openai-compat"` with both apiKey and modelName set | Remote embeddings + in-process cosine comparison |
+| C `local` | `mode: "local"` and RAG dependencies present locally | Vectors from a local transformers model |
+
+- **Vectors are a derived cache** — `~/.ai-helper-agent/memory/memory-vectors.json` can be deleted at any time; `global-memory.json` is the single source of truth. A missing or corrupt cache is treated as empty and refilled on demand during recall — it never throws.
+- **Changing the model invalidates everything** — the cache key is `mode|modelName|dimensions`; if any part changes the old vectors are dropped rather than compared (mismatched dimensions cannot be compared). No manual cleanup needed.
+- **Failure degrades, it does not break memory** — when the embedding endpoint errors or exceeds its 8s timeout, that recall falls back to Tier A and still answers 200. `tier` and `vectorMatched` in the recall response say which tier actually ran and how many hits were accepted by the semantic route (capped at 2).
+- **Both channels fuse ranks, not scores** — keywords and vectors each produce their own ranking, which is merged as `1/(60 + rank)` (RRF). The two scales are not comparable, so only **rank** is consumed, never magnitude: an item hit by both routes naturally floats to the top, one hit by a single route lands behind it.
+- **The semantic gate has two stages, not one absolute cosine threshold** — (1) **query-level floor**: if the best cosine of this query is below `0.48`, the library is judged to hold no answer for it and the whole semantic route contributes nothing (recall output goes straight into the prompt — "everything is marginally relevant" equals "nothing is relevant"); (2) **item-level relative drop-off**: only items within `0.05` of that best score are accepted, at most 2.
+- **Why there is no absolute similarity threshold** — measured on a real 41-item library: absolute cosine fails at item level (irrelevant queries reach top1 scores of 0.3340~0.4506, while a ≥0.3 threshold admits 40/41 items and ≥0.45 still admits 20/41). It separates only at query-level top1 (irrelevant 0.3340~0.4506 vs relevant 0.5467~0.6353, gap 0.096), which is exactly where the floor above is applied.
+- **Known limits** — the `0.48` floor was calibrated on `BAAI/bge-m3` with a 41-item library and 9 queries; its usable window is `(0.4506, 0.5163]` (roughly 0.03 of headroom on each side). **Recalibration is mandatory when the embedding model or the memory-text concatenation changes**, and the rule needs re-measurement once the library grows to a few hundred items. Separation (`top1 − top2`) was the original main gate of this channel and was falsified by measurement: the larger the library, the more an irrelevant query's top1−top2 can grow by chance, and the real library's target query had a gap of 0.0214 — below two irrelevant queries at 0.0361 / 0.0397, so the two are inseparable on that axis. **Do not add it back.** Practical consequence: when a target item is not the library's best cosine and falls outside the `0.05` drop-off, the semantic route will not return it (on the real library such items still enter via the keyword route, at a lower rank).
+- **The local backend only indexes the first 512 tokens (the tail is dropped silently)** — the tokenizer window of `Xenova/bge-small-zh-v1.5` is 512 tokens and inference cuts the tail **without any error** (measured: 13 of 41 items in a real library exceed it; the largest one gets only 46% of its content in). Blast radius is limited: the semantic channel cannot see the tail, while **the keyword channel still reads the full text**. The knowledge base is unaffected (its default `chunkSize: 400` already fits). Remote models have far larger windows, and a vendor's truncation behaviour is invisible in the vectors it returns — so the remote tier reports nothing. This round changes no vector content; it only makes the overflow visible: `reindex` now returns `overWindow: { count, window, ids }` and the process log names the items.
+- **Vectors drift slightly with batch composition (known noise, not a bug)** — embedding one memory alone vs inside a batch gives cos 0.9940–0.9974 (measured), caused by the `q8` quantized kernels and unrelated to how long the batch partners are; no observable effect on rank fusion and no effect on recall results.
+- **Operations entry point** — after first enabling the channel or switching models, call `POST /api/memory/reindex` once to backfill existing memories (it returns `skipped` when the channel is off, and a clear 400 — not 500 — when the endpoint is unreachable). When only some batches fail the response still reports success but carries `failedBatches` plus `lastError` (the first reason); the full reasons go to the process log. On the local tier it also carries `overWindow` (how many items exceed the window, and which).
+- **Configuration UI** — the extension's options page has a **Memory** tab that reads and writes this channel (`/api/memory/embedding-config`), probes the endpoint (`/api/memory/test-embedding`, remote tier only — the local tier's first call has to load the model and would always blow the 8s budget, so the button is hidden there instead of lying), rebuilds the cache (`/api/memory/reindex` behind an explicit confirmation that quotes the measured cost) and shows `GET /api/memory/vector-status`, whose `stale` flag is what makes "the model changed but nobody rebuilt" visible instead of silently degrading recall. Note the tab is a convenience, not a restart workaround: `loadConfig()` caches by file mtime and the provider cache is keyed by the fingerprint, so editing `config.json` by hand takes effect just as immediately. Its real value is discoverability, verification and mis-fill prevention. One rule the form follows strictly — a field the user cannot see is **absent from the request body**, never empty or `0`: sending `dimensions: 0` would overwrite a stored `512`, change the fingerprint, raise a false `stale` and force a pointless rebuild.
+- **Fingerprint staleness is report-only** — `vector-status` tells you the stored vectors were built by a different `mode|modelName|dimensions`; it does not discard or rewrite them, because `stale` with `indexed > 0` is a state worth looking at (and an empty library is never called stale — first-time enablement is normal).
 
 ### Injection tiers (system prompt)
 

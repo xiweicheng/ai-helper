@@ -3,7 +3,7 @@
 // 运行：node --test agent/test/integration/api.integration.test.js
 //
 // 环境变量：
-//   AGENT_TOKEN  - 认证 token（必填）
+//   AGENT_TOKEN  - 认证 token（未设置时回读本机 ~/.ai-helper-agent/pairings.json；两者都拿不到则直接退出）
 //   AGENT_URL    - Agent 服务地址（默认 http://127.0.0.1:18910）
 //
 // 测试策略：在 workdir 下创建临时测试目录，所有文件操作在其中进行，测试完成自动清理。
@@ -11,9 +11,27 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'path';
+import { homedir } from 'os';
 import { readFileSync } from 'fs';
 
-const TOKEN = process.env.AGENT_TOKEN || '93d601538e73e1dd91275df500ff64a1f6690af57495ecfc0373860f2738dcf7';
+// token 绝不写进仓库：历史上这里硬编码过某台机器的真实配对 token，
+// 一旦仓库推送该 token 就进入公开历史，而它是本地管理接口的唯一鉴权凭据。
+// 因此只允许从环境变量或本机配对记录取得，取不到就在发出任何请求前失败。
+function resolveToken() {
+  const fromEnv = process.env.AGENT_TOKEN;
+  if (fromEnv) return fromEnv;
+  try {
+    const pairings = JSON.parse(readFileSync(join(homedir(), '.ai-helper-agent', 'pairings.json'), 'utf-8'));
+    const paired = Object.values(pairings).find((item) => item && typeof item.token === 'string' && item.token);
+    if (paired) return paired.token;
+  } catch {
+    // 配对记录不存在或格式异常，走下面的统一报错
+  }
+  console.error('缺少认证 token：请设置 AGENT_TOKEN，或确保 ~/.ai-helper-agent/pairings.json 中存在有效配对记录');
+  process.exit(1);
+}
+
+const TOKEN = resolveToken();
 const BASE = process.env.AGENT_URL || 'http://127.0.0.1:18910';
 
 // ========== 请求辅助 ==========

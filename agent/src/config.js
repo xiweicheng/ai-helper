@@ -21,7 +21,19 @@ const DEFAULTS = {
   fileMaxSize: 50 * 1024 * 1024,
   // RAG URL 导入内网访问策略：allowedPrivateHosts 非空时仅放行白名单命中（总开关不生效）；
   // 为空时由 allowPrivateNetwork 决定；缺省均关闭（默认拒绝内网），公网访问不受影响
-  ragUrlIngest: { allowPrivateNetwork: false, allowedPrivateHosts: [] }
+  ragUrlIngest: { allowPrivateNetwork: false, allowedPrivateHosts: [] },
+  // 长期记忆语义召回（hybrid recall）的 embedding 配置：缺省关闭 → recall 只走关键词通道（Tier A），
+  // 不引入任何新的默认网络调用。mode: 'openai-compat'（远端，零依赖）| 'local'（本地模型，需 RAG 依赖）。
+  // apiKey 只落本地 config.json，任何对外响应均经 mask 脱敏（hasApiKey 供前端提示“已配置”）。
+  memoryEmbedding: {
+    enabled: false,
+    mode: 'openai-compat',
+    baseUrl: '',
+    modelName: '',
+    apiKey: '',
+    dimensions: 0,
+    queryPrefix: ''
+  }
 };
 
 const VALID_CONFIG_KEYS = Object.keys(DEFAULTS);
@@ -51,7 +63,11 @@ function withWriteLock(fn) {
   const prev = writeLock;
   let release;
   writeLock = new Promise(resolve => { release = resolve; });
-  return prev.then(() => fn().finally(release));
+  // fn 允许返回非 Promise（同步写入体）：统一用 Promise.resolve 兜住，
+  // 否则 fn().finally 直接 TypeError，且锁永远不会释放。
+  return prev
+    .then(() => Promise.resolve(fn()))
+    .finally(release);
 }
 
 function ensureAgentDir() {
@@ -139,22 +155,28 @@ function saveConfigSync(config) {
 }
 
 /**
+ * 取锁后的实际写入体：落盘 + 刷新缓存（saveConfig 与 updateConfigField 共用）。
+ * 必须不加锁：两者都已在自己的 withWriteLock 内，再嵌一次会 自我等自我 而永久挂起。
+ */
+function writeConfigBody(config) {
+  try {
+    saveConfigSync(config);
+    // 从磁盘重新加载确保缓存与磁盘一致
+    const mtime = getMtime(CONFIG_FILE);
+    const raw = readFileSync(CONFIG_FILE, 'utf-8');
+    configCache = { ...DEFAULTS, ...JSON.parse(raw) };
+    configCacheMtime = mtime;
+  } catch (err) {
+    console.error('[Config] Save config failed:', err.message);
+    throw err;
+  }
+}
+
+/**
  * 保存配置（写入磁盘并更新缓存，加写锁防并发覆盖）
  */
 export async function saveConfig(config) {
-  return withWriteLock(async () => {
-    try {
-      saveConfigSync(config);
-      // 从磁盘重新加载确保缓存与磁盘一致
-      const mtime = getMtime(CONFIG_FILE);
-      const raw = readFileSync(CONFIG_FILE, 'utf-8');
-      configCache = { ...DEFAULTS, ...JSON.parse(raw) };
-      configCacheMtime = mtime;
-    } catch (err) {
-      console.error('[Config] Save config failed:', err.message);
-      throw err;
-    }
-  });
+  return withWriteLock(() => writeConfigBody(config));
 }
 
 /**
@@ -165,9 +187,10 @@ export async function updateConfigField(key, value) {
     throw new Error(translate(currentLang, 'error.invalidConfigKey', { key }));
   }
   return withWriteLock(async () => {
-    const config = loadConfig();
-    config[key] = value;
-    return saveConfig(config).then(() => config);
+    // 浅拷贝后再改：loadConfig() 返回的是缓存本体，直接赋值会就地修改调用方已持有的对象
+    const config = { ...loadConfig(), [key]: value };
+    writeConfigBody(config);
+    return config;
   });
 }
 

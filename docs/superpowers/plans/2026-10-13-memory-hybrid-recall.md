@@ -1,5 +1,9 @@
 # Memory Hybrid Recall Implementation Plan
 
+> **存档状态（2026-10-14 加注）**：本计划已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`），**不要按本文件实施**。
+> 现行口径见 [`docs/Memory-Retrieval-Design.md`](../../Memory-Retrieval-Design.md)。文中的预写代码块与 Step 清单属实施前内容，已与源码不再同步。
+> 不删的理由：本文件末尾的执行记录里有 45 处「作废 / 更正 / 推翻 / 错定」结论（哪些判据被实测否定、为什么），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 Agent 端长期记忆的 `recall` 增加语义（向量）通道，并在 embedding 不可用/超时/失败时**逐字回落到今天的关键词行为**，零强制依赖。
@@ -36,6 +40,8 @@
 
 service.js 里现有的 STOP_WORDS/extractKeywords 是从扩展端逐字平移来的，语义**一个字符都不许改**；本 Task 只搬位置，靠现有 25 条 memory-service 测试做安全网。
 
+实测补充（写计划时未核实到的两点）：① 两者定义在 `createMemoryService()` **闭包内部**（service.js:244-303，缩进两格），摘出到模块顶层时不依赖任何闭包变量，可安全搬迁；② `extractKeywords` 除 bigram 外还会把**整段清洗后的 snippet** 作为 fallback token 返回，长查询的第一个关键词因此可能远超 4 字——这是 recall 计分的一部分，后续 Task 不能"顺手优化"掉。
+
 - [ ] **Step 1: 写失败测试**
 
 新建 `agent/test/unit/memory-tokens.unit.test.js`：
@@ -61,20 +67,29 @@ test('短中文连续段整段保留', () => {
   assert.ok(extractKeywords('用户偏好').includes('用户偏好'));
 });
 
-test('长中文连续段拆 bigram', () => {
+test('长中文连续段既拆 bigram，也保留整段 fallback', () => {
   const kws = extractKeywords('请在后续回复中使用中文说明');
   assert.ok(kws.includes('后续'));
-  assert.ok(kws.every(k => k.length <= 4));
+  assert.ok(kws.includes('回复'));
+  // 实现会把清洗后的整段（snippet）也作为关键词加入，recall 计分依赖它，不得丢
+  assert.ok(kws.some(k => k.length > 4));
 });
 
 test('关键词数量封顶 30', () => {
-  const long = 'a '.repeat(80) + '测试 '.repeat(40);
-  assert.ok(extractKeywords(long).length <= KEYWORD_CAP);
+  // 40 个互不相同的汉字 → 39 个 unique bigram + 1 个整段 fallback，必须被截到 30
+  const run = Array.from({ length: 40 }, (_, i) => String.fromCharCode(0x4e00 + i)).join('');
+  assert.equal(extractKeywords(run).length, KEYWORD_CAP);
 });
 
-test('空输入返回空数组', () => {
+test('超过 200 字符只取前 200 字符参与提取', () => {
+  assert.ok(!extractKeywords('甲'.repeat(300) + '独特结尾').includes('独特结尾'));
+});
+
+test('空输入与假值输入返回空数组', () => {
   assert.deepEqual(extractKeywords(''), []);
+  assert.deepEqual(extractKeywords('   '), []);
   assert.deepEqual(extractKeywords(null), []);
+  assert.deepEqual(extractKeywords(undefined), []);
 });
 ```
 
@@ -96,7 +111,11 @@ export const KEYWORD_CAP = 30;
 
 export const STOP_WORDS = new Set([ /* 原内容逐字粘贴 */ ]);
 
-export function extractKeywords(query) { /* 原实现，仅把硬编码 30 换成 KEYWORD_CAP */ }
+export function extractKeywords(query) { /* 原实现，硬编码 30 换成 KEYWORD_CAP、200 换成 SNIPPET_MAX_LENGTH */ }
+
+// 实测偏差（执行时确认）：原实现开头是 `text.toLowerCase().trim()`，传 null 会 TypeError ——
+// 现网调用方 recall 有 `if (query && query.trim())` 守卫所以从未触发。独立成模块后会被 Task 3/4/5
+// 的新调用点复用，故补 `if (!text) return [];` + `String(text)` 归一化。非 null 输入逐字不变。
 ```
 
 `service.js` 顶部加 import 并删除本地定义：
@@ -110,7 +129,7 @@ import { extractKeywords } from './tokens.js';
 - [ ] **Step 4: 运行新旧测试全通过**
 
 Run: `cd agent && node --test test/unit/memory-tokens.unit.test.js test/unit/memory-service.unit.test.js`
-Expected: tokens 6 条 PASS，service 25 条 PASS（行为未变的安全证明）。
+Expected: tokens 7 条 + service 25 条 = 32 PASS（行为未变的安全证明）；全量 `node --test test/unit/*.unit.test.js` 由 220 → **227**。
 
 - [ ] **Step 5: Commit**
 
@@ -138,6 +157,14 @@ git commit -m "refactor(memory): 关键词提取独立为 memory/tokens.js（行
   - `export function maskMemoryEmbeddingConfig(cfg): object`（`apiKey: ''` + `hasApiKey: boolean`）
   - `export async function saveMemoryEmbeddingConfig(input): Promise<object>`（空白 apiKey 保留旧值）
   - 端点：`GET /api/memory/embedding-config`、`POST /api/memory/embedding-config`、`POST /api/memory/test-embedding`
+  - 另导出 `MEMORY_EMBEDDING_MODES`（mode 白名单）与 `resolveMemoryEmbeddingConfig(override)`（探活/向量派生用的合并配置，明文 key 缺省回落已存值）
+
+> **Task 2 执行结果（已实施）**：新增 `memory-embedding-config` 12 条 + `config-update-field` 6 条，agent 全量 227 → **245/245**。实施中发现并修掉两个既有缺陷（都不在本计划预期内）：
+>
+> 1. **`updateConfigField` 自我死锁**：它在 `withWriteLock` 内又调 `saveConfig`（同一把锁），后者排队等前者持有的锁 → **调用方永久挂起**。此前它零生产调用方（server.js 走 `saveConfig`），从未暴露；本 Task 是第一个调用方，症状是"测试跑完不退出"。修法：把 `saveConfig` 的写入体抽成**不加锁**的 `writeConfigBody(config)`，两者各自取锁后复用；`updateConfigField` 同时改浅拷贝再赋值（原 `loadConfig()[key]=value` 会就地改调用方已持有的缓存对象）。
+> 2. **`withWriteLock` 隐含"fn 必须返回 Promise"契约**：`fn().finally(release)` 遇到同步写入体直接 TypeError 且**锁永不释放**。改为 `Promise.resolve(fn())` 兜住，并保证失败路径一定放锁（新增回归：写入失败后仍须能继续写）。
+>
+> 与计划的其余差异：① 临时 HOME 必须在 import **之前**设置（`config.js` 的 `AGENT_DIR` 在模块加载时求值，且 `loadConfig()` 首次会写默认 config.json），照抄本 Task 测试里的 `USERPROFILE` + `const { os } = await import('os')` 会污染真实 HOME；② `test-embedding` 增加 `options.createProvider` / `options.embeddingTimeoutMs` 测试接缝（沿用既有 `options.service` 模式），单测绝不真连外部 embedding；③ `withTimeout` 必须 `clearTimeout`（计划版本每次调用漏挂一个 8s 定时器，daemon 里是隐性唤醒源，测试进程还会延迟退出）；④ mode 校验错误经 `t('memory.invalidEmbeddingMode')` 渲染双语，其余错误原样透出。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -345,7 +372,10 @@ function withTimeout(promise, ms) {
 
 `agent/src/locales/zh.json` 的 `memory` 命名空间追加（`en.json` 对应英文）：
 
+追加时顺手补了校验文案 `invalidEmbeddingMode`（放在 `memory` 命名空间末尾、紧跟 `reviewItemCreated`）：
+
 ```json
+    "invalidEmbeddingMode": "不支持的 embedding 模式，仅支持 openai-compat 或 local",
     "embeddingDisabled": "未启用语义召回，当前仅关键词通道",
     "embeddingTimeout": "向量服务响应超时，本次已回落关键词召回",
     "tierLabelNone": "关键词",
@@ -356,12 +386,12 @@ function withTimeout(promise, ms) {
 - [ ] **Step 7: 运行测试 + 全量**
 
 Run: `cd agent && node --test test/unit/memory-embedding-config.unit.test.js test/unit/memory-routes.unit.test.js && node --test test/unit/*.unit.test.js`
-Expected: 新测试 4 条 PASS；routes 8 条仍 PASS；全量 `fail 0`。
+Expected: embedding 配置 12 条 + 配置锁回归 6 条 PASS；routes 8 条仍 PASS；全量 `fail 0`（245）。
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add agent/src/config.js agent/src/memory/embedding-config.js agent/src/memory/routes.js agent/src/locales/zh.json agent/src/locales/en.json agent/test/unit/memory-embedding-config.unit.test.js
+git add agent/src/config.js agent/src/memory/embedding-config.js agent/src/memory/routes.js agent/src/locales/zh.json agent/src/locales/en.json agent/test/unit/memory-embedding-config.unit.test.js agent/test/unit/config-update-field.unit.test.js
 git commit -m "feat(memory): 记忆语义召回的 embedding 配置端点（默认关闭、apiKey 脱敏）"
 ```
 
@@ -383,6 +413,8 @@ git commit -m "feat(memory): 记忆语义召回的 embedding 配置端点（默�
   - `export async function dropVectors(ids: string[]): Promise<void>`
   - `export function cosine(a: number[], b: number[]): number`
   - `export function createVectorStoreFacade({ filePath } = {})`（供 service 注入自定义路径做测试）
+  - `export function clearVectors(): Promise<void>`（执行时补：Task 6 的 reindex 端点需要「整体作废但不删文件」，删文件会让下次写落在不存在的目录上多一次 mkdir）
+  - `export const VECTORS_FILE`（默认缓存路径，Task 7 冒烟与文档引用）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -537,7 +569,7 @@ export function createVectorStoreFacade({ filePath = VECTORS_FILE } = {}) {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `cd agent && node --test test/unit/memory-vectors.unit.test.js`
-Expected: 6 条 PASS。
+Expected: 12 条 PASS（实测 12/12）。
 
 - [ ] **Step 5: Commit**
 
@@ -545,6 +577,16 @@ Expected: 6 条 PASS。
 git add agent/src/memory/vectors.js agent/test/unit/memory-vectors.unit.test.js
 git commit -m "feat(memory): 记忆向量派生缓存（模型变更整体作废、损坏即回落）"
 ```
+
+> **执行结果（已实施）。计划在此处有 5 处需要修正／加固，按实测行为改写：**
+> 1. **计划的清理会在测试自己落盘前把目录删掉**：`node:test` 的 `test()` 只是登记用例，模块体会先同步跑完，因此计划结尾的顶层 `rmSync(dir)` 在实际执行时先于异步用例的写盘发生。改为 `after(() => rmSync(dir, ...))`（新用 `node:test` 的 `after` 钩子）。
+> 2. **计划第 5 条用例含两行无效代码**：`await store.constructor;`（对函数取属性再 await，无意义）与用例内 `await import('fs')`，已删；`writeFileSync` 改到文件头统一 import。
+> 3. **计划的「落盘失败」用例本身跑不通**：原写法先 `mkdirSync(blocked)` 再 `writeFileSync(blocked, ...)` —— 对目录写文件是 EISDIR，报错发生在准备阶段而不是被测代码里。改为把父路径占成普通文件（`blocker.txt/vectors.json`），让 `mkdir(dirname)` 得到 ENOTDIR，才是真正的写失败路径。
+> 4. **`cosine` 按计划实现会算出 `0.9999999999999998` 的自相似度**：`dot / (Math.sqrt(na) * Math.sqrt(nb))` 中 `Math.sqrt(2) * Math.sqrt(2) = 2.0000000000000004`。合并成 `dot / Math.sqrt(na * nb)` 后 `cosine([1,1],[1,1]) === 1` 严格成立。这不是美化——Task 5 的相似度阈值比较和 Tier 展示都依赖它。
+> 5. **两处纯加固**（计划外的输入由实现兜住）：`memoryModelKey` 的 `dimensions` 用 `Number(...) > 0` 归一（字符串 `'512'` 与数字 512 必须得到同一个键，否则改一次配置就误作废全部向量）；`upsertVectors` 只接受「非空 + 全有限数」的向量，NaN/Infinity 不入库（一个 NaN 会让整批记忆的相似度全变 NaN，排序彻底失效）。
+> 实际用例数按计划是 6 条，落地为 **12 条**：补了并发不丢写、文件不存在/结构不合法/只有 modelKey 三种空缓存形态、drop 不存在的 id 不产生写入、`clear` 整体作废、非有限数过滤。
+
+**Agent 全量单测：245 → 257 passed / fail 0。**`vectors.js` 尚未被 `service.js` 引用（Task 5 才接入召回），因此本 Task 对既有行为零影响。
 
 ---
 
@@ -650,7 +692,7 @@ export function isVectorTier(tier) {
 - [ ] **Step 5: 运行测试 + 全量**
 
 Run: `cd agent && node --test test/unit/memory-tier.unit.test.js test/unit/rag*.unit.test.js && node --test test/unit/*.unit.test.js`
-Expected: 新 7 条 PASS；RAG 现有测试不受影响（只加了 `export`）；全量 `fail 0`。
+Expected: 新 9 条 PASS（实测 9/9）；RAG 现有测试不受影响（只加了 `export`）；全量 266 passed / fail 0。
 
 - [ ] **Step 6: Commit**
 
@@ -658,6 +700,13 @@ Expected: 新 7 条 PASS；RAG 现有测试不受影响（只加了 `export`）�
 git add agent/src/memory/tier.js agent/src/rag/searcher.js agent/test/unit/memory-tier.unit.test.js
 git commit -m "feat(memory): 召回通道分级决策器并复用 RAG 计分常量"
 ```
+
+> **执行结果（已实施）。3 处与计划不同，均已在代码注释里写明缘由：**
+> 1. **`MEMORY_VECTOR_THRESHOLD` 不复制数值，改成真同源**：计划写「自定 `0.3` + 注释取自 RAG 默认阈值」。执行前核实：`searcher.js` 里并不存在 `VECTOR_THRESHOLD` 常量（grep 无命中），真正的默认阈值在 `agent/src/rag/config.js:49` 的 `DEFAULT_SEARCH_CONFIG.threshold`。该模块是纯常量（只有 `join/homedir/process.env`，无 fs 读写），所以直接 `import` 它而不抄数字——RAG 侧调参时记忆侧自动跟随，不会静默漂移。
+> 2. **计划的远端判定会把「全是空格的 apiKey」放行**：原式 `cfg.apiKey && String(cfg.modelName || "").trim()` 中 `'   '` 为真 → 判成 `'remote'`，随后每次召回都拿空 key 去请求远端并必然失败。改为 key 与 model 都 trim 后判空。`saveMemoryEmbeddingConfig` 本身会 trim，但用户直接编辑 `config.json` 不经过它，故决策侧必须自带这道校验。
+> 3. **`ragAvailable` 用真值判断而非 `=== true`（计划同义写法保留）**：调用方 `isRagAvailable()` 返回布尔，但严格比较会让包装层传回的任何真值被误降级成 `'none'`——降级必须是静默的，静默的假阴性最难查。
+
+searcher 侧只导出计划点名的 4 个常量、值逐字不变；`KEYWORD_MIN_LEN`／`KEYWORD_MAX_HITS`／`KEYWORD_SCAN_LIMIT` 仍为私有（记忆侧不复用，导出它们只会扩大可被误用的面）。用例按计划是 7 条，落地 **9 条**：补了 `enabled` 假值（`'true'`／`1`／`undefined`）一律 none、无参/`null` 不抛、`isVectorTier` 非法值、以及阈值同源断言。
 
 ---
 
@@ -670,7 +719,7 @@ git commit -m "feat(memory): 召回通道分级决策器并复用 RAG 计分常�
 **Interfaces:**
 - Consumes: `resolveMemoryTier`, `isVectorTier`, `createVectorStoreFacade`, `createEmbeddingProvider`, `getMemoryEmbeddingConfig`, `cosine`, `MEMORY_VECTOR_THRESHOLD`, `KEYWORD_BOOST_PER_HIT`, `SCORE_MAX`
 - Produces:
-  - `createMemoryService({ filePath, vectorsFilePath, embedderFactory, tierResolver, ragAvailableProvider } = {})`（后四个仅为可测性注入点，缺省用真实实现）
+  - `createMemoryService({ filePath, vectorsFilePath, embeddingConfigProvider, embedderFactory, tierResolver, embedTimeoutMs } = {})`（除 filePath 外均为可测性注入点，缺省走真实实现；执行时以 `embeddingConfigProvider` 取代计划里的 `ragAvailableProvider`，理由见本 Task 末尾）
   - `recall(args, sessionId, t)` 返回值新增 `tier: 'none'|'remote'|'local'` 与 `vectorMatched: number`；其余字段与今天逐字一致
 
 排序规则（写进注释，避免实现走偏）：
@@ -872,7 +921,7 @@ function memorySearchText(m) {
 - [ ] **Step 4: 运行测试**
 
 Run: `cd agent && node --test test/unit/memory-service.unit.test.js`
-Expected: 29 条全 PASS（原 25 条即 A 档回归锁）。
+Expected: 34 条全 PASS（原 25 条即 A 档回归锁，实测 34/34；agent 全量 275/275）。
 
 - [ ] **Step 5: 暴露 backfillVectors 并在响应里带 tier**
 
@@ -905,6 +954,26 @@ Expected: 29 条全 PASS（原 25 条即 A 档回归锁）。
 git add agent/src/memory/service.js agent/test/unit/memory-service.unit.test.js
 git commit -m "feat(memory): recall 叠加向量通道并按需补齐缓存，未启用时逐字保持关键词行为"
 ```
+
+> **执行结果（已实施）。本 Task 的计划与实际代码差异最大，4 处必须改计划本身，请按本节为准：**
+
+> **① 计划假想的 recall 内部结构不存在。**`service.js` 里没有 `keywordScore(m,…) → {score, hits}`、没有 `compareMemoryScore`，`candidates` 之外也没有独立候选池：计分是内联的**整数加权**（content +3 / title +2 / tags +2 / 全文精确 +5+3，随关键词个数累加、无上限），排序只有 `.sort((a,b) => b.score - a.score)`，**没有 importance / updatedAt 次级键**（V8 的 sort 稳定，同分保持文件顺序）。执行时把这段内联计分原样抽成模块级 `keywordScore(m, keywords, originalQuery)`（权重与判定顺序逐字不变），`hits` 概念不存在，融合分支不再依赖它。
+
+> **② 计划的融合公式与记忆侧分值不可比，因此 Task 4 的常量导出已回退。** 计划写 `finalScore = max(cos,0) + KEYWORD_BOOST_PER_HIT * hits` 并封顶 `SCORE_MAX`（0.99）——这是 RAG 的 [0,1] 刻度。直接套到整数分制上，所有条目分数都 < 1，而关键词档动辄 8、13，等于把排序交给浮点噪声；要救回来只能先把关键词分归一化，而那会**改写 A 档计分**，违反本 Task 的硬约束。最终改法是保持整数尺子：
+> `score = kwScore + (cos >= MEMORY_VECTOR_THRESHOLD ? VECTOR_HIT_BONUS + Math.round(cos * VECTOR_SCALE_POINTS) : 0)`，其中 `VECTOR_HIT_BONUS = 3`（达阈值先保底一次 content 命中的权重）、`VECTOR_SCALE_POINTS = 4`（cos=1 时合计 7 ≈ content+title+tags 同时命中）。语义与词面都不沾的条目仍为 0 分被排除。
+> 因此 Task 4 为「复用」而给 `rag/searcher.js` 加的 4 个 `export` 已回退成私有：没有消费方的导出只会留下幻影耦合。真正的同口径只保留一处——`MEMORY_VECTOR_THRESHOLD` 仍引用 `rag/config.js` 的 `DEFAULT_SEARCH_CONFIG.threshold`。
+
+> **③ 注入点必须补 `embeddingConfigProvider`。** 计划版在单测里调用真实 `getMemoryEmbeddingConfig() → loadConfig()`，等于让 agent 单测去读用户机器上的 `~/.ai-helper-agent/config.json`：一旦用户真的配好了 embedding，modelKey/provider 行为会随用户配置漂移，测试不可重放。`ragAvailableProvider` 则取消——`tierResolver` 的缺省实现已经包住 `isRagAvailable()`，两个入口只会多出一个不一致的面。
+
+> **④ 嵌入调用挪到取锁之前。** 计划把 `embedQuery` 写在 `withMemoryLock` 内部：记忆锁是进程内 Promise 链，一次 8 秒超时的 embedding 请求会把同进程所有 store/manage 写入一起堵死。现在档位判定 + 查询向量在锁外算完（`fused = queryVec !== null`），锁内只做纯计算与向量缓存读写。条目向量的按需补齐仍在锁内（它是 fs 写入且每条记忆一生最多一次）。
+
+> **零漂移护栏的实际写法：**`if (keywords.length > 0 && !fused) { 原路径逐字保留 } else if (fused) { 融合 }`。所以 provider 抛错、`embedderFactory` 本身抛错、8 秒超时这三种情况下 `fused` 都是 false，走的正是今天这段代码——最坏情况等于没开向量，不会更差（3 条用例分别验证）。`fused` 为真但关键词切不出来时，语义达阈值的条目仍能单独命中（A 档拿不到的增量）。
+
+> **测试辅助与计划不符：** 真实文件用 `describe/it` 与 `withService(fn)`（临时目录注入 filePath），不是计划里的顶层 `test()` + `svc()`；新增向量用例配套 `withVectorService(opts, fn)`。计划第 4 条的 `assert.equal(typeof embedCalls, 'undefined')` 是恒真断言（该标识符在计划里从未定义），换成两件事：provider 工厂计数器必须为 0，以及 A 档不得生成 `memory-vectors.json`。用例按计划 4 条，落地 **9 条**：另补 embedderFactory 抛错、无 query 不做向量、按需补齐只发生一次、modelKey 变更整体作废、删除条目的向量孤儿不影响结果。
+
+> **`backfillVectors` 实现细节修正：** 计划版用 `await readAll()`（该方法失败会抛）拿数据，但执行时先照抄了 `readMemoryFile()` 的返回值——它返回的是 `{success, data}` 包装，`data.facts` 恒 undefined，于是 `indexed` 永远是 0；跑红后改为取 `.data`。分批大小用 `EMBED_BATCH_SIZE`（10，兼容阿里云百炼单次批量上限 10 条）而非硬编码，单批失败只记录不中断（能建多少算多少，剩下的 recall 时补）。A 档返回 `{success:true, skipped:true, reason: t('memory.embeddingDisabled')}`。
+
+**回归证据：agent 全量 266 → 275 passed / fail 0**（原 25 条记忆 service 用例一条未改、一条未红，即 A 档零漂移）。扩展端本 Task 未改动。
 
 ---
 
@@ -992,7 +1061,7 @@ Expected: 新增用例 FAIL。
 - [ ] **Step 4: 运行全部 Agent 测试**
 
 Run: `cd agent && node --test test/unit/*.unit.test.js`
-Expected: `fail 0`（原 220 + 本计划新增用例）。
+Expected: `fail 0`（实测 287 passed / fail 0；本 Task 新增 8 条 service + 4 条 routes）。
 
 - [ ] **Step 5: Commit**
 
@@ -1000,6 +1069,16 @@ Expected: `fail 0`（原 220 + 本计划新增用例）。
 git add agent/src/memory/service.js agent/src/memory/routes.js agent/test/unit/memory-service.unit.test.js agent/test/unit/memory-routes.unit.test.js
 git commit -m "feat(memory): 向量与记忆生命周期对齐（懒补/删除/淘汰摘除）并新增 reindex 端点"
 ```
+
+> **执行结果（已实施）。4 处与计划不同：**
+> 1. **`reindex` 不能靠现有的通用分发分支。**`ROUTE_METHODS` 的兜底调用形态是 `service[method](body, t)`，而 `backfillVectors(t)` 的第一个参数是翻译函数——直接映射会把请求体当成 `t`。已按 `injectSelect` 的先例加显式分支 `service.backfillVectors(t)`（不接请求体）。
+> 2. **懒补的实现形态：**计划给的代码在 `getMemoryEmbeddingConfig()` 上直接取配置，执行时改用 Task 5 引入的 `embeddingConfigProvider` 注入点（否则单测里的懒补用例会去读用户真实 `config.json`）。档位判定与 `cfg` 在 `queueMicrotask` 之前算完，微任务内只做嵌入与落盘，两处各自 try/catch——`getProvider()` 同步抛错也不会变成 unhandled rejection。
+> 3. **去重命中（`add` 转 `update`）也要懒补**：计划的接线清单只列了 add/update/delete/compact，但该分支会改写 `duplicate.tags`，而 tags 参与 embedding 文本，不重算就留下陈旧向量。已一并接上。
+> 4. **`dropVectors` 在 delete/compact 里是 await 的（不懒删）**：这两处只涉及 fs 写、没有网络调用，留在记忆锁内反而能保证「真源删了、缓存也删了」在同一个临界区内完成；懒删会开出一段`向量已摘除但响应还没返回`的空窗，测试也无法确定时序。
+
+用例按计划 3 条（其中第 3 条在计划里是空壳注释），落地 **8 条 service + 4 条 routes**：补了「懒补失败不留半成品文件」「delete 未落向量的条目不报错」「update 不存在的 id 不触发嵌入」「reindex 只接受 POST」「reindex 的 `skipped` 仍是 200」「嵌入整体失败才 400」。`EMBED_CFG` 与 `withVectorService` 从 Task 5 的 `describe` 内提到模块级，两个 describe 共用同一套注入辅助。
+
+**不变量已验证：每条记忆至多一个向量（update 同 id 覆盖）、删除与压缩淘汰后不残留向量。**Agent 全量 275 → 287 passed / fail 0。
 
 ---
 
@@ -1043,6 +1122,65 @@ Expected: Agent `fail 0`；扩展与基线一致；`BUILD_SUCCESS`。
 git add agent/README.md agent/README.zh-CN.md CHANGELOG.md agent/test/smoke/memory-pushdown.smoke.mjs docs/superpowers/plans/2026-10-13-memory-hybrid-recall.md
 git commit -m "docs(memory): 语义召回通道文档、冒烟降级验证与 changelog"
 ```
+
+> **执行结果（已实施）** —— Step 1 按计划通过（`tool-memory.js:85` 的 `...rest` 透传仍在，`tier`/`vectorMatched` 自动出现在工具结果里），**因此 locales 与转发层均未改动**：计划 Files 里列的 `zh.json`/`en.json` 一项是条件性的（「若需要展示 tier 提示」），而本任务不引入新 UI，未做。实际落地与计划的三处偏差：
+>
+> 1. **Step 2 的 `reindex` 预期错了**：计划要求「断言 `POST /api/memory/reindex` 返回 `success: true`（fake 端点失败时也是 skipped/成功不抛）」，但 `skipped` 只在**档位不是向量档**时才返回；配置已启用而端点不可达时走的是全量嵌入失败路径，Task 6 的实现返回 `{success:false, indexed:0, error}` → HTTP **400**。冒烟按实现断言 400，并把「明确失败而不是 500」作为真正的运维性质。
+> 2. **冒烟挖出一个计划里没有、且会使 Tier B 完全不可用的真缺陷**：`memoryEmbedding` 配置面用 `baseUrl`，而 `rag/embedding/openai-compat.js` 读的是 `config.endpoint`（`rag/config.js` 的字段名）。两边从未对接过 → `endpoint` 永远为空 → `fetch('/embeddings')` → `Failed to parse URL from /embeddings`，**对任何真实端点 100% 失败**。单测看不见，因为 Task 5/6 全部注入 `embedderFactory`/`createProvider` 假工厂；只有走真实工厂的冒烟能暴露。
+>    修正：`embedding-config.js` 新增单点出口 `toEmbeddingProviderConfig(cfg)`（`baseUrl` ⇄ `endpoint` 双向归一），service 的 `getProvider()` 与 routes 的 `test-embedding` 两个创建点都过它。映射放在**调用工厂之前**而不是默认工厂内部，这样注入的假工厂也能观察到，新加了 3 条单测钉住（纯函数 1 + routes 1 + service 1）。冒烟额外断言错误文案**不得**是 `Failed to parse URL`，防止以后再退回到静默不可用。
+> 3. **wiki 同步未执行**：Step 3 的 `bash scripts/sync-wiki-to-gitee.sh` 会向 Gitee 远端推送，与本轮「暂不推，用户说了再推」的指示冲突，所以未跑；`.wiki-check/` 下的 `Agent-Service`/`Core-Features` 中英同步也一并待命。
+>
+> 冒烟从 16 项增至 **21 项**（配置脱敏、不可达时 recall 降级、不留半成品向量文件、reindex 400、test-embedding 400），全 PASS。Agent 全量 287 → **290 passed / fail 0**。
+>
+> Step 5 拆成两次提交（仓库 `git log` 是一目的一个的 conventional commit 风格，把行为修复和文档拧成一坨会看不清）：`fix(memory)` 带映射 + 3 条单测 + 冒烟，`docs(memory)` 带 README 中英 + CHANGELOG + 本计划写回。
+
+# 真机验证更正（2026-10-13，实施后）
+
+> 用使用者真实凭证、真实记忆库副本（41 条）、真实 provider（返点 `BAAI/bge-m3`）跑端到端，不注入假工厂。只读副本 + 临时 HOME，未碰用户真实数据目录。**本节推翻 Task 5 融合公式的设计前提，也推翻本轮首轮汇报中“Tier B 无可测收益”的结论（那个结论的测法是错的）。**
+
+### 1. 绝对阈值 `MEMORY_VECTOR_THRESHOLD`（= RAG 默认 0.3）在记忆粒度上失效
+
+| query | `vectorMatched` / 候选总数 |
+|---|---|
+| 写入假装成功其实没保存的老毛病 | 38～40 / 40 |
+| 他习惯用哪种界面库写网页 | 40 / 41 |
+| 为什么我查不到海外的资料 | **41 / 41** |
+| 前端选型时他最中意哪个库 | 39 / 41 |
+| 这两个国家的综合实力谁更强 | 16 / 41 |
+
+阈值扇扫（Q5）：0.3 → 38/40 命中；0.5 / 0.55 → 1/40；0.6 → 0/40。**根因是粒度差**：RAG 是“短 query vs 小片段”，记忆是“短 query vs 中位 626 字、最长 1901 字的段落”，长段落把语义面聚到一律过阈值。绝对阈值在“全过”与“全不过”之间没有可用区间。
+
+### 2. 整数叠加融合会**压制**语义正确项（本计划最大的设计错误）
+
+拿“换个说法”类 query 实测（目标条目在其原文中无任一词面关键词命中）：
+
+| query | 目标条目 cos | 纯 cos 排序名次 | Tier A关键词 | 本计划的融合公式 |
+|---|---|---|---|---|
+| 他习惯用哪种界面库写网页 | 0.5256 | **#2** | 未召回 | **未进 top8** |
+| 这两个国家的综合实力谁更强 | 0.5829（第二名 0.374） | **#1** | 未召回 | #3 |
+| 为什么我查不到海外的资料 | 0.5724 | **#1** | 未召回 | #4 |
+| 前端选型时他最中意哪个库 | 0.5899 | #1 | #1（“前端”命中） | #1 |
+
+同口径反向实验（词面已命中的 query）：真目标 `kw=6 cos=0.6355 → fused=12` 排 #2，干扰条目 `kw=9 cos=0.5006 → fused=14` 仍排 #1，Tier A 与 Tier B 的 top6 完全同序。
+
+**修正后的结论**（与本轮首轮汇报相反）：
+- 向量有**不可替代**的增量：上表前 3 行 Tier A 根本拿不到正确答案（不是排序差，是货不在场）。首轮汇报的“无可测收益”来自测法错误——当时拿的 5 个 query 全部与原文词面重叠，而那恰好是向量最没用的场景。
+- 但 Task 5 的 `+3 + round(cos×4)` 把这份增量糟蹋了：目标纯 cos 排 #1/#2，叠加后被挤出 limit。cos 绝对分布极窄（top5 = 0.547/0.526/0.517/0.516/0.511），因此**排名融合（RRF 类）才是对口方案**，任何绝对阈值与固定加分都不成立。
+- Task 5 执行结果里“两套刻度不可比 → 所以整数叠加”的推理只对了前半句：刻度不可比确实否定了归一化，但它**同样否定了把两路分数相加**——相加仍是在比较不可比的量。当时没看到这一层。
+
+### 3. 长文本嵌入部分失败被报成成功（遗留缺陷，未修）
+
+reindex 在 `BAAI/bge-m3` 下 41/41 成功、1083ms；换 `BAAI/bge-large-zh-v1.5` 后**只有 11/41** 建索引（3 批报 `400 {"code":20015,"message":"The parameter is invalid"}`，真实文本中位 626 字超其上下文），但 `backfillVectors` 仍返回 `success:true`，失败原因只在内存数组里既不入响应也不打日志；且 recall 的按需补齐每次都对同一批必然失败的长文本重打请求。已排除厂商限流（串行 6 批 + 并发 6 批全部成功）。
+
+### 4. 本地档的两个坑
+
+- `DEFAULT_MEMORY_EMBEDDING_CONFIG.queryPrefix = ''` 是**空串不是 undefined**，而 `rag/embedding/index.js:24` 用 `resolved.queryPrefix ?? (mode==='local' ? 前缀 : '')` —— `??` 不回落空串 → 记忆选 `local` 时 BGE 查询前缀永远加不上（日志实测 `queryPrefix: off`），与知识库口径静默不一致。属配置意图与实际行为不符；但同一 query 实测加前缀后排序反而更差（目标 0.5551 vs 干扰 0.5781），不足以断言“修了一定涨质”，故未动。
+- 512 位上下文下长记忆尾部几乎不贡献表征：本地 bge-small 对“前 900 字相同、尾部整段换成无关内容”两条算出 cos **0.9799**（同文本自检一致 = true）。
+- 区分度对比（同一 query）：远端 bge-m3 **+0.134** vs 本地 bge-small **+0.018**（后者接近噪声）。
+
+### 5. 仍未解决的上游问题（转入计划三）
+
+Tier A 在词面零命中时**不是返回空，而是返回一堆无关条目**（上表返 8/6/3 条）——因为 `tokens.js` 的碎 bigram（“写网”“个国”“我查”这种 2 字块）几乎必然在长条目里 `includes` 命中。而 `agent/src/rag/searcher.js` 早在 2026-09 就升级过片段化匹配（英文词边界 + 中文最长命中片段 + df 高频剔除）。**记忆与知识库是两套关键词实现，知识库修过的坑记忆这边原封未动** —— 这才是“记忆不准”的主因，优先级高于向量调参。
 
 ## Self-Review 检查点
 

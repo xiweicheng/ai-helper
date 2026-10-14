@@ -1909,15 +1909,19 @@ textarea {
 /* Tab 导航样式 */
 .tab-nav {
   display: flex;
-  gap: 2px;
+  /* 放不下就换行，而不把每个按钮都抽成省略号：英文 8 个 tab 自然宽合计 550px，
+     而容器内宽只有 540px，只差 10px 就让整排全部截断（实测）。wrap + 不收缩 = 零截断 */
+  flex-wrap: wrap;
+  gap: 4px 2px;   /* 行间距 4px、列间距 2px；写成 gap 简写是为了不被后面的 gap 覆盖 */
   margin-bottom: 24px;
   border-bottom: 2px solid #e0e0e0;
   padding-bottom: 0;
 }
 .tab-nav-btn {
   flex: 1 1 auto;
-  min-width: 0;
-  padding: 10px 6px;
+  /* 不再写 min-width:0：那允许按钮缩到文字以下，代价是整排省略号；
+     现在交给 .tab-nav 的 flex-wrap 兜底，窄到放不下时换行而不是截字 */
+  padding: 10px 4px;
   border: none;
   background: transparent;
   color: #888;
@@ -3742,3 +3746,23 @@ textarea {
   overflow: hidden;
   cursor: pointer;
 }
+
+/* ===== 记忆面板（options.html 记忆标签页）===== */
+/* 状态卡：陈旧用红标强调，指纹用等宽小字（长 modelKey 常见） */
+.memory-status { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #666; }
+.memory-status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.memory-status-keys { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.memory-status-keys code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.memory-status-badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.memory-status-badge.stale { background: #fed7d7; color: #c53030; }
+.memory-status-badge.fresh { background: #e6fffa; color: #2c7a7b; }
+.memory-status-hint { color: #c53030; font-size: 12px; }
+.memory-status-muted { color: #999; font-size: 12px; }
+/* 状态读取失败（含代理版本旧没有这个端点）：跟 stale 同色系，但语义是“读不到”而不是“数据旧” */
+.memory-status-badge.fail { background: #fed7d7; color: #c53030; }
+/* 职责说明行：本面板写代理配置，与页面底部那颗「保存」分开 */
+.memory-scope-hint { font-size: 12px; color: #999; line-height: 1.5; margin: -6px 0 12px; }
+/* 门控引导区（未连接 / 本地档缺 RAG 依赖） */
+.memory-gate { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #e0e0e0; border-radius: 8px; background: #f7fafc; }
+.memory-gate-title { font-size: 14px; font-weight: 600; }
+.memory-gate-body { font-size: 13px; color: #666; }

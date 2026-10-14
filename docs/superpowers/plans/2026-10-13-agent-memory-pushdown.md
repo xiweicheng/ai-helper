@@ -1,5 +1,9 @@
 # 记忆逻辑下推 Agent 端 Implementation Plan
 
+> **存档状态（2026-10-14 加注）**：本计划已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`），**不要按本文件实施**。
+> 现行口径见 [`docs/Memory-Retrieval-Design.md`](../../Memory-Retrieval-Design.md)。文中的预写代码块与 Step 清单属实施前内容，已与源码不再同步。
+> 不删的理由：本文件末尾的执行记录里有 45 处「作废 / 更正 / 推翻 / 错定」结论（哪些判据被实测否定、为什么），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将长期记忆的全部业务逻辑（store/recall/manage/三级注入筛选）从扩展端 background 迁移到 agent 包，agent 端暴露 `/api/memory/*` 业务端点，扩展端瘦身为纯转发层。

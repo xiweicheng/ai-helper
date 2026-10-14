@@ -63,6 +63,53 @@ describe('persistCompactionSummary', () => {
     expect(r.memoryId).toBe('fact_a_1');
   });
 
+  // M2（2026-10-14 评审）：锚点被 compact 淘汰/手动删除后，update 从此指向不存在的 id，
+  // 摘要沉淀永久静默断供。agent 侧 now 回 code=not_found，扩展端据此降级为新增重建。
+  test('update 锚点已失效（code=not_found）：降级为 add 重建并回传新 id', async () => {
+    agentRequest
+      .mockResolvedValueOnce({ httpStatus: 400, success: false, error: 'not found', code: 'not_found' })
+      .mockResolvedValueOnce({ httpStatus: 200, success: true, memory: { id: 'sum_new_1' } });
+
+    const r = await persistCompactionSummary({
+      summary: 'S',
+      sessionId: 's1',
+      memoryId: 'sum_dead',
+      revision: 4,
+    });
+
+    expect(r).toEqual({ ok: true, memoryId: 'sum_new_1' });
+    expect(agentRequest).toHaveBeenCalledTimes(2);
+    const [path1, body1] = agentRequest.mock.calls[0];
+    expect(body1.action).toBe('update');
+    expect(body1.memoryId).toBe('sum_dead');
+    const [path2, body2] = agentRequest.mock.calls[1];
+    expect(path2).toBe('/api/memory/store');
+    expect(body2.action).toBe('add');
+    expect(body2.memoryId).toBeUndefined();
+    expect(body2.content).toBe(body1.content);
+  });
+
+  test('降级 add 也失败：仍静默（ok=false，保留原锚点）', async () => {
+    agentRequest
+      .mockResolvedValueOnce({ httpStatus: 400, success: false, code: 'not_found' })
+      .mockResolvedValueOnce({ httpStatus: 503, success: false, error: 'down' });
+
+    const r = await persistCompactionSummary({ summary: 'S', sessionId: 's1', memoryId: 'sum_dead', revision: 5 });
+
+    expect(r).toEqual({ ok: false, memoryId: 'sum_dead' });
+    expect(agentRequest).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  test('其他 400 不触发降级（code 缺失时不误重建）', async () => {
+    agentRequest.mockResolvedValue({ httpStatus: 400, success: false, error: 'invalid' });
+
+    const r = await persistCompactionSummary({ summary: 'S', sessionId: 's1', memoryId: 'sum_x', revision: 1 });
+
+    expect(r).toEqual({ ok: false, memoryId: 'sum_x' });
+    expect(agentRequest).toHaveBeenCalledTimes(1);
+  });
+
   test('无 sessionId 时不产生 session:null 标签', async () => {
     agentRequest.mockResolvedValue({ success: true, memory: { id: 'fact_b_1' } });
 

@@ -72,3 +72,27 @@ describe('压缩摘要沉淀链路接线', () => {
     expect(src).toContain('revision: (old?.revision || 0) + 1');
   });
 });
+
+// 开关状态回填守卫：两个开关在 DOMContentLoaded 时只能拿到 state 的默认值
+// （autoCompaction 默认 false / persistSummaryToMemory 默认 true），storage 里的真实值
+// 要等 GET_CHAT_CONFIG 往返后才可用。若配置加载完成后不回填，刷新必然回弹成默认值。
+describe('压缩开关状态回填接线', () => {
+  const loadedBlock = () => {
+    const src = read('src/side_panel/index.js');
+    const matched = src.match(/loadChatConfig\(\)\.then\(\(\) => \{([\s\S]*?)\n\}\);/);
+    if (!matched) throw new Error('未找到 loadChatConfig().then 初始化块');
+    return matched[1];
+  };
+
+  test('配置加载完成后回填两个开关勾选态', () => {
+    const block = loadedBlock();
+    expect(block).toContain('syncAutoCompactToggle();');
+    expect(block).toContain('syncPersistSummaryToggle();');
+  });
+
+  test('回填函数以 storage 配置为唯一真源（不读 DOM 现状）', () => {
+    const src = read('src/side_panel/index.js');
+    expect(src).toContain('btn.checked = state.chatConfig.autoCompaction === true;');
+    expect(src).toContain('btn.checked = state.chatConfig.persistSummaryToMemory !== false;');
+  });
+});

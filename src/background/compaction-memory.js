@@ -24,7 +24,8 @@ const SUMMARY_IMPORTANCE = 6;
 const STORE_TIMEOUT_MS = 30000;
 
 /**
- * 把压缩摘要写入长期记忆。同一会话复用同一 memoryId 走 update，避免每次重压缩堆条目。
+ * 把压缩摘要写入长期记忆。同一会话复用同一 memoryId 走 update，避免每次重压缩堆条目；
+ * 锚点失效（not_found）时降级为 add 重建并回传新 id，下次压缩继续复用新锚点。
  * @param {object} input
  * @param {string} input.summary - 摘要正文
  * @param {string} [input.sessionId]
@@ -58,6 +59,16 @@ export async function persistCompactionSummary({
   try {
     const resp = await agentRequest('/api/memory/store', body, 'POST', STORE_TIMEOUT_MS);
     if (!resp?.success) {
+      // 锚点已失效（条目被 compact 淘汰或手动删除，agent 侧回 code=not_found）：降级为新增重建
+      // 拿回新锚点。否则从此每次压缩都 update 一个不存在的 id，摘要沉淀静默断供且无从察觉。
+      if (body.action === 'update' && resp?.code === 'not_found') {
+        const addBody = { ...body, action: 'add' };
+        delete addBody.memoryId;
+        const retry = await agentRequest('/api/memory/store', addBody, 'POST', STORE_TIMEOUT_MS);
+        if (retry?.success) return { ok: true, memoryId: retry.memory?.id || null };
+        logger.warn('[CompactionMemory] fallback add failed:', retry?.error || retry?.httpStatus || 'unknown');
+        return { ok: false, memoryId: memoryId ?? null };
+      }
       // Agent 未连接 / 旧版本缺端点：静默降级，压缩摘要仍在会话内可用
       logger.warn('[CompactionMemory] store failed:', resp?.error || resp?.httpStatus || 'unknown');
       return { ok: false, memoryId: memoryId ?? null };

@@ -6,7 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, getMcpToolDisplayDesc, applyRagToolIntroduction } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, getMcpToolDisplayDesc, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
 import { getEnabledSkills } from './skill-selector.js';
 import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
@@ -354,7 +354,8 @@ export async function switchAgent(agentId) {
   // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
   if (isAgentSpecific || (savedTools && savedTools.length > 0)) {
     // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
-    const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+    // 有效性全集含 RAG 静态全集：代理离线时知识库工具临时卸载不能丢用户勾选
+    const validToolIds = getValidToolIdUniverse(ragTools);
     const existing = savedTools.filter(id => validToolIds.has(id));
     if (isAgentSpecific) {
       // Agent-specific：使用用户保存的列表

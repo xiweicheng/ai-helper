@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { memoryDispatch } from '../../src/memory/routes.js';
 import { createMemoryService } from '../../src/memory/service.js';
+import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 
 // 占位翻译桩：保留参数渲染，使 note 等插值可被断言
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
@@ -31,7 +32,15 @@ function mkRes() {
 
 function withRouter(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'mem-route-'));
-  const service = createMemoryService({ filePath: join(dir, 'global-memory.json') });
+  // 与 memory-service 的 withService 同一隔离口径：不供这四个注入点就会读用户真实
+  // config.json、拿真 key 联网、写他真实的向量缓存（缘由见那个夹具的注释块）。
+  const service = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath: join(dir, 'memory-vectors.json'),
+    embeddingConfigProvider: () => ({ enabled: false }),
+    tierResolver: () => 'none',
+    embedderFactory: () => { throw new Error('路由夹具不得创建 embedding provider'); }
+  });
   const call = (req, res, pathname, body) => {
     // 真实 ServerResponse 由 Node 原生挂接 res.req，mock 需显式补齐（getAllowedOrigin 依赖）
     res.req = req;
@@ -109,5 +118,105 @@ describe('memoryDispatch 分发', () => {
     await memoryDispatch(mkReq(), res, '/api/memory/store', new URL('http://127.0.0.1/api/memory/store'), T, {}, { service: broken });
     assert.equal(res.statusCode, 400);
     assert.equal(res.body.error, 'boom');
+  }));
+});
+
+describe('reindex 端点', () => {
+  const callReindex = (method = 'POST', service) => {
+    const res = mkRes();
+    return memoryDispatch(
+      mkReq(method), res, '/api/memory/reindex',
+      new URL('http://127.0.0.1/api/memory/reindex'), T, {}, { service }
+    ).then(() => res);
+  };
+
+  it('POST /api/memory/reindex 透传 backfillVectors 结果（t 作为唯一参数）', async () => {
+    let gotT = null;
+    const res = await callReindex('POST', {
+      backfillVectors: async (t) => { gotT = t; return { success: true, indexed: 3 }; }
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.indexed, 3);
+    assert.equal(typeof gotT, 'function', '必须把请求语言的 t 传进去渲染跳过原因');
+  });
+
+  it('A 档返回 skipped 仍是 200（未启用不是错误）', async () => {
+    const res = await callReindex('POST', {
+      backfillVectors: async () => ({ success: true, skipped: true, reason: 'memory.embeddingDisabled' })
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.skipped, true);
+  });
+
+  it('嵌入整体失败时返回 400 与 error', async () => {
+    const res = await callReindex('POST', {
+      backfillVectors: async () => ({ success: false, indexed: 0, error: 'embedding_timeout' })
+    });
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, 'embedding_timeout');
+  });
+
+  it('reindex 只接受 POST', async () => {
+    const res = await callReindex('GET', { backfillVectors: async () => ({ success: true, indexed: 0 }) });
+    assert.equal(res.statusCode, 404);
+  });
+});
+
+// vector-status 夹具：同时隔离向量缓存路径、配置来源与嵌入工厂。
+// 三者缺一不可：复用 withRouter 会读真实 ~/.ai-helper-agent/memory/memory-vectors.json（碍用户数据且断言不可控），
+// 不供 embedderFactory 则 store 的懒补会拿真 provider 联网/下载模型。
+// 注：withRouter 本身已于 2026-10-13 补上同口径隔离，不再依赖本夹具单独兜底。
+function withStatusRoute(cfg, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'mem-status-route-'));
+  const vectorsFilePath = join(dir, 'memory-vectors.json');
+  const service = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath,
+    embeddingConfigProvider: () => ({ enabled: false, mode: 'openai-compat', baseUrl: '', modelName: 'm', apiKey: '', dimensions: 3, queryPrefix: '', ...cfg }),
+    tierResolver: () => (cfg.enabled === true ? 'remote' : 'none'),
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (texts) => texts.map(() => [0, 1, 0]) })
+  });
+  const call = (method, pathname) => {
+    const req = { method, headers: { origin: 'chrome-extension://test-ext' } };
+    const res = {
+      statusCode: 0, headers: null, body: null,
+      writeHead(status, headers) { res.statusCode = status; res.headers = headers; },
+      end(body) { res.body = JSON.parse(body); }
+    };
+    res.req = req;
+    return memoryDispatch(req, res, pathname, new URL('http://127.0.0.1' + pathname), T, {}, { service })
+      .then(() => res);
+  };
+  return Promise.resolve(fn({ call, service, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+describe('GET /api/memory/vector-status', () => {
+  it('GET 合法：返回 200 与状态字段（向量档未启用也不报错）', () => withStatusRoute({}, async ({ call, service }) => {
+    await service.store({ action: 'add', type: 'fact', content: '一条记忆', tags: [], importance: 5 }, T);
+    const res = await call('GET', '/api/memory/vector-status');
+    assert.equal(res.statusCode, 200, '只读状态不因未启用向量档而报错');
+    assert.equal(res.body.success, true);
+    for (const k of ['indexed', 'total', 'storedModelKey', 'currentModelKey', 'stale', 'tier']) {
+      assert.ok(k in res.body, `缺少字段 ${k}`);
+    }
+    assert.equal(res.body.total, 1);
+    assert.equal(res.body.tier, 'none');
+  }));
+
+  it('换了模型没重建 → stale 为真（界面据此标红）', () => withStatusRoute({ enabled: true }, async ({ call, vectorsFilePath }) => {
+    const store = createVectorStoreFacade({ filePath: vectorsFilePath });
+    await store.upsertVectors([['fact_a', [1, 0, 0]]], 'openai-compat|old-model|3');
+    const res = await call('GET', '/api/memory/vector-status');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.stale, true);
+    assert.equal(res.body.indexed, 1);
+    assert.equal(res.body.storedModelKey, 'openai-compat|old-model|3');
+    assert.equal(res.body.currentModelKey, 'openai-compat|m|3', '指纹走 memoryModelKey，不自己拼');
+  }));
+
+  it('非 GET 方法落到通用分发 → 404（不新增业务路由）', () => withStatusRoute({}, async ({ call }) => {
+    const res = await call('POST', '/api/memory/vector-status');
+    assert.equal(res.statusCode, 404);
   }));
 });

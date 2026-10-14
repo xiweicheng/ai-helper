@@ -12,7 +12,7 @@
     "push:all": "bash scripts/push-all.sh",
     "sync:wiki": "bash scripts/sync-wiki-to-gitee.sh",
     "preview": "vite",
-    "lint": "eslint src/",
+    "lint": "eslint src/ agent/",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",

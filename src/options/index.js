@@ -25,12 +25,18 @@ import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
+import { initMemoryPanel, refreshMemoryPanel } from './memory-panel.js';
 import { initSaveBarSticky } from './save-bar.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
 
 let currentTools = [];
+
+// Tab 激活时的数据刷新注册表。
+// 激活一共有四条路径（按钮点击、hash 直达、optionsInitialTab、SWITCH_TAB 消息），它们最终都汇到
+// switchTab；刷新若只挂在按钮 click 上，F5 和从侧边栏跳进来这两条就会停在空数据。
+const tabRefreshers = {};
 
 // Tab 切换函数
 function switchTab(tabName) {
@@ -46,12 +52,16 @@ function switchTab(tabName) {
   if (window.location.hash !== '#' + tabName) {
     history.replaceState(null, '', '#' + tabName);
   }
+
+  // 已注册刷新入口的面板进入时重拉一次：三个面板的数据源都在 agent / storage，
+  // 只挂在按钮 click 上会让 hash 直达与 F5 两条路径停在空数据
+  tabRefreshers[tabName]?.();
 }
 
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge'];
+  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge', 'memory'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -167,6 +177,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   });
   
+  // 记忆面板的数据源在 agent 侧，注册刷新入口必须在 activateByHash 之前：
+  // F5 时 hash 会直接激活记忆 Tab，等到下面 initMemoryPanel() 才注册就漏了这一条路径
+  tabRefreshers.memory = refreshMemoryPanel;
+
+  // 工具箱与知识库同理，必须挤在同一个窗口里注册。两者的 refresh 都是自包含的
+  // （只读 storage / DOM，不依赖各自 init 里的临时状态），因此早于 initToolbox()
+  // 被调用也不会出错；异步失败在此吞掉，避免 switchTab 里浮出未处理的 rejection
+  tabRefreshers.toolbox = () => { refreshToolbox().catch(() => {}); };
+  tabRefreshers.knowledge = () => { refreshKnowledgePanel().catch(() => {}); };
+
   // 根据 hash 激活对应 tab
   activateByHash();
   window.addEventListener('hashchange', activateByHash);
@@ -1255,20 +1275,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   initConfigIOEvents();
 
   // 初始化工具箱 Tab（延迟加载，页面对 Agent 连接状态有依赖）
+  // 刷新入口已在 activateByHash 之前注册进 tabRefreshers，这里不再绑点击监听，
+  // 否则与 switchTab 双触发会并发拉两轮数据
   initToolbox();
 
-  // 切换到工具箱 Tab 时刷新数据（因为 Agent 可能在其他 Tab 连接后变可用）
-  document.querySelector('[data-tab="toolbox"]')?.addEventListener('click', () => {
-    refreshToolbox();
-  });
-
-  // 初始化知识库 Tab（门控引导 + 列表加载）
+  // 初始化知识库 Tab（门控引导 + 列表加载；刷新入口同上已进注册表）
   initKnowledgePanel();
 
-  // 切换到知识库 Tab 时刷新（Agent 连接状态 / RAG 总开关可能已变化）
-  document.querySelector('[data-tab="knowledge"]')?.addEventListener('click', () => {
-    refreshKnowledgePanel();
-  });
+  // 初始化记忆向量面板（配置与状态都来自 agent，需连接后才有内容）
+  // 刷新入口已在 activateByHash 之前注册进 tabRefreshers，这里只绑事件
+  initMemoryPanel();
 });
 
 // 持久化并重新渲染

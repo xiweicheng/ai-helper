@@ -17,7 +17,7 @@ import { getSideRailSlot } from './side-rail.js';
 import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
-import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
+import { formatMarkdown, splitTableCells, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
 import { renderMermaidInContainer, convertSvgsToImages, createTextRuns } from './chat-export.js';
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 
@@ -3490,7 +3490,8 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     const rows = [];
     for (const line of lines) {
       if (/^[\s\|:\-]+$/.test(line.replace(/\|/g, ''))) continue;
-      const cells = line.split('|').map(c => c.trim()).filter(c => c !== '');
+      // 按未转义竖线拆分（支持单元格内转义竖线）
+      const cells = splitTableCells(line).slice(1, -1).map(c => c.trim());
       if (cells.length > 0) rows.push(cells);
     }
     return rows;

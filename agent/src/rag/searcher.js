@@ -10,64 +10,19 @@
 
 import { DEFAULT_SEARCH_CONFIG } from './config.js';
 import { RagError } from './errors.js';
+import { extractQueryTerms, matchLatin, matchCjk, KEYWORD_MAX_HITS } from './keyword-match.js';
 
-// ---- 关键词通道参数 ----
-const KEYWORD_MIN_LEN = 2;          // 命中单元最小长度（单字符匹配噪声过大）
-const KEYWORD_MAX_FRAGMENT_LEN = 4; // 中文最长匹配窗口（≥4 字命中已顶格 3 单元，无需更长窗口）
+// 匹配语义（切段/词边界/最长片段）已抽到 keyword-match.js 与长期记忆共用，
+// 这里只保留与 [0,1] 余弦刻度绑定的抬分参数。
 const KEYWORD_BOOST_PER_HIT = 0.1;  // 每命中单元加分
-const KEYWORD_MAX_HITS = 3;         // 计分单元总数上限（防止长查询过度加分）
 const KEYWORD_MIN_SCORE = 0.5;      // 命中 chunk 的保底分（高于默认阈值 0.3，确保能召回展示）
 const KEYWORD_MAX_DF_RATIO = 0.5;   // 命中超过半数 chunk 的单元视为高频不参与（如"项目"这类常见词）
-const KEYWORD_SCAN_LIMIT = 20000;   // 全量扫描 chunk 数上限（超过则跳过关键词通道，防止大库检索卡顿）
+const KEYWORD_SCAN_LIMIT = 20000;   // 全量扫描 chunk 数上限（超过则跳过关键 词通道，防止大库检索卡顿）
 const SCORE_MAX = 0.99;             // 分数封顶
 
-/**
- * 从查询中提取关键词（英文/数字按分隔符成段；中文取连续段）
- * 说明：不引入分词依赖——中文长段由 _boostByKeywords 按最长命中片段降级匹配，
- * 本函数只负责切段与小写去重
- * @param {string} query
- * @returns {string[]} 小写去重后的关键词
- */
-export function extractKeywords(query) {
-  const parts = String(query || '').toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/);
-  const seen = new Set();
-  const keywords = [];
-  for (const p of parts) {
-    if (p.length >= KEYWORD_MIN_LEN && !seen.has(p)) {
-      seen.add(p);
-      keywords.push(p);
-    }
-  }
-  return keywords;
-}
-
-/**
- * 将关键词段拆分为带类型的命中单元：英文/数字段与中文段分开处理
- * 段内非 [a-z0-9] 的字符必为汉字（切分阶段已剔除其他字符），无需引入 Unicode 转义
- * @param {string} query
- * @returns {{latin: string[], cjk: string[]}} 小写去重后的单元列表
- */
-export function extractQueryTerms(query) {
-  const latin = [];
-  const cjk = [];
-  const seenLatin = new Set();
-  const seenCjk = new Set();
-  for (const seg of extractKeywords(query)) {
-    for (const run of seg.match(/[a-z0-9]+|[^a-z0-9]+/g) || []) {
-      if (run.length < KEYWORD_MIN_LEN) continue;
-      if (/^[a-z0-9]+$/.test(run)) {
-        if (!seenLatin.has(run)) {
-          seenLatin.add(run);
-          latin.push(run);
-        }
-      } else if (!seenCjk.has(run)) {
-        seenCjk.add(run);
-        cjk.push(run);
-      }
-    }
-  }
-  return { latin, cjk };
-}
+// 纯匹配函数由 keyword-match.js 提供；保留同名再导出以免破坏既有引用方
+export { extractKeywords } from './keyword-match.js';
+export { extractQueryTerms };
 
 export class Searcher {
   /**
@@ -155,44 +110,17 @@ export class Searcher {
       const entries = [];
 
       // 英文/数字：词边界匹配（前后须为非字母数字；CJK 相邻视为边界）
-      if (latin.length > 0) {
-        const bounded = ' ' + text.replace(/[^a-z0-9]+/g, ' ') + ' ';
-        for (const term of latin) {
-          if (bounded.includes(' ' + term + ' ')) {
-            entries.push({ keys: [term], units: 1 });
-            df.set(term, (df.get(term) || 0) + 1);
-          }
-        }
+      for (const term of matchLatin(text, latin)) {
+        entries.push({ keys: [term], units: 1 });
+        df.set(term, (df.get(term) || 0) + 1);
       }
 
-      // 中文：从最长窗口向下找命中片段（该 chunk 内该段的最长连续命中）
+      // 中文：取该 chunk 内此段的最长命中片段，命中越长计分单元越多（L=2 → 1；L≥4 顶格 3）
       for (const seg of cjk) {
-        // 2 字片段预检：更长片段的命中必蕴含其 2 字子串命中，全未命中即可跳过该 chunk
-        const keys2 = new Set();
-        for (let i = 0; i + 2 <= seg.length; i++) {
-          const frag = seg.slice(i, i + 2);
-          if (text.includes(frag)) keys2.add(frag);
-        }
-        if (keys2.size === 0) continue;
-        const maxLen = Math.min(seg.length, KEYWORD_MAX_FRAGMENT_LEN);
-        let bestKeys = keys2;
-        let bestLen = 2;
-        for (let len = maxLen; len >= 3; len--) {
-          const keys = new Set();
-          for (let i = 0; i + len <= seg.length; i++) {
-            const frag = seg.slice(i, i + len);
-            if (text.includes(frag)) keys.add(frag);
-          }
-          if (keys.size > 0) {
-            bestKeys = keys;
-            bestLen = len;
-            break;
-          }
-        }
-        // 命中越长计分单元越多（L=2 → 1 单元；L≥4 顶格 3 单元）
-        const keyList = [...bestKeys];
-        for (const k of keyList) df.set(k, (df.get(k) || 0) + 1);
-        entries.push({ keys: keyList, units: Math.min(bestLen - 1, KEYWORD_MAX_HITS) });
+        const hit = matchCjk(text, seg);
+        if (!hit) continue;
+        for (const k of hit.keys) df.set(k, (df.get(k) || 0) + 1);
+        entries.push({ keys: hit.keys, units: hit.units });
       }
 
       if (entries.length > 0) hitsById.set(item.id, { entries, metadata: item.metadata });

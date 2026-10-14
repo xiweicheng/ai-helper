@@ -466,6 +466,51 @@ export function parseInlineMarkdown(text) {
 }
 
 /**
+ * 按未转义的竖线拆分 Markdown 表格行（GFM 语义：单元格内 \| 表示字面竖线）
+ * - \|  → 字面 |（不拆分单元格）
+ * - \\| → 字面 \ + 单元格分隔符（偶数个反斜杠时竖线为分隔符）
+ * 返回值包含行首/行尾竖线产生的空串，调用方可自行 slice(1, -1)
+ */
+export function splitTableCells(line) {
+  const cells = [];
+  let current = '';
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i];
+    if (ch === '\\') {
+      let n = 0;
+      while (line[i + n] === '\\') n++;
+      if (line[i + n] === '|') {
+        // 奇数个反斜杠：竖线为字面量；偶数个：竖线为分隔符
+        current += '\\'.repeat(Math.floor(n / 2));
+        if (n % 2 === 1) {
+          current += '|';
+        } else {
+          cells.push(current);
+          current = '';
+        }
+        i += n + 1;
+      } else {
+        // 反斜杠后不是竖线：原样保留（如 \*、Windows 路径等）
+        current += '\\'.repeat(n);
+        i += n;
+      }
+      continue;
+    }
+    if (ch === '|') {
+      cells.push(current);
+      current = '';
+      i++;
+      continue;
+    }
+    current += ch;
+    i++;
+  }
+  cells.push(current);
+  return cells;
+}
+
+/**
  * 创建表格 HTML（含工具栏按钮）
  */
 export function createTableHTML(tableData) {
@@ -477,12 +522,12 @@ export function createTableHTML(tableData) {
     window.__tableBlocks[tableIndex] = { full, header, body };
   }
   
-  // 解析表头
-  const headers = header.split('|').slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
+  // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线）
+  const headers = splitTableCells(header).slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
   
-  // 解析表格行数据
+  // 解析表格行数据（按未转义竖线拆分，支持单元格内 \| 字面竖线）
   const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-    return row.split('|').slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
+    return splitTableCells(row).slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
   });
   
   // 构建表格 HTML
@@ -545,12 +590,12 @@ export function downloadTableAsExcel(tableBlock) {
   try {
     const { header, body } = tableBlock;
     
-    // 解析表头
-    const headers = header.split('|').slice(1, -1).map(cell => cell.trim());
+    // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线）
+    const headers = splitTableCells(header).slice(1, -1).map(cell => cell.trim());
     
-    // 解析表格行数据
+    // 解析表格行数据（按未转义竖线拆分，支持单元格内 \| 字面竖线）
     const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-      return row.split('|').slice(1, -1).map(cell => cell.trim());
+      return splitTableCells(row).slice(1, -1).map(cell => cell.trim());
     });
     
     // 转换为 CSV 格式
@@ -1296,10 +1341,11 @@ function extractTableFromDOM(btn) {
 
   if (headers.length === 0 && bodyRows.length === 0) return null;
 
-  // 构建 Markdown 表格
-  const headerLine = '| ' + headers.join(' | ') + ' |';
+  // 构建 Markdown 表格（单元格内竖线转义为 \|，保证复制出的 Markdown 仍是合法表格）
+  const escapeCell = (text) => text.replace(/\|/g, '\\|');
+  const headerLine = '| ' + headers.map(escapeCell).join(' | ') + ' |';
   const sepLine = '| ' + headers.map(() => '---').join(' | ') + ' |';
-  const bodyLines = bodyRows.map(row => '| ' + row.join(' | ') + ' |').join('\n');
+  const bodyLines = bodyRows.map(row => '| ' + row.map(escapeCell).join(' | ') + ' |').join('\n');
 
   return {
     full: headerLine + '\n' + sepLine + '\n' + bodyLines,

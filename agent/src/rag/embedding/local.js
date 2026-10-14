@@ -43,6 +43,31 @@ export class LocalEmbedding {
   }
 
   /**
+   * 统计文本的真实 token 长度与模型上下文窗口（供调用方发现「会被截多」）。
+   *
+   * 必须 `truncation: false`：feature-extraction pipeline 内部用的是 `truncation: true`，
+   * 实测在 `model_max_length`（本模型 512）处静默砍尾——跟着它的口径数只会永远数到窗口值，
+   * 看不见损失了多少。也不走 `embed()` 的反推：tolist 只给向量，给不出长度。
+   * 纯 tokenization 不跑推理，成本远低于嵌入本身。
+   * @param {string[]} texts
+   * @returns {Promise<{counts: number[], window: number}>} counts 与入参同序
+   */
+  async countTokens(texts) {
+    if (!Array.isArray(texts) || texts.length === 0) return { counts: [], window: 0 };
+
+    const extractor = await this._getPipeline();
+    const tokenizer = extractor.tokenizer;
+    // 窗口值以 tokenizer 为准（实测 = tokenizer_config.model_max_length = 512），不自己写常量
+    const window = Number(tokenizer.model_max_length) || 0;
+    const counts = texts.map((t) => {
+      const encoded = tokenizer(String(t ?? ''), { padding: false, truncation: false });
+      const dims = encoded?.input_ids?.dims;
+      return Array.isArray(dims) && dims.length ? Number(dims[dims.length - 1]) : 0;
+    });
+    return { counts, window };
+  }
+
+  /**
    * 获取（或加载）pipeline 单例
    */
   async _getPipeline() {

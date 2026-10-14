@@ -23,7 +23,9 @@ export const MEMORY_TOOLS = [
           content: { type: 'string', description: 'Required for store: memory content to save' },
           title: { type: 'string', description: 'optional for store: title for summary type' },
           tags: { type: 'array', items: { type: 'string' }, description: 'optional for store/recall: tag filter' },
-          importance: { type: 'integer', description: 'optional for store: importance 1-10' },
+          // 边界与 agent 端 service 的钳制口径一致（IMPORTANCE_MIN/MAX）：schema 不会被代码执行，
+          // 但声明出边界能让模型少给出被服务端拒掉的值，也不致于文案与钳制各说一套
+          importance: { type: 'integer', minimum: 1, maximum: 10, description: 'optional for store: importance 1-10' },
           memoryId: { type: 'string', description: 'Required for store subAction=update/delete: target memory ID' },
           sourceSessionId: { type: 'string', description: 'optional for store: source session ID' },
           query: { type: 'string', description: 'Required for recall: search keyword to find memories' },

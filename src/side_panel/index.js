@@ -254,7 +254,7 @@ import {
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState, updateToolsConfigIndicators,
   setVisibleMcpServicesOpen,
-  refreshToolPopupIfOpen, applyRagToolIntroduction
+  refreshToolPopupIfOpen, applyRagToolIntroduction, getValidToolIdUniverse
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
@@ -355,6 +355,7 @@ function initMemoryLimitDropdown() {
   label.addEventListener('click', toggleMemoryLimitDropdown);
 
   // 自动压缩 / 摘要存入记忆开关：切换即持久化（遵循开关立即持久化规范）
+  // 此处的 checked 只是按当前 state 先画一版，真实配置由 loadChatConfig().then 回填
   const autoCompactBtn = document.getElementById('autoCompactBtn');
   if (autoCompactBtn) {
     autoCompactBtn.checked = state.chatConfig.autoCompaction === true;
@@ -418,6 +419,12 @@ function initMemoryLimitDropdown() {
       });
     });
   }
+
+  // 快捷入口：跳配置页的记忆 Tab（与输入框 ✚ 面板的 MCP/Skill 管理入口同一通道）
+  // 不抢 stopPropagation：本按钮在 dropdown 内部，下方文档监听靠 contains(e.target) 不会关掉弹层
+  document.getElementById('memoryLimitConfigEntry')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'memory' });
+  });
 
   document.addEventListener('click', (e) => {
     if (!dropdown.contains(e.target) && e.target !== label) {
@@ -3816,7 +3823,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
     if (Array.isArray(savedAgentTools)) {
       // Agent-specific：使用用户保存的列表（MCP 已改为服务级开关，不再参与工具级勾选）
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+      // 有效性全集含 RAG 静态全集：代理离线时知识库工具临时卸载不能丢用户勾选
+      const validToolIds = getValidToolIdUniverse(ragTools);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
       state.enabledTools = savedTools;
       // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
@@ -3830,7 +3838,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } else if (fallbackTools && fallbackTools.length > 0) {
       // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+      const validToolIds = getValidToolIdUniverse(ragTools);
       const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
       state.enabledTools = [...savedTools, ...newBuiltinTools];
@@ -4312,6 +4320,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 loadChatConfig().then(() => {
   updateMemoryLimitLabel();
   setMessageTimestampVisible(state.chatConfig.showMessageTimestamp !== false);
+  // 开关勾选态以 storage 配置为唯一真源：初始化早于本次往返，必须用真实值回填
+  syncAutoCompactToggle();
+  syncPersistSummaryToggle();
 });
 
 // 初始化记忆限制标签点击事件

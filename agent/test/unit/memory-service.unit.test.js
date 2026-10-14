@@ -2,19 +2,34 @@
  * memory-service.unit.test.js
  * agent 端记忆 service 行为测试（自扩展端 tool-memory.js 迁移，行为不变）
  * 通过 filePath 注入临时目录，t 用占位 stub（断言依赖结构字段而非文案）
+ * 向量侧一律靠注入关掉（见 withService），测试不读用户 config.json、不联网、不碰他真实缓存
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryService } from '../../src/memory/service.js';
+import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
 
+/**
+ * 关键词通道用的 service 夹具：四个注入点缺一不可。
+ * 只给 filePath 时，service 会回落去读用户真实 config.json：一旦本机开过记忆向量，
+ * store 的懒补向量与 recall 的语义路就会拿真 key 联网，并把向量写进用户真实的
+ * ~/.ai-helper-agent/memory/memory-vectors.json（实测覆盖过他 41 条缓存），
+ * 断言同时从「纯词面通道」漂成「词面 + 语义」双通道——本文件的碎块噪声用例就这样变红。
+ */
 function withService(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'mem-test-'));
-  const svc = createMemoryService({ filePath: join(dir, 'global-memory.json') });
+  const svc = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath: join(dir, 'memory-vectors.json'),
+    embeddingConfigProvider: () => ({ enabled: false }),
+    tierResolver: () => 'none',
+    embedderFactory: () => { throw new Error('A 档夹具不得创建 embedding provider'); }
+  });
   return Promise.resolve(fn(svc)).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
@@ -89,6 +104,19 @@ describe('store', () => {
     const r = await svc.store({ action: 'add', type: 'fact', content: 'x' }, T);
     assert.equal(r.stats.totalFacts, 1);
   }));
+
+  // M2（2026-10-14 评审）：update 的「不存在」必须是机器可判定的 code——压缩摘要锚点链
+  // 靠它降级为新增重建（条目被 compact 淘汰后 update 永久失败，摘要从此静默断供）。
+  // 类型不匹配不得冒用该 code：那是另一条错误路径，混用会让调用方错误地走重建。
+  it('update 不存在的 id：错误体带 code=not_found；类型不匹配不带', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'update', type: 'summary', content: 'x', memoryId: 'sum_nope' }, T);
+    assert.equal(r.success, false);
+    assert.equal(r.code, 'not_found');
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const m = await svc.store({ action: 'update', type: 'summary', content: 'x', memoryId: a.memory.id }, T);
+    assert.equal(m.success, false);
+    assert.equal(m.code, undefined, '类型不匹配是另一条错误，不得带 not_found');
+  }));
 });
 
 describe('recall', () => {
@@ -99,6 +127,21 @@ describe('recall', () => {
     assert.equal(r.success, true);
     assert.equal(r.total, 1);
     assert.ok(r.results[0].content.includes('pnpm'));
+  }));
+
+  it('单个中文短词仍能命中（整段命中不受单元门槛限制）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '用户偏好 pnpm 管理依赖' }, T);
+    const r = await svc.recall({ query: '依赖' }, null, T);
+    assert.equal(r.total, 1);
+  }));
+
+  it('只碰到 2 字碎块的条目不当成命中（碎 bigram 噪声的出口）', () => withService(async (svc) => {
+    // 目标：与查询共享 3 字片段「界面库」；噪声：只共享 2 字碎块「网页」
+    await svc.store({ action: 'add', type: 'fact', content: '前端界面库偏好：选 Vue 3' }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '这个网页的框架选型还在讨论' }, T);
+    const r = await svc.recall({ query: '他习惯用哪种界面库' }, null, T);
+    assert.equal(r.total, 1, '旧实现下噪声条目会因「网页」碎块而被捣回');
+    assert.ok(r.results[0].content.includes('界面库'));
   }));
 
   it('无命中返回 noMatch 且 results 为空', () => withService(async (svc) => {
@@ -159,11 +202,14 @@ describe('recall', () => {
     assert.equal(l.results.length, 1);
   }));
 
-  it('tags 筛选：命中任一标签才保留', () => withService(async (svc) => {
+  // 2026-10-14 口径变更：本用例原先钉的是「命中任一标签才保留」（旧断言 r.total === 1）。
+  // 旧实现把标签过滤放在任何打分之前，于是「标签 + 词面门槛 + 语义地板」构成三个硬门槛 AND 叠加，
+  // 一条内容正确但没打标签的记忆会被整条抹掉。现在标签只上抬名次，所以两条都要在，且标签项在前。
+  it('tags 降为加分：两条都保留，标签命中项上抬到第一', () => withService(async (svc) => {
     await svc.store({ action: 'add', type: 'fact', content: '标签目标内容', tags: ['Vue'] }, T);
     await svc.store({ action: 'add', type: 'fact', content: '标签目标其它内容' }, T);
     const r = await svc.recall({ query: '标签', tags: ['vue'] }, null, T);
-    assert.equal(r.total, 1);
+    assert.equal(r.total, 2, '无标签但词面命中的条目不得被抹掉');
     assert.deepEqual(r.results[0].tags, ['Vue']);
   }));
 });
@@ -240,5 +286,960 @@ describe('injectSelect', () => {
     assert.equal(r.success, true);
     assert.deepEqual(r.injected, []);
     assert.equal(r.remainingCount, 0);
+  }));
+});
+
+// 追加：recall 的向量通道（Tier B/C）。
+// 关键约束：A 档（tier === 'none'）必须逐字维持现状——既不能触碰 provider，也不能创建向量缓存文件。
+// 注入点用 embeddingConfigProvider / tierResolver / embedderFactory，测试绝不读用户真实 config.json，也绝不联网。
+const EMBED_CFG = { enabled: true, mode: 'openai-compat', baseUrl: '', modelName: 'm', apiKey: 'k', dimensions: 3, queryPrefix: '' };
+
+function withVectorService(opts, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'mem-vec-test-'));
+  const vectorsFilePath = join(dir, 'memory-vectors.json');
+  const svc = createMemoryService({
+    filePath: join(dir, 'global-memory.json'),
+    vectorsFilePath,
+    embeddingConfigProvider: () => ({ ...EMBED_CFG, ...(opts.embeddingConfig || {}) }),
+    tierResolver: () => 'remote',
+    embedTimeoutMs: 200,
+    // 默认工厂直接抛：用例忘了供假 provider 时应当当场炸，而不是静默回落去拿真 provider 联网
+    // （写在 ...opts 之前，用例自带的 embedderFactory 照旧覆盖它）
+    embedderFactory: () => { throw new Error('向量夹具必须自带假 embedderFactory'); },
+    ...opts
+  });
+  return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/**
+ * 「必须已发生」类断言一律轮询到条件成立（上限 2s），不再赌固定时长。
+ * 本文件原先四处都是 settle()/setTimeout(30)，而懒补的嵌入 + 落盘是后台异步链：
+ * 机器一忙就没跑完——实测约 15%~20% 概率随机变红（HEAD 态同样命中，属既有脆弱用例）。
+ */
+async function waitUntil(condition, description) {
+  for (let i = 0; i < 200; i++) {
+    if (condition()) return;
+    await new Promise((res) => setTimeout(res, 10));
+  }
+  assert.fail('等待超时（2s）：' + description);
+}
+
+/**
+ * 读派生缓存，容忍「撕裂读」：writeFile 是先 truncate 再落内容，而本文件的轮询恰好发生在后台
+ * 懒补的写入途中——existsSync 在 truncate 之后就已成真，此刻同步 readFileSync 会读到空串或半截
+ * JSON 并抛 SyntaxError（全套件并发负载下实测命中，孤立跑则 40 次 0 次）。产品侧没有这个窗口
+ * （向量读排在全局串行链里，不会与自己的写交叉），所以只在测试读盘处兜住：读不通按「还没写好」
+ * 处理，交给轮询重试，不放宽任何断言。
+ */
+function readVectorPayload(vectorsFilePath) {
+  try {
+    const parsed = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 断言用的正式读盘：等到读得出可解析内容为止（撕裂读不算失败，只算还没写完） */
+async function waitVectorPayload(vectorsFilePath, description) {
+  let payload = null;
+  await waitUntil(() => {
+    payload = readVectorPayload(vectorsFilePath);
+    return payload !== null;
+  }, '派生缓存读不出可解析内容：' + description);
+  return payload;
+}
+
+/** 派生缓存当前已落入的向量 id 集（文件未生成或尚未写完时为空） */
+const vectorIds = (vectorsFilePath) => Object.keys(readVectorPayload(vectorsFilePath)?.vectors || {});
+
+describe('recall 向量通道', () => {
+
+  // 语义近、词面零重合的条目应被召回；无关条目两条通道都不沾，应被排除
+  it('向量通道召回语义相近但关键词零命中的条目，并标注 tier/vectorMatched', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('目标') ? [0.98, 0.2, 0] : [0, 1, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关条目', tags: [], importance: 5 }, T);
+    const backfill = await svc.backfillVectors(T);
+    assert.equal(backfill.success, true);
+    assert.equal(backfill.indexed, 2);
+
+    const r = await svc.recall({ query: '完全不同措辞', limit: 5 }, null, T);
+    assert.equal(r.tier, 'remote');
+    assert.ok(r.vectorMatched >= 1);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, '目标条目');
+  }));
+
+  // 2026-10-14 计划五：记忆语义转纯 top-K，删掉查询级地板。本用例由「钉住地板把 0.4 噪声挡成空返」
+  // 反转为「钉住无地板后这些勉强相关头部被采信、但至多 maxTake 条、不填满 limit」。这是放弃
+  // 「无匹配空返」换取「任意模型开箱即用」的已知代价，护栏从空返降级为有界。
+  it('本库无强落点时纯 top-K 返回至多 maxTake 条头部（不再整通道空返）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      // [0.4, 0.9165151, 0] 模长 1，与查询 cos=0.4：无地板后 top1=0.4，margin(0.05) 内全部进头部
+      embedDocuments: async (texts) => texts.map(() => [0.4, 0.9165151, 0])
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '条目甲', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '条目乙', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '条目丙', tags: [], importance: 5 }, T);
+    assert.equal((await svc.backfillVectors(T)).indexed, 3);
+
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true, '无强落点仍是正常返回，不是失败');
+    assert.equal(r.vectorMatched, 2, 'top1 的 margin 内头部被采信，受 maxTake=2 封顶');
+    assert.equal(r.total, 2, '勉强相关被采信但不超过 maxTake，不填满 limit=5');
+  }));
+
+  it('同库内既有落点也有勉强相关时，只返回落点那条', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('目标') ? [0.98, 0.2, 0] : [0.4, 0.9165151, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '勉强条目', tags: [], importance: 5 }, T);
+    assert.equal((await svc.backfillVectors(T)).indexed, 2);
+
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, '目标条目');
+    assert.equal(r.vectorMatched, 1);
+  }));
+
+  it('缺向量的条目在 recall 中按需补齐，第二次召回不再调用 embedDocuments', () => withVectorService({
+    embedderFactory: () => {
+      const calls = { q: 0, d: 0 };
+      return {
+        get stats() { return calls; },
+        embedQuery: async () => { calls.q++; return [1, 0, 0]; },
+        embedDocuments: async (texts) => { calls.d += texts.length; return texts.map(() => [0.98, 0.2, 0]); }
+      };
+    }
+  }, async (svc, { vectorsFilePath }) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha', tags: [], importance: 5 }, T);
+    const r1 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r1.success, true);
+    assert.ok(existsSync(vectorsFilePath), '补齐后应落盘向量缓存');
+
+    const r2 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r2.success, true);
+    assert.equal(r2.vectorMatched, r1.vectorMatched);
+  }));
+
+  // H1（2026-10-14 评审）：向量缓存的 modelKey 与当前配置不符时必须整份视空重建。
+  // 旧实现直接采信缓存：换模型后旧空间的向量被拿去和新查询向量算 cos，名次全是噪声，
+  // 还会被 margin 门采信进语义路。用「旧缓存与新查询正交、重建向量与查询同向」区分两种行为。
+  it('缓存指纹不符（换模型）时整份不采信，当轮按当前模型重建', () => {
+    let docEmbedded = 0;
+    return withVectorService({
+      embeddingConfig: { modelName: 'new-model' },
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts) => {
+          docEmbedded += texts.length;
+          return texts.map((s) => (String(s).includes('目标') ? [1, 0, 0] : [0, 0, 1]));
+        }
+      })
+    }, async (svc, { vectorsFilePath }) => {
+      const a = await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+      const b = await svc.store({ action: 'add', type: 'fact', content: '无关条目', tags: [], importance: 5 }, T);
+      // 先等懒补落盘，再整体覆写成「旧模型」的缓存：两条旧向量都与本次查询正交
+      await waitUntil(() => vectorIds(vectorsFilePath).length === 2, '两条懒补未全部落盘');
+      await createVectorStoreFacade({ filePath: vectorsFilePath })
+        .upsertVectors([[a.memory.id, [0, 1, 0]], [b.memory.id, [0, 1, 0]]], 'openai-compat|old-model|3');
+
+      const before = docEmbedded;
+      const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r.success, true);
+      assert.ok(docEmbedded > before, '旧指纹的缓存必须整份视空并当轮重建（旧实现此处不再发起嵌入）');
+      const stored = await waitVectorPayload(vectorsFilePath, '指纹重建后');
+      assert.equal(stored.modelKey, 'openai-compat|new-model|3', '重建必须带当前指纹');
+      assert.deepEqual(stored.vectors[a.memory.id], [1, 0, 0], '重建后的同向向量才是名次依据');
+      assert.equal(r.vectorMatched, 1, '旧向量 cos=0 若被采信，两条都会进语义头部（旧实现为 2）');
+      assert.equal(r.total, 1);
+      assert.equal(r.results[0].content, '目标条目');
+    });
+  });
+
+  // M1（2026-10-14 评审）：补齐嵌入必须在互斥锁外。旧实现把 embedDocuments 放在 withMemoryLock
+  // 里，坏端点挂起时整把锁被拖满超时上限，期间同进程所有记忆写入排队干等。
+  it('补齐嵌入挂起时 store 照常完成（补齐在锁外）', { timeout: 5000 }, () => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    let docCalls = 0;
+    return withVectorService({
+      embedTimeoutMs: 3000,
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: (texts) => { docCalls++; return held.then(() => texts.map(() => [1, 0, 0])); }
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: '待补齐条目', tags: [], importance: 5 }, T);
+      const recallP = svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      // 懒补（#1）与本次召回补齐（#2）都扣在同一个 held 上；两次调用都发起后，召回必已进入锁外补齐
+      await waitUntil(() => docCalls >= 2, '召回的补齐嵌入未发起');
+
+      // 旧实现此刻 recall 整段持锁：store 会排在锁链上，本竞速 700ms 内必超时判红
+      const stored = await Promise.race([
+        svc.store({ action: 'add', type: 'fact', content: '并发写入', tags: [], importance: 5 }, T),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('store 被挂起的补齐嵌入堵死')), 700))
+      ]);
+      assert.equal(stored.success, true);
+
+      release();
+      const r = await recallP;
+      assert.equal(r.success, true);
+    });
+  });
+
+  // M1 配套：补齐失败按 modelKey 冷却 60s——坏端点下每次召回不再各重付一次超时
+  it('补齐失败后冷却：冷却期内第二次召回不再发起补齐', () => {
+    let docCalls = 0;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async () => { docCalls++; throw new Error('endpoint down'); }
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+      await new Promise((res) => setImmediate(res));   // 让懒补先把它那次失败消费掉
+      const before = docCalls;
+      const r1 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r1.success, true, '补齐失败不得让召回失败');
+      assert.ok(docCalls > before, '第一次召回必须发起补齐');
+      const afterFirst = docCalls;
+      const r2 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r2.success, true);
+      assert.equal(docCalls, afterFirst, '冷却期内不得再发起补齐');
+    });
+  });
+
+  it('embedQuery 抛错：本次召回不失败，退回关键词排序', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => { throw new Error('boom'); }, embedDocuments: async () => { throw new Error('boom'); } })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '必须命中 npm 包', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 1);
+    assert.equal(r.vectorMatched, 0);
+    assert.ok(r.results[0].content.includes('npm'));
+  }));
+
+  it('embedQuery 永不 resolve：按超时降级，不挂起', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: () => new Promise(() => {}), embedDocuments: async () => [] }),
+    embedTimeoutMs: 20
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'x npm', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 1);
+  }));
+
+  it('provider 工厂本身抛错：等价于向量通道不可用，召回仍成功', () => withVectorService({
+    embedderFactory: () => { throw new Error('no provider'); }
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'y npm', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ query: 'npm', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.vectorMatched, 0);
+  }));
+
+  it('A 档（none）完全不触碰向量侧：不调 provider、不创建缓存文件', () => {
+    let embedCalls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-a-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false }),
+      tierResolver: () => 'none',
+      embedderFactory: () => { embedCalls++; throw new Error('A 档不该创建 provider'); }
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      await s.store({ action: 'add', type: 'fact', content: 'abc 关键词', tags: ['t'], importance: 5 }, T);
+      const r = await s.recall({ query: '关键词', limit: 5 }, null, T);
+      assert.equal(r.tier, 'none');
+      assert.equal(r.vectorMatched, 0);
+      assert.equal(r.total, 1);
+      assert.equal(embedCalls, 0);
+      assert.equal(existsSync(vectorsFilePath), false, 'A 档不得生成向量缓存文件');
+      const bf = await s.backfillVectors(T);
+      assert.equal(bf.skipped, true);
+      assert.equal(embedCalls, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('无 query 的召回不做向量计算（没有可嵌入的查询）', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => { throw new Error('不应被调用'); }, embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '条目', tags: [], importance: 5 }, T);
+    const r = await svc.recall({ limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.vectorMatched, 0);
+    assert.equal(r.total, 1);
+  }));
+
+  it('backfillVectors 整体重建：模型标识变更即作废旧向量', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-vec-key-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    let cfg = { ...EMBED_CFG, modelName: 'm1' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => cfg,
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      await s.store({ action: 'add', type: 'fact', content: 'alpha', tags: [], importance: 5 }, T);
+      const first = await s.backfillVectors(T);
+      assert.equal(first.indexed, 1);
+      // 上面 store 的懒补仍在后台写，读盘必须走容错版（见 readVectorPayload）
+      const stored = await waitVectorPayload(vectorsFilePath, '首次 backfill 后');
+      assert.equal(stored.modelKey, 'openai-compat|m1|3');
+
+      cfg = { ...cfg, modelName: 'm2' };
+      await s.backfillVectors(T);
+      const after = await waitVectorPayload(vectorsFilePath, '换模型 backfill 后');
+      assert.equal(after.modelKey, 'openai-compat|m2|3');
+      assert.equal(Object.keys(after.vectors).length, 1, '换模型后只应剩新模型的这一条向量');
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  // EMBED_BATCH_SIZE = 10，故第 11 条落在第二批。只对含标记词的那批报错，模拟真实厂商端点的
+  // 「局部批 400、其余成功」——那种情况下旧实现只报 failedBatches 计数，原因既不入响应也不入日志。
+  it('backfillVectors 部分批失败：原因进响应也进日志（不能只给一个计数）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => {
+        if (texts.some(s => String(s).includes('BOOM'))) throw new Error('400 {"code":20015}');
+        return texts.map(() => [0.98, 0.2, 0]);
+      }
+    })
+  }, async (svc) => {
+    for (let i = 0; i < 10; i++) {
+      await svc.store({ action: 'add', type: 'fact', content: `条目${i} alpha`, tags: [], importance: 5 }, T);
+    }
+    await svc.store({ action: 'add', type: 'fact', content: 'BOOM 那条长记忆', tags: [], importance: 5 }, T);
+
+    const warns = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => { warns.push(args.join(' ')); };
+    let r;
+    try {
+      r = await svc.backfillVectors(T);
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(r.success, true, '部分失败不得把整体报成失败');
+    assert.equal(r.indexed, 10);
+    assert.equal(r.total, 11);
+    assert.equal(r.failedBatches, 1);
+    assert.equal(r.lastError, '400 {"code":20015}', '有失败批时必须带出首条原因');
+    assert.ok(warns.some(w => w.includes('400 {"code":20015}')), '完整原因要落进程日志');
+  }));
+
+  it('backfillVectors 全成功时不凭空造 lastError', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.failedBatches, 0);
+    assert.ok(!('lastError' in r), '无失败时不得多出 lastError 字段');
+  }));
+
+  // 本地档的 pipeline 在 tokenizer.model_max_length（实测 512）处静默截断：超出部分根本不进向量，
+  // 原先没有任何信号。这里只要求把它变成可见数字——不改向量、不影响建索引成败。
+  // 注意检测按「provider 是否具备 tokenCounter」能力探测，不按 tier 判（夹具用的是 remote 档假工厂）。
+  it('backfillVectors：超窗条目进响应也进日志（本地档静默截断必须可见）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async (texts) => ({ counts: texts.map(s => String(s).includes('超长') ? 900 : 120), window: 512 })
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '超长 那条记忆', tags: [], importance: 5 }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '正常条目', tags: [], importance: 5 }, T);
+    const longId = (await svc.readAll()).facts.find(m => m.content.includes('超长')).id;
+    const warns = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => { warns.push(args.join(' ')); };
+    let r;
+    try { r = await svc.backfillVectors(T); } finally { console.warn = originalWarn; }
+    assert.equal(r.indexed, 2, '超窗不得影响建索引结果');
+    assert.equal(r.overWindow.count, 1, '必须报出超出本地窗口的条数');
+    assert.deepEqual(r.overWindow.ids, [longId], '要能点名是哪一条');
+    assert.equal(r.overWindow.window, 512, '窗口值未自定，必须照搬 provider 给的真实值');
+    assert.ok(warns.some(w => w.includes('512') && w.includes(longId)), 'daemon stdout 不可见，原因要落进程日志');
+  }));
+
+  it('backfillVectors：零超窗时要明确报 0（不能与「无从判断」混淆）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async (texts) => ({ counts: texts.map(() => 50), window: 512 })
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.overWindow.count, 0);
+  }));
+
+  it('backfillVectors：provider 不具备计数能力时不得凭空造 overWindow', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.indexed, 1);
+    assert.ok(!('overWindow' in r), '远端档看不见厂商截断行为，不得装作知道');
+  }));
+
+  it('backfillVectors：计数失败不得拖垮索引结果（宁可不报也不误报）', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]),
+      tokenCounter: async () => { throw new Error('tokenizer boom'); }
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+    const r = await svc.backfillVectors(T);
+    assert.equal(r.success, true);
+    assert.equal(r.indexed, 1);
+    assert.equal(r.failedBatches, 0, '计数失败不得算进嵌入失败批数');
+    assert.ok(!('overWindow' in r));
+  }));
+
+  it('delete 淘汰记忆后不再被召回（向量缓存中的孤儿不影响结果）', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) })
+  }, async (svc) => {
+    const added = await svc.store({ action: 'add', type: 'fact', content: '临时条目', tags: [], importance: 5 }, T);
+    await svc.backfillVectors(T);
+    await svc.store({ action: 'delete', memoryId: added.memory.id }, T);
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 0);
+  }));
+});
+
+describe('向量生命周期同步', () => {
+  // 只给「不得发生」类断言留一个固定时长窗口（方向容错：晚点也没关系）
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+  // 这条曾用「Date.now() - t0 < 10」对抗一个 setTimeout(10) 的假端点，纯靠挂钟分「有没有被 await」：
+  // 实测约 15%~20% 概率随机变红（HEAD 态同样命中，属既有脆弱用例）。现在改成因果序判定：
+  // 嵌入何时完成由测试放行，store 若敢等它就拿不到响应（由外层 timeout 干净地判红，而不是挂住套件）。
+  it('store(add) 在向量档懒补：响应不等待嵌入，之后落盘', { timeout: 3000 }, () => {
+    let release;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedDocuments: (texts) => new Promise((resolve) => {
+          release = () => resolve(texts.map(() => [1, 0, 0]));   // 扣住不放，直到测试明说「现在可以完成」
+        })
+      })
+    }, async (svc, { vectorsFilePath }) => {
+      const r = await svc.store({ action: 'add', type: 'fact', content: '懒补条目', tags: [], importance: 5 }, T);
+      assert.equal(r.success, true, '嵌入还被扣着，store 就必须先返回（返回不了则是本用例 timeout 红）');
+      assert.equal(existsSync(vectorsFilePath), false, '响应回来时嵌入仍未完成，不得已落盘');
+
+      // 后台发起嵌入与落盘都是异步动作：轮询到条件成立为止，而不是赌一个固定时长
+      await waitUntil(() => typeof release === 'function', 'store 返回后后台必须已发出嵌入请求');
+      release();
+      const stored = await waitVectorPayload(vectorsFilePath, '放行嵌入后的派生缓存');
+      assert.deepEqual(Object.keys(stored.vectors), [r.memory.id]);
+    });
+  });
+
+  it('懒补失败（嵌入抛错）不影响 store 的成功响应', () => withVectorService({
+    embedderFactory: () => ({ embedDocuments: async () => { throw new Error('endpoint down'); } })
+  }, async (svc, { vectorsFilePath }) => {
+    const r = await svc.store({ action: 'add', type: 'fact', content: '补不上', tags: [], importance: 5 }, T);
+    assert.equal(r.success, true);
+    await settle();
+    assert.equal(existsSync(vectorsFilePath), false, '嵌入失败不应留下半成品向量文件');
+  }));
+
+  it('store(add) 在 A 档完全不触碰向量侧', () => {
+    let factoryCalls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-a-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false }),
+      tierResolver: () => 'none',
+      embedderFactory: () => { factoryCalls++; throw new Error('A 档不该建 provider'); }
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const r = await s.store({ action: 'add', type: 'fact', content: 'x', tags: [], importance: 5 }, T);
+      assert.equal(r.success, true);
+      await new Promise((res) => setImmediate(res));
+      assert.equal(factoryCalls, 0);
+      assert.equal(existsSync(vectorsFilePath), false);
+      assert.equal((await s.recall({ query: 'x' }, null, T)).vectorMatched, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('delete 同步摘除向量，其他记忆不受牵连', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc, { vectorsFilePath }) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: '待删', tags: [], importance: 5 }, T);
+    const b = await svc.store({ action: 'add', type: 'fact', content: '留下', tags: [], importance: 5 }, T);
+    await waitUntil(() => vectorIds(vectorsFilePath).includes(a.memory.id) && vectorIds(vectorsFilePath).includes(b.memory.id), '两条懒补未全部落盘');
+    await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    const stored = await waitVectorPayload(vectorsFilePath, 'delete 之后');
+    assert.ok(!(a.memory.id in stored.vectors), '已删记忆不得残留向量');
+    assert.ok(b.memory.id in stored.vectors, '其他记忆向量不受牵连');
+  }));
+
+  it('delete 未落向量的记忆也不报错（向量侧缺项是常态）', () => withVectorService({
+    embedderFactory: () => ({ embedDocuments: async () => { throw new Error('no embed available'); } })
+  }, async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: '只有词面', tags: [], importance: 5 }, T);
+    await settle();
+    const r = await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    assert.equal(r.success, true);
+  }));
+
+  it('update 内容变化后重算向量（同 id 覆盖，不新增条目）', () => {
+    const embeddedTexts = [];
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-upd-'));
+    const vectorsFilePath = join(dir, 'memory-vectors.json');
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath,
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, modelName: 'mu' }),
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts) => {
+          texts.forEach((s) => embeddedTexts.push(s));
+          return texts.map(() => [1, 0, 0]);
+        }
+      })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const a = await s.store({ action: 'add', type: 'fact', content: '初稿', tags: [], importance: 5 }, T);
+      await waitUntil(() => embeddedTexts.some(x => x.includes('初稿')), 'add 后没发起嵌入');
+
+      await s.store({ action: 'update', type: 'fact', memoryId: a.memory.id, content: '终稿', tags: [], importance: 5 }, T);
+      await waitUntil(() => embeddedTexts.some(x => x.includes('终稿')), 'update 后必须按新内容重算');
+      await waitUntil(() => vectorIds(vectorsFilePath).length === 1, '重算后的向量未落盘');
+
+      const stored = await waitVectorPayload(vectorsFilePath, 'update 重算后');
+      assert.deepEqual(Object.keys(stored.vectors), [a.memory.id], '同 id 覆盖，不得新增条目');
+      assert.equal(stored.modelKey, 'openai-compat|mu|3');
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('update 不存在的 id 不触发嵌入', () => {
+    let calls = 0;
+    const dir = mkdtempSync(join(tmpdir(), 'mem-life-miss-'));
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => EMBED_CFG,
+      tierResolver: () => 'remote',
+      embedderFactory: () => ({ embedDocuments: async (t) => { calls += t.length; return t.map(() => [1, 0, 0]); } })
+    });
+    return Promise.resolve(svc).then(async (s) => {
+      const r = await s.store({ action: 'update', type: 'fact', memoryId: 'fact_nope', content: 'x' }, T);
+      assert.equal(r.success, false);
+      await new Promise((res) => setTimeout(res, 20));
+      assert.equal(calls, 0);
+    }).finally(() => rmSync(dir, { recursive: true, force: true }));
+  });
+
+  it('compact 淘汰的记忆同步摘除向量', () => withVectorService({
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
+  }, async (svc, { vectorsFilePath }) => {
+    const low = await svc.store({ action: 'add', type: 'fact', content: '低价值', importance: 1 }, T);
+    const high = await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
+    await waitUntil(() => vectorIds(vectorsFilePath).length === 2, '两条懒补未全部落盘');
+    const before = await waitVectorPayload(vectorsFilePath, 'compact 之前');
+    assert.equal(Object.keys(before.vectors).length, 2);
+
+    const r = await svc.manage({ action: 'compact' }, T);
+    assert.equal(r.success, true);
+    assert.equal(r.removedFacts, 1);
+    const after = await waitVectorPayload(vectorsFilePath, 'compact 之后');
+    assert.ok(!(low.memory.id in after.vectors), '被淘汰记忆不得残留向量');
+    assert.ok(high.memory.id in after.vectors, '未淘汰记忆的向量不得被误删');
+    assert.equal(Object.keys(after.vectors).length, 1);
+  }));
+});
+
+// 配置字段名适配：memoryEmbedding 存的是 baseUrl，而 rag/embedding 的 OpenAI 兼容后端读 endpoint。
+// 两者曾不一致 → 远端档永远 fetch('/embeddings')，单测因注入假工厂而看不见，只有真链路会炸。
+describe('provider 配置字段映射', () => {
+  let seenCfg = null;
+  it('交给 provider 工厂的配置带由 baseUrl 派生的 endpoint', () => withVectorService({
+    embeddingConfig: { baseUrl: 'https://api.example.com/v1' },
+    embedderFactory: (cfg) => {
+      seenCfg = cfg;
+      return { embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0.98, 0.2, 0]) };
+    }
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha', importance: 5 }, T);
+    const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+    assert.equal(r.success, true);
+    assert.ok(seenCfg, '向量档必须创建 provider');
+    assert.equal(seenCfg.endpoint, 'https://api.example.com/v1');
+  }));
+
+  // 坑2（2026-10-14 评审）：provider 缓存键此前只含 modelKey（mode|model|dims）——改 baseUrl / apiKey /
+  // queryPrefix 都不触发重建，旧 provider（旧端点/旧 key/旧前缀）会一直用到重启为止。
+  it('provider 缓存键纳入完整配置：只改 queryPrefix / baseUrl 也重建', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-provider-key-'));
+    let factoryCalls = 0;
+    let cfg = { ...EMBED_CFG, baseUrl: 'https://a.example.com/v1' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => cfg,
+      tierResolver: () => 'remote',
+      embedderFactory: () => {
+        factoryCalls++;
+        return { embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) };
+      }
+    });
+    return Promise.resolve((async () => {
+      await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      const afterFirst = factoryCalls;
+      assert.ok(afterFirst >= 1, '首次召回必须建 provider');
+
+      cfg = { ...cfg, queryPrefix: '为这个句子生成表示以用于检索相关文章：' };
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 1, '改 queryPrefix 必须重建 provider（旧实现到重启才生效）');
+
+      cfg = { ...cfg, baseUrl: 'https://b.example.com/v1' };
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 2, '换端点必须重建 provider');
+
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 2, '配置未变时不得反复重建');
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
+});
+
+// 追加：vectorStatus 只读状态。核心约束——它只读文件，绝不构造 provider
+//（拿超窗计数要 await _getPipeline()，那会触发模型下载；一个只读状态查询不许有这种副作用）。
+describe('vectorStatus 向量状态', () => {
+  it('报告条数与指纹；换模型未重建 → stale', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-status-'));
+    const cfg = { ...EMBED_CFG, modelName: 'first-model' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => ({ ...cfg }),
+      tierResolver: () => 'remote',
+      embedTimeoutMs: 200,
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async () => [[0.98, 0.2, 0]]
+      })
+    });
+    return Promise.resolve((async () => {
+      await svc.store({ action: 'add', type: 'fact', content: '一条记忆', tags: [], importance: 5 }, T);
+      const bf = await svc.backfillVectors(T);
+      assert.equal(bf.indexed, 1);
+
+      const fresh = await svc.vectorStatus();
+      assert.equal(fresh.indexed, 1);
+      assert.equal(fresh.total, 1, 'total = facts + summaries');
+      assert.equal(fresh.stale, false, '刚建完不该陈旧');
+      assert.equal(fresh.storedModelKey, fresh.currentModelKey);
+      assert.equal(fresh.tier, 'remote');
+
+      cfg.modelName = 'second-model';        // 模拟用户在界面里换了模型但没重建
+      const stale = await svc.vectorStatus();
+      assert.equal(stale.stale, true, '换模型未重建必须可见');
+      assert.equal(stale.indexed, 1, '陈旧不等于向量消失，条数照实报');
+      assert.notEqual(stale.storedModelKey, stale.currentModelKey);
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
+
+  it('从未建过向量（空库）不算陈旧', () => withVectorService({
+    // 前提修正：向量档开着时 store 会懒补出一个向量，“空库”在开启态下根本不存在
+    //（实测 indexed 恒为 1）。真正需要不报警的是「向量档未开且从未建过」这种初始态。
+    // 假工厂仍要给：万一档位判定变了也不会去碰真 provider。
+    tierResolver: () => 'none',
+    embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0, 1, 0]) })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '还没有向量', tags: [], importance: 5 }, T);
+    const s = await svc.vectorStatus();
+    assert.equal(s.tier, 'none');
+    assert.equal(s.indexed, 0);
+    assert.equal(s.total, 1);
+    assert.equal(s.storedModelKey, '', '空库没有指纹');
+    assert.equal(s.stale, false, '首次启用时 indexed=0 是正常态，不得报警');
+  }));
+
+  it('向量档关着也照常返回统计（残留陈旧向量是需要看到的状态，不是错误）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-status-off-'));
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => ({ ...EMBED_CFG, enabled: false, modelName: 'now-model' }),
+      tierResolver: () => 'none',
+      // 同上：store 会懒补向量，不给假工厂就会碰真 provider
+      embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [0, 1, 0]) })
+    });
+    return Promise.resolve((async () => {
+      // 直接写一份与当前配置不符的向量缓存，模拟「以前开过、换了模型、现在关了」
+      const vectors = createVectorStoreFacade({ filePath: join(dir, 'memory-vectors.json') });
+      await vectors.upsertVectors([['fact_x', [1, 0, 0]]], 'remote|old-model|3');
+      await svc.store({ action: 'add', type: 'fact', content: '条目', tags: [], importance: 5 }, T);
+
+      const s = await svc.vectorStatus();
+      assert.equal(s.tier, 'none');
+      assert.equal(s.indexed, 1, '残留向量条数照实报');
+      assert.equal(s.stale, true, '关着也要能看出向量已作废');
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
+});
+
+// 追加：入参校验。钉住用户在真实对话里就能触发的那些脏数据路径（侧边栏记忆能力验证报告 D2/D3/D4）。
+// 重点不只是「拒不拒」，而是拒绝的形态：旧代码 `type === 'fact' ? facts : summaries` 会把任何非 fact
+// 的值写进 summaries（抢摘要配额）；旧代码 recall 遇到无效 memoryType 会说「记忆库为空」。
+describe('store / recall 入参校验', () => {
+
+  it('add 拒绝白名单外的 type，且不落进 summaries 兜底数组', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'add', type: 'note', content: 'x' }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidType/);
+    const data = await svc.readAll();
+    assert.equal(data.facts.length + data.summaries.length, 0, '无效类型不得写进任何数组');
+  }));
+
+  it('update 拒绝白名单外的 type（不再被 typeMismatch 误导成「类型不匹配」）', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.store({ action: 'update', type: 'bogus', content: 'x', memoryId: a.memory.id }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidType/);
+  }));
+
+  it('delete 照旧不要求 type', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
+    assert.equal(r.success, true);
+  }));
+
+  it('importance 钳到 1..10：0 不再被 `|| 5` 吞成 5，999 落到上限', () => withService(async (svc) => {
+    const lo = await svc.store({ action: 'add', type: 'fact', content: 'L', importance: 0 }, T);
+    assert.equal(lo.memory.importance, 1, '0 是越界值，应钳到下限而不是被当没传退成默认 5');
+    const hi = await svc.store({ action: 'add', type: 'fact', content: 'H', importance: 999 }, T);
+    assert.equal(hi.memory.importance, 10);
+    const str = await svc.store({ action: 'add', type: 'fact', content: 'S', importance: '8' }, T);
+    assert.equal(str.memory.importance, 8, '字符串数字可解析，照钳制流程走');
+    const def = await svc.store({ action: 'add', type: 'fact', content: 'D' }, T);
+    assert.equal(def.memory.importance, 5, '未传仍取默认 5');
+  }));
+
+  it('importance 非数字直接报错，不写 NaN 进去毁掉价值排序', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'add', type: 'fact', content: 'x', importance: 'high' }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidImportance/);
+    const data = await svc.readAll();
+    assert.equal(data.facts.length, 0);
+  }));
+
+  it('update 与 add 的 importance 口径一致（旧代码 add 传 0 得 5、update 传 0 得 0）', () => withService(async (svc) => {
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F', importance: 3 }, T);
+    const u = await svc.store({ action: 'update', type: 'fact', content: 'F2', importance: 0, memoryId: a.memory.id }, T);
+    assert.equal(u.success, true);
+    assert.equal(u.memory.importance, 1);
+    const bad = await svc.store({ action: 'update', type: 'fact', content: 'F3', importance: 'x', memoryId: a.memory.id }, T);
+    assert.equal(bad.success, false);
+    assert.match(bad.error, /memory\.invalidImportance/);
+    const after = await svc.readAll();
+    assert.equal(after.facts[0].content, 'F2', '拒绝非数字不得把已写入的内容改掉');
+  }));
+
+  it('去重分支同样走钳制（旧代码 `importance || duplicate.importance` 会吞掉低值）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'dup', importance: 8 }, T);
+    const r = await svc.store({ action: 'add', type: 'fact', content: 'dup', importance: 0 }, T);
+    assert.equal(r.action, 'updated');
+    assert.equal(r.memory.importance, 1);
+  }));
+
+  it('recall 无效 memoryType 明确报错，不再谎称「记忆库为空」', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const r = await svc.recall({ query: 'F', memoryType: 'garbage' }, null, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.invalidMemoryType/);
+    assert.doesNotMatch(JSON.stringify(r), /memoryEmpty/);
+  }));
+
+  it('有效 memoryType 仍照常工作（all / fact / summary 三值）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '事实甲' }, T);
+    await svc.store({ action: 'add', type: 'summary', content: '摘要乙', title: 'T' }, T);
+    // 不传 query：避开词面/语义打分，只验「新加的白名单没把正常类型一并拒掉」
+    for (const [mt, expectTotal] of [['all', 2], ['fact', 1], ['summary', 1]]) {
+      const r = await svc.recall({ memoryType: mt }, null, T);
+      assert.equal(r.success, true, mt);
+      assert.equal(r.total, expectTotal, mt);
+    }
+  }));
+
+  // 校验必须放在嵌入请求之前：否则一次参数写坏的记忆检索会白打一发远端嵌入
+  it('无效 memoryType 的校验早于嵌入请求（不浪费一次网络往返）', () => {
+    let queryCalls = 0;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedQuery: async () => { queryCalls++; return [1, 0, 0]; },
+        embedDocuments: async (texts) => texts.map(() => [1, 0, 0])
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: '目标', tags: [], importance: 5 }, T);
+      const r = await svc.recall({ query: '目标', memoryType: 'garbage' }, null, T);
+      assert.equal(r.success, false);
+      assert.match(r.error, /memory\.invalidMemoryType/);
+      assert.equal(queryCalls, 0, '参数非法时不得发起查询嵌入');
+    });
+  });
+});
+
+// 追加：标签从「打分前硬过滤」降为「名次加成」（2026-10-14，用户定的检索取向，报告 D1）。
+// 机制层的重叠比例与上抬强度在 memory-tag-rank.unit.test.js，这里只钉接线后的端到端行为。
+describe('recall 标签口径：加分而非剔除', () => {
+
+  it('有 query 时不抹掉无标签条目，标签命中项按重叠比例上抬名次', () => withService(async (svc) => {
+    // df 剔除线是 max(2, N × 0.5)：6 条库 × 0.5 = 3，df(quark) = 3 恰好不过半，
+    // 保证本用例测的是标签行为，而不是被 df 抢先决定
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 无标签但先写', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 乙', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关一', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关二', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关三', tags: [] }, T);
+
+    const r = await svc.recall({ query: 'quark', tags: ['proj'] }, null, T);
+    // 基线名次（词面同分按写入序）：无标签, 甲, 乙；上抬 2 位后期望 甲, 乙, 无标签
+    assert.deepEqual(
+      r.results.map(m => m.content),
+      ['quark 甲', 'quark 乙', 'quark 无标签但先写']
+    );
+    assert.equal(r.total, 3, '旧实现这里只会返回两条带标签的');
+  }));
+
+  // 这一条是 df 统计池的护栏：df 判据是 `d > 0 && d <= limit`，若把统计池换成标签子集，
+  // 一个只出现在无标签条目里的词 d 就是 undefined 而被直接拒——那等于被捞回的条目
+  // 只能靠与标签子集共享的词才能命中，与硬过滤差不了多少。
+  it('df 仍走全候选池：只出现在无标签条目里的词照样有区分度', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 带标签但与查询词无关', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'beta 无标签但是唯一命中', tags: [] }, T);
+    const r = await svc.recall({ query: 'beta', tags: ['proj'] }, null, T);
+    assert.equal(r.total, 1);
+    assert.equal(r.results[0].content, 'beta 无标签但是唯一命中');
+  }));
+
+  // 上一轮把这条当「已知代价」钉成返回空；本轮用户批准加了 df 全塌兜底，该代价作废，改钉兜底行为。
+  it('df 全塌兜底：查询词在全库过半时忽略区分度剔除，标签上抬仍生效', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 乙', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 丙', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'zeta 丁', tags: [] }, T);
+    const r = await svc.recall({ query: 'zeta', tags: ['proj'] }, null, T);
+    assert.equal(r.total, 4, '前置：df(zeta)=4 > max(2, 4×0.5)=2，唯一单元全被判死 → 必须忽略 df 而不是返回空');
+    assert.deepEqual(r.results.slice(0, 2).map(m => m.content), ['zeta 甲', 'zeta 乙'], '兜底不得把标签上抬挤掉');
+  }));
+
+  it('兜底不放宽词面门槛：全库无人碰该词时仍零命中', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '无关内容甲', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关内容乙', tags: [] }, T);
+    const r = await svc.recall({ query: 'zzz' }, null, T);
+    assert.equal(r.total, 0, '忽略 df 只是不再因无区分度剔词，词面不沾的条目不得被放进来');
+    assert.match(r.message, /memory\.noMatch/, '应说「无匹配」而不是谎称空库');
+  }));
+
+  it('兜底只在整体塌陷时生效：还有低频词幸存则高频词照旧被剔', () => withService(async (svc) => {
+    // N=5 → limit = max(2, 2.5) = 2.5；df(quark)=3 已过半，df(稀有)=1 幸存 → 不算全塌
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 一', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 二', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 三', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '稀有标识', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关', tags: [] }, T);
+    const r = await svc.recall({ query: 'quark 稀有' }, null, T);
+    assert.deepEqual(r.results.map(m => m.content), ['稀有标识'], '部分存活不得触发兜底，否则高频词又把窗口填满');
+  }));
+
+  it('无 query 时标签仍是硬筛选（枚举语义，行为不变）', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '枚举甲', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '枚举乙', tags: [] }, T);
+    const r = await svc.recall({ tags: ['proj'] }, null, T);
+    assert.equal(r.total, 1, '无查询词时标签是唯一选择器，不得退化成全库返回');
+    assert.equal(r.results[0].content, '枚举甲');
+  }));
+
+  it('向量档同样只上抬名次：不抹掉无标签条目，也不让标签项白抬', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      // 用内容里的标记区分两条：memorySearchText 包含标签字段，按 alpha 判会两条同向量。
+      // 故意让无标签那条在两条通道上都第一，这样「标签项落到第一」只能由上抬产生
+      embedDocuments: async (texts) => texts.map(s => (s.includes('无标签') ? [0.98, 0.2, 0] : [0, 1, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha 带标签', tags: ['proj'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'alpha beta 无标签', tags: [] }, T);
+    const r = await svc.recall({ query: 'alpha beta', tags: ['proj'] }, null, T);
+    assert.equal(r.success, true);
+    assert.equal(r.total, 2, '无标签条目不得被整条抹掉');
+    assert.equal(r.tier, 'remote');
+    assert.equal(r.vectorMatched, 1, '只有无标签那条的向量过地板');
+    assert.equal(r.results[1].content, 'alpha beta 无标签', '基线名次：词面与语义双第一的条目原本在前');
+    assert.equal(r.results[0].content, 'alpha 带标签', '标签命中把第二名上抬 2 位到第一（上抬强度为 0 时本断言必须红）');
+  }));
+});
+
+// 2026-10-14 两处收口都在 recall 的词面通道上，夹具必须同时钉 A 档与融合档：
+// service.js 里那两处排序被注释明确要求「口径逐字一致」，只改一处会造成
+// 「开没开向量档，碎块条目地位不同」这种更难查的行为分叉。
+describe('词面门槛：同一碎块跨字段重复计数不得顶过门槛', () => {
+  it('只碰一个 2 字碎块、靠正文+标签凑出单元数的条目不被捣回', () => withService(async (svc) => {
+    // 噪声条取自真实库那条 QQ 邮箱记忆的骨架：正文有「配置」、标签「邮箱配置」也有，
+    // 而查询的三个概念词「远端」「模型」在整条里一次都没出现
+    await svc.store({ action: 'add', type: 'fact', content: 'QQ邮箱已配置成功：imap 与 smtp 均通过测试', tags: ['邮箱配置'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '配置远端模型的步骤：先填 baseUrl 再填 apiKey', tags: [] }, T);
+    const r = await svc.recall({ query: '配置远端模型' }, null, T);
+    assert.equal(r.total, 1, '旧实现下噪声条以 units=2 顶过门槛，与真答案平起平坐');
+    assert.ok(r.results[0].content.includes('步骤'), '留下的必须是真正答得上那条');
+  }));
+});
+
+describe('词面排序：深度命中优先于浅碎块（降权不剔除）', () => {
+  const NOISE = '这里的检索很快，那里的部署也完成了';
+  const DEEP = '这是一份部署流程说明';
+
+  it('A 档：靠标题+正文+标签三个字段凑高分的碎块条仍在结果里，但排到深度命中之后', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'summary', content: NOISE, title: '检索 部署', tags: ['检索', '部署'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: DEEP, tags: [] }, T);
+    const r = await svc.recall({ query: '检索方案 部署流程' }, null, T);
+    assert.equal(r.total, 2, '取向是降权不是剔除：浅碎块不得被整条抹掉');
+    assert.equal(r.results[0].content, DEEP, '碎块条 score 更高（多处命中累加），旧实现下它在前');
+  }));
+
+  // 2026-10-14 计划五：纯 top-K 取消地板后语义不再整通道否决。本用例改为验证「语义命中头部条目时，
+  // 融合档结果序仍由词面深度优先主导、浅碎块不被剔除」——这才是「开没开向量档口径一致」真正要钉的。
+  it('融合档同口径：语义命中头部时，融合结果仍保持词面的深度优先', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      // 深度命中那条给高 cos（进语义头部），碎块条 cos=0 被 margin 砍掉、只能靠词面进
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('流程说明') ? [0.98, 0.2, 0] : [0, 1, 0]))
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'summary', content: NOISE, title: '检索 部署', tags: ['检索', '部署'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: DEEP, tags: [] }, T);
+    const r = await svc.recall({ query: '检索方案 部署流程' }, null, T);
+    assert.equal(r.tier, 'remote');
+    assert.equal(r.vectorMatched, 1, '语义只采信深度命中那条头部（碎块 cos=0 被 margin 砍）');
+    assert.equal(r.total, 2, '融合档同样不得剔除浅碎块');
+    assert.equal(r.results[0].content, DEEP, '碎块条语义为 0，仅靠词面名次保留，深度命中的 DEEP 仍在前');
   }));
 });

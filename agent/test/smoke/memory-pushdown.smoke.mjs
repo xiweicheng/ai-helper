@@ -11,8 +11,9 @@
  *
  * 链路：/api/pair 取 token → store(add) → recall → inject → manage(review) → 未知子路径 404
  *       → 压缩摘要沉淀（store summary/update + inject + recall）→ delete
+ *       → 语义召回通道降级（配置里预置不可达的 embedding 端点，验证 recall 仍 200 回落关键词）
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -22,7 +23,20 @@ const HOST = '127.0.0.1';
 const home = mkdtempSync(join(tmpdir(), 'aihelper-mem-smoke-'));
 const agentDir = join(home, '.ai-helper-agent');
 mkdirSync(agentDir, { recursive: true });
-writeFileSync(join(agentDir, 'config.json'), JSON.stringify({ port: PORT, host: HOST }, null, 2));
+// 预置「已启用但端点不可达」的语义通道配置。冒烟要验的是运维最关心的性质：
+// embedding 挂掉时记忆功能必须整体可用（回落关键词），而不是被一起拖崩。
+// 端口 1 上没有服务，连接会被立刻拒绝——不真的联网，也不依赖外网。
+const unreachableEmbedding = {
+  mode: 'openai-compat',
+  baseUrl: 'http://127.0.0.1:1/v1',
+  modelName: 'fake-embedding',
+  apiKey: 'sk-fake-smoke',
+  dimensions: 3,
+  queryPrefix: '',
+  enabled: true
+};
+
+writeFileSync(join(agentDir, 'config.json'), JSON.stringify({ port: PORT, host: HOST, memoryEmbedding: unreachableEmbedding }, null, 2));
 
 // 必须在导入 config.js/server.js 之前设置（config 模块在加载时用 homedir() 解析数据目录）
 process.env.HOME = home;
@@ -164,6 +178,43 @@ try {
       && diskAfterUpdate.summaries.length === 1
       && String(diskAfterUpdate.summaries[0].content).includes('r2'),
     'summaries=' + diskAfterUpdate.summaries.length);
+
+  // 8b) 语义召回通道：端点不可达时的降级必须静默且不影响结果
+  const embCfgRes = await fetch(`${BASE}/api/memory/embedding-config`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, 'Accept-Language': 'zh-CN' }
+  });
+  const embCfg = await embCfgRes.json();
+  check('GET /api/memory/embedding-config 200 且明文 key 脱敏',
+    embCfgRes.status === 200 && embCfg.success === true
+      && embCfg.config.enabled === true && embCfg.config.apiKey === '' && embCfg.config.hasApiKey === true,
+    `hasApiKey=${embCfg.config?.hasApiKey}, apiKeyLen=${String(embCfg.config?.apiKey ?? null).length}`);
+
+  const degRes = await authed('/api/memory/recall', { query: '冒烟记忆', limit: 5 });
+  const degJson = await degRes.json();
+  check('embedding 不可达时 recall 仍 200 并回落关键词通道',
+    degRes.status === 200 && degJson.success === true
+      && degJson.tier === 'remote' && degJson.vectorMatched === 0 && degJson.total >= 1,
+    `tier=${degJson.tier}, vectorMatched=${degJson.vectorMatched}, total=${degJson.total}`);
+
+  await new Promise((r) => setTimeout(r, 500));   // 等懒补的失败路径落定
+  const vecFile = join(agentDir, 'memory', 'memory-vectors.json');
+  check('嵌入不可达时不留下半成品向量缓存文件（派生缓存宁可整删重建）', !existsSync(vecFile));
+
+  const reindexRes = await authed('/api/memory/reindex', {});
+  const reindexJson = await reindexRes.json();
+  // 错误不得是「Failed to parse URL」：那说明配置里的 baseUrl 根本没传给 provider（远端档永远打不到真端点）
+  check('POST /api/memory/reindex 不可达时明确失败而非 500',
+    reindexRes.status === 400 && reindexJson.success === false && typeof reindexJson.error === 'string'
+      && !/Failed to parse URL/.test(reindexJson.error),
+    `status=${reindexRes.status}, error=${String(reindexJson.error).slice(0, 50)}`);
+
+  const testEmbRes = await authed('/api/memory/test-embedding', {});
+  const testEmbJson = await testEmbRes.json();
+  check('POST /api/memory/test-embedding 不可达时回 400 带原因',
+    testEmbRes.status === 400 && testEmbJson.success === false
+      && !/Failed to parse URL/.test(String(testEmbJson.error)),
+    String(testEmbJson.error).slice(0, 50));
 
   // 9) 清理：删除冒烟记忆后确认注入不再包含
   const delRes = await authed('/api/memory/store', { action: 'delete', memoryId });

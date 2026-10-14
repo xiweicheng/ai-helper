@@ -1,5 +1,5 @@
 import state from './state.js';
-import { BUILTIN_TOOLS, CATEGORY_ORDER } from './constants.js';
+import { BUILTIN_TOOLS, CATEGORY_ORDER, RAG_TOOL_IDS } from './constants.js';
 import { showToast, escapeHtml, escapeAttr } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import logger from '../shared/logger.js';
@@ -819,20 +819,20 @@ function updateToolsPopupTitle() {
 
 function saveToolsFromPopup() {
   const newEnabledTools = [];
-  // MCP 工具不参与工具级勾选（服务级开关单独保存）
-  const allTools = [...BUILTIN_TOOLS, ...ragToolsCache];
+  // 遍历工具勾选的有效 ID 全集（内置 + RAG 静态全集 + 已注册 RAG 工具，MCP 不参与工具级勾选）
+  const universeIds = [...getValidToolIdUniverse(ragToolsCache)];
   
-  allTools.forEach(tool => {
-    const checkbox = document.getElementById('tool_' + tool.id);
+  universeIds.forEach(id => {
+    const checkbox = document.getElementById('tool_' + id);
     if (checkbox) {
       // 可见工具：根据 checkbox 状态决定
       if (checkbox.checked) {
-        newEnabledTools.push(tool.id);
+        newEnabledTools.push(id);
       }
     } else {
-      // 不可见工具：保持原始状态
-      if (state.enabledTools.includes(tool.id)) {
-        newEnabledTools.push(tool.id);
+      // 不可见工具：保持原始状态（代理离线时知识库工具无 checkbox，勾选在此保留）
+      if (state.enabledTools.includes(id)) {
+        newEnabledTools.push(id);
       }
     }
   });
@@ -918,6 +918,9 @@ function setVisibleMcpServicesOpen(checked) {
 }
 
 function updateToolsToggleState() {
+  // 无 DOM 环境（单测以 node 环境导入本模块）时模块初始化的 .then 回调仍会走到这里，
+  // 不在入口兜住就会浮出 "document is not defined" 的未处理 rejection
+  if (typeof document === 'undefined') return;
   const toolsToggleBtn = document.getElementById('toolsToggleBtn');
   const toolsBadge = document.getElementById('toolsBadge');
   const filteredTools = getAgentFilteredTools();
@@ -1003,7 +1006,8 @@ export {
   setVisibleMcpServicesOpen,
   refreshToolPopupIfOpen,
   applyRagToolIntroduction,
-  getRagToolIds
+  getRagToolIds,
+  getValidToolIdUniverse
 };
 
 /**
@@ -1031,6 +1035,26 @@ function applyRagToolIntroduction(savedTools, ragTools, introduced) {
  */
 function getRagToolIds() {
   return ragToolsCache.map(t => t.id);
+}
+
+/**
+ * 工具勾选的有效 ID 全集：内置工具 + RAG 知识库静态全集 + 当前已注册的 RAG 工具
+ *
+ * 必须在"当前已注册"之外并入 RAG 静态全集：代理离线时知识库工具会临时卸载
+ * （storage.ragTools 清空），若只按已注册工具判定有效性，各加载/切换/保存路径会把
+ * 用户已勾选的知识库工具当作残留 ID 清理并持久化，代理重连后（ragToolsIntroduced=true
+ * 不再重新引入）勾选丢失。静态全集保证只清理真正无效的残留 ID（如旧版 MCP 工具），
+ * 不误伤临时离线的动态工具。
+ * @param {Array<{id: string}>} [ragTools] 当前已注册的 RAG 工具（storage.ragTools）
+ * @returns {Set<string>}
+ */
+function getValidToolIdUniverse(ragTools = []) {
+  const registered = Array.isArray(ragTools) ? ragTools : [];
+  return new Set([
+    ...BUILTIN_TOOLS.map(t => t.id),
+    ...RAG_TOOL_IDS,
+    ...registered.map(t => t.id)
+  ]);
 }
 
 /**
