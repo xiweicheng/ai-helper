@@ -55,7 +55,11 @@
 
 `vectorMatched` = 被语义路采纳的条数（上限 2）。两路各取名次后按 `rrfFuse` 融合，`RRF_K = 60`（业界默认值，未重调）——**只消费名次，不混合分数尺度**。
 
-> ⚠️ 0.48 是**换 embedding 模型或改记忆文本拼接方式后必须重跑网格重标定**的落点，不是通用常数。当时的可用窗口是 `(0.4506, 0.5163]`。
+> ⚠️ 0.48 不是通用常数，而是**在标注样本上量出的一段安全窗口的中点**：下界 = 无关查询（本库无答案）top1 的最大值、上界 = 相关查询 top1 的最小值。bge-m3 上窗口为 `(0.4506, 0.5163]`（下界取真实库天气控制查询，比合成语料的 0.4322 更严）。整段窗口随 embedding 模型平移，**换模型或改记忆文本拼接方式后必须重标定**。
+>
+> **如何重标定**（换模型后的固定动作）：在 `agent config.json` 的 `memoryEmbedding` 里配好目标模型，跑
+> `cd agent && node test/eval/recalibrate-semantic-floor.mjs`。它联网取一次向量、调用纯函数
+> `agent/test/eval/semantic-window.js` 的 `computeSemanticWindow` 量出新窗口，打印建议地板与「现值 0.48 是否仍在窗口内、余量多少」。按它给的数改 `SEMANTIC_QUERY_FLOOR`，再跑 `test/eval` 两套黄金评测确认。数学由 `memory-semantic-window.unit.test.js` 离线钉住（用已提交黄金向量，零联网）；脚本本身人工执行，绝不进测试链路。
 
 ## 5. 标签的角色：`agent/src/memory/tags.js`
 
