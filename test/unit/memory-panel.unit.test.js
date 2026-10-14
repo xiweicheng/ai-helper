@@ -111,17 +111,19 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     });
   });
 
-  test('本地档保存：模型固定内置，显式提交 modelName 空串清除远端残留，其余隐藏字段不提交', async () => {
+  test('本地档保存：显式清空三项会污染本地档的远端残留（modelName/queryPrefix/dimensions），惰性字段不提交', async () => {
     document.getElementById('memModeLocal').click();
     await vi.waitFor(() => expect(document.getElementById('memoryModelGroup').style.display).toBe('none'));
-    // 即使输入框里还残留着进本地档之前配过的远端模型名，也不能被提交（本地 provider 会拿它去 transformers 下载）
+    // 进本地档之前配过远端：回显残留还留在隐藏的输入框里——模型名会劫持 transformers 下载，
+    // 前缀会顶替 BGE 本地默认前缀，维度会拼进 memoryModelKey 指纹（逐字段理由见 collectPayload）
     document.getElementById('memoryModelInput').value = 'BAAI/bge-m3';
+    document.getElementById('memoryPrefixInput').value = 'query: ';
+    document.getElementById('memoryDimsInput').value = '1024';
     document.getElementById('memorySaveBtn').click();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
-      expect(post.body).toEqual({ enabled: true, mode: 'local', modelName: '' });
-      expect('dimensions' in post.body).toBe(false, '提交 dimensions:0 会让指纹改变并冒报 stale');
-      expect('baseUrl' in post.body).toBe(false);
+      expect(post.body).toEqual({ enabled: true, mode: 'local', modelName: '', queryPrefix: '', dimensions: 0 });
+      expect('baseUrl' in post.body).toBe(false, 'baseUrl 在本地档完全惰性：省略是留给切回远端用的，不是残留漏洞');
     });
   });
 

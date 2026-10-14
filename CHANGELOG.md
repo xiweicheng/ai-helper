@@ -4,6 +4,15 @@
 
 ## 2026-10-14
 
+### 修复（记忆线评审收口：score 字段级封顶回归 + 标定工具窄窗口越界 + 本地档残留清空）
+> 承上一轮 CodeReview 结论，用户裁定「确认是问题的先修，不确定的先核实」：两条确认问题（#1/#2）修复；第三点先核实——核实结果亦为真（queryPrefix/dimensions 都会参与本地档行为），一并修。全部先红后绿。
+
+- **#1 `keywordScore` 恢复字段级封顶（真回归）**：`6e2a22f` 重构时 `fieldUnitHits()` 丢掉了旧 `fieldUnits()` 内部的 `Math.min(units, KEYWORD_MAX_HITS)`，`score` 从「字段内单元和先封顶再乘权重」变成逐单元线性累加——长文档碰多个碎块被按单元放大（红跑实测 18，恰为旧实现 9 的两倍）。`units` 轴封顶未丢（门槛/深度判定不变），但同深度档内排序被改写，与 README「单字段封顶 3 个单元」等声明矛盾。修：字段内累加后 `Math.min(fieldUnits, KEYWORD_MAX_HITS)` 再乘权重（跨字段仍各自累加）；改正 `tokens.js` 那条说「封顶口径与原实现一致」却无封顶的错误注释。旧钉只断言 `units` 没断言 `score`——正是它没拦住这次回归，本轮补上 score 轴断言。
+- **#2 标定工具窄窗口越界（边界缺口）**：`semantic-window.js` 的 `recommend = snapToGrid(中点)` 未校验归整后仍落窗口内，窗口窄于栅格时会越出上界（构造 `(0.454,0.456]` → 归整成 0.46），照它设地板会拒掉最低分的相关查询。修：归整值不在 `(下界, 上界]` 内时退回未归整中点（窗口可用时中点必然在窗内），并补「窗口过窄 / 推荐值未落栅格」两条告警。bge-m3 真实窗口宽 0.084 不触发，属换模型场景的前置护栏。
+- **#3 本地档残留清空扩到 queryPrefix/dimensions（核实后确认是问题）**：`collectPayload` 本地分支此前只清 `modelName`。两条残留链路核实为真：`queryPrefix` 残留顶替本地 BGE 默认前缀（`EmbeddingProvider` 的 `??` 只认 nullish，非空残留原样生效，漏前缀对中文召回是实质质量损失）；`dimensions` 不参与本地向量但进 `memoryModelKey` 指纹（`upsertVectors` 键变即整体作废旧向量），残留值随远端历史漂移会让同一份本地配置冒报 stale、白跑一次 23 分钟本地重建。修：本地分支显式 `queryPrefix:''` + `dimensions:0`（保存层收空串/0、provider 层删空键回落默认前缀）；`baseUrl`/`apiKey` 在本地档完全惰性，保持省略。改写旧钉（原「dimensions 不提交」钉的是旧行为）为「三项残留显式清空 + 惰性字段省略」，并用隐藏输入框里的真实残留值驱动。
+
+收口计数（全部实测）：agent 单测 **427/427**（含两套黄金评测）、根 vitest **1315/1315**、`npm run build:silent` BUILD_SUCCESS。口径写回 `docs/Memory-Retrieval-Design.md` §3/§4/§7；一律未推送。
+
 ### 变更（记忆向量配置界面：远端命名对齐知识库 + 本地档模型固定不可编辑）
 > 用户两个界面优化点，核实后均成立，开挖时顺带发现一个正确性坑。只动 `src/options` 与文案/布局，不碰代理逻辑。
 

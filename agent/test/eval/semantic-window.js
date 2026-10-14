@@ -78,7 +78,21 @@ export function computeSemanticWindow({ docs = {}, queries = {}, cases = [], cur
   const upper = relevantTopMin;
   const windowUsable = lower !== null && upper !== null && lower < upper;
 
-  const recommend = windowUsable ? snapToGrid((lower + upper) / 2, gridStep) : null;
+  // 推荐值：窗口中点归整到栅格；但归整后的值必须仍落在 (下界, 上界] 内——窗口窄于栅格时
+  // 四舍五入可能越出上界（地板高于上界会拒掉最低分的相关查询），此时退回未归整中点
+  // （窗口可用时中点必然严格落在窗口内）。
+  let recommend = null;
+  let recommendSnapped = false;
+  if (windowUsable) {
+    const mid = (lower + upper) / 2;
+    const snapped = snapToGrid(mid, gridStep);
+    if (snapped > lower && snapped <= upper) {
+      recommend = snapped;
+      recommendSnapped = true;
+    } else {
+      recommend = Number(mid.toFixed(6));
+    }
+  }
 
   const hasCurrent = Number.isFinite(currentFloor);
   const currentInside = hasCurrent && windowUsable && currentFloor > lower && currentFloor <= upper;
@@ -91,6 +105,12 @@ export function computeSemanticWindow({ docs = {}, queries = {}, cases = [], cur
   }
   if (!windowUsable) {
     warnings.push('安全窗口为空（下界 ≥ 上界或缺失）：该地板取值不可用，需补标注或该模型对相关/无关查询区分度不足');
+  }
+  if (windowUsable && (upper - lower) < gridStep * 2) {
+    warnings.push(`安全窗口过窄（宽度 ${(upper - lower).toFixed(4)} < 2×${gridStep}）：推荐值仅供人工复核，换模型时建议补标注扩窗`);
+  }
+  if (windowUsable && !recommendSnapped) {
+    warnings.push(`推荐值 ${recommend} 未落在 ${gridStep} 栅格上（窗口窄于栅格，归整会越界）：已退回窗口中点`);
   }
   const offTop1 = relevant.filter(r => !r.targetIsTop1);
   if (offTop1.length) {

@@ -32,7 +32,7 @@
 `keywordScore` 返回 `{ score, units, full, best }`，三根轴各有分工：
 
 - **单元身份是「查询单元」**（拉丁按词、中文按连续段），不是命中片段。同一查询单元在正文/标题/标签多处命中时，`units` 取它达到的**最强值**而非累加——否则一个 2 字片段（如「配置」）在正文与标签各命中一次就凑出 `units=2`，把门槛旁路（2026-10-14 真实库实测：QQ 邮箱记忆靠此顶到第 1，而查询的三个概念词一次都没出现）。
-- **`score` 保持跨字段累加**：一个词既在正文又在标签出现本就是更强的排序信号，只让**门槛**不再吃这份重复。
+- **`score` 跨字段累加、字段内封顶**：同一字段内的命中单元和先封顶 `KEYWORD_MAX_HITS (= 3)` 再乘该字段权重（2026-10-14 评审发现 `6e2a22f` 重构曾丢掉这层封顶、被按单元线性放大，已恢复——长文档碰多个碎块不得线性推分）；跨字段仍各自累加：一个词既在正文又在标签出现本就是更强的排序信号，只让**门槛**不再吃这份重复。
 - **`best` 是单个查询单元自己达到的最强单元数**——区分「一次深命中」与「多次浅碎块」，`score` 只反映出现在几个字段，判名次时必须有这根深度轴。
 
 命中判定（门槛）：`isKeywordHit = s.full || s.units >= KEYWORD_MIN_UNITS (= 2)`。
@@ -59,7 +59,7 @@
 >
 > **如何重标定**（换模型后的固定动作）：在 `agent config.json` 的 `memoryEmbedding` 里配好目标模型，跑
 > `cd agent && node test/eval/recalibrate-semantic-floor.mjs`。它联网取一次向量、调用纯函数
-> `agent/test/eval/semantic-window.js` 的 `computeSemanticWindow` 量出新窗口，打印建议地板与「现值 0.48 是否仍在窗口内、余量多少」。按它给的数改 `SEMANTIC_QUERY_FLOOR`，再跑 `test/eval` 两套黄金评测确认。数学由 `memory-semantic-window.unit.test.js` 离线钉住（用已提交黄金向量，零联网）；脚本本身人工执行，绝不进测试链路。
+> `agent/test/eval/semantic-window.js` 的 `computeSemanticWindow` 量出新窗口，打印建议地板与「现值 0.48 是否仍在窗口内、余量多少」。按它给的数改 `SEMANTIC_QUERY_FLOOR`，再跑 `test/eval` 两套黄金评测确认。推荐值归整栅格后会校验仍落 `(下界, 上界]` 内——窗口窄于栅格时四舍五入会越出上界，此时退回未归整中点（窗口可用时中点必然在窗内），并在窗口过窄（宽 < 2×栅格）或推荐值未落栅格时输出告警；照越界的归整值设地板会拒掉最低分的相关查询。数学由 `memory-semantic-window.unit.test.js` 离线钉住（用已提交黄金向量，零联网）；脚本本身人工执行，绝不进测试链路。
 
 ## 5. 标签的角色：`agent/src/memory/tags.js`
 
@@ -86,7 +86,7 @@
 - **`baseUrl` → `endpoint` 的字段映射必须在 `toEmbeddingProviderConfig()` 里做**：配置面统一叫 `baseUrl`（与扩展端表单一致），而 `rag/embedding` 的 OpenAI 兼容后端读 `endpoint`。这个错位单测看不见（注入的是假工厂），只有走真实 provider 的冒烟会炸。交出空白 `queryPrefix` 时须删除该键。
 - 端点（`ROUTE_METHODS` + `handleEmbeddingEndpoints`）：POST 类 `store` / `recall` / `manage` / `inject` / `reindex`（后者实际映射到 `backfillVectors`）；配置与探活类 GET 合法：`embedding-config`、`test-embedding`、`vector-status`（只读状态：条数 + 指纹陈旧判定）。业务失败一律 HTTP 400 + 原样 error；只有路径/方法不匹配才 404（扩展端据此探测旧版 agent 无记忆端点）。
 - 扩展端界面：`src/options/memory-panel.js`（状态三态、陈旧标红、重建按钮）。**总开关走「切换即持久化」**，请求体只带 `enabled`（其余字段仍是「不传即不改」），其它字段仍由「保存到代理」按钮提交。开关文案由 `syncEnabledLabel()` 唯一渲染，`options.html` 里那个 span 不挂静态 i18n 键 —— 挂上后语言切换会把「已启用」硬盖成「已停用」。
-- **嵌入来源单选与知识库同名同义**：远端选项文案统一为「远端服务（OpenAI 兼容接口）」（此前记忆面写作「远端 API」，与知识库不一致）。**本地档模型固定内置** `Xenova/bge-small-zh-v1.5`，与知识库一致：选本地时 `applyModeVisibility` 连模型框一起隐藏，`collectPayload` 本地分支**显式发 `modelName:''`** 而非省略——保存层「不传即沿用旧值」，省略会让之前配远端时存下的模型名残留，被本地 provider（`modelName || 内置默认`）拿去 transformers 下载。
+- **嵌入来源单选与知识库同名同义**：远端选项文案统一为「远端服务（OpenAI 兼容接口）」（此前记忆面写作「远端 API」，与知识库不一致）。**本地档模型固定内置** `Xenova/bge-small-zh-v1.5`，与知识库一致：选本地时 `applyModeVisibility` 连模型框一起隐藏，`collectPayload` 本地分支**显式清空三个会把远端残留带进本地档的字段**（保存层「不传即沿用旧值」）：`modelName:''`（残留被本地 provider `modelName || 内置默认` 拿去 transformers 下载）、`queryPrefix:''`（残留顶替 BGE 默认查询前缀——provider 的 `??` 只认 nullish，非空残留原样生效）、`dimensions:0`（不参与本地向量，但进 `memoryModelKey` 指纹，残留随远端历史漂移会让同一份本地配置冒报 stale 并白跑重建）；`baseUrl`/`apiKey` 在本地档完全惰性（不建远端后端），保持省略留给切回远端用。
 
 ## 8. 已知限制（不是 bug，别顺手「修掉」）
 

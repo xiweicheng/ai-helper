@@ -110,7 +110,8 @@ export function buildDocFreqFilter(candidates = [], terms = { latin: [], cjk: []
 }
 
 /**
- * 记忆关键词分：单元数 × 字段权重，另加整句原样命中分。
+ * 记忆关键词分：字段内命中单元和（封顶 KEYWORD_MAX_HITS）× 字段权重，跨字段累加；
+ * 另加整句原样命中分。
  * 与旧实现的差别即本次变更的目的——碎块不再与整词等价，长命中不再被拆成多次加分。
  * full 标识「命中了某个完整单元」（整个拉丁词或整个中文连续段），供调用方区分
  * 「整词命中」与「只碰了 2 字碎块」——后者的分数必须过 KEYWORD_MIN_UNITS 门槛才能算命中。
@@ -129,13 +130,17 @@ export function keywordScore(m, terms, originalQuery, dfFilter = () => true) {
   let score = 0;
   let full = false;
   for (const field of Object.keys(FIELD_WEIGHT)) {
+    // 字段级封顶（与原实现一致）：同一字段内的命中单元和先封顶再乘权重——不封顶的话，
+    // 长文档碰多个碎块会被按单元线性放大，正是本轮要压制的噪声形态。
+    // 跨字段仍各自累加：一个词既在正文又在标签出现，本来就是更强的排序信号。
+    let fieldUnits = 0;
     for (const h of fieldUnitHits(texts[field], terms, dfFilter)) {
-      // 排序轴保持跨字段累加：一个词既在正文又在标签出现，本来就该更强
-      score += FIELD_WEIGHT[field] * h.units;
+      fieldUnits += h.units;
       const prev = perUnit.get(h.unit);
       if (prev === undefined || h.units > prev) perUnit.set(h.unit, h.units);
       if (h.full) full = true;
     }
+    score += FIELD_WEIGHT[field] * Math.min(fieldUnits, KEYWORD_MAX_HITS);
   }
   let units = 0;
   let best = 0;
@@ -143,7 +148,7 @@ export function keywordScore(m, terms, originalQuery, dfFilter = () => true) {
     units += u;
     if (u > best) best = u;
   }
-  units = Math.min(units, KEYWORD_MAX_HITS);   // 封顶口径与原实现一致：长查询不得无限推高
+  units = Math.min(units, KEYWORD_MAX_HITS);   // 门槛轴同样封顶：去重后的单元和也不得超过 KEYWORD_MAX_HITS
   const query = String(originalQuery || '');
   if (query.length >= ORIGINAL_QUERY_MIN_LENGTH) {
     if (texts.content.includes(query)) score += ORIGINAL_QUERY_CONTENT_BONUS;

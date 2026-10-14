@@ -56,6 +56,28 @@ describe('语义地板安全窗口标定（黄金向量离线）', () => {
     const w = snap();
     // (0.4322 + 0.5163) / 2 = 0.47425 → 0.47
     assert.equal(w.recommend, 0.47);
+    // 黄金语料窗口宽 0.084，远大于栅格：不得触发窄窗口告警
+    assert.ok(!w.warnings.some(x => x.includes('窗口过窄')));
+  });
+
+  it('窄窗口（宽度小于栅格）推荐值不得越出上界：退回未归整中点并告警', () => {
+    // 构造窗口 (0.454, 0.456]：中点 0.455，按 0.01 栅格归整得 0.46 > 上界 0.456，
+    // 照它设地板会把最低分的相关查询拒之门外——必须退回窗口内的中点并给窄窗口告警。
+    const ang = (c) => Math.sqrt(1 - c * c);
+    const docs = { 'd-target': [1, 0], 'd-other': [0, -1] };
+    const queries = { 'q-rel': [0.456, ang(0.456)], 'q-none': [0.454, ang(0.454)] };
+    const cases = [
+      { query: 'q-rel', target: 'd-target' },
+      { query: 'q-none', expectNone: true },
+    ];
+    const w = computeSemanticWindow({ docs, queries, cases, currentFloor: 0.48 });
+    assert.equal(w.windowUsable, true);
+    assert.equal(w.lower.toFixed(4), '0.4540');
+    assert.equal(w.upper.toFixed(4), '0.4560');
+    assert.ok(w.recommend > w.lower, '推荐值必须严格高于下界');
+    assert.ok(w.recommend <= w.upper, '推荐值不得越出上界');
+    assert.equal(w.recommend, 0.455, '窄窗口下退回未归整中点（栅格归整会得 0.46 越界）');
+    assert.ok(w.warnings.some(x => x.includes('窗口过窄')), '窄窗口必须给人工作业告警');
   });
 
   it('每条相关查询都列出 target 是否 top1，供换模型时判断召回质量', () => {

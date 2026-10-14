@@ -34,9 +34,8 @@ function applyModeVisibility() {
  * 为什么不能交空值：memoryModelKey = mode|modelName|dimensions，且 dimensions 取
  * `Number(d) > 0 ? floor : 0` —— 把已存 512 覆盖成 0 会改变指纹，界面冒报陈旧，
  * 逼用户做一次无谓重建。apiKey 留空同理（agent 端语义：不传即不改）。
- * 本地档例外：模型固定内置，且必须**显式发 modelName:''**——保存层「不传即沿用旧值」，
- * 若省略，之前配远端时存下的模型名会残留并被本地 provider 拿去 transformers 下载（local.js
- * `modelName || 内置默认`，残留值非空即劫持默认）。
+ * 本地档是这条规则的反面：「缺席」= 保存层沿用旧值 = 远端残留渗进本地档，
+ * 所以会参与本地行为的字段必须显式清空（逐字段理由见 isLocal 分支）。
  */
 function collectPayload() {
   const payload = {
@@ -44,7 +43,15 @@ function collectPayload() {
     mode: currentMode()
   };
   if (isLocal()) {
+    // modelName 残留会劫持模型（local.js `modelName || 内置默认`，非空残留被拿去 transformers 下载）；
+    // queryPrefix 残留会顶替 BGE 查询前缀（provider `resolved.queryPrefix ?? 本地默认` 只认 nullish，
+    // 非空残留原样生效，漏前缀对中文召回是实质质量损失）；
+    // dimensions 不参与本地向量，但会拼进 memoryModelKey 指纹——残留值随远端配置历史漂移，
+    // 同一份本地配置会莫名冒报 stale（本地档重建实测 23 分钟，白跑不能接受）。
+    // baseUrl/apiKey 不在此列：本地档根本不建远端后端，对它们完全惰性，省略留给切回远端用。
     payload.modelName = '';
+    payload.queryPrefix = '';
+    payload.dimensions = 0;
     return payload;
   }
   const modelName = ($('memoryModelInput')?.value || '').trim();

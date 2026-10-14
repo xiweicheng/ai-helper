@@ -52,7 +52,23 @@ describe('单元制计分（本次行为改变的核心）', () => {
   it('同字段单元数封顶，长查询不会把分数无限推高', () => {
     const terms = T('混合检索 方案 落地 评估');
     const m = { content: '混合检索方案落地评估报告', title: '', tags: [] };
-    assert.equal(keywordScore(m, terms, '混合检索 方案 落地 评估', () => true).units, 3);
+    const s = keywordScore(m, terms, '混合检索 方案 落地 评估', () => true);
+    assert.equal(s.units, 3);
+    // 封顶必须同时落在 score 轴上（2026-10-14 评审发现：重构时只留了 units 轴封顶，
+    // 字段内单元和 3+1+1+1=6 被按单元线性累加 → score=18，是旧实现 9 的两倍，
+    // 长文档碰多个碎块的噪声反而被放大）。正确口径：字段内先封顶到 3 再乘权重 → 9。
+    assert.equal(s.score, FIELD_WEIGHT.content * 3, '字段级封顶：score 不得随命中单元数线性推高');
+  });
+
+  it('单字段多命中与跨字段命中：各字段内先封顶再比较', () => {
+    const terms = T('alpha beta gamma delta');
+    const single = { content: 'delta alpha beta gamma 顺序打乱', title: '', tags: [] };
+    const cross = { content: 'alpha beta 先说', title: 'gamma delta 后续', tags: [] };
+    const a = keywordScore(single, terms, '', () => true);
+    const b = keywordScore(cross, terms, '', () => true);
+    assert.equal(a.score, FIELD_WEIGHT.content * 3, '单字段 4 词先封顶到 3 单元');
+    assert.equal(b.score, FIELD_WEIGHT.content * 2 + FIELD_WEIGHT.title * 2, '跨字段各按字段内单元和计分');
+    assert.ok(b.score > a.score, '两个字段都命中应强于单字段封顶值——丢封顶时本条会反转');
   });
 
   it('标题与标签命中按各自权重计分', () => {
