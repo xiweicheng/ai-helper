@@ -2354,14 +2354,16 @@ body {
 .tool-toggle-wrapper:hover {
   background: rgba(0, 0, 0, 0.03);
 }
-/* 分组容器选中态背景 */
-.toolbar-chip-group:has(input:checked),
-.tool-toggle-wrapper:has(input:checked) {
+/* 分组容器选中态背景：只认组内直属主开关（> label.check-toggle > input）。
+   记忆组把条数下拉嵌在组内，下拉里的自动压缩/摘要存入记忆子开关若用裸
+   :has(input:checked) 会误触发整组高亮——关掉记忆主开关后选中态仍残留 */
+.toolbar-chip-group:has(> label.check-toggle > input:checked),
+.tool-toggle-wrapper:has(> label.check-toggle > input:checked) {
   background: rgba(102, 126, 234, 0.13);
   border-color: rgba(102, 126, 234, 0.30);
 }
-.toolbar-chip-group:has(input:checked):hover,
-.tool-toggle-wrapper:has(input:checked):hover {
+.toolbar-chip-group:has(> label.check-toggle > input:checked):hover,
+.tool-toggle-wrapper:has(> label.check-toggle > input:checked):hover {
   background: rgba(102, 126, 234, 0.20);
   border-color: rgba(102, 126, 234, 0.40);
 }
