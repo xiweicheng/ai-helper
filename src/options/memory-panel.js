@@ -10,6 +10,8 @@ import logger from '../shared/logger.js';
 
 let initialized = false;
 let lastStatus = { connected: true, ragAvailable: true };  // mode 切换要重算门控，而连接态只有 refresh 时才知道
+let gateBlocked = false;   // 门控（代理未连接等）导致的锁定
+let toggleBusy = false;    // 开关写入在途的锁定
 
 const $ = (id) => document.getElementById(id);
 
@@ -54,9 +56,24 @@ function collectPayload() {
   return payload;
 }
 
+/** 开关文案的唯一出口：只认真值 checkbox，别处不要直接写这个 span */
+function syncEnabledLabel() {
+  const el = $('memoryEnabledLabel');
+  if (el) el.textContent = $('memoryEnabled')?.checked === true ? t('memoryPanel.enabled') : t('memoryPanel.disabled');
+}
+
+/**
+ * 开关的两把锁合并下发：门控不通过（根本发不出请求）或写入在途（防连点发两轮）都要禁用。
+ * 原来 renderGate 只锁三个按钮，开关照样能点 —— 点了又落不了盘，正是用户报「控制不了」的观感来源。
+ */
+function applyToggleLock() {
+  const box = $('memoryEnabled');
+  if (box) box.disabled = gateBlocked || toggleBusy;
+}
+
 function fillForm(cfg) {
   $('memoryEnabled').checked = cfg.enabled === true;
-  $('memoryEnabledLabel').textContent = cfg.enabled === true ? t('memoryPanel.enabled') : t('memoryPanel.disabled');
+  syncEnabledLabel();
   const radio = document.querySelector(`input[name="memoryEmbeddingMode"][value="${cfg.mode === 'local' ? 'local' : 'openai-compat'}"]`);
   if (radio) radio.checked = true;
   $('memoryBaseUrlInput').value = cfg.baseUrl || '';
@@ -190,6 +207,21 @@ async function onReindex() {
 
 // ==================== 加载 ====================
 
+/** 只重拉状态卡：开关切换后档位会从 remote/local 变 none，状态必须收敛，但不能顺带回填表单 */
+async function loadStatus() {
+  try {
+    const statusRes = await agentApi('GET', '/api/memory/vector-status');
+    if (statusRes && statusRes.success === true) {
+      renderStatus(statusRes);
+    } else {
+      renderStatusFail(statusRes);
+    }
+  } catch (err) {
+    logger.warn('[MemoryPanel] status load failed:', err.message);
+    renderStatusFail(err);
+  }
+}
+
 async function loadAll() {
   // 两条请求并发（进面板不等两个往返串行），但各自独立降级：
   // 旧代理可能只缺其中一个端点，捆在同一个 try 里会让能拿到的那份也被拖成失败
@@ -205,19 +237,7 @@ async function loadAll() {
     }
   })();
 
-  const statusTask = (async () => {
-    try {
-      const statusRes = await agentApi('GET', '/api/memory/vector-status');
-      if (statusRes && statusRes.success === true) {
-        renderStatus(statusRes);
-      } else {
-        renderStatusFail(statusRes);
-      }
-    } catch (err) {
-      logger.warn('[MemoryPanel] status load failed:', err.message);
-      renderStatusFail(err);
-    }
-  })();
+  const statusTask = loadStatus();
 
   await Promise.all([cfgTask, statusTask]);
 }
@@ -226,6 +246,8 @@ function renderGate(status) {
   const gate = $('memoryGate');
   const main = $('memoryMain');
   const blocked = !status.connected || (currentMode() === 'local' && !status.ragAvailable);
+  gateBlocked = blocked;
+  applyToggleLock();
   gate.style.display = blocked ? '' : 'none';
   main.style.opacity = blocked ? '0.5' : '';
   ['memorySaveBtn', 'memoryReindexBtn', 'memoryTestBtn'].forEach((id) => { const el = $(id); if (el) el.disabled = blocked; });
@@ -236,6 +258,33 @@ function renderGate(status) {
       : t('memoryPanel.gateRagMissing');
     // 门控样式用本面板自己的类（knowledge 的 gate 是一套带安装引导的渲染器，不适合直接搬用）
     gate.innerHTML = `<div class="memory-gate"><span class="memory-gate-title">${escapeHtml(title)}</span><span class="memory-gate-body">${escapeHtml(body)}</span></div>`;
+  }
+}
+
+/**
+ * 总开关切换即持久化（与仓库其它顶层开关同惯例）。
+ * 只发 { enabled }：agent 端语义是「不传的字段不改」，实测这种最小体不会抹掉地址/模型/维度，
+ * 也不会改动 modelKey 指纹。成功后只重拉状态卡，绝不 loadAll —— 那会把用户尚未保存的草稿盖掉。
+ * 失败必须回滚勾选框：界面显示「已停用」而代理里还开着，比原来那个「刷新后自己弹回去」更坏。
+ */
+async function onToggleEnabled() {
+  const box = $('memoryEnabled');
+  const target = box.checked === true;
+  toggleBusy = true;
+  applyToggleLock();
+  try {
+    const res = await agentApi('POST', '/api/memory/embedding-config', { enabled: target });
+    if (!res || res.success !== true) throw new Error(res?.error || 'unknown');
+    showToast(target ? t('memoryPanel.toggleOnSaved') : t('memoryPanel.toggleOffSaved'), 'info');
+    await loadStatus();
+  } catch (err) {
+    logger.warn('[MemoryPanel] toggle persist failed:', err.message);
+    box.checked = !target;
+    showToast(t('memoryPanel.toggleFail', { error: err.message }), 'error');
+  } finally {
+    toggleBusy = false;
+    applyToggleLock();
+    syncEnabledLabel();
   }
 }
 
@@ -252,7 +301,8 @@ export function initMemoryPanel() {
     r.addEventListener('change', () => { applyModeVisibility(); renderGate(lastStatus); });
   });
   $('memoryEnabled')?.addEventListener('change', () => {
-    $('memoryEnabledLabel').textContent = $('memoryEnabled').checked ? t('memoryPanel.enabled') : t('memoryPanel.disabled');
+    syncEnabledLabel();      // 先跟着用户动作走，失败时 onToggleEnabled 会回滚
+    onToggleEnabled();
   });
 }
 

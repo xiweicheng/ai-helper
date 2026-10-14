@@ -39,6 +39,18 @@
 
 收口计数（本轮实测）：agent 单测 **409/409**、根 vitest **1306/1306**、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。rag 集成与记忆冒烟本轮未重跑——它们验的是产品代码，而本轮 `git diff --stat` 只含 `docs/` 与 `CHANGELOG.md`。
 
+### 修复（记忆向量总开关：切换即持久化，不再被回填盖回去）
+> 用户实测报告：配置页把「记忆向量」总开关关掉，一刷新页面又变成开启，「好像这个开关我控制不了」。
+
+- **根因在扩展侧，不在 agent 侧**（先取证再动手）：读真实 `~/.ai-helper-agent/config.json` 看到 `memoryEmbedding.enabled` 仍是 `true` —— 那次「关闭」从未写进去；再用隔离 HOME 的探针实测配置层**完全能**把 true 改成 false，且只发 `{enabled:false}` 的最小体不会抹掉 `baseUrl` / `modelName` / `dimensions`，也不改动 `memoryModelKey` 指纹。真因是面板的**表单制**：开关 `change` 只改「已启用/已停用」文案、不落盘，必须再点「保存到代理」；而 `refreshMemoryPanel` 每次刷新/切 Tab 都 GET 配置回填，未保存的关闭态被真值盖回去。文案立刻变成「已停用」是在骗用户，也与仓库既有惯例（顶层开关 `change` 即持久化）相反。当初的设计文档**没写**这条开关的持久化时机，属实施时自选的表单制，不是按规格做错。
+- **改成切换即持久化**（`src/options/memory-panel.js`）：`change` → `POST /api/memory/embedding-config`，请求体**严格只有 `enabled`**；成功后只重拉状态卡（档位会从 `remote`/`local` 变 `none`，状态必须跟着收敛），**绝不调 `loadAll()`** —— 全量回填会把用户尚未保存的地址/模型草稿盖掉，这是本方案唯一的真陷阱。失败回滚勾选框并报错 toast（留下「界面已关、代理还开着」比原缺陷更坏）；写入在途锁住开关防连点，结束后必须解锁。
+- **门控原先漏掉了这颗开关**：`renderGate` 只禁三个按钮，代理未连接时开关照样能点，而点了必然落不了盘 —— 现在把两把锁（门控 + 写入在途）合并下发到开关本身。
+- **同一颗开关的第二个缺陷顺手修掉**：`options.html` 里那个标签挂着静态 i18n 键 `memoryPanel.disabled`，而语言切换只跑 `applyI18n()`、不重跑面板刷新 —— 勾选态还是「开」，文案却被硬写成「已停用」。改为标签文案由面板按开关态唯一渲染（`syncEnabledLabel()`），HTML 初值留空。
+- 新增中英 `memoryPanel.toggleOnSaved` / `toggleOffSaved` / `toggleFail` 三键（中英对齐由既有结构测试兜住）；新增 7 例行为钉 + 1 例结构钉。
+- **四条变异证明用例有牙**：改发全量体 → 2 红；成功后改走 `loadAll()` → 2 红；失败不回滚 → 1 红；门控不锁开关 → 1 红。逐条还原后 22/22 绿，`md5` 与备份一致。取证与变异用的临时件已删。
+
+收口计数（全部实测）：根 vitest **1314/1314**（+8）、agent 单测 **409/409**（agent 侧零改动，重跑只为确认没被牵连）、`npm run lint` 干净、`npm run build:silent` BUILD_SUCCESS。
+
 ## 2026-10-13
 
 ### 变更（记忆入参校验：侧边栏自测报告的 D2/D3/D4 收口）

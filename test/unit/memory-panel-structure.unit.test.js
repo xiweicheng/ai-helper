@@ -24,6 +24,18 @@ test('面板需要的 id 逐个存在', () => {
   for (const id of IDS) expect(html, `options.html 缺 id=${id}`).toContain(`id="${id}"`);
 });
 
+// 开关标签是状态派生文案，不能挂静态 data-i18n：applyI18n 在语言切换时会把它硬写成「已停用」，
+// 而开关本身仍是勾选态（语言切换并不重跑 refreshMemoryPanel）—— 文案与真值各说各话。
+test('开关标签不挂 data-i18n，也不留硬编码文案（由面板按开关态唯一渲染）', () => {
+  const tag = html.match(/<span[^>]*id="memoryEnabledLabel"[^>]*>([^<]*)<\/span>/);
+  expect(tag, '找不到 memoryEnabledLabel 的 span（或它不是空初值）').toBeTruthy();
+  expect(tag[0]).not.toContain('data-i18n');
+  expect(tag[1].trim(), '标签内不能留硬编码初值').toBe('');
+  // 而代理返回的开关态必须有渲染出口
+  const panel = readFileSync(new URL('../../src/options/memory-panel.js', import.meta.url), 'utf8');
+  expect(panel).toContain('syncEnabledLabel');
+});
+
 test('模式单选组两个值齐备（与 agent 白名单逐字一致）', () => {
   expect(html).toContain('name="memoryEmbeddingMode" value="openai-compat"');
   expect(html).toContain('name="memoryEmbeddingMode" value="local"');
