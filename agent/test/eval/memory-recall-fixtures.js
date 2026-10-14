@@ -81,7 +81,13 @@ export const CASES = [
   { name: '英文专名按词边界命中', query: 'Google 境外', top1: 'proxy' },
   { name: '标签命中进前 2', query: '浏览器自动化', expectTop: ['webpage', 'long-zhihu'] },
   { name: '摘要类可检索', query: '会话压缩摘要', top1: 'summary-1' },
-  { name: '超短条目按整段命中', query: '中国和美国', top1: 'country' }
+  // 2026-10-14 口径变更（计划五）：原查询「中国和美国」在词面通道对 country 的唯一证据是
+  // 两个 2 字碎块（「中国」「美国」），matchCjk 按最长片段分层把它压成 units=1，旧实现靠
+  // 「同一查询单元在正文与标签各命中一次」跨字段累加才凑到 units=2 顶过门槛——那正是本轮
+  // 要消除的重复计数缺陷（QQ 邮箱噪声同源）。门槛去重后它不再算词面命中，改由向量档承接
+  // （见 SEMANTIC_CASES「换说法命中国家观点」，实测 country 召回）。本条保留其名「按整段命中」
+  // 的本意：换成两个完整单元「中国 美国」，靠 full=true 干净过门槛，不再依赖被移除的缺陷。
+  { name: '超短条目按整段命中', query: '中国 美国', top1: 'country' }
 ];
 
 /**

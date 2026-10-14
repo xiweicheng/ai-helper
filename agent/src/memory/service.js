@@ -75,6 +75,25 @@ function isKeywordHit(s) {
 }
 
 /**
+ * 深度命中：整词/整段，或某个查询单元**自己**就过了门槛。
+ * 与 isKeywordHit 的区别只在来源——多个 2 字碎块凑起来的命中能过门槛但不算深度，
+ * 它必须排在一次长片段命中之后（2026-10-13 文件头就写着「排序方向是反的」这笔账，
+ * 单元制修了分值，名次上还没修：浅碎块靠多字段重复照样能顶到前面）。
+ */
+function isDeepKeywordHit(s) {
+  return s.full || s.best >= KEYWORD_MIN_UNITS;
+}
+
+/**
+ * 词面通道唯一比较器：深度命中优先，其后按分数。
+ * A 档单通道与融合档的 kwRanked 必须共用它——两处的注释本来就要求口径逐字一致，
+ * 各写一份会让「开没开向量档」改变碎块条目的地位，那是比噪声更难查的行为分叉。
+ */
+function byKeywordRank(a, b) {
+  return (isDeepKeywordHit(b) ? 1 : 0) - (isDeepKeywordHit(a) ? 1 : 0) || b.score - a.score;
+}
+
+/**
  * 创建记忆服务实例
  * @param {object} [options] 注入点：filePath / vectorsFilePath 指定数据与向量缓存路径（测试用），
  *   embeddingConfigProvider / tierResolver / embedderFactory / embedTimeoutMs 用于关闭网络与真实配置依赖。
@@ -459,7 +478,7 @@ export function createMemoryService({
             // 只留下过了命中门槛的条目，按分数排序
             candidates = scored
               .filter(isKeywordHit)
-              .sort((a, b) => b.score - a.score)
+              .sort(byKeywordRank)
               .map(s => s.memory);
 
             // 迁移说明：原扩展端（tool-memory.js:499-513）的"全文 fallback"分支过滤的是已被
@@ -489,7 +508,7 @@ export function createMemoryService({
             const kwRanked = candidates
               .map(m => ({ memory: m, ...keywordScore(m, terms, originalQuery, dfFilter) }))
               .filter(isKeywordHit)
-              .sort((a, b) => b.score - a.score);
+              .sort(byKeywordRank);
 
             // 语义路：全候选算 cos 后过采信门（查询级地板 + 条目级相对落差 + 条数封顶）。
             // 词面零命中但语义达标的条目由此能被召回；而本库无落点时整通道空返，不再填满窗口。

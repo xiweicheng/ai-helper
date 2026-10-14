@@ -29,7 +29,15 @@
 
 计分单元与权重：`FIELD_WEIGHT = { content: 3, title: 2, tags: 2 }`，整句命中另加 `ORIGINAL_QUERY_CONTENT_BONUS = 5` / `ORIGINAL_QUERY_TITLE_BONUS = 3`（整句长度门槛 `ORIGINAL_QUERY_MIN_LENGTH = 2`）。单元来自**片段化匹配**，与知识库共用同一实现 `agent/src/rag/keyword-match.js`（消除碎 bigram 噪声）。
 
-命中判定：`isKeywordHit = s.full || s.units >= KEYWORD_MIN_UNITS (= 2)`。
+`keywordScore` 返回 `{ score, units, full, best }`，三根轴各有分工：
+
+- **单元身份是「查询单元」**（拉丁按词、中文按连续段），不是命中片段。同一查询单元在正文/标题/标签多处命中时，`units` 取它达到的**最强值**而非累加——否则一个 2 字片段（如「配置」）在正文与标签各命中一次就凑出 `units=2`，把门槛旁路（2026-10-14 真实库实测：QQ 邮箱记忆靠此顶到第 1，而查询的三个概念词一次都没出现）。
+- **`score` 保持跨字段累加**：一个词既在正文又在标签出现本就是更强的排序信号，只让**门槛**不再吃这份重复。
+- **`best` 是单个查询单元自己达到的最强单元数**——区分「一次深命中」与「多次浅碎块」，`score` 只反映出现在几个字段，判名次时必须有这根深度轴。
+
+命中判定（门槛）：`isKeywordHit = s.full || s.units >= KEYWORD_MIN_UNITS (= 2)`。
+
+词面排序（两处共用 `byKeywordRank`，A 档单通道与融合档 `kwRanked` 口径逐字一致）：**深度命中优先，其后按分数**。深度命中 `isDeepKeywordHit = s.full || s.best >= KEYWORD_MIN_UNITS`——多个 2 字碎块凑起来的命中能过门槛但不算深度，必须排在一次长片段命中之后（单元制修了分值，名次上未修：浅碎块靠多字段重复照样顶到前面）。取向是**降权不是剔除**，浅碎块仍在结果里。
 
 区分度剔除（IDF）：`buildDocFreqFilter` 用 `limit = max(KEYWORD_DF_EXEMPT (= 2), 候选数 × KEYWORD_MAX_DF_RATIO (= 0.5))`，保留 `d > 0 && d <= limit` 的单元。三条已定死的口径：
 
@@ -97,6 +105,8 @@
 | --- | --- |
 | 档位判定 | `agent/test/unit/memory-tier.unit.test.js` |
 | 词面计分、df 池与全塌兜底 | `agent/test/unit/memory-tokens.unit.test.js`、`memory-service.unit.test.js`（describe「recall 标签口径：加分而非剔除」） |
+| 单元跨字段去重不得旁路门槛（`units` 取最强、`best` 轴） | `agent/test/unit/memory-tokens.unit.test.js`（describe「单元累加按查询单元而非按字段」） |
+| 深度命中优先排序（A 档与融合档两处同步、降权不剔除） | `agent/test/unit/memory-service.unit.test.js`（describe「词面门槛：同一碎块跨字段重复计数不得顶过门槛」「词面排序：深度命中优先于浅碎块」） |
 | 语义三门与 RRF、分离度门不得加回 | `agent/test/unit/memory-fusion.unit.test.js` |
 | 标签重叠比例与上抬 | `agent/test/unit/memory-tag-rank.unit.test.js` |
 | 派生缓存与模型键 | `agent/test/unit/memory-vectors.unit.test.js` |

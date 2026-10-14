@@ -1061,3 +1061,47 @@ describe('recall 标签口径：加分而非剔除', () => {
     assert.equal(r.results[0].content, 'alpha 带标签', '标签命中把第二名上抬 2 位到第一（上抬强度为 0 时本断言必须红）');
   }));
 });
+
+// 2026-10-14 两处收口都在 recall 的词面通道上，夹具必须同时钉 A 档与融合档：
+// service.js 里那两处排序被注释明确要求「口径逐字一致」，只改一处会造成
+// 「开没开向量档，碎块条目地位不同」这种更难查的行为分叉。
+describe('词面门槛：同一碎块跨字段重复计数不得顶过门槛', () => {
+  it('只碰一个 2 字碎块、靠正文+标签凑出单元数的条目不被捣回', () => withService(async (svc) => {
+    // 噪声条取自真实库那条 QQ 邮箱记忆的骨架：正文有「配置」、标签「邮箱配置」也有，
+    // 而查询的三个概念词「远端」「模型」在整条里一次都没出现
+    await svc.store({ action: 'add', type: 'fact', content: 'QQ邮箱已配置成功：imap 与 smtp 均通过测试', tags: ['邮箱配置'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '配置远端模型的步骤：先填 baseUrl 再填 apiKey', tags: [] }, T);
+    const r = await svc.recall({ query: '配置远端模型' }, null, T);
+    assert.equal(r.total, 1, '旧实现下噪声条以 units=2 顶过门槛，与真答案平起平坐');
+    assert.ok(r.results[0].content.includes('步骤'), '留下的必须是真正答得上那条');
+  }));
+});
+
+describe('词面排序：深度命中优先于浅碎块（降权不剔除）', () => {
+  const NOISE = '这里的检索很快，那里的部署也完成了';
+  const DEEP = '这是一份部署流程说明';
+
+  it('A 档：靠标题+正文+标签三个字段凑高分的碎块条仍在结果里，但排到深度命中之后', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'summary', content: NOISE, title: '检索 部署', tags: ['检索', '部署'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: DEEP, tags: [] }, T);
+    const r = await svc.recall({ query: '检索方案 部署流程' }, null, T);
+    assert.equal(r.total, 2, '取向是降权不是剔除：浅碎块不得被整条抹掉');
+    assert.equal(r.results[0].content, DEEP, '碎块条 score 更高（多处命中累加），旧实现下它在前');
+  }));
+
+  // 语义地板不采信时，融合档的结果序就是词面通道名次本身——用它钉第二处排序点
+  it('融合档同口径：语义整通道否决后，词面名次仍是深度优先', () => withVectorService({
+    embedderFactory: () => ({
+      embedQuery: async () => [1, 0, 0],
+      embedDocuments: async (texts) => texts.map(() => [0, 1, 0])
+    })
+  }, async (svc) => {
+    await svc.store({ action: 'add', type: 'summary', content: NOISE, title: '检索 部署', tags: ['检索', '部署'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: DEEP, tags: [] }, T);
+    const r = await svc.recall({ query: '检索方案 部署流程' }, null, T);
+    assert.equal(r.tier, 'remote');
+    assert.equal(r.vectorMatched, 0, '前置：cos 全为 0，语义通道必须整通道否决，本断言才只吃词面名次');
+    assert.equal(r.total, 2, '融合档同样不得剔除浅碎块');
+    assert.equal(r.results[0].content, DEEP, 'A 档改了而这里没改的话，开关一开一关的排序就不一致了');
+  }));
+});

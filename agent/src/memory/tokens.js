@@ -25,6 +25,8 @@ export const KEYWORD_DF_EXEMPT = 2;
 
 /**
  * 命中门槛：单元数 ≥ 2，或存在一个「完整单元」命中。
+ * 单元身份是**查询单元**（拉丁词 / 中文连续段），其单元数取它在任一字段里达到的最强值；
+ * 不得按字段累加——同一个 2 字片段在正文和标签各命中一次就凑出 2，会把这个门槛旁路掉（实测缺陷）。
  * 实测于 Task 2 评测集（计划 Task 3 Step 3）：只看 score > 0 时 3 条零重叠查询仍会
  * 捣回仅命中 2 字碎块的长条目；纯要求 units ≥ 2 能抹平噪声，但会把「单个英文词」
  * 「单个 2 字中文词」这类短查询误杀。加 full 分支后两者兼得，10/10 全绿。
@@ -50,24 +52,26 @@ export function extractMemoryTerms(query) {
   return extractQueryTerms(query);
 }
 
-/** 单字段内的命中单元数：词边界拉丁命中 + 中文最长片段，按 KEYWORD_MAX_HITS 封顶 */
-function fieldUnits(text, terms, dfFilter) {
-  if (!text) return { units: 0, full: false };
-  let units = 0;
-  let full = false;
+/**
+ * 单字段内的逐查询单元命中明细：词边界拉丁命中 + 中文最长片段。
+ * unit 是稳定的单元身份（拉丁按词、中文按连续段），前缀 l:/c: 防止两种形态互相撞车；
+ * 它是**查询单元**而不是命中片段——按片段计会把「检索」「方案」两个随机 2 字块当成两个单元，
+ * 正是 2026-10-13 碎块噪声要消除的东西，所以这里不能改。
+ */
+function fieldUnitHits(text, terms, dfFilter) {
+  if (!text) return [];
+  const out = [];
   for (const term of matchLatin(text, terms.latin)) {
     if (!dfFilter(term)) continue;
-    units += 1;
     // 拉丁命中本身就是整词命中（词边界已保证），不是碎块
-    full = true;
+    out.push({ unit: 'l:' + term, units: 1, full: true });
   }
   for (const seg of terms.cjk) {
     const hit = matchCjk(text, seg);
     if (!hit || !hit.keys.some(k => dfFilter(k))) continue;
-    units += hit.units;
-    if (seg.length === hit.keys[0].length) full = true;
+    out.push({ unit: 'c:' + seg, units: hit.units, full: seg.length === hit.keys[0].length });
   }
-  return { units: Math.min(units, KEYWORD_MAX_HITS), full };
+  return out;
 }
 
 /**
@@ -114,23 +118,36 @@ export function buildDocFreqFilter(candidates = [], terms = { latin: [], cjk: []
  * @param {{latin: string[], cjk: string[]}} terms extractMemoryTerms 的结果
  * @param {string} originalQuery 原始查询（小写 trim 后传入）
  * @param {(key: string) => boolean} [dfFilter] buildDocFreqFilter 的结果，默认全通过
- * @returns {{score: number, units: number, full: boolean}} units 为命中强度，0 表示词面不沾
+ * @returns {{score: number, units: number, full: boolean, best: number}}
+ *   units 命中强度（跨单元累加，同单元跨字段取最强），0 表示词面不沾；
+ *   best 单个查询单元自己达到的最强单元数——区分「一次深命中」与「多次浅碎块」，
+ *   score 只反映出现在几个字段，判名次时必须有这根深度轴。
  */
 export function keywordScore(m, terms, originalQuery, dfFilter = () => true) {
   const texts = fieldTexts(m);
+  const perUnit = new Map();   // 单元身份 -> 各字段里的最强单元数
   let score = 0;
-  let units = 0;
   let full = false;
   for (const field of Object.keys(FIELD_WEIGHT)) {
-    const hit = fieldUnits(texts[field], terms, dfFilter);
-    units += hit.units;
-    full = full || hit.full;
-    score += FIELD_WEIGHT[field] * hit.units;
+    for (const h of fieldUnitHits(texts[field], terms, dfFilter)) {
+      // 排序轴保持跨字段累加：一个词既在正文又在标签出现，本来就该更强
+      score += FIELD_WEIGHT[field] * h.units;
+      const prev = perUnit.get(h.unit);
+      if (prev === undefined || h.units > prev) perUnit.set(h.unit, h.units);
+      if (h.full) full = true;
+    }
   }
+  let units = 0;
+  let best = 0;
+  for (const u of perUnit.values()) {
+    units += u;
+    if (u > best) best = u;
+  }
+  units = Math.min(units, KEYWORD_MAX_HITS);   // 封顶口径与原实现一致：长查询不得无限推高
   const query = String(originalQuery || '');
   if (query.length >= ORIGINAL_QUERY_MIN_LENGTH) {
     if (texts.content.includes(query)) score += ORIGINAL_QUERY_CONTENT_BONUS;
     if (texts.title.includes(query)) score += ORIGINAL_QUERY_TITLE_BONUS;
   }
-  return { score, units, full };
+  return { score, units, full, best };
 }

@@ -137,3 +137,54 @@ describe('与知识库同口径的两条硬性质', () => {
     assert.equal(keywordScore(hit, terms, '混合检索', () => false).score, 5);
   });
 });
+
+// 2026-10-14 缺陷（真实库实测）：units 是「最长命中片段的长度分层」单元数（L=2→1、L≥4→3），
+// 而 keywordScore 早先把三个字段的 units 直接相加。于是同一个 2 字片段只要在正文和标签
+// 各出现一次就凑出 units=2，刚好顶过 KEYWORD_MIN_UNITS——门槛「至少两个不同词块」被跨字段
+// 重复计数旁路。实测查询「配置远端模型」把一条既不含「远端」也不含「模型」的 QQ 邮箱记忆顶到
+// 第 1 名，靠的就是「配置」在正文一次、在标签「邮箱配置」里再一次。
+// 修法：累加轴从「字段」换成「查询单元」——同一单元跨字段取最强，不同单元才相加。
+// score 保持跨字段累加不动：一个词既在正文又在标签出现，本来就是更强的排序信号。
+// best 是本次新增的第三根轴：单个查询单元自身达到的最强单元数，供调用方判「深度命中」。
+describe('单元累加按查询单元而非按字段（跨字段重复计数不得旁路门槛）', () => {
+  const QQ = {
+    content: 'QQ邮箱已配置成功（2026-08-13）：imap-smtp-email 技能的 .env 已切换',
+    title: '',
+    tags: ['QQ邮箱', '邮箱配置']
+  };
+
+  it('同一个 2 字片段在正文与标签各命中一次，单元数仍是 1', () => {
+    const s = keywordScore(QQ, T('配置远端模型'), '配置远端模型', () => true);
+    assert.equal(s.full, false, '整段「配置远端模型」在该条目里并不存在');
+    assert.equal(s.units, 1, '旧实现给 2（正文 1 + 标签 1），正是这个 1 让门槛被顶过');
+    assert.equal(s.best, 1, '最强单元自身也只有 1 单元 → 属浅命中');
+  });
+
+  it('修门槛不得动排序：同一片段跨字段命中时 score 仍按各字段权重累加', () => {
+    const s = keywordScore(QQ, T('配置远端模型'), '配置远端模型', () => true);
+    assert.equal(s.score, FIELD_WEIGHT.content * 1 + FIELD_WEIGHT.tags * 1,
+      '正文 3×1 + 标签 2×1 = 5：排序信号保持累加，只有门槛不再吃这份重复');
+  });
+
+  it('两个不同查询单元各命中一次仍算 2 单元（门槛本意必须留得住）', () => {
+    const m = { content: '这里的检索很快，那里的部署也完成了', title: '', tags: [] };
+    const s = keywordScore(m, T('检索方案 部署流程'), '', () => true);
+    assert.equal(s.units, 2, '两个单元各自只碰 2 字碎块，合计仍应过门槛（单元身份是查询单元，不是命中片段）');
+    assert.equal(s.best, 1, '但没有任何一个单元达到 2 单元：靠数量凑出来的命中，深度轴必须认出来');
+  });
+
+  it('4 字片段单字段命中不受影响（不得把门槛修得过严）', () => {
+    const m = { content: '已切换到远端模型并重建索引', title: '', tags: [] };
+    const s = keywordScore(m, T('配置远端模型'), '', () => true);
+    assert.equal(s.units, 3, 'L≥4 顶格 3 单元，单字段就该过门槛');
+    assert.equal(s.best, 3, '深度命中：单个单元自己就顶格');
+  });
+
+  it('同一单元跨字段取最强，不同单元才相加', () => {
+    const m = { content: '这里的检索很快，那里的部署也完成了', title: '检索部署', tags: ['检索', '部署'] };
+    const s = keywordScore(m, T('检索方案 部署流程'), '', () => true);
+    assert.equal(s.units, 2, '旧实现给 6（两个单元各在三个字段重复计数），把「碰了 2 字碎块」放大成顶格命中');
+    assert.equal(s.best, 1);
+    assert.ok(s.score > FIELD_WEIGHT.content * 3, 'score 仍随字段数走高（排序轴不动）');
+  });
+});
