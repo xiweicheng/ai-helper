@@ -540,15 +540,18 @@ Hover over assistant messages to auto-generate floating navigation:
 
 ### 19. Long-term Memory System
 
-AI Helper has long-term memory capabilities, storing and retrieving user information across sessions:
+AI Helper has long-term memory capabilities, storing and retrieving user information across sessions. Extraction, storage and recall run inside the **Agent service** (entries live in `~/.ai-helper-agent/memory/global-memory.json`, derived vectors in `memory-vectors.json`); the extension only forwards requests and assembles the injection for the current turn:
 
 - **Memory Storage**: AI automatically identifies important information (preferences, knowledge, decisions) and calls `agent_memory` to store it
 - **Memory Types**: Supports fact memory and conversation summary memory
-- **Smart Retrieval**: Use `agent_memory` to search historical memories by keywords, tags, and type
+- **Two-Channel Recall**: keywords by default; once an embedding is configured in the options page **Memory** tab, a semantic vector channel joins and the two channels fuse by rank (the semantic tier takes pure top-K by similarity, with no absolute score floor)
+- **Three Tiers**: `none` (vectors disabled, keywords only) / `remote` (OpenAI-compatible endpoint) / `local` (local model, requires the RAG dependency); when vectors are unavailable it silently falls back to keywords without affecting the conversation
+- **Fingerprint & Rebuild**: vectors are filed under a fingerprint of source + model + dimensions + prefix; after a config change old vectors become incomparable — use **Rebuild vector index** in the Memory tab (the status card shows a "stale" badge)
 - **Memory Management**: Auto-review memory quality, merge duplicates, evict low-value memories
 - **Tag Classification**: Preference, knowledge, decision, and custom tag categories
 - **Importance Scoring**: 1-10 scale for priority sorting
 - **Auto-Archival**: Facts capped at 50, summaries at 20, exceeding triggers auto-compaction
+- **Context Budget**: the side panel memory toggle and history limit (unlimited / recent 2–200 entries) are global settings controlling how much memory context each turn carries
 
 ### 20. ReAct Checkpoint Resume
 
@@ -979,7 +982,7 @@ Build output in `dist/`. `scripts/fix-build.js` auto-fixes path issues and renam
 
 ### Configuration
 
-The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, and Knowledge Base.
+The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, Knowledge Base, and Memory.
 
 1. Right-click extension icon → **Options**
 2. **Basic**: Pick UI language and provider profile, enter API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
@@ -989,13 +992,14 @@ The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, 
 6. **Agent**: Pair with the local agent service
 7. **Toolbox**: Manage MCP servers and Skills
 8. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies)
-9. Start chatting in the side panel
+9. **Memory**: Configure long-term memory semantic vectors (requires a connected agent)
+10. Start chatting in the side panel
 
 ---
 
 ## Configuration Reference
 
-The Options page has 7 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, and Knowledge Base.
+The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, Knowledge Base, and Memory.
 
 ### Basic Settings (Basic tab)
 
@@ -1088,6 +1092,8 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 | Toolbar Config | `chrome.storage.local` | Tool list, ordering, domain blocklist |
 | Input History | `chrome.storage.local` | Auto-dedup management |
 | Cross-Restart Messages | `chrome.storage.session` | SW restart recovery, background task persistence |
+| Memory Vector Config | `memoryEmbedding` inside the agent `config.json` | Written by the Memory tab; not stored in the extension |
+| Memories and Derived Vectors | agent `memory/` directory (`global-memory.json` / `memory-vectors.json`) | Memories are the single source of truth; the vector file can be dropped and rebuilt |
 
 ### IndexedDB Database Design
 
