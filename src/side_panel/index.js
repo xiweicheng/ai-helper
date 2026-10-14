@@ -27,6 +27,12 @@ import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-selec
 import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
+import { decodeSecret } from '../shared/secret.js';
+
+// 内部工具：从存储读取的 pairedAgents 解密 token
+function _decodeAgents(agents) {
+  return (agents || []).map(a => a.token ? { ...a, token: decodeSecret(a.token) } : a);
+}
 
 registerTranslations('zh', {
   sidePanel: {
@@ -458,7 +464,7 @@ async function saveModelToAgentOrGlobal(modelName) {
 async function verifyActiveAgentConnectivity() {
   try {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const activeId = storage.activeAgentId;
     const active = agents.find(a => a.id === activeId && !a.disabled);
 
@@ -968,7 +974,7 @@ async function updateAgentIndicator(platformInfo, skipPing = false) {
   let allAgents = [];
   try {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    allAgents = storage.pairedAgents || [];
+    allAgents = _decodeAgents(storage.pairedAgents);
     activeAgent = allAgents.find(a => a.id === storage.activeAgentId);
   } catch { /* ignore */ }
 
@@ -1208,7 +1214,7 @@ window.updateAgentItemWorkdir = updateAgentItemWorkdir;
 async function pingAllAgents() {
   try {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const activeId = storage.activeAgentId;
     // 并行 ping 所有非停用代理
     await Promise.all(agents.filter(a => !a.disabled).map(async (a) => {
@@ -1258,7 +1264,7 @@ async function refreshAgentPlatformInfo(agent) {
     let agentData = agent;
     if (!agentData) {
       const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-      const agents = storage.pairedAgents || [];
+      const agents = _decodeAgents(storage.pairedAgents);
       const activeId = storage.activeAgentId;
       agentData = agents.find(a => a.id === activeId && !a.disabled);
     }
@@ -1355,7 +1361,7 @@ function startRecoveryPolling(agentId, maxAttempts = 20) {
     }
     try {
       const storage = await chrome.storage.local.get(['pairedAgents']);
-      const agent = (storage.pairedAgents || []).find(a => a.id === agentId);
+      const agent = _decodeAgents(storage.pairedAgents).find(a => a.id === agentId);
       if (!agent) {
         clearInterval(_recoveryPollingTimer);
         _recoveryPollingTimer = null;
@@ -1462,7 +1468,7 @@ async function initAgentDropdown() {
     e.stopPropagation();
     const activeAgentId = state.activeAgentId;
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const active = agents.find(a => a.id === storage.activeAgentId);
     if (active?.url) {
       await navigator.clipboard.writeText(active.url);
@@ -1494,7 +1500,7 @@ async function initAgentDropdown() {
   restartBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const active = agents.find(a => a.id === storage.activeAgentId);
     const name = active?.name || t('sidePanel.unknownAgent');
     const url = active?.url || t('sidePanel.unknownAgent');
@@ -1527,7 +1533,7 @@ async function initAgentDropdown() {
   updateBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const active = agents.find(a => a.id === storage.activeAgentId);
     const name = active?.name || t('sidePanel.unknownAgent');
     const url = active?.url || t('sidePanel.unknownAgent');
@@ -1560,7 +1566,7 @@ async function initAgentDropdown() {
   stopBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    const agents = storage.pairedAgents || [];
+    const agents = _decodeAgents(storage.pairedAgents);
     const active = agents.find(a => a.id === storage.activeAgentId);
     const name = active?.name || t('sidePanel.unknownAgent');
     const url = active?.url || t('sidePanel.unknownAgent');
@@ -1626,7 +1632,7 @@ async function initAgentDropdown() {
    */
   async function handleAgentDdAction(action, agentId) {
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-    let agents = storage.pairedAgents || [];
+    let agents = _decodeAgents(storage.pairedAgents);
 
     switch (action) {
       case 'enable': {
@@ -1825,7 +1831,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         (async () => {
           try {
             const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-            const agents = storage.pairedAgents || [];
+            const agents = _decodeAgents(storage.pairedAgents);
             const active = agents.find(a => a.id === storage.activeAgentId && !a.disabled);
 
             if (!active) {
@@ -2247,7 +2253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.enableImageInput = result.enableImageInput || false;
     state.imageModelName = result.imageModelName || '';
     state.imageApiBase = result.imageApiBase || '';
-    state.imageApiKey = result.imageApiKey || '';
+    state.imageApiKey = decodeSecret(result.imageApiKey) || '';
     // 文件上传配置
     state.enableFileInput = true;
     updateImagePreviewVisibility();

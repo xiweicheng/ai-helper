@@ -2,8 +2,10 @@
 //
 // 设计：modelProfiles 保存多套厂商配置（地址/Key/模型列表/选中模型），
 // activeProfileId 标记当前激活项。扁平键（apiBase/apiKey/modelName/customModels）
-// 保留为"激活配置的运行时投影"——所有既有调用链（background/会话/Agent）零改动。
+// 保留为“激活配置的运行时投影”——所有既有调用链（background/会话/Agent）零改动。
 // 切换配置时由本模块统一把配置字段写回扁平键，避免数据分叉。
+
+import { encodeSecret, decodeSecret } from './secret.js';
 
 const PROFILES_KEY = 'modelProfiles';
 const ACTIVE_PROFILE_KEY = 'activeProfileId';
@@ -114,8 +116,17 @@ export function compareByName(a, b) {
  */
 export async function getState() {
   const result = await chrome.storage.local.get([PROFILES_KEY, ACTIVE_PROFILE_KEY]);
-  const profiles = Array.isArray(result[PROFILES_KEY]) ? result[PROFILES_KEY] : [];
+  const rawProfiles = Array.isArray(result[PROFILES_KEY]) ? result[PROFILES_KEY] : [];
+  // 磁盘密文 → 内存明文（兼容旧版）
+  const profiles = rawProfiles.map(p => p.apiKey ? { ...p, apiKey: decodeSecret(p.apiKey) } : p);
   return { profiles, activeProfileId: result[ACTIVE_PROFILE_KEY] || '' };
+}
+
+/**
+ * 将 profiles 数组混淆后返回可直接写盘的副本
+ */
+function _encodeProfiles(profiles) {
+  return profiles.map(p => p.apiKey ? { ...p, apiKey: encodeSecret(p.apiKey) } : p);
 }
 
 /**
@@ -179,7 +190,7 @@ export async function ensureProfilesMigrated(opts = {}) {
       id: LEGACY_PROFILE_ID,
       name: deriveProfileName(apiBase) || opts.fallbackName || 'AI',
       apiBase,
-      apiKey: flat.apiKey || '',
+      apiKey: decodeSecret(flat.apiKey) || '',
       modelName: flat.modelName || DEFAULT_MODEL_NAME,
       models,
       createdAt: now,
@@ -193,7 +204,7 @@ export async function ensureProfilesMigrated(opts = {}) {
     }
 
     await chrome.storage.local.set({
-      [PROFILES_KEY]: [profile],
+      [PROFILES_KEY]: _encodeProfiles([profile]),
       [ACTIVE_PROFILE_KEY]: profile.id,
       // 同步扁平键：迁移后 customModels 即配置的完整模型列表（投影保持一致）
       customModels: models,
@@ -227,7 +238,7 @@ export async function applyProfile(id) {
 
   await chrome.storage.local.set({
     apiBase: profile.apiBase || DEFAULT_API_BASE,
-    apiKey: profile.apiKey || '',
+    apiKey: encodeSecret(profile.apiKey) || '',
     modelName: profile.modelName || DEFAULT_MODEL_NAME,
     customModels: normalizeModels(profile.models),
     [ACTIVE_PROFILE_KEY]: profile.id,
@@ -256,7 +267,7 @@ export async function updateActiveProfile(patch) {
   if (patch.models !== undefined) next.models = normalizeModels(patch.models);
 
   const profiles = state.profiles.map(p => (p.id === profile.id ? next : p));
-  await chrome.storage.local.set({ [PROFILES_KEY]: profiles });
+  await chrome.storage.local.set({ [PROFILES_KEY]: _encodeProfiles(profiles) });
   return next;
 }
 
@@ -297,11 +308,11 @@ export async function createProfile(data = {}, opts = {}) {
   };
 
   const profiles = [...state.profiles, profile];
-  const payload = { [PROFILES_KEY]: profiles };
+  const payload = { [PROFILES_KEY]: _encodeProfiles(profiles) };
   if (opts.activate !== false) {
     payload[ACTIVE_PROFILE_KEY] = profile.id;
     payload.apiBase = profile.apiBase || DEFAULT_API_BASE;
-    payload.apiKey = profile.apiKey;
+    payload.apiKey = encodeSecret(profile.apiKey) || '';
     payload.modelName = profile.modelName;
     payload.customModels = profile.models;
   }
@@ -325,7 +336,7 @@ export async function renameProfile(id, name) {
   const profiles = state.profiles.map(p => (
     p.id === id ? { ...p, name: newName, updatedAt: Date.now() } : p
   ));
-  await chrome.storage.local.set({ [PROFILES_KEY]: profiles });
+  await chrome.storage.local.set({ [PROFILES_KEY]: _encodeProfiles(profiles) });
   return true;
 }
 
@@ -352,10 +363,10 @@ export async function deleteProfile(id) {
     nextActive = profiles[0];
   }
 
-  const payload = { [PROFILES_KEY]: profiles, [ACTIVE_PROFILE_KEY]: activeProfileId };
+  const payload = { [PROFILES_KEY]: _encodeProfiles(profiles), [ACTIVE_PROFILE_KEY]: activeProfileId };
   if (nextActive) {
     payload.apiBase = nextActive.apiBase || DEFAULT_API_BASE;
-    payload.apiKey = nextActive.apiKey || '';
+    payload.apiKey = encodeSecret(nextActive.apiKey) || '';
     payload.modelName = nextActive.modelName || DEFAULT_MODEL_NAME;
     payload.customModels = normalizeModels(nextActive.models);
   }

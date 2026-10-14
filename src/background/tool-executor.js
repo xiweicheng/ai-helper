@@ -4,6 +4,7 @@ import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype, getSession } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
+import { decodeSecret } from '../shared/secret.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
@@ -1462,7 +1463,7 @@ async function analyzeScreenshotWithVision(dataUrl, pageUrl, pageTitle, sessionI
   });
 
   const apiBase = visionConfig.imageApiBase || visionConfig.apiBase;
-  const apiKey = visionConfig.imageApiKey || visionConfig.apiKey;
+  const apiKey = decodeSecret(visionConfig.imageApiKey) || decodeSecret(visionConfig.apiKey);
   const model = visionConfig.imageModelName || visionConfig.modelName;
   const useStream = visionConfig.streamEnabled !== false; // 默认 true
 

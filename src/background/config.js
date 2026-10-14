@@ -2,6 +2,7 @@
 
 import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG } from './constants.js';
 import { normalizeCustomModels } from '../shared/token-counter.js';
+import { decodeSecret } from '../shared/secret.js';
 
 /**
  * 获取存储的配置
@@ -19,7 +20,7 @@ export function getStoredConfig() {
     ], (result) => {
       resolve({
         apiBase: result.apiBase || DEFAULT_API_BASE,
-        apiKey: result.apiKey || '',
+        apiKey: decodeSecret(result.apiKey) || '',
         modelName: result.modelName || DEFAULT_MODEL,
         temperature: result.temperature !== undefined ? result.temperature : undefined,
         topP: result.topP !== undefined ? result.topP : undefined,

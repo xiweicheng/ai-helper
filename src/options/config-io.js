@@ -5,6 +5,7 @@ import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
 import logger from '../shared/logger.js';
 import { t, getLanguage } from '../shared/i18n.js';
 import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, mergeProfiles, getState, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
+import { encodeSecret, decodeSecret } from '../shared/secret.js';
 
 // 允许导出的配置项 key 白名单
 const EXPORT_KEYS = [
@@ -43,6 +44,25 @@ const EXPORT_KEYS = [
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
 const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
+
+/**
+ * 导入时混淆配置中的密钥字段（确保落存储的是 enc: 格式）
+ */
+function _encodeConfigSecrets(config) {
+  for (const key of ['apiKey', 'imageApiKey']) {
+    if (config[key]) config[key] = encodeSecret(decodeSecret(config[key]));
+  }
+  if (Array.isArray(config.modelProfiles)) {
+    config.modelProfiles = config.modelProfiles.map(p =>
+      p.apiKey ? { ...p, apiKey: encodeSecret(decodeSecret(p.apiKey)) } : p
+    );
+  }
+  if (Array.isArray(config.pairedAgents)) {
+    config.pairedAgents = config.pairedAgents.map(a =>
+      a.token ? { ...a, token: encodeSecret(decodeSecret(a.token)) } : a
+    );
+  }
+}
 
 /**
  * 剥离已下线的反思配置字段（工具级反思 toolReflection 已移除）。
@@ -283,12 +303,14 @@ export async function confirmImport() {
     }
 
     if (strategy === 'replace') {
-      // 完全替换：直接写入所有配置
+      // 完全替换：密钥混淆后写入
+      _encodeConfigSecrets(config);
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
       });
     } else {
-      // 合并导入：逐项写入（modelProfiles 已按 ID 对齐）
+      // 合并导入：密钥混淆后逐项写入
+      _encodeConfigSecrets(config);
       await new Promise((resolve) => {
         chrome.storage.local.set(config, resolve);
       });
@@ -302,7 +324,7 @@ export async function confirmImport() {
       const flat = await chrome.storage.local.get(['apiBase', 'apiKey', 'modelName', 'customModels']);
       await updateActiveProfile({
         apiBase: flat.apiBase || DEFAULT_API_BASE,
-        apiKey: flat.apiKey || '',
+        apiKey: decodeSecret(flat.apiKey) || '',
         modelName: flat.modelName || DEFAULT_MODEL_NAME,
         models: normalizeModels(flat.customModels),
       });

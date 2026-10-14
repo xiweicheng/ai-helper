@@ -2,6 +2,7 @@
 
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
+import { encodeSecret, decodeSecret } from '../shared/secret.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection, commitImageModelContextWindow } from './config-manager.js';
 import { addCustomApiBase, removeApiBase, saveApiBases, loadApiBases, updateApiBaseSelection } from './config-manager.js';
 import { addCustomImageApiBase, removeImageApiBase, saveImageApiBases, loadImageApiBases, updateImageApiBaseSelection } from './config-manager.js';
@@ -898,7 +899,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const toggleImageApiKeyBtn = document.getElementById('toggleImageApiKeyBtn');
   if (imageApiKeyEl) {
     imageApiKeyEl.addEventListener('blur', function() {
-      chrome.storage.local.set({ imageApiKey: this.value.trim() });
+      chrome.storage.local.set({ imageApiKey: encodeSecret(this.value.trim()) });
     });
   }
   if (imageApiKeyEl && toggleImageApiKeyBtn) {
@@ -1546,7 +1547,7 @@ function initAgentConfig() {
     agentUrlInput.value = agent.url;
 
     // 获取代理详情并展示
-    await fetchAndShowAgentDetail(agent.url, agent.token);
+    await fetchAndShowAgentDetail(agent.url, decodeSecret(agent.token));
 
     // 通知 background + Side Panel
     chrome.runtime.sendMessage({
@@ -1716,7 +1717,7 @@ function initAgentConfig() {
     const active = agents.find(a => a.id === activeId);
     if (active) {
       agentUrlInput.value = active.url;
-      await fetchAndShowAgentDetail(active.url, active.token);
+      await fetchAndShowAgentDetail(active.url, decodeSecret(active.token));
     }
   }
 
@@ -1952,7 +1953,7 @@ function initAgentConfig() {
 
         const storage = await chrome.storage.local.get('pairedAgents');
         const agents = storage.pairedAgents || [];
-        agents.push(newAgent);
+        agents.push({ ...newAgent, token: encodeSecret(newAgent.token) });
         await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: id });
 
         pairCodeInput.value = '';

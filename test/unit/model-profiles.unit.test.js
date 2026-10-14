@@ -21,6 +21,7 @@ import {
   DEFAULT_API_BASE,
   DEFAULT_MODEL_NAME,
 } from '../../src/shared/model-profiles.js';
+import { decodeSecret } from '../../src/shared/secret.js';
 
 const LEGACY_ID = 'profile-legacy-default';
 
@@ -155,7 +156,7 @@ describe('applyProfile（切换即同步扁平键）', () => {
 
     expect(switched.id).toBe(p1.id);
     expect(store.apiBase).toBe('https://api.deepseek.com');
-    expect(store.apiKey).toBe('sk-a');
+    expect(decodeSecret(store.apiKey)).toBe('sk-a');
     expect(store.modelName).toBe('m-a');
     expect(store.customModels).toEqual([{ name: 'm-a', contextWindow: 1000 }]);
     expect(store.activeProfileId).toBe(p1.id);
@@ -187,7 +188,7 @@ describe('updateActiveProfile / 同步函数', () => {
     expect(a.modelName).toBe(DEFAULT_MODEL_NAME);
     expect(b.models).toEqual([{ name: 'm1', contextWindow: 0 }]);
     expect(b.modelName).toBe('m1');
-    expect(b.apiKey).toBe('sk-new');
+    expect(decodeSecret(b.apiKey)).toBe('sk-new');
   });
 
   test('getActiveProfile 返回激活项', async () => {
@@ -233,7 +234,7 @@ describe('deleteProfile（删除保护与自动切换）', () => {
     expect(result.activeProfileId).toBe(p1.id);
     expect(store.activeProfileId).toBe(p1.id);
     expect(store.apiBase).toBe('https://a.com');
-    expect(store.apiKey).toBe('k-a');
+    expect(decodeSecret(store.apiKey)).toBe('k-a');
     expect(store.modelName).toBe('ma');
     expect(store.customModels).toEqual([{ name: 'ma', contextWindow: 0 }]);
   });

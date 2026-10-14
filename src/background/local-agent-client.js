@@ -1,5 +1,11 @@
 import logger from '../shared/logger.js';
 import { getLanguage, t, registerTranslations } from '../shared/i18n.js';
+import { encodeSecret, decodeSecret } from '../shared/secret.js';
+
+// 内部工具：从存储读取的 agents 数组解密 token
+function _decodeAgents(agents) {
+  return (agents || []).map(a => a.token ? { ...a, token: decodeSecret(a.token) } : a);
+}
 
 // 注册 agentClient 命名空间翻译
 registerTranslations('zh', {
@@ -159,7 +165,7 @@ async function migrateFromLegacyFormat() {
         id,
         name,
         url: result.agentUrl,
-        token: result.agentToken,
+        token: encodeSecret(result.agentToken),
         pairedAt: new Date().toISOString()
       }];
       await chrome.storage.local.set({
@@ -182,7 +188,7 @@ async function migrateFromLegacyFormat() {
  */
 async function getAgentConfig() {
   const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-  const agents = result.pairedAgents || [];
+  const agents = _decodeAgents(result.pairedAgents);
   const activeId = result.activeAgentId;
 
   if (!activeId || agents.length === 0) {
@@ -211,7 +217,7 @@ async function getAgentConfig() {
  */
 async function getPairedAgents() {
   const result = await chrome.storage.local.get('pairedAgents');
-  return result.pairedAgents || [];
+  return _decodeAgents(result.pairedAgents);
 }
 
 /**
@@ -220,7 +226,7 @@ async function getPairedAgents() {
  */
 async function getActiveAgent() {
   const result = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-  const agents = result.pairedAgents || [];
+  const agents = _decodeAgents(result.pairedAgents);
   if (!result.activeAgentId || agents.length === 0) return null;
   return agents.find(a => a.id === result.activeAgentId) || agents[0] || null;
 }
@@ -308,10 +314,10 @@ async function pairWithAgent(agentUrl, pairCode, customName) {
       const id = generateAgentId();
       const newAgent = { id, name, url: agentUrl, token: data.token, pairedAt: new Date().toISOString() };
 
-      // 追加到列表并设为活跃
+      // 追加到列表并设为活跃（存储时混淆 token）
       const result = await chrome.storage.local.get('pairedAgents');
       const agents = result.pairedAgents || [];
-      agents.push(newAgent);
+      agents.push({ ...newAgent, token: encodeSecret(newAgent.token) });
       await chrome.storage.local.set({ pairedAgents: agents, activeAgentId: id });
 
       logger.debug('[AgentClient] pairing successful:', name);

@@ -5,6 +5,7 @@ import state from './state.js';
 // pdfjs-dist / mammoth / xlsx 已改为按需动态加载，避免首屏 bundle 过大
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { decodeSecret } from '../shared/secret.js';
 
 registerTranslations('zh', {
   fileExtract: {
@@ -187,7 +188,7 @@ export async function extractFileContent(file) {
  */
 export async function uploadFileToAgent(file) {
   const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
-  const agents = storage.pairedAgents || [];
+  const agents = (storage.pairedAgents || []).map(a => a.token ? { ...a, token: decodeSecret(a.token) } : a);
   const active = agents.find(a => a.id === storage.activeAgentId);
   const agentUrl = active?.url;
   const agentToken = active?.token;

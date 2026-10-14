@@ -3,6 +3,7 @@
 import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
 import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
+import { decodeSecret } from '../shared/secret.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
@@ -469,7 +470,7 @@ async function _fetchDeepSeekBalance(popup) {
     const apiBase = (config.apiBase || 'https://api.deepseek.com').replace(/\/+$/, '');
     // 严格判定：模型名含 deepseek 且地址为官方域名才查询，避免第三方厂商误触发私有接口
     if (!model.includes('deepseek') || !apiBase.includes('deepseek.com')) return;
-    const apiKey = config.apiKey;
+    const apiKey = decodeSecret(config.apiKey);
     if (!apiKey) return;
 
     balanceSection.style.display = '';

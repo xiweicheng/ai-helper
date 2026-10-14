@@ -1,8 +1,9 @@
 // agent/src/config.js - 配置管理（带内存缓存 + 写入互斥锁）
 import { homedir } from 'os';
 import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, chmodSync } from 'fs';
 import { t as translate } from './i18n.js';
+import { encodeSecret, decodeSecret } from './crypto-lite.js';
 
 const AGENT_DIR = join(homedir(), '.ai-helper-agent');
 const CONFIG_FILE = join(AGENT_DIR, 'config.json');
@@ -72,9 +73,9 @@ function withWriteLock(fn) {
 
 function ensureAgentDir() {
   try {
-    // 确保 Agent 根目录存在
+    // 确保 Agent 根目录存在（0700：仅当前用户可进入）
     if (!existsSync(AGENT_DIR)) {
-      mkdirSync(AGENT_DIR, { recursive: true });
+      mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
     }
     // 确保 skills、workspace 和 memory 子目录存在
     for (const dir of [SKILLS_DIR, WORKSPACE_DIR, MEMORY_DIR]) {
@@ -121,6 +122,10 @@ export function loadConfig() {
   try {
     const raw = readFileSync(CONFIG_FILE, 'utf-8');
     const userConfig = JSON.parse(raw);
+    // 磁盘密文 → 内存明文（兼容旧版无 enc: 前缀的明文）
+    if (userConfig.memoryEmbedding && userConfig.memoryEmbedding.apiKey) {
+      userConfig.memoryEmbedding = { ...userConfig.memoryEmbedding, apiKey: decodeSecret(userConfig.memoryEmbedding.apiKey) };
+    }
     configCache = { ...DEFAULTS, ...userConfig };
     configCacheMtime = mtime;
   } catch (err) {
@@ -151,7 +156,12 @@ function saveConfigSync(config) {
   for (const key of VALID_CONFIG_KEYS) {
     if (config[key] !== undefined) safe[key] = config[key];
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(safe, null, 2), 'utf-8');
+  // 落盘前混淆 apiKey（内存缓存保持明文）
+  if (safe.memoryEmbedding && safe.memoryEmbedding.apiKey) {
+    safe.memoryEmbedding = { ...safe.memoryEmbedding, apiKey: encodeSecret(safe.memoryEmbedding.apiKey) };
+  }
+  writeFileSync(CONFIG_FILE, JSON.stringify(safe, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  try { chmodSync(CONFIG_FILE, 0o600); } catch {} // 历史宽松文件收紧
 }
 
 /**
@@ -161,10 +171,14 @@ function saveConfigSync(config) {
 function writeConfigBody(config) {
   try {
     saveConfigSync(config);
-    // 从磁盘重新加载确保缓存与磁盘一致
+    // 从磁盘重新加载确保缓存与磁盘一致（解码后缓存保持明文）
     const mtime = getMtime(CONFIG_FILE);
     const raw = readFileSync(CONFIG_FILE, 'utf-8');
-    configCache = { ...DEFAULTS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    if (parsed.memoryEmbedding && parsed.memoryEmbedding.apiKey) {
+      parsed.memoryEmbedding = { ...parsed.memoryEmbedding, apiKey: decodeSecret(parsed.memoryEmbedding.apiKey) };
+    }
+    configCache = { ...DEFAULTS, ...parsed };
     configCacheMtime = mtime;
   } catch (err) {
     console.error('[Config] Save config failed:', err.message);
@@ -212,7 +226,12 @@ export function loadPairings() {
   }
 
   try {
-    pairingsCache = JSON.parse(readFileSync(PAIRINGS_FILE, 'utf-8'));
+    const parsed = JSON.parse(readFileSync(PAIRINGS_FILE, 'utf-8'));
+    // 磁盘密文 → 内存明文（兼容旧版）
+    for (const entry of Object.values(parsed)) {
+      if (entry.token) entry.token = decodeSecret(entry.token);
+    }
+    pairingsCache = parsed;
     pairingsCacheMtime = mtime;
     return pairingsCache;
   } catch (err) {
@@ -232,7 +251,13 @@ export async function savePairing(extensionId, token) {
     pairings[extensionId] = { token, pairedAt: Date.now() };
     ensureAgentDir();
     try {
-      writeFileSync(PAIRINGS_FILE, JSON.stringify(pairings, null, 2), 'utf-8');
+      // 落盘前混淆 token（内存缓存保持明文）
+      const diskPairings = {};
+      for (const [id, entry] of Object.entries(pairings)) {
+        diskPairings[id] = { ...entry, token: encodeSecret(entry.token) };
+      }
+      writeFileSync(PAIRINGS_FILE, JSON.stringify(diskPairings, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      try { chmodSync(PAIRINGS_FILE, 0o600); } catch {} // 历史宽松文件收紧
       pairingsCache = pairings;
       pairingsCacheMtime = getMtime(PAIRINGS_FILE);
     } catch (err) {

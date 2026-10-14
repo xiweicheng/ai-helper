@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { decodeSecret } from '../../src/shared/secret.js';
 
 // 隔离重依赖：配置管理器与工具栏模块（confirmImport 内仅做页面刷新，测试不关心）
 vi.mock('../../src/options/config-manager.js', () => ({
@@ -127,7 +128,7 @@ describe('confirmImport（厂商配置合并导入）', () => {
     expect(store.modelProfiles.map(p => p.name)).toEqual(['A', 'B']);
     expect(store.activeProfileId).toBe('a');
     expect(store.apiBase).toBe('https://a.example.com');
-    expect(store.apiKey).toBe('sk-a');
+    expect(decodeSecret(store.apiKey)).toBe('sk-a');
     expect(store.modelName).toBe('m-a');
   });
 
@@ -150,7 +151,7 @@ describe('confirmImport（厂商配置合并导入）', () => {
 
     await confirmImport();
 
-    expect(store.modelProfiles.find(p => p.id === 'b').apiKey).toBe('sk-b');
+    expect(decodeSecret(store.modelProfiles.find(p => p.id === 'b').apiKey)).toBe('sk-b');
     expect(store.modelProfiles.find(p => p.id === 'b').name).toBe('B-new');
   });
 
@@ -167,7 +168,7 @@ describe('confirmImport（厂商配置合并导入）', () => {
 
     const active = store.modelProfiles.find(p => p.id === 'b');
     expect(active.apiBase).toBe('https://legacy.example.com');
-    expect(active.apiKey).toBe('sk-legacy');
+    expect(decodeSecret(active.apiKey)).toBe('sk-legacy');
     expect(active.models).toEqual([{ name: 'm-legacy', contextWindow: 0 }]);
   });
 

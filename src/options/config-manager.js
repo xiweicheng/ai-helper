@@ -6,6 +6,7 @@ import { t } from '../shared/i18n.js';
 import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
 import { formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
 import { closeCtxPopover } from './ctx-popover.js';
+import { encodeSecret, decodeSecret } from '../shared/secret.js';
 
 
 // Re-export PRESET_MODELS so index.js can use it
@@ -950,7 +951,7 @@ export function loadConfig() {
       document.getElementById('apiBase').value = result.apiBase;
     }
     if (result.apiKey) {
-      document.getElementById('apiKey').value = result.apiKey;
+      document.getElementById('apiKey').value = decodeSecret(result.apiKey);
     }
     if (result.modelName) {
       setCurrentModel(result.modelName);
@@ -984,7 +985,7 @@ export function loadConfig() {
       document.getElementById('imageApiBase').value = result.imageApiBase;
     }
     if (result.imageApiKey) {
-      document.getElementById('imageApiKey').value = result.imageApiKey;
+      document.getElementById('imageApiKey').value = decodeSecret(result.imageApiKey);
     }
 
     // 加载 ReAct 配置（时间单位转换）
@@ -1237,10 +1238,10 @@ export function saveConfig() {
     return;
   }
   
-  // 保存配置
+  // 保存配置（密钥混淆落盘）
   chrome.storage.local.set({ 
     apiBase: apiBase,
-    apiKey: apiKey,
+    apiKey: encodeSecret(apiKey),
     modelName: currentModel || 'deepseek-v4-pro',
     systemPrompt: systemPrompt,
     // ReAct 配置
@@ -1255,7 +1256,7 @@ export function saveConfig() {
     enableImageInput: enableImageInput,
     imageModelName: imageModelName,
     imageApiBase: imageApiBase,
-    imageApiKey: imageApiKey,
+    imageApiKey: encodeSecret(imageApiKey),
     // 反思配置
     reflectionConfig: reflectionConfig,
     // 流式输出配置

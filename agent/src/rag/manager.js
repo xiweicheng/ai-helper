@@ -25,6 +25,7 @@ import { RagError } from './errors.js';
 import { checkPath } from '../security.js';
 import { fetchUrlGuarded, decodeBytes } from './url-guard.js';
 import { loadConfig } from '../config.js';
+import { encodeSecret, decodeSecret } from '../crypto-lite.js';
 
 // 知识库 ID 格式校验（防路径穿越）
 const COLLECTION_ID_RE = /^kb_[a-z0-9]+$/;
@@ -189,6 +190,12 @@ export class RagManager {
       const raw = await readFile(COLLECTIONS_REGISTRY, 'utf-8');
       const reg = JSON.parse(raw);
       if (!Array.isArray(reg.collections)) reg.collections = [];
+      // 磁盘密文 → 内存明文（兼容旧版无 enc: 前缀的明文）
+      for (const col of reg.collections) {
+        if (col.embeddingConfig?.apiKey) {
+          col.embeddingConfig = { ...col.embeddingConfig, apiKey: decodeSecret(col.embeddingConfig.apiKey) };
+        }
+      }
       return reg;
     } catch {
       return { version: 1, collections: [] };
@@ -204,6 +211,14 @@ export class RagManager {
       const reg = await this._loadRegistry();
       const out = mutator(reg) || reg;
       await mkdir(RAG_ROOT, { recursive: true });
+      // 落盘前混淆各库的 apiKey（内存保持明文）
+      if (Array.isArray(out.collections)) {
+        for (const col of out.collections) {
+          if (col.embeddingConfig?.apiKey) {
+            col.embeddingConfig = { ...col.embeddingConfig, apiKey: encodeSecret(col.embeddingConfig.apiKey) };
+          }
+        }
+      }
       // 注册表含远端向量服务密钥：创建即 0600，并对历史遗留的宽松权限文件显式收紧
       await writeFile(COLLECTIONS_REGISTRY, JSON.stringify(out, null, 2), { encoding: 'utf-8', mode: 0o600 });
       await chmod(COLLECTIONS_REGISTRY, 0o600).catch(() => {}); // Windows 无 POSIX 权限位，忽略
