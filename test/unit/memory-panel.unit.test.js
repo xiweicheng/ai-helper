@@ -3,8 +3,8 @@
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { t } from '../../src/shared/i18n.js';
 
-const { apiCalls, toastCalls, confirmCalls } = vi.hoisted(() => ({
-  apiCalls: [], toastCalls: [], confirmCalls: []
+const { apiCalls, toastCalls, confirmCalls, confirmState } = vi.hoisted(() => ({
+  apiCalls: [], toastCalls: [], confirmCalls: [], confirmState: { result: true }
 }));
 
 const CONFIG = {
@@ -17,11 +17,16 @@ let statusThrows = false; // true 时状态请求直接报错，用来测网络�
 let nextReindex = { success: true, indexed: 41, total: 41, failedBatches: 0 };
 let nextSave = null;   // 非 null 时接管保存响应，用来模拟接口失败
 let nextRagStatus = null; // 非 null 时接管代理连接态，用来测门控是否锁住总开关
+let nextConfig = null;   // 非 null 时接管配置读取响应，用来测「未加载成功」守卫
+let configThrows = false; // true 时配置读取直接报错（网络断）
 
 vi.mock('../../src/options/toolbox-shared.js', () => ({
   agentApi: vi.fn(async (method, path, body) => {
     apiCalls.push({ method, path, body });
-    if (method === 'GET' && path === '/api/memory/embedding-config') return { success: true, config: CONFIG };
+    if (method === 'GET' && path === '/api/memory/embedding-config') {
+      if (configThrows) throw new Error('net::ERR_CONNECTION_REFUSED');
+      return nextConfig || { success: true, config: CONFIG };
+    }
     if (method === 'GET' && path === '/api/memory/vector-status') {
       if (statusThrows) throw new Error('net::ERR_CONNECTION_REFUSED');
       return nextStatus || { success: true, ...STATUS };
@@ -33,7 +38,7 @@ vi.mock('../../src/options/toolbox-shared.js', () => ({
   }),
   escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
   showToast: (m, k) => toastCalls.push([m, k]),
-  showCustomConfirm: vi.fn(async (m) => { confirmCalls.push(m); return true; })
+  showCustomConfirm: vi.fn(async (m) => { confirmCalls.push(m); return confirmState.result; })
 }));
 
 vi.mock('../../src/options/toolbox-rag.js', () => ({
@@ -54,7 +59,7 @@ const DOM = `<div class="knowledge-header"><input type="checkbox" id="memoryEnab
 <input type="radio" name="memoryEmbeddingMode" value="local" id="memModeLocal">
 <div id="memoryRemoteGroup"><input type="text" id="memoryBaseUrlInput"></div>
 <div id="memoryModelGroup"><input type="text" id="memoryModelInput"></div>
-<div id="memoryApiKeyGroup"><input type="password" id="memoryApiKeyInput"></div>
+<div id="memoryApiKeyGroup"><input type="password" id="memoryApiKeyInput"><button id="memoryApiKeyClearBtn" type="button" style="display:none;"></button></div>
 <div id="memoryDimsGroup"><div id="memoryTestRow"><input type="number" id="memoryDimsInput">
 <button id="memoryTestBtn" type="button"></button><span id="memoryTestResult"></span></div></div>
 <div id="memoryPrefixGroup"><input type="text" id="memoryPrefixInput"></div>
@@ -66,9 +71,14 @@ let mod;
 beforeEach(async () => {
   vi.resetModules();
   apiCalls.length = 0; toastCalls.length = 0; confirmCalls.length = 0;
+  confirmState.result = true;
+  CONFIG.modelName = 'BAAI/bge-m3';
+  CONFIG.hasApiKey = true;
   STATUS = { ...STATUS, stale: false, storedModelKey: STATUS.currentModelKey };
   nextStatus = null;
   statusThrows = false;
+  nextConfig = null;
+  configThrows = false;
   nextReindex = { success: true, indexed: 41, total: 41, failedBatches: 0 };
   nextSave = null;
   nextRagStatus = null;
@@ -150,6 +160,26 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     await vi.waitFor(() => expect(document.getElementById('memoryDimsInput').value).toBe('512'));
     expect(toastCalls.some(([m]) => m.includes('512'))).toBe(true);
   });
+
+  test('坑1：远端档所见即所存——清空地址/模型/前缀/维度后保存，提交的是空值而不是缺席', async () => {
+    await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3'));
+    // 旧实现「只收非空」：清空 queryPrefix 后字段缺席 → agent 端「不传即不改」＝清空保存其实什么都没发生；
+    // 地址/模型/维度同病。远端档四字段必须始终提交（含空值），apiKey 是唯一例外（明文不回显，留空=不改）。
+    document.getElementById('memoryBaseUrlInput').value = '';
+    document.getElementById('memoryModelInput').value = '   ';
+    document.getElementById('memoryPrefixInput').value = '';
+    document.getElementById('memoryDimsInput').value = '';
+    document.getElementById('memorySaveBtn').click();
+    await vi.waitFor(() => {
+      const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
+      expect(post).toBeTruthy();
+      expect(post.body).toEqual({
+        enabled: true, mode: 'openai-compat',
+        baseUrl: '', modelName: '', queryPrefix: '', dimensions: 0
+      });
+      expect('apiKey' in post.body).toBe(false);
+    });
+  });
 });
 
 describe('记忆面板：陈旧与重建', () => {
@@ -193,6 +223,56 @@ describe('记忆面板：陈旧与重建', () => {
   });
 });
 
+// L1 的真实缺口：明文 key 永不回显 → 输入框留空=不修改，用户没有任何路径清除已存 key。
+// 补一条显式清除通道：按钮只在 hasApiKey=true 时出现，先确认后 POST {clearApiKey:true}。
+describe('记忆面板：清除已存 API Key', () => {
+  const clearBtn = () => document.getElementById('memoryApiKeyClearBtn');
+
+  test('hasApiKey=true 时显示清除按钮', async () => {
+    await vi.waitFor(() => expect(clearBtn().style.display).toBe(''));
+  });
+
+  test('hasApiKey=false 时按钮保持隐藏（没有 key 可清）', async () => {
+    CONFIG.hasApiKey = false;
+    CONFIG.modelName = 'BAAI/bge-m3-nokey';
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3-nokey'));
+    expect(clearBtn().style.display).toBe('none');
+  });
+
+  test('点清除 → 确认 → 恰好一发 {clearApiKey:true}，成功后按钮隐藏并提示', async () => {
+    await vi.waitFor(() => expect(clearBtn().style.display).toBe(''));
+    clearBtn().click();
+    await vi.waitFor(() => expect(confirmCalls).toHaveLength(1));
+    await vi.waitFor(() => {
+      const posts = apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
+      expect(posts).toHaveLength(1);
+      expect(posts[0].body).toEqual({ clearApiKey: true });
+    });
+    expect(clearBtn().style.display).toBe('none');
+    expect(toastCalls.some(([m]) => m === t('memoryPanel.apiKeyCleared'))).toBe(true);
+  });
+
+  test('确认弹窗取消：不发请求、按钮保持', async () => {
+    await vi.waitFor(() => expect(clearBtn().style.display).toBe(''));
+    confirmState.result = false;
+    clearBtn().click();
+    await vi.waitFor(() => expect(confirmCalls).toHaveLength(1));
+    expect(apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(0);
+    expect(clearBtn().style.display).toBe('');
+  });
+
+  test('清除失败走 error toast，按钮保持可见（还能再试）', async () => {
+    await vi.waitFor(() => expect(clearBtn().style.display).toBe(''));
+    nextSave = { success: false, error: 'memory_config_write_failed' };
+    clearBtn().click();
+    await vi.waitFor(() => {
+      expect(toastCalls.some(([m, kind]) => kind === 'error' && m.includes('memory_config_write_failed'))).toBe(true);
+    });
+    expect(clearBtn().style.display).toBe('');
+  });
+});
+
 // 本案的真实事故：状态接口报错时被当成「还没读到」，页面永远转圈。
 describe('记忆面板：状态卡必须分得清加载中与读失败', () => {
   const statusText = () => document.getElementById('memoryStatus').textContent;
@@ -231,6 +311,35 @@ describe('记忆面板：状态卡必须分得清加载中与读失败', () => {
   test('成功态照常给出条数与指纹（回归护栏）', async () => {
     expect(statusText()).toContain('41');
     expect(statusText()).toContain('openai-compat|BAAI/bge-m3|1024');
+  });
+});
+
+// WYSIWYG（所见即所存）带来的新风险：配置 GET 失败时表单停在本地默认空值，
+// 此时保存会把代理里的真配置整份覆盖成空。守卫必须拦住，且刷新成功后要解除。
+describe('记忆面板：配置未加载成功时不得保存', () => {
+  test('配置 GET 失败后点保存：拒绝并提示，不发 POST', async () => {
+    nextConfig = { success: false, httpStatus: 404, error: 'unknown_api_path' };
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(
+      apiCalls.filter(c => c.method === 'GET' && c.path === '/api/memory/embedding-config')).toHaveLength(2));
+    document.getElementById('memorySaveBtn').click();
+    await vi.waitFor(() => expect(
+      toastCalls.some(([m, kind]) => kind === 'error' && m.includes(t('memoryPanel.configNotLoaded')))).toBe(true));
+    expect(apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(0);
+  });
+
+  test('刷新成功回填后守卫解除，保存恢复可用', async () => {
+    nextConfig = { success: false, httpStatus: 404, error: 'unknown_api_path' };
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(
+      apiCalls.filter(c => c.method === 'GET' && c.path === '/api/memory/embedding-config')).toHaveLength(2));
+    nextConfig = null;
+    CONFIG.modelName = 'BAAI/bge-m3-recovered';
+    mod.refreshMemoryPanel();
+    await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3-recovered'));
+    document.getElementById('memorySaveBtn').click();
+    await vi.waitFor(() => expect(
+      apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(1));
   });
 });
 

@@ -31,6 +31,7 @@ export function maskMemoryEmbeddingConfig(cfg = getMemoryEmbeddingConfig()) {
 
 /**
  * 保存配置：mode 白名单校验；空白 apiKey 表示不修改（前端表单不回填明文时不能抹掉已存 key）；
+ * clearApiKey===true 是唯一显式清除通道，且优先于同传的 apiKey；
  * dimensions 规整为非负整数；enabled 只认真 true（字符串/数字一律视为关闭）。
  * @param {object} input
  * @returns {Promise<object>} 脱敏后的最新配置
@@ -51,6 +52,9 @@ export async function saveMemoryEmbeddingConfig(input = {}) {
   if (typeof input.modelName === 'string') next.modelName = input.modelName.trim();
   if (typeof input.queryPrefix === 'string') next.queryPrefix = input.queryPrefix;
   if (typeof input.apiKey === 'string' && input.apiKey.trim()) next.apiKey = input.apiKey.trim();
+  // L1（评审）：明文不回显 + 空白=不修改 ⇒ 用户没有清除路径。clearApiKey 放在赋值之后：
+  // 清除是显式动作，赢过同传的新 key（界面不会同传，但 API 语义不能含糊）。
+  if (input.clearApiKey === true) next.apiKey = '';
   if (input.dimensions !== undefined) {
     const n = Number(input.dimensions);
     next.dimensions = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;

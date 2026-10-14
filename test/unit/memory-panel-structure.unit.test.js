@@ -10,6 +10,7 @@ const en = readFileSync(new URL('../../src/shared/locales/en.js', import.meta.ur
 const optionsJs = readFileSync(new URL('../../src/options/index.js', import.meta.url), 'utf8');
 
 const IDS = ['memoryGate', 'memoryEnabled', 'memoryBaseUrlInput', 'memoryApiKeyInput',
+  'memoryApiKeyClearBtn',
   'memoryDimsInput', 'memoryPrefixInput', 'memoryModelInput', 'memoryModelGroup', 'memoryLocalNotice',
   'memoryTestRow', 'memoryTestBtn', 'memoryTestResult', 'memorySaveBtn',
   'memoryReindexBtn', 'memoryStatus', 'memoryResult'];

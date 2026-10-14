@@ -41,6 +41,10 @@ function generateMemoryId(type) {
 // 查询向量的一次嵌入上限（与 embedding 探活端点同口径）：超时即降级到关键词单通道
 const MEMORY_EMBED_TIMEOUT_MS = 8000;
 
+// recall 锁外补齐失败后的冷却窗口：坏端点下每次召回都为补齐重付一次超时（默认 8s），
+// 冷却期内直接跳过补齐、只用手上已有向量算语义名次，60s 后自动再试
+const RECALL_BACKFILL_COOLDOWN_MS = 60_000;
+
 // 记忆类型白名单。旧实现用 type === "fact" ? facts : summaries 分桶，于是任何非 fact 的值
 // （包括模型打错的 note / Fact / fact1）都会被当成摘要写进 summaries，还抢走它的配额
 // （maxSummaries 只有 20）。校验必须显式，不能靠三元表达式的 else 兜底。
@@ -112,12 +116,20 @@ export function createMemoryService({
   let cachedProvider = null;
   let cachedProviderKey = null;
 
-  /** provider 按模型标识复用：改配置即重建，避免拿旧 endpoint/key 打新模型 */
+  // 补齐失败的冷却记录（按 modelKey 记账：换模型/改配置视为新一次尝试，不继承旧端的失败）
+  const backfillFail = { key: null, until: 0 };
+
+  /**
+   * provider 按**全部生效配置**复用：缓存键取最终交给工厂的完整配置。
+   * 此前键里只有 modelKey（mode|modelName|dimensions）——改 baseUrl / apiKey / queryPrefix
+   * 都不改变它，旧 provider（旧端点/旧 key/旧前缀）会一直用到重启为止，与「改配置即重建」相悖。
+   */
   function getProvider() {
     const cfg = embeddingConfigProvider();
-    const key = memoryModelKey(cfg);
+    const providerCfg = toEmbeddingProviderConfig(cfg);
+    const key = JSON.stringify(providerCfg);
     if (!cachedProvider || cachedProviderKey !== key) {
-      cachedProvider = embedderFactory(toEmbeddingProviderConfig(cfg));
+      cachedProvider = embedderFactory(providerCfg);
       cachedProviderKey = key;
     }
     return { provider: cachedProvider, cfg };
@@ -320,7 +332,8 @@ export function createMemoryService({
           if (otherIdx !== -1) {
             return { success: false, error: t('memory.typeMismatch', { id: memoryId, type: otherArray[otherIdx].type }) };
           }
-          return { success: false, error: t('memory.notFound', { id: memoryId }) };
+          // code 供扩展端机器判定（压缩摘要锚点被淘汰后降级为新增重建），不让调用方拿人话文案当协议
+          return { success: false, error: t('memory.notFound', { id: memoryId }), code: 'not_found' };
         }
 
         const existing = targetArray[idx];
@@ -392,6 +405,12 @@ export function createMemoryService({
 
   /**
    * recall：从长期记忆中检索相关信息（迁移自 executeAgentMemoryRecall tool-memory.js:369-608）
+   *
+   * 三段式（2026-10-14 修复「锁内嵌入拖垮全进程」）：锁是进程内 Promise 链、没有超时逃生口，
+   * 外部嵌入在锁内挂起（最长 embedTimeoutMs）会让同进程所有记忆写入排队干等。
+   *   阶段 1（锁内只读）：读真源、定候选、校验向量缓存指纹、收集缺失项——锁里只放本地文件读；
+   *   阶段 2（锁外）：嵌入缺失项并写入派生缓存，失败按 modelKey 冷却 60s 再试；
+   *   阶段 3（锁内收尾）：融合排序、会话去重、访问计数 RMW（重读真源防覆盖并发写）、格式化。
    * @param {object} args { query, tags, memoryType='all', limit=10 }
    * @param {string|null} sessionId 会话 ID，用于 session 级召回去重
    * @param {Function} t 请求语言翻译函数
@@ -420,9 +439,12 @@ export function createMemoryService({
     // fused = 本次确实拿到了可用的查询向量（queryVec 仅在向量档且嵌入成功时非空）
     const fused = queryVec !== null;
 
-    return withMemoryLock(async () => {
+    // ==================== 阶段 1：锁内只读 ====================
+    const snap = await withMemoryLock(async () => {
       const readResult = await readMemoryFile();
-      if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
+      if (!readResult.success) {
+        return { fail: { success: false, error: t('memory.readFailed', { error: readResult.error }) } };
+      }
 
       const memoryData = readResult.data;
 
@@ -435,17 +457,7 @@ export function createMemoryService({
         candidates.push(...memoryData.summaries.map(m => ({ ...m, _source: 'summaries' })));
       }
 
-      if (candidates.length === 0) {
-        return {
-          success: true,
-          message: t('memory.memoryEmpty'),
-          results: [],
-          total: 0,
-          query,
-          tier,
-          vectorMatched: 0
-        };
-      }
+      if (candidates.length === 0) return { empty: true };
 
       // 标签的角色（2026-10-14 口径变更，动机见 memory/tags.js 文件头）：无 query 时标签是唯一
       // 选择器（枚举语义），保持硬过滤；有 query 时不再剔除候选，只在最后按重叠比例上抬名次，
@@ -456,9 +468,66 @@ export function createMemoryService({
         candidates = filterByTags(candidates, tags);
       }
 
-      // 按关键词搜索
+      // 向量缓存先过指纹校验（H1）：缓存属于另一套模型时**整份视空**，所有候选按缺失处理，
+      // 由阶段 2 用当前模型重建。旧实现不校验：换模型后旧空间的向量会被拿去和新查询向量
+      // 算 cos，名次全是噪声，还会被 margin 门采信进语义路（派生缓存要能自愈，不能劫持名次）。
+      const vecMap = {};
+      let missing = [];
+      let modelKey = null;
+      if (fused) {
+        const cfg = embeddingConfigProvider();
+        modelKey = memoryModelKey(cfg);
+        const store = await vectors.read();
+        if (store.modelKey === modelKey) Object.assign(vecMap, store.vectors);
+        missing = candidates.filter(m => m.id && !(m.id in vecMap));
+      }
+      return { candidates, tagRequested, hasQuery, vecMap, missing, modelKey };
+    });
+
+    if (snap.fail) return snap.fail;
+    if (snap.empty) {
+      return {
+        success: true,
+        message: t('memory.memoryEmpty'),
+        results: [],
+        total: 0,
+        query,
+        tier,
+        vectorMatched: 0
+      };
+    }
+
+    // ==================== 阶段 2：锁外补齐缺失向量 ====================
+    const { tagRequested, hasQuery, vecMap, missing, modelKey } = snap;
+    let candidates = snap.candidates;
+    if (missing.length) {
+      const cooling = backfillFail.key === modelKey && Date.now() < backfillFail.until;
+      if (!cooling) {
+        // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义名次，不影响正确性
+        try {
+          const { provider } = getProvider();
+          const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
+          const pairs = missing.map((m, i) => [m.id, Array.isArray(vecs) ? vecs[i] : undefined]).filter(([, v]) => Array.isArray(v) && v.length);
+          if (pairs.length) {
+            // 门面自身带串行链（读-改-写不交叉），与懒补/重建等其它写的先后安全
+            await vectors.upsertVectors(pairs, modelKey);
+            for (const [id, v] of pairs) vecMap[id] = v;
+          }
+        } catch (err) {
+          // 冷却按 modelKey 记账：换模型/改配置视为新一次尝试，不继承旧端的失败记忆
+          backfillFail.key = modelKey;
+          backfillFail.until = Date.now() + RECALL_BACKFILL_COOLDOWN_MS;
+          console.warn('[Memory] vector backfill skipped:', err.message);
+        }
+      }
+    }
+
+    // ==================== 阶段 3：锁内收尾 ====================
+    return withMemoryLock(async () => {
       let vectorMatched = 0;
-      if (query && query.trim()) {
+
+      // 按关键词搜索
+      if (hasQuery) {
         const terms = extractMemoryTerms(query);
         const originalQuery = query.toLowerCase().trim();
 
@@ -486,24 +555,7 @@ export function createMemoryService({
           } else {
             // 双通道排名融合（RRF）：关键词与向量各排各的名次，只按名次合并。
             // 不再叠加绝对相似度分数的原因见 memory/fusion.js 文件头——cos 绝对值在条目级不可判别。
-            const vecMap = (await vectors.read()).vectors;
-
-            const missing = candidates.filter(m => m.id && !(m.id in vecMap));
-            if (missing.length) {
-              // 派生缓存按需补齐：真源是 global-memory.json，补不上只是这次少一条语义名次，不影响正确性
-              try {
-                const { provider, cfg } = getProvider();
-                const vecs = await embedWithTimeout(provider.embedDocuments(missing.map(memorySearchText)));
-                const pairs = missing.map((m, i) => [m.id, Array.isArray(vecs) ? vecs[i] : undefined]).filter(([, v]) => Array.isArray(v) && v.length);
-                if (pairs.length) {
-                  await vectors.upsertVectors(pairs, memoryModelKey(cfg));
-                  for (const [id, v] of pairs) vecMap[id] = v;
-                }
-              } catch (err) {
-                console.warn('[Memory] vector backfill skipped:', err.message);
-              }
-            }
-
+            // 向量来自阶段 1 指纹校验通过的缓存 + 阶段 2 当轮补齐，跨模型向量不会混入。
             // 关键词路：口径与 A 档逐字一致（同一门槛、同一排序），只是取名次
             const kwRanked = candidates
               .map(m => ({ memory: m, ...keywordScore(m, terms, originalQuery, dfFilter) }))
@@ -583,21 +635,25 @@ export function createMemoryService({
         }
       }
 
-      // 更新访问计数
-      for (const m of results) {
-        const source = m._source === 'facts' ? memoryData.facts : memoryData.summaries;
-        const found = source.find(sm => sm.id === m.id);
-        if (found) {
-          found.accessCount = (found.accessCount || 0) + 1;
-          found.lastAccessAt = new Date().toISOString();
+      // 访问计数 RMW 必须重读真源：阶段 1 到现在的窗口里可能已有 store/compact/delete 落盘
+      // （阶段 2 的嵌入最长可到超时上限），拿阶段 1 的快照写回会把那些变更整段抹掉。
+      const fresh = await readMemoryFile();
+      if (fresh.success) {
+        for (const m of results) {
+          const source = m._source === 'facts' ? fresh.data.facts : fresh.data.summaries;
+          const found = source.find(sm => sm.id === m.id);
+          if (found) {
+            found.accessCount = (found.accessCount || 0) + 1;
+            found.lastAccessAt = new Date().toISOString();
+          }
         }
-      }
 
-      // 写回更新后的访问计数（非关键操作，失败不阻塞返回）
-      try {
-        await writeMemoryFile(memoryData);
-      } catch (e) {
-        console.warn('[Memory] update visitcount failed:', e.message);
+        // 写回更新后的访问计数（非关键操作，失败不阻塞返回）
+        try {
+          await writeMemoryFile(fresh.data);
+        } catch (e) {
+          console.warn('[Memory] update visitcount failed:', e.message);
+        }
       }
 
       // 格式化输出

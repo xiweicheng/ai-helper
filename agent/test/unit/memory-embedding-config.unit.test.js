@@ -84,6 +84,22 @@ test('空白 apiKey 视为不修改，其余字段照常更新', async () => {
   assert.equal(saved.apiKey, '');
 });
 
+// L1（2026-10-14 评审）：明文 key 不回显 + 空白 key=不修改 = 用户没有任何路径清除已存 key。
+// clearApiKey 是唯一主动清除通道，且必须赢过同传的新 key（清除是显式动作）。
+test('clearApiKey=true 清空已存 key，且优先于同传的新 key', async () => {
+  await saveMemoryEmbeddingConfig({ apiKey: 'sk-old' });
+  const saved = await saveMemoryEmbeddingConfig({ apiKey: 'sk-new', clearApiKey: true });
+  assert.equal(getMemoryEmbeddingConfig().apiKey, '');
+  assert.equal(saved.hasApiKey, false);
+});
+
+test('clearApiKey 只严格认真 true：false/字符串都不清 key', async () => {
+  await saveMemoryEmbeddingConfig({ apiKey: 'sk-keep2' });
+  await saveMemoryEmbeddingConfig({ clearApiKey: false });
+  await saveMemoryEmbeddingConfig({ clearApiKey: 'yes' });
+  assert.equal(getMemoryEmbeddingConfig().apiKey, 'sk-keep2');
+});
+
 test('非法 mode 被拒绝且不落盘', async () => {
   await assert.rejects(() => saveMemoryEmbeddingConfig({ mode: 'magic' }));
   assert.equal(getMemoryEmbeddingConfig().mode, 'openai-compat');

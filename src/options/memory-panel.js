@@ -12,6 +12,7 @@ let initialized = false;
 let lastStatus = { connected: true, ragAvailable: true };  // mode 切换要重算门控，而连接态只有 refresh 时才知道
 let gateBlocked = false;   // 门控（代理未连接等）导致的锁定
 let toggleBusy = false;    // 开关写入在途的锁定
+let configLoadFailed = false;  // 配置 GET 失败时的保存守卫：WYSIWYG 下空表单保存＝把代理真配置覆盖成空
 
 const $ = (id) => document.getElementById(id);
 
@@ -30,11 +31,12 @@ function applyModeVisibility() {
 }
 
 /**
- * 组装提交体：只收「看得见的且非空的」字段，其余**缺席**。
- * 为什么不能交空值：memoryModelKey = mode|modelName|dimensions，且 dimensions 取
- * `Number(d) > 0 ? floor : 0` —— 把已存 512 覆盖成 0 会改变指纹，界面冒报陈旧，
- * 逼用户做一次无谓重建。apiKey 留空同理（agent 端语义：不传即不改）。
- * 本地档是这条规则的反面：「缺席」= 保存层沿用旧值 = 远端残留渗进本地档，
+ * 组装提交体。远端档「所见即所存」：地址/模型/前缀/维度始终提交（含空值/0），
+ * apiKey 是唯一例外——明文永不回显，留空只能解释为「不修改」，清除走专用按钮。
+ * 为什么改掉原来的「只收非空」：清空 queryPrefix 后字段缺席 = agent 端「不传即不改」
+ * ＝清空保存静默无效；清空维度=0 会改指纹、状态卡冒报陈旧——这是配置真变了，
+ * 报得对，不该由提交体替用户捂掉。
+ * 本地档是反面：「缺席」= 保存层沿用旧值 = 远端残留渗进本地档，
  * 所以会参与本地行为的字段必须显式清空（逐字段理由见 isLocal 分支）。
  */
 function collectPayload() {
@@ -54,17 +56,13 @@ function collectPayload() {
     payload.dimensions = 0;
     return payload;
   }
-  const modelName = ($('memoryModelInput')?.value || '').trim();
-  if (modelName) payload.modelName = modelName;
-
-  const baseUrl = ($('memoryBaseUrlInput')?.value || '').trim();
-  if (baseUrl) payload.baseUrl = baseUrl;
+  payload.modelName = ($('memoryModelInput')?.value || '').trim();
+  payload.baseUrl = ($('memoryBaseUrlInput')?.value || '').trim();
+  payload.queryPrefix = ($('memoryPrefixInput')?.value || '').trim();
+  const dims = Number($('memoryDimsInput')?.value);
+  payload.dimensions = Number.isFinite(dims) && dims > 0 ? Math.floor(dims) : 0;
   const apiKey = ($('memoryApiKeyInput')?.value || '').trim();
   if (apiKey) payload.apiKey = apiKey;
-  const dims = Number($('memoryDimsInput')?.value);
-  if (Number.isFinite(dims) && dims > 0) payload.dimensions = Math.floor(dims);
-  const queryPrefix = ($('memoryPrefixInput')?.value || '').trim();
-  if (queryPrefix) payload.queryPrefix = queryPrefix;
   return payload;
 }
 
@@ -91,6 +89,7 @@ function fillForm(cfg) {
   $('memoryBaseUrlInput').value = cfg.baseUrl || '';
   $('memoryModelInput').value = cfg.modelName || '';
   $('memoryApiKeyInput').value = '';   // 明文 key 不回显，占位文案已说明「留空表示不修改」
+  $('memoryApiKeyClearBtn').style.display = cfg.hasApiKey ? '' : 'none';   // 没有已存 key 就没有可清除的东西
   $('memoryDimsInput').value = cfg.dimensions > 0 ? String(cfg.dimensions) : '';
   $('memoryPrefixInput').value = cfg.queryPrefix || '';
   applyModeVisibility();
@@ -147,6 +146,7 @@ function setBusy(on) {
   $('memoryReindexBtn').disabled = on;
   $('memorySaveBtn').disabled = on;
   $('memoryTestBtn').disabled = on || isLocal();
+  $('memoryApiKeyClearBtn').disabled = on;   // 清除也是写操作，防连点
 }
 
 // ==================== 动作 ====================
@@ -172,6 +172,11 @@ async function onTest() {
 }
 
 async function onSave() {
+  // WYSIWYG 后表单即真值：配置没加载成功时保存 = 把代理里的真配置覆盖成空表单，必须拦
+  if (configLoadFailed) {
+    showToast(t('memoryPanel.configNotLoaded'), 'error');
+    return;
+  }
   setBusy(true);
   try {
     const res = await agentApi('POST', '/api/memory/embedding-config', collectPayload());
@@ -217,6 +222,27 @@ async function onReindex() {
   }
 }
 
+/**
+ * 清除已存 API Key：明文永不回显 + 留空=不修改 ⇒ 这是用户唯一的清除通道。
+ * 立即落盘（只发 clearApiKey 一个字段，agent 端「不传的字段不改」），成功后本地隐藏
+ * 按钮——绝不 loadAll：会把用户未保存的草稿盖掉（与总开关同一惯例）。
+ */
+async function onClearApiKey() {
+  const ok = await showCustomConfirm(t('memoryPanel.apiKeyClearConfirm'));
+  if (!ok) return;
+  setBusy(true);
+  try {
+    const res = await agentApi('POST', '/api/memory/embedding-config', { clearApiKey: true });
+    if (!res || res.success !== true) throw new Error(res?.error || 'unknown');
+    $('memoryApiKeyClearBtn').style.display = 'none';
+    showToast(t('memoryPanel.apiKeyCleared'), 'info');
+  } catch (err) {
+    showToast(t('memoryPanel.apiKeyClearFail', { error: err.message }), 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
 // ==================== 加载 ====================
 
 /** 只重拉状态卡：开关切换后档位会从 remote/local 变 none，状态必须收敛，但不能顺带回填表单 */
@@ -238,10 +264,12 @@ async function loadAll() {
   // 两条请求并发（进面板不等两个往返串行），但各自独立降级：
   // 旧代理可能只缺其中一个端点，捆在同一个 try 里会让能拿到的那份也被拖成失败
   const cfgTask = (async () => {
+    configLoadFailed = true;   // 先上锁：GET 成功为止，保存一律拒绝（WYSIWYG：空表单=覆盖成空）
     try {
       const cfgRes = await agentApi('GET', '/api/memory/embedding-config');
       if (cfgRes && cfgRes.success === true && cfgRes.config) {
         fillForm(cfgRes.config);
+        configLoadFailed = false;
       }
     } catch (err) {
       logger.warn('[MemoryPanel] config load failed:', err.message);
@@ -309,6 +337,7 @@ export function initMemoryPanel() {
   $('memoryTestBtn')?.addEventListener('click', onTest);
   $('memorySaveBtn')?.addEventListener('click', onSave);
   $('memoryReindexBtn')?.addEventListener('click', onReindex);
+  $('memoryApiKeyClearBtn')?.addEventListener('click', onClearApiKey);
   document.querySelectorAll('input[name="memoryEmbeddingMode"]').forEach((r) => {
     r.addEventListener('change', () => { applyModeVisibility(); renderGate(lastStatus); });
   });

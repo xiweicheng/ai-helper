@@ -13,7 +13,7 @@
 | `~/.ai-helper-agent/memory/global-memory.json` | **唯一真源**（`MEMORY_DIR/global-memory.json`），`maxFacts: 50 / maxSummaries: 20` |
 | `~/.ai-helper-agent/memory/memory-vectors.json` | **派生缓存**：可整删、可损坏、可整目录不存在 |
 
-缓存异常一律当空处理并回落词面通道——**绝不把 recall 带崩或带抛**。缓存键 `memoryModelKey()` = `mode|modelName|dimensions`，任一变化即整体作废旧向量（跨模型向量不可比）。
+缓存异常一律当空处理并回落词面通道——**绝不把 recall 带崩或带抛**。缓存键 `memoryModelKey()` = `mode|modelName|dimensions`，任一变化即整体作废旧向量（跨模型向量不可比）。**读出时同样校验指纹**：`vectors.read()` 返回 `{modelKey, vectors}`，recall 必须比对缓存指纹与当前 `memoryModelKey()`，不符则整份视空、全部候选当缺失重补——旧实现只在写入路径关心指纹，读出后直接采信旧空间向量算余弦，换模型后的名次是纯噪声。
 
 ## 2. 档位判定：`agent/src/memory/tier.js`（纯函数单点）
 
@@ -23,7 +23,7 @@
 | `remote` | `mode === 'openai-compat'` 且 `apiKey`/`modelName` trim 后非空 | 远端 embedding + 进程内 brute-force 余弦 |
 | `local` | `mode === 'local'` 且 `isRagAvailable()` | 复用知识库的本地 transformers 模型；依赖缺失**静默降回 `none`** |
 
-嵌入调用**移出记忆互斥锁且在取锁前完成**；失败或超时（`MEMORY_EMBED_TIMEOUT_MS = 8000`）静默退回词面通道，HTTP 仍返 200。
+recall 是三阶段结构：锁内只读（真源 + 候选 + 缓存指纹 + 缺失集）→ **锁外**补齐（嵌入失败或超时 `MEMORY_EMBED_TIMEOUT_MS = 8000` 静默退回词面通道，HTTP 仍返 200；失败按 `modelKey` 冷却 `RECALL_BACKFILL_COOLDOWN_MS = 60000`，期内不再发起）→ 锁内融合与访问计数。为什么补齐必须移出：互斥锁是进程内 Promise 链、连超时都不解锁，补齐永驻锁内会堵死全部记忆操作；而 `upsertVectors` 自身有串行链（读-改-写不交叉），锁外写安全。访问计数在锁内须重读真源做读-改-写，否则覆盖锁外期间并发写入的条目。
 
 ## 3. 词面通道：`agent/src/memory/tokens.js`
 
@@ -75,7 +75,8 @@
 | 事件 | 向量侧动作 |
 | --- | --- |
 | `store(add)` 在向量档 | **懒补**：响应不等待嵌入，嵌入完成后落盘 |
-| `store(update)` 内容变化 | 同 id 重算覆盖，不新增条目 |
+| `recall` 发现缺失向量 | 锁外补齐（见 §2）；失败后同一 `modelKey` 在 60s 冷却期内不再发起 |
+| `store(update)` 内容变化 | 同 id 重算覆盖，不新增条目；id 不存在时返回 `code: 'not_found'`（HTTP 400），压缩线据此降级为 `add` 重建锚点 |
 | `store(delete)` | 同步 `dropVectors([id])`，不留孤儿向量 |
 | `manage(compact)` 淘汰 | 同步摘除被淘汰记忆的向量 |
 | 换模型 / 手动重建 | `POST /api/memory/reindex`（`backfillVectors`）整体重建 |
@@ -84,8 +85,10 @@
 
 - 配置读写单点 `agent/src/memory/embedding-config.js`：`DEFAULT_MEMORY_EMBEDDING_CONFIG`（**默认关闭**）、`maskMemoryEmbeddingConfig`（key 脱敏后才出接口）、`resolveMemoryEmbeddingConfig`、`toEmbeddingProviderConfig`。
 - **`baseUrl` → `endpoint` 的字段映射必须在 `toEmbeddingProviderConfig()` 里做**：配置面统一叫 `baseUrl`（与扩展端表单一致），而 `rag/embedding` 的 OpenAI 兼容后端读 `endpoint`。这个错位单测看不见（注入的是假工厂），只有走真实 provider 的冒烟会炸。交出空白 `queryPrefix` 时须删除该键。
-- 端点（`ROUTE_METHODS` + `handleEmbeddingEndpoints`）：POST 类 `store` / `recall` / `manage` / `inject` / `reindex`（后者实际映射到 `backfillVectors`）；配置与探活类 GET 合法：`embedding-config`、`test-embedding`、`vector-status`（只读状态：条数 + 指纹陈旧判定）。业务失败一律 HTTP 400 + 原样 error；只有路径/方法不匹配才 404（扩展端据此探测旧版 agent 无记忆端点）。
-- 扩展端界面：`src/options/memory-panel.js`（状态三态、陈旧标红、重建按钮）。**总开关走「切换即持久化」**，请求体只带 `enabled`（其余字段仍是「不传即不改」），其它字段仍由「保存到代理」按钮提交。开关文案由 `syncEnabledLabel()` 唯一渲染，`options.html` 里那个 span 不挂静态 i18n 键 —— 挂上后语言切换会把「已启用」硬盖成「已停用」。
+- **provider 进程内缓存按完整配置作键**：`getProvider()` 的键 = `JSON.stringify(toEmbeddingProviderConfig(cfg))`（涵盖 `baseUrl`/`endpoint`/`apiKey`/`queryPrefix` 等全部输入）。曾只按 `mode|modelName|dimensions` 作键——改前缀/换 key/换地址后旧 provider 不重建，不重启不生效。
+- 端点（`ROUTE_METHODS` + `handleEmbeddingEndpoints`）：POST 类 `store` / `recall` / `manage` / `inject` / `reindex`（后者实际映射到 `backfillVectors`）；配置与探活类 GET 合法：`embedding-config`、`test-embedding`、`vector-status`（只读状态：条数 + 指纹陈旧判定）。业务失败一律 HTTP 400 + 原样 body（含结构化 `code`，如 `update` 不存在 id 时的 `not_found`；扩展端 `agentRequest` 保留 `httpStatus`）；只有路径/方法不匹配才 404（扩展端据此探测旧版 agent 无记忆端点）。
+- 扩展端界面：`src/options/memory-panel.js`（状态三态、陈旧标红、重建按钮）。**总开关走「切换即持久化」**，请求体只带 `enabled`；其余字段走「保存到代理」。开关文案由 `syncEnabledLabel()` 唯一渲染，`options.html` 里那个 span 不挂静态 i18n 键 —— 挂上后语言切换会把「已启用」硬盖成「已停用」。
+- 远端档提交体是**所见即所存**：`baseUrl`/`modelName`/`queryPrefix`/`dimensions` 始终提交（含空值/0）——旧实现「只收非空」让清空操作静默无效（字段缺席 = agent 端「不传即不改」）。唯一例外 `apiKey`：明文永不回显、留空 = 不修改，清除走专用按钮（`hasApiKey` 为真时显示，确认后 POST `{ clearApiKey: true }`；agent 端 `clearApiKey === true` 优先于同传的 `apiKey`）。配置 GET 失败后表单停在默认空值，保存被 `configLoadFailed` 守卫拒绝——否则空表单会把代理真配置覆盖成空。
 - **嵌入来源单选与知识库同名同义**：远端选项文案统一为「远端服务（OpenAI 兼容接口）」（此前记忆面写作「远端 API」，与知识库不一致）。**本地档模型固定内置** `Xenova/bge-small-zh-v1.5`，与知识库一致：选本地时 `applyModeVisibility` 连模型框一起隐藏，`collectPayload` 本地分支**显式清空三个会把远端残留带进本地档的字段**（保存层「不传即沿用旧值」）：`modelName:''`（残留被本地 provider `modelName || 内置默认` 拿去 transformers 下载）、`queryPrefix:''`（残留顶替 BGE 默认查询前缀——provider 的 `??` 只认 nullish，非空残留原样生效）、`dimensions:0`（不参与本地向量，但进 `memoryModelKey` 指纹，残留随远端历史漂移会让同一份本地配置冒报 stale 并白跑重建）；`baseUrl`/`apiKey` 在本地档完全惰性（不建远端后端），保持省略留给切回远端用。
 
 ## 8. 已知限制（不是 bug，别顺手「修掉」）
@@ -116,7 +119,10 @@
 | 标签重叠比例与上抬 | `agent/test/unit/memory-tag-rank.unit.test.js` |
 | 派生缓存与模型键 | `agent/test/unit/memory-vectors.unit.test.js` |
 | 懒补/删除/淘汰的向量同步 | `agent/test/unit/memory-service.unit.test.js`（describe「向量生命周期同步」） |
-| 配置字段映射与脱敏 | `agent/test/unit/memory-embedding-config.unit.test.js` |
+| recall 状态机（读出指纹校验 / 锁外补齐 / 失败冷却 / 锁内重读真源） | `agent/test/unit/memory-service.unit.test.js` |
+| 锚点失效（`code: not_found`）降级 add（压缩线） | `test/unit/compaction-memory-persist.unit.test.js` |
+| 面板所见即所存 / 清除 API Key / 未加载守卫 | `test/unit/memory-panel.unit.test.js`、`test/unit/memory-panel-structure.unit.test.js` |
+| 配置字段映射与脱敏（含 `clearApiKey`） | `agent/test/unit/memory-embedding-config.unit.test.js` |
 | 入参校验的渲染文案 | `agent/test/unit/memory-validation-messages.unit.test.js` |
 | 检索**效果**基线（离线、零网络） | `agent/test/unit/memory-recall-eval.unit.test.js`、`memory-recall-eval-b.unit.test.js` |
 | 测试不得写真实目录 | `agent/test/unit/memory-test-isolation.unit.test.js` |

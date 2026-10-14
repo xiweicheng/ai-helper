@@ -104,6 +104,19 @@ describe('store', () => {
     const r = await svc.store({ action: 'add', type: 'fact', content: 'x' }, T);
     assert.equal(r.stats.totalFacts, 1);
   }));
+
+  // M2（2026-10-14 评审）：update 的「不存在」必须是机器可判定的 code——压缩摘要锚点链
+  // 靠它降级为新增重建（条目被 compact 淘汰后 update 永久失败，摘要从此静默断供）。
+  // 类型不匹配不得冒用该 code：那是另一条错误路径，混用会让调用方错误地走重建。
+  it('update 不存在的 id：错误体带 code=not_found；类型不匹配不带', () => withService(async (svc) => {
+    const r = await svc.store({ action: 'update', type: 'summary', content: 'x', memoryId: 'sum_nope' }, T);
+    assert.equal(r.success, false);
+    assert.equal(r.code, 'not_found');
+    const a = await svc.store({ action: 'add', type: 'fact', content: 'F' }, T);
+    const m = await svc.store({ action: 'update', type: 'summary', content: 'x', memoryId: a.memory.id }, T);
+    assert.equal(m.success, false);
+    assert.equal(m.code, undefined, '类型不匹配是另一条错误，不得带 not_found');
+  }));
 });
 
 describe('recall', () => {
@@ -418,6 +431,94 @@ describe('recall 向量通道', () => {
     assert.equal(r2.success, true);
     assert.equal(r2.vectorMatched, r1.vectorMatched);
   }));
+
+  // H1（2026-10-14 评审）：向量缓存的 modelKey 与当前配置不符时必须整份视空重建。
+  // 旧实现直接采信缓存：换模型后旧空间的向量被拿去和新查询向量算 cos，名次全是噪声，
+  // 还会被 margin 门采信进语义路。用「旧缓存与新查询正交、重建向量与查询同向」区分两种行为。
+  it('缓存指纹不符（换模型）时整份不采信，当轮按当前模型重建', () => {
+    let docEmbedded = 0;
+    return withVectorService({
+      embeddingConfig: { modelName: 'new-model' },
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts) => {
+          docEmbedded += texts.length;
+          return texts.map((s) => (String(s).includes('目标') ? [1, 0, 0] : [0, 0, 1]));
+        }
+      })
+    }, async (svc, { vectorsFilePath }) => {
+      const a = await svc.store({ action: 'add', type: 'fact', content: '目标条目', tags: [], importance: 5 }, T);
+      const b = await svc.store({ action: 'add', type: 'fact', content: '无关条目', tags: [], importance: 5 }, T);
+      // 先等懒补落盘，再整体覆写成「旧模型」的缓存：两条旧向量都与本次查询正交
+      await waitUntil(() => vectorIds(vectorsFilePath).length === 2, '两条懒补未全部落盘');
+      await createVectorStoreFacade({ filePath: vectorsFilePath })
+        .upsertVectors([[a.memory.id, [0, 1, 0]], [b.memory.id, [0, 1, 0]]], 'openai-compat|old-model|3');
+
+      const before = docEmbedded;
+      const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r.success, true);
+      assert.ok(docEmbedded > before, '旧指纹的缓存必须整份视空并当轮重建（旧实现此处不再发起嵌入）');
+      const stored = await waitVectorPayload(vectorsFilePath, '指纹重建后');
+      assert.equal(stored.modelKey, 'openai-compat|new-model|3', '重建必须带当前指纹');
+      assert.deepEqual(stored.vectors[a.memory.id], [1, 0, 0], '重建后的同向向量才是名次依据');
+      assert.equal(r.vectorMatched, 1, '旧向量 cos=0 若被采信，两条都会进语义头部（旧实现为 2）');
+      assert.equal(r.total, 1);
+      assert.equal(r.results[0].content, '目标条目');
+    });
+  });
+
+  // M1（2026-10-14 评审）：补齐嵌入必须在互斥锁外。旧实现把 embedDocuments 放在 withMemoryLock
+  // 里，坏端点挂起时整把锁被拖满超时上限，期间同进程所有记忆写入排队干等。
+  it('补齐嵌入挂起时 store 照常完成（补齐在锁外）', { timeout: 5000 }, () => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    let docCalls = 0;
+    return withVectorService({
+      embedTimeoutMs: 3000,
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: (texts) => { docCalls++; return held.then(() => texts.map(() => [1, 0, 0])); }
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: '待补齐条目', tags: [], importance: 5 }, T);
+      const recallP = svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      // 懒补（#1）与本次召回补齐（#2）都扣在同一个 held 上；两次调用都发起后，召回必已进入锁外补齐
+      await waitUntil(() => docCalls >= 2, '召回的补齐嵌入未发起');
+
+      // 旧实现此刻 recall 整段持锁：store 会排在锁链上，本竞速 700ms 内必超时判红
+      const stored = await Promise.race([
+        svc.store({ action: 'add', type: 'fact', content: '并发写入', tags: [], importance: 5 }, T),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('store 被挂起的补齐嵌入堵死')), 700))
+      ]);
+      assert.equal(stored.success, true);
+
+      release();
+      const r = await recallP;
+      assert.equal(r.success, true);
+    });
+  });
+
+  // M1 配套：补齐失败按 modelKey 冷却 60s——坏端点下每次召回不再各重付一次超时
+  it('补齐失败后冷却：冷却期内第二次召回不再发起补齐', () => {
+    let docCalls = 0;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async () => { docCalls++; throw new Error('endpoint down'); }
+      })
+    }, async (svc) => {
+      await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+      await new Promise((res) => setImmediate(res));   // 让懒补先把它那次失败消费掉
+      const before = docCalls;
+      const r1 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r1.success, true, '补齐失败不得让召回失败');
+      assert.ok(docCalls > before, '第一次召回必须发起补齐');
+      const afterFirst = docCalls;
+      const r2 = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(r2.success, true);
+      assert.equal(docCalls, afterFirst, '冷却期内不得再发起补齐');
+    });
+  });
 
   it('embedQuery 抛错：本次召回不失败，退回关键词排序', () => withVectorService({
     embedderFactory: () => ({ embedQuery: async () => { throw new Error('boom'); }, embedDocuments: async () => { throw new Error('boom'); } })
@@ -790,6 +891,41 @@ describe('provider 配置字段映射', () => {
     assert.ok(seenCfg, '向量档必须创建 provider');
     assert.equal(seenCfg.endpoint, 'https://api.example.com/v1');
   }));
+
+  // 坑2（2026-10-14 评审）：provider 缓存键此前只含 modelKey（mode|model|dims）——改 baseUrl / apiKey /
+  // queryPrefix 都不触发重建，旧 provider（旧端点/旧 key/旧前缀）会一直用到重启为止。
+  it('provider 缓存键纳入完整配置：只改 queryPrefix / baseUrl 也重建', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mem-provider-key-'));
+    let factoryCalls = 0;
+    let cfg = { ...EMBED_CFG, baseUrl: 'https://a.example.com/v1' };
+    const svc = createMemoryService({
+      filePath: join(dir, 'global-memory.json'),
+      vectorsFilePath: join(dir, 'memory-vectors.json'),
+      embeddingConfigProvider: () => cfg,
+      tierResolver: () => 'remote',
+      embedderFactory: () => {
+        factoryCalls++;
+        return { embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) };
+      }
+    });
+    return Promise.resolve((async () => {
+      await svc.store({ action: 'add', type: 'fact', content: 'alpha 条目', tags: [], importance: 5 }, T);
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      const afterFirst = factoryCalls;
+      assert.ok(afterFirst >= 1, '首次召回必须建 provider');
+
+      cfg = { ...cfg, queryPrefix: '为这个句子生成表示以用于检索相关文章：' };
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 1, '改 queryPrefix 必须重建 provider（旧实现到重启才生效）');
+
+      cfg = { ...cfg, baseUrl: 'https://b.example.com/v1' };
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 2, '换端点必须重建 provider');
+
+      await svc.recall({ query: 'zzz', limit: 5 }, null, T);
+      assert.equal(factoryCalls, afterFirst + 2, '配置未变时不得反复重建');
+    })().finally(() => rmSync(dir, { recursive: true, force: true })));
+  });
 });
 
 // 追加：vectorStatus 只读状态。核心约束——它只读文件，绝不构造 provider

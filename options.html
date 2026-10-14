@@ -785,6 +785,8 @@
         <div class="form-group" id="memoryApiKeyGroup">
           <label data-i18n="memoryPanel.apiKeyLabel">API Key</label>
           <input type="password" id="memoryApiKeyInput" data-i18n-placeholder="memoryPanel.apiKeyPlaceholder" placeholder="">
+          <!-- L1：明文 key 永不回填 + 留空=不修改 ⇒ 用户没有清除路径，这是唯一显式清除入口（hasApiKey 时显示） -->
+          <button class="kb-action-btn" type="button" id="memoryApiKeyClearBtn" data-i18n="memoryPanel.apiKeyClearBtn" style="display:none; margin-top:8px;">清除已存 Key</button>
         </div>
 
         <div class="form-group" id="memoryDimsGroup">
