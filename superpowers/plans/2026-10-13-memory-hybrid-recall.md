@@ -1,5 +1,9 @@
 # Memory Hybrid Recall Implementation Plan
 
+> **存档状态（2026-10-14 加注）**：本计划已全部执行完毕（记忆线最后一个相关提交 `0c1fdaa`），**不要按本文件实施**。
+> 现行口径见 [`docs/Memory-Retrieval-Design.md`](../../Memory-Retrieval-Design.md)。文中的预写代码块与 Step 清单属实施前内容，已与源码不再同步。
+> 不删的理由：本文件末尾的执行记录里有 45 处「作废 / 更正 / 推翻 / 错定」结论（哪些判据被实测否定、为什么），那是防止后续「顺手把已否定的判据加回来」的唯一书面依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 Agent 端长期记忆的 `recall` 增加语义（向量）通道，并在 embedding 不可用/超时/失败时**逐字回落到今天的关键词行为**，零强制依赖。
