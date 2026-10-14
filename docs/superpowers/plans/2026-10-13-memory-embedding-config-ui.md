@@ -1392,14 +1392,112 @@ service 钳制口径一致，且描述里的数字与 `minimum`/`maximum` 不矛
 - 负向对照：`TAG_RANK_LIFT` 临时改 0 → **4 红**（机制层 2 + service 层 2，含向量档那条），证两处通道都对加成敏感；改回 2 后全绿。
   第一次跑负向对照时向量档用例没红，换夹具（让无标签条目在两通道都排第一）后才有牙——原夹具是假敏感。
 
-### 5. 顺手发现的既有 flake（非本轮引入，未修）
+### 5. 顺手发现的既有 flake（非本轮引入，本轮未修 → **第六轮已修**）
 
 `store(add) 在向量档懒补：响应不等待嵌入，之后落盘` 断言 `Date.now() - t0 < 10` 而夹具的假端点 `setTimeout(10)`，
 纯靠挂钟快慢分「有没有被 await」，调度抖动即红。实测全量套件 HEAD 态 3/20 红、改动后 4/20 红——**同一条、同量级，与本轮无关**。
 建议改法（需用户点头，属另一条改动）：不测耗时，改为夹具持一个手动 resolve 的 promise，断言 store 已返回时嵌入仍未落盘。
+> 第六轮按此建议实施完毕，并顺带揪出同族另外四处等待与一个更深的根因（不只是挂钟赌注）——见「执行记录第六轮」§3。
 
 ### 本轮收口计数（全部实测）
 
 agent 单测 **405/405**（+18：机制层 12 + service 层 6）；两份黄金评测 `memory-recall-eval` / `-eval-b` 原样绿、未重钉任何期望；
 rag 集成（隔离部分）**24/24**；记忆冒烟 **21 项 0 失败**；根 vitest **1306/1306**；`npm run lint` 干净；`npm run build:silent` BUILD_SUCCESS。
 标定用临时件（`_legacy-service.tmp.js`、探针脚本、落盘脚本）已删除，工作树只留 `tags.js` + `service.js` + 两份测试。
+
+---
+
+## 执行记录第六轮（2026-10-14：df 全塌兜底 + 挂钟脆弱用例治理）
+
+> 用户对上一轮汇报的四条待办点前两条（「第一条你干吧；第二条你也干」）：① df 全塌兜底；② 修复靠挂钟的脆弱用例。后两条（换模型重标定 0.48 地板、provider 嵌入层缺陷）仍未动。
+
+### 1. df 全塌兜底（待办①）
+
+上一轮标定得到的唯一真代价就是这一格：查询词在全库过半时整条判死，裸查 `ai` 返回 0 条。本轮按用户批准加上兜底。
+
+**判据层形状变更（破坏性 API）**：`buildDocFreqFilter` 由返回函数改为返回 `{ keep, hasDiscriminative }`。改前先 grep 确认使用面只有 `service.js:448` 与 tokens 单测两处，无其他调用方：
+
+```js
+const limit = Math.max(KEYWORD_DF_EXEMPT, candidates.length * KEYWORD_MAX_DF_RATIO);
+const keep = (key) => { const d = df.get(key); return d > 0 && d <= limit; };
+let hasDiscriminative = false;
+for (const d of df.values()) { if (d <= limit) { hasDiscriminative = true; break; } }
+return { keep, hasDiscriminative };
+```
+
+**调用侧**（`service.js` 词面通道入口）：
+
+```js
+const { keep: dfKeep, hasDiscriminative } = buildDocFreqFilter(candidates, terms);
+const dfFilter = hasDiscriminative ? dfKeep : () => true;
+```
+
+全塌判定有两个细节必须记清：
+- `df` 的键只会在被某条候选碰到时才写入，所以 `d > 0` 恒成立，`hasDiscriminative` 等价于「有没有任一键没过 `limit`」。
+- **「查询词全库无人碰」也算全塌**（`df` 为空表）。这是故意：那个词本来就不具备区分度。但兜底只关掉 df 闸门，**不放宽词面命中门槛**（`isKeywordHit`）——所以这种查询仍返回 0 条，不会把无关条目灌进来。
+
+**上一轮明文钉的「已知代价」作废**：那条用例（`已知代价：查询词在全库过半时判无区分度，标签全命中也返回空`）就地改写为`df 全塌兜底…`，不新增一条更正记录。兜底的三条边界各自钉住：
+
+| 用例 | 钉住的行为 |
+| --- | --- |
+| `df 全塌兜底：查询词在全库过半时忽略区分度剔除，标签上抬仍生效` | `zeta` 四条全命中→`total = 4`；且前两条必为带标签的「甲/乙」——兜底不得把上一轮的标签上抬挤掉 |
+| `兜底不放宽词面门槛：全库无人碰该词时仍零命中` | `zzz` 仍 0 条 + `/memory\.noMatch/`，不说「空库」谎 |
+| `兜底只在整体塌陷时生效：还有低频词幸存则高频词照旧被剔` | `quark 稀有`：`df(quark)=3 > limit 2.5` 但 `df(稀有)=1` 幸存→**不兜底**，只返回「稀有标识」 |
+
+第三条是本轮最重要的反向护栏：若部分存活也兜底，高频词会把返回窗口填满、挤掉有效信号——那恰好是 `KEYWORD_MAX_DF_RATIO` 存在的理由。
+
+### 2. 真实库离线标定（只读副本、tier none、零网络，重跑）
+
+同一批 41 条（facts 38 / summaries 3、151 标签）、同一套用例重跑。旧侧仍是 `43712b4`（标签硬过滤、无兜底），新侧为本轮工作树：
+
+| 指标 | 上一轮（D1） | 本轮（D1 + df 兜底） |
+| --- | --- | --- |
+| 枚举路径（只传 tags、无 query）新旧差异 | 0 / 151 | **0 / 151**（保持硬过滤这条承诺仍成立） |
+| 相关型用例捞回条目 | 24 / 36 | **28 / 36** |
+| 新实现少返回的用例 | 3 | **0** ← 代价清零 |
+| 完全一致（旧 vs 新） | 9 | 8 |
+| 触发全塌兜底的查询词数 | — | **4**（均为含 `ai` 的那批用例） |
+| 不带标签裸查 `ai` | 0 条 | **10 条**（返回上限即满窗口） |
+| 不带标签裸查 `配置` / `agent` | 0 条 | 0 条（**不触发兜底**：这些词在全库不过半，仍有区分度） |
+
+`配置` 不触发是关键反向证据：兜底不是「把 df 关掉」的橡皮图章，只对真塌陷的查询生效。
+
+**方法坑（下次直接照此避）**：`buildDocFreqFilter` 返回形状一变，导出的 legacy `service.js` 会把 `dfFilter` 当函数调当场崩。必须连 legacy 的 `tokens.js` 一起 `git show 43712b4:… > _legacy-tokens.tmp.js` 并 sed 重定向 legacy service 的 import，不能只导一个文件。
+
+### 3. 挂钟脆弱用例治理（待办②）——根因不是挂钟
+
+按上一轮建议先把懒补用例改成门闩式：夹具持一个手动 resolve 的 promise，断言改测**因果序**而非耗时；另加 `{ timeout: 3000 }`，使「store 敢等嵌入」这种情况干净地判红而不是挂住套件。
+
+但改写后跑 25 次全量循环仍出 2 次红（`delete 同步摘除向量`），继续跑到 30 次又抓到 1 次红，拿到真实错误栈才看清根因：
+
+```
+SyntaxError: Unexpected end of JSON input
+    at memory-service.unit.test.js:630
+```
+
+**是「撕裂读」，不是时长赌注**：`writeFile` 先 truncate 再落内容，而测试的轮询恰好发生在后台懒补写入途中——`existsSync` 在 truncate 之后就已成真，此刻同步 `readFileSync` 读到空串/半截 JSON。产品侧没有这个窗口（向量读排在全局串行链 `serialized()` 里，不会与自己的写交叉），所以**只修测试读盘，没有改任何产品代码**，也没动一条断言的宽松度。
+
+收口到模块级三件助手（与 `withVectorService` 同层，全文件共用）：`waitUntil(condition, description)`（有界轮询 200×10ms）、`readVectorPayload()`（读不通返回 `null`，即「还没写好」）、`waitVectorPayload()` + `vectorIds()`（基于前者）。全文七处断言读盘加 vectorIds 内部一处直接 `JSON.parse(readFileSync(vectorsFilePath))` 全部改走容错版：懒补 / delete / update 重算 / compact 两组前后读，以及 `backfillVectors 整体重建`（它的 `store` 懒补也在后台写，同样暴露在这个窗口里）。
+
+同时把四处「必须已发生」的 `settle()` 正向等待换成 `waitUntil`（`settle()` 仅保留给「不得发生」类断言，方向容错）。**同族缺陷不止用户点的那一条**：`delete 同步摘除向量` / `update 内容变化后重算向量` / `compact 淘汰的记忆同步摘除向量` 三处与懒补同源；compact 那条还补了一条断言（`未淘汰记忆的向量不得被误删`），否则只验「被删的摘干净」、验不出「误删」。
+
+**循环计数（文件法重跑，全部实测）**：
+
+| 配置 | 红场次 / 总跑数 | 备注 |
+| --- | --- | --- |
+| 修复前（严格读盘） | **3 / 61** | 25 次→2 红 + 6 次→0 红 + 30 次→1 红；均为撕裂读 |
+| 修复后（容错读盘） | **0 / 100** | 60 次 + 追加 40 次；每次 409 例全跑 |
+
+两条**失败的对照臂必须如实记下**（它们不构成证据，但记录能防下次重踩）：
+1. 第一版对照把 `catch { return null }` 改成 `throw err` → **40/40 全红**。因为严格版连「文件还不存在」的 ENOENT 也抛，这不是修复前的等价物，对照无效。
+2. 第二版对照只让半截 JSON 抛（`MUT_TORN`）→ **0/40 全绿**，没复现红。撕裂窗口太窄，**无法按需复现**，这一臂同样不能用。
+
+所以本轮承重证据是「修复前实测到 SyntaxError 栈 + 修复后 0/100」，不是对照臂。另：**单文件孤立跑 40 次 0 红**，该 flake 只在全套件并发负载下出现——往后验证 flake 必须跑全量，拿单文件绿当证据会漏。
+
+（过程中还有一次判定式误报：我用 `echo "$out" | grep -q '^ℹ fail 0'` 作守卫，报出「12/12 全红」，而后续文件法同样代码 6/6 全绿——循环里管输出的方式不可靠，改成一轮写一个文件再汇总。）
+
+### 4. 本轮收口计数（全部实测）
+
+agent 单测 **409/409**（+4：service 层净 +2〔删旧钉 1、新增 3〕+ tokens 层 +2）；两份黄金评测 `memory-recall-eval` / `-eval-b` 原样绿、未重钉任何期望；
+rag 集成（隔离部分）**24/24**；记忆冒烟 **21 项 0 失败**；根 vitest **1306/1306**；`npm run lint` 干净；`npm run build:silent` BUILD_SUCCESS。
+产品侧改动仅 `tokens.js`（+13/-4）与 `service.js`（+5/-1）；标定临时件（两份 `_legacy-*.tmp.js`、探针脚本、落盘脚本）已删，工作树无残留。`api.integration.test.js` 仍未实跑（会干扰用户正在跑的 agent）。

@@ -102,14 +102,29 @@ describe('与知识库同口径的两条硬性质', () => {
       content: i === 0 ? '项目文档模板' : '项目笔记与项目计划',
       title: '', tags: []
     }));
-    const dfFilter = buildDocFreqFilter(candidates, terms);
+    const { keep: dfFilter, hasDiscriminative } = buildDocFreqFilter(candidates, terms);
     // “项目”在 8 条里被碰到（过半）→ 失去区分度；4 字整词 “项目文档” 只在 1 条 → 保留
     assert.equal(dfFilter('项目'), false);
     assert.equal(dfFilter('项目文档'), true);
+    assert.equal(hasDiscriminative, true, '有任一单元幸存就不得标记为全砍');
     const noisy = { content: '项目笔记与项目计划', title: '', tags: [] };
     const real = { content: '项目文档模板', title: '', tags: [] };
     assert.equal(keywordScore(noisy, terms, '项目文档', dfFilter).score, 0);
     assert.ok(keywordScore(real, terms, '项目文档', dfFilter).score > 0);
+  });
+
+  it('查询词全部过半时标记全砍（hasDiscriminative 为 false）', () => {
+    const terms = T('项目');
+    const candidates = Array.from({ length: 4 }, () => ({ content: '项目笔记', title: '', tags: [] }));
+    const { keep, hasDiscriminative } = buildDocFreqFilter(candidates, terms);
+    assert.equal(keep('项目'), false, '4/4 命中：limit = max(2, 2) = 2，该词已无区分度');
+    assert.equal(hasDiscriminative, false, '整个查询只剩这一个单元，必须让调用方知道全塌了');
+  });
+
+  it('查询词在全库根本没人碰也算全砍（无区分度可言）', () => {
+    const terms = T('zzz');
+    const { hasDiscriminative } = buildDocFreqFilter([{ content: '无关内容', title: '', tags: [] }], terms);
+    assert.equal(hasDiscriminative, false, 'df 表里没这个 key：d 为 undefined，本来就不具备区分度');
   });
 
   it('df 全砍后词面单元得 0 分，整句原样命中加分仍保留', () => {

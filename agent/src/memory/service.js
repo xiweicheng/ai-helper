@@ -445,7 +445,11 @@ export function createMemoryService({
 
         if (terms.latin.length > 0 || terms.cjk.length > 0) {
           // df 过滤必须在计分前对全候选扫一遍：单条记忆自身无法判断某个单元是否无区分度
-          const dfFilter = buildDocFreqFilter(candidates, terms);
+          const { keep: dfKeep, hasDiscriminative } = buildDocFreqFilter(candidates, terms);
+          // 全塌兜底：查询里所有单元都被判为无区分度时忽略 df——宁可按词面强度排，也不要把用户
+          // 明确输入的那个词整条判死（实测「ai」在本库 41 条里出现 30 次，按现行尺子必被剔）。只要还有
+          // 任一单元幸存就不兜底，高频单元照旧被剔，否则高频词会把返回窗口填满、挤掉有效信号。
+          const dfFilter = hasDiscriminative ? dfKeep : () => true;
 
           if (!fused) {
             // 关键词单通道：A 档（未启用向量）走这条，向量档但本次查询向量不可用时也退回这条，

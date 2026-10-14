@@ -75,7 +75,9 @@ function fieldUnits(text, terms, dfFilter) {
  * 必须在计分前对全候选扫一遍——单条记忆自身无法判断某词是否常见。
  * @param {Array} candidates 本次召回的候选记忆
  * @param {{latin: string[], cjk: string[]}} terms
- * @returns {(key: string) => boolean} 该单元是否具备区分度
+ * @returns {{keep: (key: string) => boolean, hasDiscriminative: boolean}}
+ *   keep 该单元是否具备区分度；hasDiscriminative 是否**至少有一个**单元具备区分度
+ *   （全塌信号：整个查询的词形区分度都不成立，调用方据此决定是否忽略 df）
  */
 export function buildDocFreqFilter(candidates = [], terms = { latin: [], cjk: [] }) {
   const df = new Map();
@@ -90,10 +92,17 @@ export function buildDocFreqFilter(candidates = [], terms = { latin: [], cjk: []
   }
   const limit = Math.max(KEYWORD_DF_EXEMPT, candidates.length * KEYWORD_MAX_DF_RATIO);
   // d > 0：未被任何候选碰过的单元不参与判定；d ≤ limit：过半者剔除
-  return (key) => {
+  const keep = (key) => {
     const d = df.get(key);
     return d > 0 && d <= limit;
   };
+  // 全塌判定：df 表里一个幸存单元都没有。df 的键只会在被某条候选碰到时才写入，所以 d > 0 恒成立，
+  // 这里等价于「有没有任何一个键没过 limit」。注意「查询词全库无人碰」也算全塌——那个词本来就不具备区分度。
+  let hasDiscriminative = false;
+  for (const d of df.values()) {
+    if (d <= limit) { hasDiscriminative = true; break; }
+  }
+  return { keep, hasDiscriminative };
 }
 
 /**

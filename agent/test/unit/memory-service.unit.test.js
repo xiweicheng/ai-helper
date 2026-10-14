@@ -298,6 +298,48 @@ function withVectorService(opts, fn) {
   return Promise.resolve(fn(svc, { dir, vectorsFilePath })).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
+/**
+ * 「必须已发生」类断言一律轮询到条件成立（上限 2s），不再赌固定时长。
+ * 本文件原先四处都是 settle()/setTimeout(30)，而懒补的嵌入 + 落盘是后台异步链：
+ * 机器一忙就没跑完——实测约 15%~20% 概率随机变红（HEAD 态同样命中，属既有脆弱用例）。
+ */
+async function waitUntil(condition, description) {
+  for (let i = 0; i < 200; i++) {
+    if (condition()) return;
+    await new Promise((res) => setTimeout(res, 10));
+  }
+  assert.fail('等待超时（2s）：' + description);
+}
+
+/**
+ * 读派生缓存，容忍「撕裂读」：writeFile 是先 truncate 再落内容，而本文件的轮询恰好发生在后台
+ * 懒补的写入途中——existsSync 在 truncate 之后就已成真，此刻同步 readFileSync 会读到空串或半截
+ * JSON 并抛 SyntaxError（全套件并发负载下实测命中，孤立跑则 40 次 0 次）。产品侧没有这个窗口
+ * （向量读排在全局串行链里，不会与自己的写交叉），所以只在测试读盘处兜住：读不通按「还没写好」
+ * 处理，交给轮询重试，不放宽任何断言。
+ */
+function readVectorPayload(vectorsFilePath) {
+  try {
+    const parsed = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 断言用的正式读盘：等到读得出可解析内容为止（撕裂读不算失败，只算还没写完） */
+async function waitVectorPayload(vectorsFilePath, description) {
+  let payload = null;
+  await waitUntil(() => {
+    payload = readVectorPayload(vectorsFilePath);
+    return payload !== null;
+  }, '派生缓存读不出可解析内容：' + description);
+  return payload;
+}
+
+/** 派生缓存当前已落入的向量 id 集（文件未生成或尚未写完时为空） */
+const vectorIds = (vectorsFilePath) => Object.keys(readVectorPayload(vectorsFilePath)?.vectors || {});
+
 describe('recall 向量通道', () => {
 
   // 语义近、词面零重合的条目应被召回；无关条目两条通道都不沾，应被排除
@@ -457,12 +499,13 @@ describe('recall 向量通道', () => {
       await s.store({ action: 'add', type: 'fact', content: 'alpha', tags: [], importance: 5 }, T);
       const first = await s.backfillVectors(T);
       assert.equal(first.indexed, 1);
-      const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      // 上面 store 的懒补仍在后台写，读盘必须走容错版（见 readVectorPayload）
+      const stored = await waitVectorPayload(vectorsFilePath, '首次 backfill 后');
       assert.equal(stored.modelKey, 'openai-compat|m1|3');
 
       cfg = { ...cfg, modelName: 'm2' };
       await s.backfillVectors(T);
-      const after = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      const after = await waitVectorPayload(vectorsFilePath, '换模型 backfill 后');
       assert.equal(after.modelKey, 'openai-compat|m2|3');
       assert.equal(Object.keys(after.vectors).length, 1, '换模型后只应剩新模型的这一条向量');
     }).finally(() => rmSync(dir, { recursive: true, force: true }));
@@ -584,24 +627,32 @@ describe('recall 向量通道', () => {
 });
 
 describe('向量生命周期同步', () => {
+  // 只给「不得发生」类断言留一个固定时长窗口（方向容错：晚点也没关系）
   const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
-  it('store(add) 在向量档懒补：响应不等待嵌入，之后落盘', () => withVectorService({
-    embedderFactory: () => ({
-      embedDocuments: async (texts) => {
-        await new Promise((r) => setTimeout(r, 10));   // 慢端点：若被 await，store 响应会一起慢
-        return texts.map(() => [1, 0, 0]);
-      }
-    })
-  }, async (svc, { vectorsFilePath }) => {
-    const t0 = Date.now();
-    const r = await svc.store({ action: 'add', type: 'fact', content: '懒补条目', tags: [], importance: 5 }, T);
-    assert.equal(r.success, true);
-    assert.ok(Date.now() - t0 < 10, 'store 响应不得等待嵌入');
-    await settle();
-    const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
-    assert.deepEqual(Object.keys(stored.vectors), [r.memory.id]);
-  }));
+  // 这条曾用「Date.now() - t0 < 10」对抗一个 setTimeout(10) 的假端点，纯靠挂钟分「有没有被 await」：
+  // 实测约 15%~20% 概率随机变红（HEAD 态同样命中，属既有脆弱用例）。现在改成因果序判定：
+  // 嵌入何时完成由测试放行，store 若敢等它就拿不到响应（由外层 timeout 干净地判红，而不是挂住套件）。
+  it('store(add) 在向量档懒补：响应不等待嵌入，之后落盘', { timeout: 3000 }, () => {
+    let release;
+    return withVectorService({
+      embedderFactory: () => ({
+        embedDocuments: (texts) => new Promise((resolve) => {
+          release = () => resolve(texts.map(() => [1, 0, 0]));   // 扣住不放，直到测试明说「现在可以完成」
+        })
+      })
+    }, async (svc, { vectorsFilePath }) => {
+      const r = await svc.store({ action: 'add', type: 'fact', content: '懒补条目', tags: [], importance: 5 }, T);
+      assert.equal(r.success, true, '嵌入还被扣着，store 就必须先返回（返回不了则是本用例 timeout 红）');
+      assert.equal(existsSync(vectorsFilePath), false, '响应回来时嵌入仍未完成，不得已落盘');
+
+      // 后台发起嵌入与落盘都是异步动作：轮询到条件成立为止，而不是赌一个固定时长
+      await waitUntil(() => typeof release === 'function', 'store 返回后后台必须已发出嵌入请求');
+      release();
+      const stored = await waitVectorPayload(vectorsFilePath, '放行嵌入后的派生缓存');
+      assert.deepEqual(Object.keys(stored.vectors), [r.memory.id]);
+    });
+  });
 
   it('懒补失败（嵌入抛错）不影响 store 的成功响应', () => withVectorService({
     embedderFactory: () => ({ embedDocuments: async () => { throw new Error('endpoint down'); } })
@@ -638,9 +689,9 @@ describe('向量生命周期同步', () => {
   }, async (svc, { vectorsFilePath }) => {
     const a = await svc.store({ action: 'add', type: 'fact', content: '待删', tags: [], importance: 5 }, T);
     const b = await svc.store({ action: 'add', type: 'fact', content: '留下', tags: [], importance: 5 }, T);
-    await settle();   // 先让懒补落定，再验证删除的摘除
+    await waitUntil(() => vectorIds(vectorsFilePath).includes(a.memory.id) && vectorIds(vectorsFilePath).includes(b.memory.id), '两条懒补未全部落盘');
     await svc.store({ action: 'delete', memoryId: a.memory.id }, T);
-    const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    const stored = await waitVectorPayload(vectorsFilePath, 'delete 之后');
     assert.ok(!(a.memory.id in stored.vectors), '已删记忆不得残留向量');
     assert.ok(b.memory.id in stored.vectors, '其他记忆向量不受牵连');
   }));
@@ -673,14 +724,13 @@ describe('向量生命周期同步', () => {
     });
     return Promise.resolve(svc).then(async (s) => {
       const a = await s.store({ action: 'add', type: 'fact', content: '初稿', tags: [], importance: 5 }, T);
-      await new Promise((r) => setTimeout(r, 30));
-      assert.ok(embeddedTexts.some(x => x.includes('初稿')));
+      await waitUntil(() => embeddedTexts.some(x => x.includes('初稿')), 'add 后没发起嵌入');
 
       await s.store({ action: 'update', type: 'fact', memoryId: a.memory.id, content: '终稿', tags: [], importance: 5 }, T);
-      await new Promise((r) => setTimeout(r, 30));
-      assert.ok(embeddedTexts.some(x => x.includes('终稿')), 'update 后必须按新内容重算');
+      await waitUntil(() => embeddedTexts.some(x => x.includes('终稿')), 'update 后必须按新内容重算');
+      await waitUntil(() => vectorIds(vectorsFilePath).length === 1, '重算后的向量未落盘');
 
-      const stored = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+      const stored = await waitVectorPayload(vectorsFilePath, 'update 重算后');
       assert.deepEqual(Object.keys(stored.vectors), [a.memory.id], '同 id 覆盖，不得新增条目');
       assert.equal(stored.modelKey, 'openai-compat|mu|3');
     }).finally(() => rmSync(dir, { recursive: true, force: true }));
@@ -708,16 +758,17 @@ describe('向量生命周期同步', () => {
     embedderFactory: () => ({ embedQuery: async () => [1, 0, 0], embedDocuments: async (t) => t.map(() => [1, 0, 0]) })
   }, async (svc, { vectorsFilePath }) => {
     const low = await svc.store({ action: 'add', type: 'fact', content: '低价值', importance: 1 }, T);
-    await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
-    await settle();
-    const before = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    const high = await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
+    await waitUntil(() => vectorIds(vectorsFilePath).length === 2, '两条懒补未全部落盘');
+    const before = await waitVectorPayload(vectorsFilePath, 'compact 之前');
     assert.equal(Object.keys(before.vectors).length, 2);
 
     const r = await svc.manage({ action: 'compact' }, T);
     assert.equal(r.success, true);
     assert.equal(r.removedFacts, 1);
-    const after = JSON.parse(readFileSync(vectorsFilePath, 'utf-8'));
+    const after = await waitVectorPayload(vectorsFilePath, 'compact 之后');
     assert.ok(!(low.memory.id in after.vectors), '被淘汰记忆不得残留向量');
+    assert.ok(high.memory.id in after.vectors, '未淘汰记忆的向量不得被误删');
     assert.equal(Object.keys(after.vectors).length, 1);
   }));
 });
@@ -953,17 +1004,34 @@ describe('recall 标签口径：加分而非剔除', () => {
     assert.equal(r.results[0].content, 'beta 无标签但是唯一命中');
   }));
 
-  // 本次口径变更的已知代价，就地钉住而不是等哪天当成怪事：词面通道只能在全库尺度上判区分度。
-  // 旧实现靠标签把池子缩到 2 条，df ≤ 2 豁免恰好放行；解除硬过滤后同一个词在全库过半，
-  // 于是被判无区分度剔除，即使标签完全匹配也返回空。这是同一把尺子（已与知识库/评测集标定）的必然结果。
-  it('已知代价：查询词在全库过半时判无区分度，标签全命中也返回空', () => withService(async (svc) => {
+  // 上一轮把这条当「已知代价」钉成返回空；本轮用户批准加了 df 全塌兜底，该代价作废，改钉兜底行为。
+  it('df 全塌兜底：查询词在全库过半时忽略区分度剔除，标签上抬仍生效', () => withService(async (svc) => {
     await svc.store({ action: 'add', type: 'fact', content: 'zeta 甲', tags: ['proj'] }, T);
     await svc.store({ action: 'add', type: 'fact', content: 'zeta 乙', tags: ['proj'] }, T);
     await svc.store({ action: 'add', type: 'fact', content: 'zeta 丙', tags: [] }, T);
     await svc.store({ action: 'add', type: 'fact', content: 'zeta 丁', tags: [] }, T);
     const r = await svc.recall({ query: 'zeta', tags: ['proj'] }, null, T);
-    assert.equal(r.total, 0, '前置条件：df(zeta)=4 > max(2, 4×0.5)=2，该词已被判为无区分度');
+    assert.equal(r.total, 4, '前置：df(zeta)=4 > max(2, 4×0.5)=2，唯一单元全被判死 → 必须忽略 df 而不是返回空');
+    assert.deepEqual(r.results.slice(0, 2).map(m => m.content), ['zeta 甲', 'zeta 乙'], '兜底不得把标签上抬挤掉');
+  }));
+
+  it('兜底不放宽词面门槛：全库无人碰该词时仍零命中', () => withService(async (svc) => {
+    await svc.store({ action: 'add', type: 'fact', content: '无关内容甲', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关内容乙', tags: [] }, T);
+    const r = await svc.recall({ query: 'zzz' }, null, T);
+    assert.equal(r.total, 0, '忽略 df 只是不再因无区分度剔词，词面不沾的条目不得被放进来');
     assert.match(r.message, /memory\.noMatch/, '应说「无匹配」而不是谎称空库');
+  }));
+
+  it('兜底只在整体塌陷时生效：还有低频词幸存则高频词照旧被剔', () => withService(async (svc) => {
+    // N=5 → limit = max(2, 2.5) = 2.5；df(quark)=3 已过半，df(稀有)=1 幸存 → 不算全塌
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 一', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 二', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: 'quark 三', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '稀有标识', tags: [] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '无关', tags: [] }, T);
+    const r = await svc.recall({ query: 'quark 稀有' }, null, T);
+    assert.deepEqual(r.results.map(m => m.content), ['稀有标识'], '部分存活不得触发兜底，否则高频词又把窗口填满');
   }));
 
   it('无 query 时标签仍是硬筛选（枚举语义，行为不变）', () => withService(async (svc) => {
