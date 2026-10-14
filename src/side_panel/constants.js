@@ -1,6 +1,13 @@
 import { BUILTIN_TOOLS_UI, CATEGORY_ORDER as _CATEGORY_ORDER } from '../background/constants.js';
+import { RAG_TOOLS } from '../background/tools/rag-tools.js';
 
 export { BUILTIN_TOOLS_UI as BUILTIN_TOOLS };
+
+// RAG 知识库工具 ID 静态全集（与 background 注册表 rag-tools.js 同源）：
+// 工具勾选有效性判定必须用它而非"当前已注册"的 ragTools——代理离线时 RAG 工具会临时
+// 卸载（storage.ragTools 清空），只按已注册判定会把用户勾选误当残留 ID 清理掉
+// （详见 tool-panel.js getValidToolIdUniverse）
+export const RAG_TOOL_IDS = RAG_TOOLS.map(t => t.id);
 // 'mcp' 与 'knowledge' 为动态工具分类（BUILTIN_TOOLS_UI 快照中不含，需显式补充）
 export const CATEGORY_ORDER = [...new Set([..._CATEGORY_ORDER, 'mcp', 'knowledge'])];
 

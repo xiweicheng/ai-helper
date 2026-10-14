@@ -254,7 +254,7 @@ import {
   getVisibleTools, updateAllCategoryCounts, updateCategoryBadges,
   updateToolsPopupTitle, saveToolsFromPopup, updateToolsToggleState, updateToolsConfigIndicators,
   setVisibleMcpServicesOpen,
-  refreshToolPopupIfOpen, applyRagToolIntroduction
+  refreshToolPopupIfOpen, applyRagToolIntroduction, getValidToolIdUniverse
 } from './tool-panel.js';
 import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
@@ -3823,7 +3823,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
     if (Array.isArray(savedAgentTools)) {
       // Agent-specific：使用用户保存的列表（MCP 已改为服务级开关，不再参与工具级勾选）
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+      // 有效性全集含 RAG 静态全集：代理离线时知识库工具临时卸载不能丢用户勾选
+      const validToolIds = getValidToolIdUniverse(ragTools);
       const savedTools = savedAgentTools.filter(id => validToolIds.has(id));
       state.enabledTools = savedTools;
       // RAG 知识库工具一次性引入（首次默认启用，之后完全跟随用户勾选）
@@ -3837,7 +3838,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } else if (fallbackTools && fallbackTools.length > 0) {
       // 降级：迁移旧的全局 enabledTools 到当前智能体（保留自动添加新 builtin 工具的行为）
-      const validToolIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+      const validToolIds = getValidToolIdUniverse(ragTools);
       const savedTools = fallbackTools.filter(id => validToolIds.has(id));
       const newBuiltinTools = BUILTIN_TOOLS.filter(t => t.enabled && !savedTools.includes(t.id)).map(t => t.id);
       state.enabledTools = [...savedTools, ...newBuiltinTools];

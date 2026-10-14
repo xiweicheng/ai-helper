@@ -5,7 +5,7 @@ import state from './state.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
-import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, applyRagToolIntroduction } from './tool-panel.js';
+import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
 import { showToast } from './utils.js';
 import {
   createSession,
@@ -925,7 +925,8 @@ async function handleSessionSwitch(sessionId) {
   // 空数组是用户的显式配置（全部禁用），不能被当作"未配置"而回落默认启用
   if (isAgentSpecific || (savedTools && savedTools.length > 0)) {
     // 常规工具（内置 + RAG）；MCP 已改为服务级开关，不再参与工具级勾选
-    const validIds = new Set([...BUILTIN_TOOLS.map(t => t.id), ...ragTools.map(t => t.id)]);
+    // 有效性全集含 RAG 静态全集：代理离线时知识库工具临时卸载不能丢用户勾选
+    const validIds = getValidToolIdUniverse(ragTools);
     const existing = savedTools.filter(id => validIds.has(id));
     if (isAgentSpecific) {
       state.enabledTools = existing;
