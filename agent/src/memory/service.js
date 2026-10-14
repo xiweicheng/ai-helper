@@ -510,8 +510,8 @@ export function createMemoryService({
               .filter(isKeywordHit)
               .sort(byKeywordRank);
 
-            // 语义路：全候选算 cos 后过采信门（查询级地板 + 条目级相对落差 + 条数封顶）。
-            // 词面零命中但语义达标的条目由此能被召回；而本库无落点时整通道空返，不再填满窗口。
+            // 语义路（纯 top-K）：全候选算 cos 后过两道相对门（条目级落差 + 条数封顶），无绝对地板。
+            // 词面零命中但语义居前的条目由此能被召回；与全库无关的查询也会返回至多 maxTake 条头部（已知代价）。
             const cosPairs = candidates
               .map(m => (m.id && vecMap[m.id] ? [m.id, cosine(queryVec, vecMap[m.id])] : null))
               .filter(Boolean);

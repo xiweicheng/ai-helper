@@ -18,6 +18,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMemoryService } from '../../src/memory/service.js';
 import { FIXTURES, SEMANTIC_CASES } from '../eval/memory-recall-fixtures.js';
+import { SEMANTIC_MAX_TAKE } from '../../src/memory/fusion.js';
 
 const T = (key) => key;
 const GOLDEN = JSON.parse(readFileSync(
@@ -66,8 +67,10 @@ describe('记忆召回评测集（B 档向量通道）', () => {
         // 明细打印出来：改采信门/融合规则时靠它判断影响面，不靠猜
         console.log(`[eval-b] ${c.name} → ${ids.join(', ') || '(无命中)'} | vectorMatched=${r.vectorMatched}`);
 
-        if (c.expectNone && ids.length > 0) {
-          failures.push(`${c.name}：本库无答案却返回 ${ids.length} 条（${ids.join(',')}）`);
+        // 2026-10-14 计划五：纯 top-K 取消地板后，无关查询也返回至多 maxTake 条头部。
+        // 验收从「空返」降级为「有界」：不得返回超过 maxTake 条、不得填满 limit。
+        if (c.expectNone && ids.length > SEMANTIC_MAX_TAKE) {
+          failures.push(`${c.name}：无关查询返回 ${ids.length} 条，超过纯 top-K 上界 ${SEMANTIC_MAX_TAKE}`);
         }
         if (c.target) {
           const rank = ids.indexOf(c.target) + 1;

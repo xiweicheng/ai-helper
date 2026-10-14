@@ -362,25 +362,25 @@ describe('recall 向量通道', () => {
     assert.equal(r.results[0].content, '目标条目');
   }));
 
-  // 计划四主缺陷的回归钉：cos 落在旧绝对阈值（0.3）之上、查询级地板（0.48）之下的条目，
-  // 旧规则会当成「语义命中」并绕过词面门槛、填满 limit；新规则整通道不采信。
-  // 上面那条用 0.98/0 的手搓向量钉住不了这个区间——两档规则在那种距离上结论相同。
-  it('本库对该查询没有落点时，向量档不再填满窗口（旧阈值区间的噪声被挡掉）', () => withVectorService({
+  // 2026-10-14 计划五：记忆语义转纯 top-K，删掉查询级地板。本用例由「钉住地板把 0.4 噪声挡成空返」
+  // 反转为「钉住无地板后这些勉强相关头部被采信、但至多 maxTake 条、不填满 limit」。这是放弃
+  // 「无匹配空返」换取「任意模型开箱即用」的已知代价，护栏从空返降级为有界。
+  it('本库无强落点时纯 top-K 返回至多 maxTake 条头部（不再整通道空返）', () => withVectorService({
     embedderFactory: () => ({
       embedQuery: async () => [1, 0, 0],
-      // [0.4, 0.9165151, 0] 模长 1，与查询的 cos 恰为 0.4：≥ 0.3（旧规则命中）但 < 0.48（新规则否决）
+      // [0.4, 0.9165151, 0] 模长 1，与查询 cos=0.4：无地板后 top1=0.4，margin(0.05) 内全部进头部
       embedDocuments: async (texts) => texts.map(() => [0.4, 0.9165151, 0])
     })
   }, async (svc) => {
     await svc.store({ action: 'add', type: 'fact', content: '条目甲', tags: [], importance: 5 }, T);
     await svc.store({ action: 'add', type: 'fact', content: '条目乙', tags: [], importance: 5 }, T);
-    assert.equal((await svc.backfillVectors(T)).indexed, 2);
+    await svc.store({ action: 'add', type: 'fact', content: '条目丙', tags: [], importance: 5 }, T);
+    assert.equal((await svc.backfillVectors(T)).indexed, 3);
 
     const r = await svc.recall({ query: 'zzz', limit: 5 }, null, T);
-    assert.equal(r.success, true, '无落点应是正常空返，不是失败');
-    assert.equal(r.vectorMatched, 0);
-    assert.equal(r.total, 0, '两条 0.4 相似度的条目都不该被采信');
-    assert.deepEqual(r.results, []);
+    assert.equal(r.success, true, '无强落点仍是正常返回，不是失败');
+    assert.equal(r.vectorMatched, 2, 'top1 的 margin 内头部被采信，受 maxTake=2 封顶');
+    assert.equal(r.total, 2, '勉强相关被采信但不超过 maxTake，不填满 limit=5');
   }));
 
   it('同库内既有落点也有勉强相关时，只返回落点那条', () => withVectorService({
@@ -1089,19 +1089,21 @@ describe('词面排序：深度命中优先于浅碎块（降权不剔除）', (
     assert.equal(r.results[0].content, DEEP, '碎块条 score 更高（多处命中累加），旧实现下它在前');
   }));
 
-  // 语义地板不采信时，融合档的结果序就是词面通道名次本身——用它钉第二处排序点
-  it('融合档同口径：语义整通道否决后，词面名次仍是深度优先', () => withVectorService({
+  // 2026-10-14 计划五：纯 top-K 取消地板后语义不再整通道否决。本用例改为验证「语义命中头部条目时，
+  // 融合档结果序仍由词面深度优先主导、浅碎块不被剔除」——这才是「开没开向量档口径一致」真正要钉的。
+  it('融合档同口径：语义命中头部时，融合结果仍保持词面的深度优先', () => withVectorService({
     embedderFactory: () => ({
       embedQuery: async () => [1, 0, 0],
-      embedDocuments: async (texts) => texts.map(() => [0, 1, 0])
+      // 深度命中那条给高 cos（进语义头部），碎块条 cos=0 被 margin 砍掉、只能靠词面进
+      embedDocuments: async (texts) => texts.map((s) => (s.includes('流程说明') ? [0.98, 0.2, 0] : [0, 1, 0]))
     })
   }, async (svc) => {
     await svc.store({ action: 'add', type: 'summary', content: NOISE, title: '检索 部署', tags: ['检索', '部署'] }, T);
     await svc.store({ action: 'add', type: 'fact', content: DEEP, tags: [] }, T);
     const r = await svc.recall({ query: '检索方案 部署流程' }, null, T);
     assert.equal(r.tier, 'remote');
-    assert.equal(r.vectorMatched, 0, '前置：cos 全为 0，语义通道必须整通道否决，本断言才只吃词面名次');
+    assert.equal(r.vectorMatched, 1, '语义只采信深度命中那条头部（碎块 cos=0 被 margin 砍）');
     assert.equal(r.total, 2, '融合档同样不得剔除浅碎块');
-    assert.equal(r.results[0].content, DEEP, 'A 档改了而这里没改的话，开关一开一关的排序就不一致了');
+    assert.equal(r.results[0].content, DEEP, '碎块条语义为 0，仅靠词面名次保留，深度命中的 DEEP 仍在前');
   }));
 });

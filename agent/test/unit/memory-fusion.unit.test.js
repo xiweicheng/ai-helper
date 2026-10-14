@@ -4,24 +4,24 @@ import assert from 'node:assert/strict';
 import { selectSemanticHits, rrfFuse, RRF_K, SEMANTIC_QUERY_FLOOR } from '../../src/memory/fusion.js';
 
 describe('selectSemanticHits', () => {
-  const G = { floor: 0.48, margin: 0.05, maxTake: 2 };
+  const G = { margin: 0.05, maxTake: 2 };
 
-  it('查询级地板：top1 低于地板时整通道否决（本库对该查询没有落点）', () => {
-    // 实测形式：无关查询「今天北京天气」top1=0.4506，库内落差达 0.036 仍应全部不采信
-    assert.deepEqual(selectSemanticHits([['a', 0.4506], ['b', 0.4145], ['c', 0.4120]], G), []);
+  it('不再施加查询级地板：低分头部照样按相对远近采信（纯 top-K）', () => {
+    // 原「地板否决→整通道空」用例反转：去掉地板后，top1 及其 margin 内头部都被采信。
+    // top1=0.4506，cutoff=0.4006，三条均≥cutoff，再按 maxTake=2 截断。
+    assert.deepEqual(
+      selectSemanticHits([['a', 0.4506], ['b', 0.4145], ['c', 0.4120]], G).map(h => h[0]),
+      ['a', 'b']
+    );
   });
 
-  it('top1 恰等于地板时放行（边界取 ≥ 不取 >）', () => {
-    assert.deepEqual(selectSemanticHits([['a', G.floor], ['b', 0.1]], G).map(h => h[0]), ['a']);
-  });
-
-  it('地板达标后，相对落差之外的尾部被砍', () => {
+  it('条目级相对落差之外的尾部被砍（margin 仍生效）', () => {
     const hits = selectSemanticHits([['a', 0.63], ['b', 0.52], ['c', 0.51]], G);
     assert.deepEqual(hits.map(h => h[0]), ['a'], 'b/c 距 top1 超过 margin，不得采信');
   });
 
-  it('分离度不参与判定：top1 达标且 gap 极小时照样采信头部', () => {
-    // 这一条钉住 Task 2 去掉 gap 门的决定。将来谁要「顺手把分离度加回去」，这条会红：
+  it('分离度不参与判定：gap 极小时照样采信头部', () => {
+    // 这一条钉住去掉 gap 门的决定。将来谁要「顺手把分离度加回去」，这条会红：
     // 真实库 Q1（gap 0.0214）与无关查询天气（gap 0.0361）在 gap 轴上分不开，
     // 任何能救回 Q1 的 gap 下限都会同时放过噪声。
     const hits = selectSemanticHits([['a', 0.600], ['b', 0.599], ['c', 0.30]], G);
@@ -33,19 +33,21 @@ describe('selectSemanticHits', () => {
     assert.equal(selectSemanticHits(many, G).length, 2);
   });
 
-  it('空表不抛错；单条候选达地板时采信（极小库只有一条相关记忆，语义必须生效）', () => {
+  it('空表不抛错；单条无论分数高低都被采信（极小库只有一条记忆，语义必须生效）', () => {
     assert.deepEqual(selectSemanticHits([], G), []);
     assert.deepEqual(selectSemanticHits([['only', 0.6]], G).map(h => h[0]), ['only']);
-    assert.deepEqual(selectSemanticHits([['only', 0.2]], G), []);
+    // 无地板后，即使 cos 只有 0.2，它是唯一候选也会被采信（top-K 的已知代价）
+    assert.deepEqual(selectSemanticHits([['only', 0.2]], G).map(h => h[0]), ['only']);
   });
 
   it('非有限 cos 被过滤（维度不匹配时 cosine 返回 NaN）', () => {
     assert.deepEqual(selectSemanticHits([['a', NaN], ['b', 0.9]], G).map(h => h[0]), ['b']);
   });
 
-  it('缺省门用实测常量，且地板常量等于标定值', () => {
-    assert.equal(SEMANTIC_QUERY_FLOOR, 0.48);
-    assert.deepEqual(selectSemanticHits([['a', 0.44], ['b', 0.43]]), []);
+  it('缺省 gate 用实测常量；地板常量虽保留但 selectSemanticHits 不施加它', () => {
+    assert.equal(SEMANTIC_QUERY_FLOOR, 0.48); // 常量仍在（供标定脚本），仅线上不施加
+    // 不传 gate 走默认 margin=0.05：0.44/0.43 都在 top1 的 margin 内 → 都采信（不再被判空）
+    assert.deepEqual(selectSemanticHits([['a', 0.44], ['b', 0.43]]).map(h => h[0]), ['a', 'b']);
   });
 });
 
