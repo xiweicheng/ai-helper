@@ -73,7 +73,7 @@
 - 配置读写单点 `agent/src/memory/embedding-config.js`：`DEFAULT_MEMORY_EMBEDDING_CONFIG`（**默认关闭**）、`maskMemoryEmbeddingConfig`（key 脱敏后才出接口）、`resolveMemoryEmbeddingConfig`、`toEmbeddingProviderConfig`。
 - **`baseUrl` → `endpoint` 的字段映射必须在 `toEmbeddingProviderConfig()` 里做**：配置面统一叫 `baseUrl`（与扩展端表单一致），而 `rag/embedding` 的 OpenAI 兼容后端读 `endpoint`。这个错位单测看不见（注入的是假工厂），只有走真实 provider 的冒烟会炸。交出空白 `queryPrefix` 时须删除该键。
 - 端点（`ROUTE_METHODS` + `handleEmbeddingEndpoints`）：POST 类 `store` / `recall` / `manage` / `inject` / `reindex`（后者实际映射到 `backfillVectors`）；配置与探活类 GET 合法：`embedding-config`、`test-embedding`、`vector-status`（只读状态：条数 + 指纹陈旧判定）。业务失败一律 HTTP 400 + 原样 error；只有路径/方法不匹配才 404（扩展端据此探测旧版 agent 无记忆端点）。
-- 扩展端界面：`src/options/memory-panel.js`（状态三态、陈旧标红、重建按钮）。
+- 扩展端界面：`src/options/memory-panel.js`（状态三态、陈旧标红、重建按钮）。**总开关走「切换即持久化」**，请求体只带 `enabled`（其余字段仍是「不传即不改」），其它字段仍由「保存到代理」按钮提交。开关文案由 `syncEnabledLabel()` 唯一渲染，`options.html` 里那个 span 不挂静态 i18n 键 —— 挂上后语言切换会把「已启用」硬盖成「已停用」。
 
 ## 8. 已知限制（不是 bug，别顺手「修掉」）
 
