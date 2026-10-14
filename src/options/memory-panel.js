@@ -20,10 +20,10 @@ function currentMode() {
 }
 const isLocal = () => currentMode() === 'local';
 
-/** 本地档没有远端端点概念：地址/key/维度/探活对它无意义，隐藏且不提交 */
+/** 本地档没有远端端点概念：模型固定内置、地址/key/维度/前缀/探活对它无意义，隐藏且不提交 */
 function applyModeVisibility() {
   const hide = isLocal() ? 'none' : '';
-  ['memoryRemoteGroup', 'memoryApiKeyGroup', 'memoryDimsGroup', 'memoryPrefixGroup', 'memoryTestRow']
+  ['memoryRemoteGroup', 'memoryModelGroup', 'memoryApiKeyGroup', 'memoryDimsGroup', 'memoryPrefixGroup', 'memoryTestRow']
     .forEach((id) => { const el = $(id); if (el) el.style.display = hide; });
   const notice = $('memoryLocalNotice');
   if (notice) notice.style.display = isLocal() ? '' : 'none';
@@ -34,25 +34,30 @@ function applyModeVisibility() {
  * 为什么不能交空值：memoryModelKey = mode|modelName|dimensions，且 dimensions 取
  * `Number(d) > 0 ? floor : 0` —— 把已存 512 覆盖成 0 会改变指纹，界面冒报陈旧，
  * 逼用户做一次无谓重建。apiKey 留空同理（agent 端语义：不传即不改）。
+ * 本地档例外：模型固定内置，且必须**显式发 modelName:''**——保存层「不传即沿用旧值」，
+ * 若省略，之前配远端时存下的模型名会残留并被本地 provider 拿去 transformers 下载（local.js
+ * `modelName || 内置默认`，残留值非空即劫持默认）。
  */
 function collectPayload() {
   const payload = {
     enabled: $('memoryEnabled')?.checked === true,
     mode: currentMode()
   };
+  if (isLocal()) {
+    payload.modelName = '';
+    return payload;
+  }
   const modelName = ($('memoryModelInput')?.value || '').trim();
   if (modelName) payload.modelName = modelName;
 
-  if (!isLocal()) {
-    const baseUrl = ($('memoryBaseUrlInput')?.value || '').trim();
-    if (baseUrl) payload.baseUrl = baseUrl;
-    const apiKey = ($('memoryApiKeyInput')?.value || '').trim();
-    if (apiKey) payload.apiKey = apiKey;
-    const dims = Number($('memoryDimsInput')?.value);
-    if (Number.isFinite(dims) && dims > 0) payload.dimensions = Math.floor(dims);
-    const queryPrefix = ($('memoryPrefixInput')?.value || '').trim();
-    if (queryPrefix) payload.queryPrefix = queryPrefix;
-  }
+  const baseUrl = ($('memoryBaseUrlInput')?.value || '').trim();
+  if (baseUrl) payload.baseUrl = baseUrl;
+  const apiKey = ($('memoryApiKeyInput')?.value || '').trim();
+  if (apiKey) payload.apiKey = apiKey;
+  const dims = Number($('memoryDimsInput')?.value);
+  if (Number.isFinite(dims) && dims > 0) payload.dimensions = Math.floor(dims);
+  const queryPrefix = ($('memoryPrefixInput')?.value || '').trim();
+  if (queryPrefix) payload.queryPrefix = queryPrefix;
   return payload;
 }
 

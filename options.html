@@ -764,7 +764,7 @@
           <label data-i18n="memoryPanel.modeLabel">嵌入来源</label>
           <label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px;">
             <input type="radio" name="memoryEmbeddingMode" value="openai-compat" style="width:auto;">
-            <span data-i18n="memoryPanel.modeRemote">远端 API</span>
+            <span data-i18n="memoryPanel.modeRemote">远端服务（OpenAI 兼容接口）</span>
           </label>
           <label style="display:inline-flex; align-items:center; gap:6px;">
             <input type="radio" name="memoryEmbeddingMode" value="local" style="width:auto;">
@@ -777,7 +777,7 @@
           <input type="text" id="memoryBaseUrlInput" data-i18n-placeholder="memoryPanel.baseUrlPlaceholder" placeholder="https://api.openai.com/v1">
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="memoryModelGroup">
           <label data-i18n="memoryPanel.modelLabel">模型名称</label>
           <input type="text" id="memoryModelInput" data-i18n-placeholder="memoryPanel.modelPlaceholder" placeholder="BAAI/bge-m3">
         </div>

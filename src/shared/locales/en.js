@@ -1098,7 +1098,7 @@ export default {
     statusFresh: 'Matches current config',
     staleHint: 'Old vectors are incomparable with the new config, so semantic recall degrades silently. Click “Rebuild vector index”.',
     modeLabel: 'Embedding source',
-    modeRemote: 'Remote API',
+    modeRemote: 'Remote service (OpenAI-compatible API)',
     modeLocal: 'Local model',
     baseUrlLabel: 'Endpoint',
     baseUrlPlaceholder: 'https://api.openai.com/v1',

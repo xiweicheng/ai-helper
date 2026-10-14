@@ -53,7 +53,7 @@ const DOM = `<div class="knowledge-header"><input type="checkbox" id="memoryEnab
 <input type="radio" name="memoryEmbeddingMode" value="openai-compat" id="memModeRemote" checked>
 <input type="radio" name="memoryEmbeddingMode" value="local" id="memModeLocal">
 <div id="memoryRemoteGroup"><input type="text" id="memoryBaseUrlInput"></div>
-<input type="text" id="memoryModelInput">
+<div id="memoryModelGroup"><input type="text" id="memoryModelInput"></div>
 <div id="memoryApiKeyGroup"><input type="password" id="memoryApiKeyInput"></div>
 <div id="memoryDimsGroup"><div id="memoryTestRow"><input type="number" id="memoryDimsInput">
 <button id="memoryTestBtn" type="button"></button><span id="memoryTestResult"></span></div></div>
@@ -88,11 +88,12 @@ describe('记忆面板：加载与显隐', () => {
     expect(document.getElementById('memoryEnabled').checked).toBe(true);
   });
 
-  test('切到本地档：隐藏服务地址/key/维度/探活，显示本地说明', async () => {
+  test('切到本地档：隐藏服务地址/模型/key/维度/探活，显示本地说明', async () => {
     document.getElementById('memModeLocal').click();
     await vi.waitFor(() => {
       expect(document.getElementById('memoryTestRow').style.display).toBe('none');
       expect(document.getElementById('memoryRemoteGroup').style.display).toBe('none');
+      expect(document.getElementById('memoryModelGroup').style.display).toBe('none', '本地档模型固定内置，不给编辑');
       expect(document.getElementById('memoryApiKeyGroup').style.display).toBe('none');
       expect(document.getElementById('memoryDimsGroup').style.display).toBe('none');
       expect(document.getElementById('memoryLocalNotice').style.display).toBe('');
@@ -110,16 +111,28 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     });
   });
 
-  test('本地档保存：隐藏字段一个都不提交，绝不把维度写成 0 污染 modelKey', async () => {
+  test('本地档保存：模型固定内置，显式提交 modelName 空串清除远端残留，其余隐藏字段不提交', async () => {
     document.getElementById('memModeLocal').click();
-    await vi.waitFor(() => expect(document.getElementById('memoryTestRow').style.display).toBe('none'));
-    document.getElementById('memoryModelInput').value = 'Xenova/bge-small-zh-v1.5';
+    await vi.waitFor(() => expect(document.getElementById('memoryModelGroup').style.display).toBe('none'));
+    // 即使输入框里还残留着进本地档之前配过的远端模型名，也不能被提交（本地 provider 会拿它去 transformers 下载）
+    document.getElementById('memoryModelInput').value = 'BAAI/bge-m3';
     document.getElementById('memorySaveBtn').click();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
-      expect(post.body).toEqual({ enabled: true, mode: 'local', modelName: 'Xenova/bge-small-zh-v1.5' });
+      expect(post.body).toEqual({ enabled: true, mode: 'local', modelName: '' });
       expect('dimensions' in post.body).toBe(false, '提交 dimensions:0 会让指纹改变并冒报 stale');
       expect('baseUrl' in post.body).toBe(false);
+    });
+  });
+
+  test('远端档：模型框可见且按用户输入提交（与本地档对照）', async () => {
+    // 默认就是远端档（夹具 checked）
+    expect(document.getElementById('memoryModelGroup').style.display).not.toBe('none');
+    document.getElementById('memoryModelInput').value = 'BAAI/bge-large-en';
+    document.getElementById('memorySaveBtn').click();
+    await vi.waitFor(() => {
+      const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
+      expect(post.body.modelName).toBe('BAAI/bge-large-en');
     });
   });
 

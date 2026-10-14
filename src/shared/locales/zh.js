@@ -1098,7 +1098,7 @@ export default {
     statusFresh: '与当前配置一致',
     staleHint: '旧向量与新配置不可比，语义召回会静默退化。请点「重建向量索引」。',
     modeLabel: '嵌入来源',
-    modeRemote: '远端 API',
+    modeRemote: '远端服务（OpenAI 兼容接口）',
     modeLocal: '本地模型',
     baseUrlLabel: '服务地址',
     baseUrlPlaceholder: 'https://api.openai.com/v1',

@@ -4,6 +4,16 @@
 
 ## 2026-10-14
 
+### 变更（记忆向量配置界面：远端命名对齐知识库 + 本地档模型固定不可编辑）
+> 用户两个界面优化点，核实后均成立，开挖时顺带发现一个正确性坑。只动 `src/options` 与文案/布局，不碰代理逻辑。
+
+- **命名统一**：记忆面板「嵌入来源」的远端选项从`远端 API`/`Remote API` 改为`远端服务（OpenAI 兼容接口）`/`Remote service (OpenAI-compatible API)`，与知识库单选逐字一致（`zh.js`/`en.js` 的 `memoryPanel.modeRemote` + `options.html` 回退文本）。
+- **本地档不再可编辑模型名**（真实缺陷）：知识库把所有远端字段（含模型名）包进 `kbVecRemoteFields`，选本地时整块隐藏；记忆面板的 `applyModeVisibility` 却漏了模型框（是个无 id 的独立 `form-group`），导致本地档仍给编辑。代理端本地档本应用固定内置 `Xenova/bge-small-zh-v1.5`。修：模型框加 id `memoryModelGroup` 并纳入隐藏清单。
+- **正确性坑（只改可见性反而更危险，必须一并修）**：记忆配置保存是「字段不传就沿用旧值」。若仅隐藏模型框而不提交，之前配远端时存下的 `BAAI/bge-m3` 会残留；而 `local.js` 是 `modelName || 内置默认`，残留值非空就会劫持默认、拿它去 transformers 下载。修：`collectPayload` 本地分支**显式发 `modelName:''`** 清空（非省略）。
+- **测试**：结构测加 `memoryModelGroup` id 钉；行为测夹具把模型框包进组，「切本地隐藏」补断模型组隐藏；**改写旧钉**（原「本地档提交用户输入模型名」钉的是旧行为）为「本地档提交 `modelName:''`」，并新增一条远端档可见+按输入提交的对照钉。**反向验证**：旧源码+新测 → 恰 3 红（结构缺 id / 本地没藏模型 / 本地仍提交输入值），新源码 → 33/33 绿。
+
+口径写回 `docs/Memory-Retrieval-Design.md` §7；根 vitest **1315/1315**、`npm run build:silent` BUILD_SUCCESS；一律未推送。
+
 ### 新增（记忆检索：语义地板 0.48 的换模型重标定工具）
 > 计划五收尾项。`SEMANTIC_QUERY_FLOOR = 0.48` 不是通用常数，而是「无关查询 top1 最大值 < 地板 ≤ 相关查询 top1 最小值」这段安全窗口的中点；整段窗口随 embedding 模型平移，换模型必须重算。此前这套网格方法只写在归档的计划四里、不可执行——本轮把它固化成一条命令。
 
