@@ -35,11 +35,11 @@ test-results-probes/
 dist/
 # Wiki 构建中转目录（正式内容在独立 wiki 仓库）
 .wiki-tmp/
-.wiki-check/
+.wiki/
 # Brainstorm 视觉伴侣过程产物（mockup 会话目录）
 .superpowers/
 
 # git worktrees（隔离开发工作区）
 .worktrees/
 
-ai-helper-resources/
+.resources/
