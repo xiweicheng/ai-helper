@@ -272,7 +272,8 @@ def build_pdf():
         ["项目", "内容"],
         ["作品类型", "开源浏览器扩展（Chrome / Edge，Manifest V3）+ 本地 Agent 服务"],
         ["个人角色", "独立全栈开发（架构设计 / 前后端 / Agent 服务 / 文档与测试）"],
-        ["核心技术", "ReAct 推理循环 · 多智能体协作 · MCP 协议 · Content Script 页面操控"],
+        ["核心技术", "ReAct 推理循环 · 多智能体协作 · MCP 协议 · Content Script 页面操控 · 知识库 RAG · 长期记忆双通道"],
+        ["当前版本", "v2.2.0（已上架 Chrome / Edge 双商店）"],
         ["开源协议", "MIT License"],
     ]
     add_small_table(story, create_styled_table(info_data, col_widths=[1.2 * inch, 5.3 * inch]))
@@ -288,7 +289,7 @@ def build_pdf():
     ), styles['body']))
     story.append(Paragraph(normalize_text(
         "AI Helper 把浏览器变成 AI 的操作系统：LLM 通过 40+ 内建工具与 MCP 动态扩展工具，"
-        "像人一样理解并操作网页，同时借助本地 Agent 获得文件读写与命令执行能力。"
+        "像人一样理解并操作网页，同时借助本地 Agent 获得文件读写、命令执行、本地知识库检索与跨会话长期记忆能力。"
     ), styles['body']))
 
     # ══════════════ 二、核心能力亮点 ══════════════
@@ -299,13 +300,13 @@ def build_pdf():
         ("1. 真正的网页操控，而非只读",
          "点击、填表、拖拽、滚动、上传文件；Shadow DOM 递归穿透，可操作 React / Vue / Web Components "
          "与富文本编辑器等传统自动化工具难以触及的组件。"),
-        ("2. ReAct 推理引擎 + 三级反思质量保障",
-         "思考 - 调用工具 - 反馈 - 再推理的闭环；工具级 / 子任务 / 后置三级反思，对最终答案做 7 维度评分"
+        ("2. ReAct 推理引擎 + 反思质量保障",
+         "思考 - 调用工具 - 反馈 - 再推理的闭环；子任务 / 后置二级反思加零成本工具观察提示，对最终答案做 7 维度评分"
          "（完整性、准确性、相关性、工具使用、清晰度、安全性、效率），不合格自动修订或重试，"
          "而非直接返回 LLM 原始输出。"),
         ("3. Token 成本与长对话质量优化",
          "调用主力模型前用轻量 API 预筛选工具（40+ 缩减为 5-10 个）；按 Token 数做预算管理、"
-         "三级上下文压力监测与增量摘要压缩，长对话质量不下滑、成本可控。"),
+         "三级上下文压力监测、阈值批量压缩与任务状态锚点，长对话质量不下滑、成本可控。"),
         ("4. 多智能体协作与任务拆解",
          "内置 5 种专业助手模板 + 自定义 Agent；复杂任务可拆解为子任务，"
          "按顺序 / 并行 / 条件策略分派给不同 Agent 并行执行。"),
@@ -314,6 +315,12 @@ def build_pdf():
         ("6. 浏览器原生多格式处理与本地文件能力",
          "浏览器端直接解析 PDF / Word / Excel 等 50+ 格式，无需服务器、保护隐私；"
          "连接 Agent 后可管理本地文件、执行终端命令（黑/灰/白名单三级安全 + 文件回收站兜底）。"),
+        ("7. 本地知识库（RAG）+ 跨会话长期记忆",
+         "导入自有文档建多库本地知识库，向量 + 关键词混合检索，回答附可点击引用溯源，索引不出本机；"
+         "长期记忆采用关键词 + 语义向量双通道名次融合，支持远端/本地两档 embedding 与三档降级，压缩摘要自动沉淀入库。"),
+        ("8. 长任务可靠交付",
+         "Checkpoint 断点续接 + Service Worker 重启自动恢复；定时任务支持 Cron / 间隔 / 一次性三种调度，"
+         "到点自动重跑并写入指定会话；任务完成/失败/等待确认弹出桌面通知，不错过任何结果。"),
     ]
     for title, desc in capabilities:
         story.append(Paragraph(normalize_text(title), styles['h2']))
@@ -358,7 +365,7 @@ def build_pdf():
          "连接本地 Agent 后，可在侧边栏浏览管理本地文件、执行终端命令，并以三级安全与回收站兜底。",
          os.path.join(DOCS_IMAGES, "连接代理实现高级文件读写命令执行.png"),
          "图 6: Agent 文件管理与命令执行"),
-        ("案例 6 · 三级反思质量保障",
+        ("案例 6 · 反思质量保障",
          "每轮推理完成后自动做 7 维度质量评分，不合格自动修订或重试，而非直接返回 LLM 原始输出。",
          os.path.join(DOCS_IMAGES, "生成回答做质量评估.png"),
          "图 7: 后置反思质量评估"),
@@ -371,15 +378,15 @@ def build_pdf():
     story.append(h1_divider())
     story.append(Paragraph(normalize_text(
         "Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · IndexedDB · "
-        "OpenAI-Compatible API（含 Vision / 流式）· Node.js + WebSocket（Agent）· MCP Protocol · "
-        "marked / mermaid / pdf.js / mammoth / SheetJS · Vitest + Playwright"
+        "OpenAI-Compatible API（含 Vision / 流式 / 多厂商切换）· Embedding 服务（远端 / 本地 BGE 双档）· "
+        "Node.js + WebSocket（Agent）· MCP Protocol · marked / mermaid / pdf.js / mammoth / SheetJS · Vitest + Playwright"
     ), styles['body']))
 
     # ══════════════ 六、工程与质量 ══════════════
     story.append(Paragraph(normalize_text("六、工程与质量"), styles['h1']))
     story.append(h1_divider())
     engineering = [
-        "<b>安全</b>：敏感操作二次确认、命令三级安全、路径沙箱、配对认证、文件回收站、审计日志。",
+        "<b>安全</b>：敏感操作二次确认、命令三级安全、路径沙箱、配对认证、密钥混淆编码、文件回收站、审计日志。",
         "<b>可靠</b>：Checkpoint 断点续接 + Service Worker 重启自动恢复，长任务中断可一键继续。",
         "<b>质量</b>：ESLint 规范、模块化设计、Vitest 单元测试 + Playwright E2E、中英文国际化。",
         "<b>开源</b>：MIT 协议完全开源，结构清晰、注释完善，欢迎社区贡献。",
@@ -391,12 +398,12 @@ def build_pdf():
     story.append(Paragraph(normalize_text("七、成果速览"), styles['h1']))
     story.append(h1_divider())
     stats_data = [
-        ["40+", "50+", "7", "3", "MIT"],
-        ["内建工具（11 大类）", "可解析文件格式", "维度答案质量评分", "级反思质量保障", "完全开源"],
+        ["40+", "11", "50+", "7", "3", "MIT"],
+        ["内建工具", "工具大类", "可解析文件格式", "维度答案质量评分", "记忆检索降级档位", "完全开源"],
     ]
     add_small_table(story, create_styled_table(
         stats_data,
-        col_widths=[CONTENT_WIDTH / 5] * 5
+        col_widths=[CONTENT_WIDTH / 6] * 6
     ))
 
     # ══════════════ 八、了解更多 ══════════════
@@ -405,7 +412,8 @@ def build_pdf():
     links = [
         "<b>在线网站</b>：https://xiweicheng.github.io/ai-helper/",
         "<b>开源仓库</b>：https://github.com/xiweicheng/ai-helper",
-        "<b>Edge 商店</b>：已上架 Microsoft Edge Add-ons",
+        "<b>商店上架</b>：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.2.0）",
+        "<b>代理端安装</b>：curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash（Windows 用 install.ps1），或 npm install -g ai-helper-agent",
         "<b>演示视频</b>：产品介绍（约 4 分钟）/ 自动填表 Demo（67 秒），见仓库 docs/videos/",
     ]
     for link in links:

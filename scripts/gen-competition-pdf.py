@@ -266,11 +266,11 @@ def gen_architecture_diagram():
         {"y": 8.2, "color": "#EBF4FF", "border": "#BEE3F8", "title": "UI 层 - Side Panel",
          "items": ["对话面板/Markdown渲染", "多会话管理", "执行日志/Token统计", "工作目录/文件预览", "划词工具栏/Agent选择器"]},
         {"y": 6.0, "color": "#FFF9C4", "border": "#FFF176", "title": "核心逻辑层 - Background Service Worker",
-         "items": ["消息路由", "ReAct 推理循环", "三级反思系统", "工具执行调度", "工具预筛选", "Agent 通信", "流式控制"]},
+         "items": ["消息路由", "ReAct 推理循环", "二级反思系统", "工具执行调度", "工具预筛选", "上下文压缩", "Agent 通信"]},
         {"y": 3.8, "color": "#F3E5F5", "border": "#CE93D8", "title": "页面执行层 - Content Script",
          "items": ["页面内容提取", "页面交互操作", "Shadow DOM 穿透", "划词浮动工具栏"]},
         {"y": 1.6, "color": "#E8F5E9", "border": "#A5D6A7", "title": "代理服务层 - Node.js Agent",
-         "items": ["文件系统/路径沙箱", "命令执行/三级安全", "Skill 系统", "MCP 协议", "审计日志/回收站"]},
+         "items": ["文件系统/路径沙箱", "命令执行/三级安全", "Skill/MCP 协议", "知识库 RAG", "长期记忆双通道", "审计/回收站"]},
     ]
 
     for layer in layers:
@@ -357,7 +357,7 @@ def gen_react_flow_diagram():
     add_diamond(3.0, 4.0, 4, 1.0, "需要调用工具?", "#FFF9C4", "#FDD835")
 
     add_box(0.3, 2.5, 3, 0.8, "执行工具 (并行/串行)", "#E1BEE7", "#AB47BC")
-    add_box(0.3, 1.2, 3, 0.8, "工具级反思/结果评估", "#FFCDD2", "#EF5350")
+    add_box(0.3, 1.2, 3, 0.8, "工具观察提示/结果处理", "#FFCDD2", "#EF5350")
 
     add_box(6.7, 2.5, 3, 0.8, "生成最终答案", "#C8E6C9", "#66BB6A")
     add_box(6.7, 1.2, 3, 0.8, "后置反思 7维度评分", "#FFCDD2", "#EF5350")
@@ -395,17 +395,17 @@ def gen_tool_distribution_chart():
     init_plot_env()
     import matplotlib.pyplot as plt
 
-    categories = ['内容提取', '页面交互', '表单与输入', '标签页管理', '书签与历史',
-                  '存储管理', '网络请求', '媒体与输出', '调试与开发', 'AI 协作', 'Agent 服务']
-    counts = [6, 5, 4, 2, 1, 3, 1, 5, 3, 7, 5]
+    categories = ['内容提取', '页面交互', '表单与输入', '标签页与浏览器',
+                  '存储与网络', '媒体与输出', '调试与开发', 'AI 协作', 'Agent 服务', '长期记忆', '知识库检索']
+    counts = [6, 5, 5, 3, 4, 7, 2, 6, 6, 1, 3]
     colors_list = ['#2b6cb0', '#3182ce', '#4299e1', '#63b3ed', '#90cdf4',
-                    '#bee3f8', '#c3dafe', '#4fd1c5', '#48bb78', '#38a169', '#276749']
+                    '#bee3f8', '#4fd1c5', '#38a169', '#276749', '#718096', '#c3dafe']
 
     fig, ax = plt.subplots(figsize=(CONTENT_WIDTH / 72, 4))
     wedges, texts, autotexts = ax.pie(counts, labels=categories, autopct='%1.0f%%',
                                       colors=colors_list, startangle=90,
                                       textprops={'fontsize': 8})
-    ax.set_title('内建工具分类分布 (40+ 项)', fontsize=13, fontweight='bold')
+    ax.set_title('内建工具分类分布 (40+ 项 / 11 大类)', fontsize=13, fontweight='bold')
     fig.tight_layout()
     output_path = os.path.join(OUTPUT_DIR, "tool_distribution.png")
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -475,7 +475,7 @@ def build_pdf():
         ["项目负责人", "席维成"],
         ["所在单位", "平安"],
         ["开源协议", "MIT License"],
-        ["版本号", "v1.0.0"],
+        ["版本号", "v2.2.0（已上架 Chrome / Edge 双商店）"],
     ]
     cover_table = create_styled_table(info_data, col_widths=[1.5 * inch, 3.5 * inch])
     story.append(cover_table)
@@ -505,6 +505,7 @@ def build_pdf():
         "<b>长文档阅读成本高</b>：阅读长篇技术文档、合同条款时，用户需要人工总结关键信息，缺乏即时智能摘要能力。",
         "<b>缺乏质量保障</b>：传统 AI 工具直接返回 LLM 原始输出，缺少对工具调用结果和最终答案的质量校验机制，可靠性不足。",
         "<b>工具扩展性弱</b>：大多数 AI 工具内置固定功能集，用户无法根据自身需求灵活扩展自定义工具和技能。",
+        "<b>上下文与记忆断层</b>：会话关闭即一切归零，长对话因超出上下文窗口而质量下滑，跨会话信息无法沉淀复用，重复性任务仍需人工重复发起。",
     ]
     for point in pain_points:
         story.append(Paragraph(normalize_text(point), styles['bullet']))
@@ -519,7 +520,7 @@ def build_pdf():
     story.append(Paragraph(normalize_text(
         "项目核心目标是将浏览器转化为 AI 的操作系统——LLM 通过 40+ 项内建工具和 MCP 动态扩展工具，"
         "像人类一样操作网页：点击、填表、拖拽、滚动、截图、提取数据，同时通过本地代理服务获得文件读写、"
-        "命令执行和 Skill 技能系统能力，实现真正的浏览器端 AI 办公助手。"
+        "命令执行、Skill 技能系统、本地知识库（RAG）检索和跨会话长期记忆能力，实现真正的浏览器端 AI 办公助手。"
     ), styles['body']))
 
     story.append(Paragraph(normalize_text("1.3 目标用户"), styles['h2']))
@@ -551,11 +552,11 @@ def build_pdf():
     # Architecture layers
     arch_layers = [
         ["层级", "模块", "职责"],
-        ["UI 层\nSide Panel", "side_panel.html + src/side_panel/", "对话管理、多会话标签页、Markdown/Mermaid 渲染、工具面板、执行日志、工作目录管理、Agent 选择器、图片标注编辑"],
-        ["核心逻辑层\nBackground", "src/background/ (Service Worker)", "消息路由、ReAct 推理循环、三级反思系统、工具执行调度、工具预筛选、Agent 通信、流式响应控制、Token 统计"],
+        ["UI 层\nSide Panel", "side_panel.html + src/side_panel/", "对话管理、多会话标签页、Markdown/Mermaid 渲染、工具面板、执行日志、工作目录管理、Agent 选择器、图片标注编辑、定时任务、记忆弹层"],
+        ["核心逻辑层\nBackground", "src/background/ (Service Worker)", "消息路由、ReAct 推理循环、二级反思（子任务+后置）与工具观察提示、工具执行调度、工具预筛选、上下文压缩、Agent 通信、流式响应控制、Token 统计"],
         ["页面执行层\nContent Script", "src/content/ (注入到用户页面)", "页面内容提取、可交互元素查询、点击/填表/拖拽等交互操作、Shadow DOM 递归穿透、划词浮动工具栏"],
-        ["代理服务层\nAgent", "agent/ (Node.js 独立进程)", "文件系统操作、命令执行（三级安全）、Skill 系统、MCP 协议扩展、路径沙箱、文件回收站、审计日志"],
-        ["数据持久化层\nStorage", "src/storage/ + chrome.storage", "IndexedDB（会话/原型/统计/断点）、chrome.storage.local（配置）、chrome.storage.session（跨重启恢复）"],
+        ["代理服务层\nAgent", "agent/ (Node.js 独立进程)", "文件系统操作、命令执行（三级安全）、Skill 系统、MCP 协议扩展、知识库 RAG 混合检索、长期记忆服务（关键词+语义向量双通道）、路径沙箱、文件回收站、审计日志"],
+        ["数据持久化层\nStorage", "src/storage/ + chrome.storage", "IndexedDB（会话/原型/统计/断点/收藏）、chrome.storage.local（配置，密钥混淆编码）、chrome.storage.session（跨重启恢复）、Agent 端记忆与知识库文件真源"],
     ]
     story.append(Spacer(1, 6))
     add_small_table(story, create_styled_table(arch_layers, col_widths=[1.1 * inch, 1.8 * inch, 3.6 * inch]))
@@ -566,13 +567,13 @@ def build_pdf():
     ), styles['body']))
 
     flow_steps = [
-        "用户输入 -> Side Panel：选择 Agent、附加图片/文件、选择 Skill/MCP 服务、可选 @网页上下文",
+        "用户输入 -> Side Panel：选择 Agent、附加图片/文件、选择 Skill/MCP 服务/知识库、可选 @网页上下文",
         "Side Panel -> Background：通过 chrome.runtime.sendMessage 发送 CALL_API 请求",
-        "Background 核心处理：MCP 工具注入 -> 工具预筛选 -> ReAct 推理循环",
-        "ReAct 循环：Token 预算管理 -> 上下文压力监测 -> LLM API 调用（带流式响应）",
-        "工具执行：敏感操作确认 -> Background/Content Script/Agent 分发执行 -> 工具级反思",
+        "Background 核心处理：MCP 工具注入 -> 工具预筛选 -> 长期记忆三级注入 -> ReAct 推理循环",
+        "ReAct 循环：Token 预算管理 -> 上下文压力监测与压缩 -> 任务状态锚点回灌 -> LLM API 调用（带流式响应）",
+        "工具执行：敏感操作确认 -> Background/Content Script/Agent 分发执行 -> 工具观察提示（超大结果可卸载到工作目录文件）",
         "质量保障：后置反思 7 维度评分 -> 合格/修订/重试决策",
-        "结果返回：流式输出到 Side Panel -> Markdown/Mermaid 渲染 -> Token 统计更新",
+        "结果返回：流式输出到 Side Panel -> Markdown/Mermaid 渲染 -> Token 统计更新 -> 按需桌面通知",
     ]
     for i, step in enumerate(flow_steps):
         story.append(Paragraph(normalize_text(f"{i+1}. {step}"), styles['bullet']))
@@ -593,8 +594,11 @@ def build_pdf():
         ["工具预筛选", "正式调用主力模型前，用轻量 API 预判所需工具，将 40+ 工具缩减为 5-10 个，大幅节省 Token"],
         ["推理循环", "LLM 思考 -> 决定调用工具 -> 执行工具 -> 结果反馈 -> 继续推理，直至生成最终答案"],
         ["Token 预算管理", "按模型上下文窗口动态计算可用预算（80%），按 Token 数而非消息数智能截断"],
-        ["上下文压力监测", "三级监测（safe/warning/critical），自动触发摘要压缩"],
-        ["并行工具执行", "同一轮中标记为可并行的工具通过 Promise.all 并发执行"],
+        ["任务状态锚点", "plan_task 拆解后维护 taskState，每次 API 调用前瞬态回灌计划进度，长任务被压缩/摘要后不丢失目标"],
+        ["大工具结果卸载", "超阈值工具结果优先卸载到 Agent 工作目录文件，全文可回读，无代理时回退智能截断"],
+        ["阈值自动压缩", "上下文占用 ≥ 85% 时发送前静默触发批量压缩，结构化四小节摘要，失败不阻塞发送"],
+        ["上下文压力监测", "三级监测（safe/warning/critical），自动触发摘要压缩；400 超限自动压缩重试，429 尊重 Retry-After"],
+        ["并行工具执行", "同一轮中标记为可并行的工具按连续分组通过 Promise.all 并发执行，结果按声明顺序回写"],
         ["Checkpoint 断点", "每轮推理后自动保存断点到 IndexedDB，支持中断后一键恢复，7 天 TTL"],
         ["多级超时控制", "API 超时 5min、工具超时 10min、整体循环超时 30min"],
         ["SW 重启恢复", "Keepalive 端口监测 SW 静默重启，自动恢复后台任务状态"],
@@ -602,36 +606,37 @@ def build_pdf():
     add_small_table(story, create_styled_table(react_features, col_widths=[1.6 * inch, 4.9 * inch]))
 
     # ── 2.4 反思系统 ──
-    story.append(Paragraph(normalize_text("2.4 三级反思系统"), styles['h2']))
+    story.append(Paragraph(normalize_text("2.4 反思系统"), styles['h2']))
     story.append(Paragraph(normalize_text(
-        "AI Helper 创新性地引入三级反思系统，从工具执行到最终答案全链路保障输出质量："
+        "AI Helper 创新性地引入反思系统，从工具执行到最终答案全链路保障输出质量"
+        "（工具层为零成本内联提示，子任务与后置层为独立反思）："
     ), styles['body']))
 
     reflection_data = [
         ["反思级别", "触发条件", "评估维度", "决策"],
-        ["工具级反思", "工具返回错误/空结果/结果过大(>50000字符)/连续3次失败", "结果有用性快速评估", "反馈 LLM 调整策略"],
+        ["工具观察提示", "工具返回错误/空结果/结果超大被压缩", "零成本内联规则提示（不再单独发起 LLM 反思）", "反馈 LLM 调整策略"],
         ["子任务反思", "仅标记为 complex 的子任务（可配置）", "完整性和相关性", "通过/重试"],
         ["后置反思", "每轮推理完成后自动执行", "完整性/准确性/相关性/工具使用/清晰度/安全性/效率（7维度）", "通过(>=7)/修订(5-7)/重试(<5)"],
     ]
     add_small_table(story, create_styled_table(reflection_data, col_widths=[1.0 * inch, 2.2 * inch, 1.8 * inch, 1.5 * inch]))
 
     story.append(Spacer(1, 6))
-    ref_img_path = os.path.join(DOCS_IMAGES, "推理过程反思配置.png")
+    ref_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-03-反思质量保障.png")
     if os.path.exists(ref_img_path):
         add_figure(story, ref_img_path, "图 3: 反思系统配置界面", styles)
 
     # ── 2.5 工具系统 ──
     story.append(Paragraph(normalize_text("2.5 工具系统（40+ 内建 + MCP 动态扩展）"), styles['h2']))
     story.append(Paragraph(normalize_text(
-        "AI Helper 内建 40+ 项工具，覆盖内容提取、页面交互、表单操作、标签页管理、存储管理、"
-        "网络请求、媒体输出、调试开发、AI 协作和 Agent 服务等 11 大类别。"
+        "AI Helper 内建 40+ 项工具，覆盖内容提取、页面交互、表单操作、标签页与浏览器数据、存储与网络、"
+        "媒体输出、调试开发、AI 协作、Agent 服务、长期记忆和知识库检索等 11 大类别。"
         "同时通过 MCP（Model Context Protocol）协议支持动态扩展第三方工具，实现无限能力延伸。"
     ), styles['body']))
 
     if tool_chart_path and os.path.exists(tool_chart_path):
         add_figure(story, tool_chart_path, "图 4: 内建工具分类分布", styles)
 
-    tools_screenshot = os.path.join(DOCS_IMAGES, "丰富自动化LLM调用工具.png")
+    tools_screenshot = os.path.join(DOCS_IMAGES, "new", "ai-helper-input-06-工具配置弹窗.png")
     if os.path.exists(tools_screenshot):
         add_figure(story, tools_screenshot, "图 4a: 工具选择面板", styles)
 
@@ -639,16 +644,15 @@ def build_pdf():
         ["工具类别", "数量", "代表性工具"],
         ["内容提取", "6", "page_content, extract_data, query_elements, search_in_page, iframe_content, scroll_collect"],
         ["页面交互", "5", "interact_element, drag_drop, scroll_to, wait_element, wait_navigation"],
-        ["表单与输入", "4", "fill_form, keyboard_input, file_upload, select_dropdown"],
-        ["标签页管理", "2", "manage_tab, list_tabs"],
-        ["书签与历史", "1", "search_browser_data"],
-        ["存储管理", "3", "manage_cookies, manage_storage, clear_data"],
-        ["网络请求", "1", "fetch_url (超时/重试/指数退避)"],
-        ["媒体与输出", "5", "capture_page, clipboard, qrcode, download_file, notify"],
-        ["调试与开发", "3", "inject_css, browser_info, highlight_text"],
-        ["AI 协作", "7", "clarify_question, plan_task, preview_ui, search_chats, dispatch_task, manage_agent, exec_log"],
-        ["Agent 服务", "5", "agent_file, agent_trash, agent_exec, agent_search, agent_skill"],
+        ["表单与输入", "5", "fill_form, keyboard_input, file_upload, select_dropdown, handle_dialog"],
+        ["标签页与浏览器数据", "3", "manage_tab, list_tabs, search_browser_data"],
+        ["存储与网络", "4", "manage_cookies, manage_storage, clear_data, fetch_url (超时/重试/指数退避)"],
+        ["媒体与输出", "7", "capture_page, clipboard, qrcode, download_file, notify, inject_css, browser_info"],
+        ["调试与开发", "2", "debug_page, highlight_text"],
+        ["AI 协作", "6", "clarify_question, plan_task, preview_ui, search_chats, dispatch_task, exec_log"],
+        ["Agent 服务", "6", "agent_file, agent_trash, agent_exec, agent_search, agent_skill, manage_agent"],
         ["长期记忆", "1", "agent_memory (store/recall/manage)"],
+        ["知识库检索", "3", "knowledge_search, knowledge_ingest, knowledge_list"],
     ]
     add_small_table(story, create_styled_table(tools_data, col_widths=[1.3 * inch, 0.6 * inch, 4.6 * inch], is_large=True))
 
@@ -663,14 +667,15 @@ def build_pdf():
         "<b>上下文窗口自动检测</b>：根据模型名自动推断上下文窗口大小，支持自定义模型映射",
         "<b>消息预算计算</b>：消息预算 = 上下文窗口 - 系统提示词 - 工具定义 - 输出预留（20%）",
         "<b>三级压力监测</b>：safe（<60%）、warning（60-80%）、critical（>80%），自动触发不同策略",
-        "<b>上下文增量摘要</b>：压力达到 critical 时自动对早期工具调用轮次生成 LLM 摘要，替代原始内容",
+        "<b>上下文增量摘要</b>：压力达到 critical 时自动对早期工具调用轮次生成 LLM 摘要，替代原始内容；超阈值时一次 LLM 调用将多旧轮次批量压缩为结构化四小节摘要（中英双语）",
+        "<b>阈值半自动压缩</b>：上下文占用 ≥ 85% 时发送前静默触发压缩（开关默认关），失败不阻塞发送；压缩摘要可按 memoryId 去重沉淀为长期记忆",
         "<b>引用压缩</b>：长引用/选中内容自动压缩为摘要，避免永久占据上下文空间",
         "<b>Token 级截断</b>：70% 开头 + 30% 结尾 + 截断标记，保留 tool_calls/tool 消息配对完整性",
     ]
     for feature in ctx_features:
         story.append(Paragraph(normalize_text(feature), styles['bullet']))
 
-    token_img_path = os.path.join(DOCS_IMAGES, "大模型token耗费统计.png")
+    token_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-panel-03-Token用量统计.png")
     if os.path.exists(token_img_path):
         add_figure(story, token_img_path, "图 5: Token 统计面板", styles)
 
@@ -696,7 +701,7 @@ def build_pdf():
         "包括 contenteditable 编辑器、prosemirror 富文本编辑器等，这是传统自动化工具难以做到的。"
     ), styles['body']))
 
-    react_img_path = os.path.join(DOCS_IMAGES, "推理循环配置化.png")
+    react_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-02-推理循环配置.png")
     if os.path.exists(react_img_path):
         add_figure(story, react_img_path, "图 6: ReAct 推理循环配置", styles)
 
@@ -718,11 +723,11 @@ def build_pdf():
         "这是浏览器内最自然的人机交互方式——用户无需切换到独立 AI 应用。"
     ), styles['body']))
 
-    selection_img_path = os.path.join(DOCS_IMAGES, "页面划词便捷AI问答.png")
+    selection_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-selection-01-划词工具条.png")
     if os.path.exists(selection_img_path):
         add_figure(story, selection_img_path, "图 8: 划词浮动工具栏", styles)
 
-    toolbar_config_img = os.path.join(DOCS_IMAGES, "划词工具栏自定义配置.png")
+    toolbar_config_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-04-划词工具栏.png")
     if os.path.exists(toolbar_config_img):
         add_figure(story, toolbar_config_img, "图 8a: 划词工具栏自定义配置", styles)
 
@@ -745,11 +750,11 @@ def build_pdf():
         "分派给不同 Agent 并行处理，实现真正的多 Agent 协作。"
     ), styles['body']))
 
-    agent_img_path = os.path.join(DOCS_IMAGES, "多智能体助手自由切换.png")
+    agent_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-input-07-助手切换下拉.png")
     if os.path.exists(agent_img_path):
         add_figure(story, agent_img_path, "图 10: 多智能体助手管理", styles)
 
-    agent_custom_img = os.path.join(DOCS_IMAGES, "智能体助手自定义.png")
+    agent_custom_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-05-智能体自定义.png")
     if os.path.exists(agent_custom_img):
         add_figure(story, agent_custom_img, "图 10a: 智能体助手自定义", styles)
 
@@ -760,11 +765,11 @@ def build_pdf():
         "同时支持终端命令执行，采用黑/灰/白名单三级安全机制，敏感操作需确认。"
     ), styles['body']))
 
-    file_img_path = os.path.join(DOCS_IMAGES, "连接代理实现高级文件读写命令执行.png")
+    file_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-menu-action-05-命令执行审计.png")
     if os.path.exists(file_img_path):
         add_figure(story, file_img_path, "图 11: Agent 文件管理与命令执行", styles)
 
-    agent_config_img = os.path.join(DOCS_IMAGES, "代理配置.png")
+    agent_config_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-menu-07-代理.png")
     if os.path.exists(agent_config_img):
         add_figure(story, agent_config_img, "图 11a: 代理服务配置", styles)
 
@@ -775,7 +780,7 @@ def build_pdf():
         "这让 AI Helper 具备了无限的扩展能力——从数据库查询到 API 调用，从代码执行到文件转换。"
     ), styles['body']))
 
-    mcp_img_path = os.path.join(DOCS_IMAGES, "MCP和Skill工具箱配置.png")
+    mcp_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-06-MCP与技能扩展.png")
     if os.path.exists(mcp_img_path):
         add_figure(story, mcp_img_path, "图 12: MCP 与 Skill 工具箱配置", styles)
 
@@ -785,15 +790,15 @@ def build_pdf():
         "从 API 基础配置到模型参数微调，从提示词管理到 UI 原型生成，覆盖完整的工作流配置。"
     ), styles['body']))
 
-    api_config_img = os.path.join(DOCS_IMAGES, "大模型对接基础配置.png")
+    api_config_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-01-模型配置.png")
     if os.path.exists(api_config_img):
         add_figure(story, api_config_img, "图 12a: 大模型对接基础配置", styles)
 
-    model_param_img = os.path.join(DOCS_IMAGES, "模型参数便捷按需调整.png")
+    model_param_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-input-08-模型设置弹窗.png")
     if os.path.exists(model_param_img):
         add_figure(story, model_param_img, "图 12b: 模型参数便捷调整", styles)
 
-    prompt_img = os.path.join(DOCS_IMAGES, "自定义提示词便捷触发发送.png")
+    prompt_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-input-01-slash-提示词面板.png")
     if os.path.exists(prompt_img):
         add_figure(story, prompt_img, "图 12c: 自定义提示词管理", styles)
 
@@ -804,9 +809,35 @@ def build_pdf():
         "这为前端开发者和产品经理提供了从想法到原型的快速验证路径。"
     ), styles['body']))
 
-    ui_proto_img = os.path.join(DOCS_IMAGES, "对话生成静态页面.png")
+    ui_proto_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-menu-04-网页.png")
     if os.path.exists(ui_proto_img):
         add_figure(story, ui_proto_img, "图 12d: 对话生成 UI 原型页面", styles)
+
+    story.append(Paragraph(normalize_text("3.10 本地知识库问答（RAG）"), styles['h2']))
+    story.append(Paragraph(normalize_text(
+        "连接 Agent 后，用户可在选项页「知识库」创建多个知识库，一键导入 PDF / Word / Excel / PPT / "
+        "Markdown / HTML / CSV 等文档，索引完全存储在本机，文件不出本地。提问时向量 + 关键词混合检索"
+        "（中文采用最长命中片段化匹配，消除碎词噪声），回答附带可点击的引用来源气泡，支持多库同时检索。"
+    ), styles['body']))
+    kb_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-options-07-本地知识库.png")
+    if os.path.exists(kb_img):
+        add_figure(story, kb_img, "图 12e: 本地知识库配置", styles)
+
+    story.append(Paragraph(normalize_text("3.11 跨会话长期记忆"), styles['h2']))
+    story.append(Paragraph(normalize_text(
+        "AI Helper 具备跨会话的长期记忆能力：重要信息可通过 agent_memory 工具存入本机记忆库，"
+        "后续对话按三级注入策略自动召回。检索采用关键词 + 语义向量双通道 RRF 名次融合，"
+        "支持远端 OpenAI 兼容 embedding 与本地 BGE 模型两档。会话压缩摘要还能按 memoryId 去重自动沉淀为长期记忆。"
+    ), styles['body']))
+
+    story.append(Paragraph(normalize_text("3.12 定时任务与结果通知"), styles['h2']))
+    story.append(Paragraph(normalize_text(
+        "支持 Cron / 间隔 / 一次性三种调度的定时任务：到点自动重跑用户指令，结果写入指定会话，带完整运行历史。"
+        "任务完成/失败、定时任务结束、AI 等待确认或澄清时弹出桌面通知，点击即可回到侧边栏，长任务不错过。"
+    ), styles['body']))
+    sched_img = os.path.join(DOCS_IMAGES, "new", "ai-helper-panel-04-定时任务.png")
+    if os.path.exists(sched_img):
+        add_figure(story, sched_img, "图 12g: 定时任务面板", styles)
 
     # ══════════════════════════════════════════════════════════════════════
     # 4. 创新点
@@ -823,9 +854,9 @@ def build_pdf():
                     "这让 AI 从被动问答进化为主动操控。",
         },
         {
-            "title": "4.2 三级反思质量保障体系",
-            "desc": "创新的预筛选 -> 工具级反思 -> 子任务反思 -> 后置反思多级质量保障机制。"
-                    "工具级反思在工具执行后快速评估结果有用性；子任务反思评估复杂子任务完整性；"
+            "title": "4.2 反思质量保障体系",
+            "desc": "创新的预筛选 -> 工具观察提示 -> 子任务反思 -> 后置反思多级质量保障机制。"
+                    "工具观察提示以零成本内联规则在工具执行后提示异常（不再单独发起 LLM 反思）；子任务反思评估复杂子任务完整性；"
                     "后置反思对最终答案进行 7 维度质量评分（完整性/准确性/相关性/工具使用/清晰度/安全性/效率）。"
                     "根据评分自动决定通过、修订或重新执行，确保输出质量而非简单返回 LLM 原始结果。",
         },
@@ -833,7 +864,7 @@ def build_pdf():
             "title": "4.3 工具预筛选与 Token 成本优化",
             "desc": "40+ 个工具定义会消耗大量 Token。AI Helper 在每次调用主力模型前，用一次轻量 API 预判所需工具，"
                     "将工具缩减为 5-10 个相关项，大幅节省成本。配合 Token 预算管理（按模型上下文窗口动态计算）、"
-                    "上下文压力三级监测（safe/warning/critical）和增量摘要压缩，实现长对话质量不下滑。",
+                    "上下文压力三级监测（safe/warning/critical）、增量摘要与阈值批量压缩，实现长对话质量不下滑。",
         },
         {
             "title": "4.4 多 Agent 协作与任务拆解",
@@ -863,12 +894,17 @@ def build_pdf():
                     "Excel 表格渲染）、批量上传下载、拖拽移动、虚拟滚动优化大目录性能。",
         },
         {
-            "title": "4.8 双平台架构（Chrome + Electron）",
-            "desc": "通过平台适配层（platform/adapter.js）将 Chrome API 调用与业务逻辑分离，"
-                    "实现同一套代码同时发布为 Chrome 扩展和 Electron 桌面应用。"
-                    "Chrome 版本保留完整的浏览器操控能力（划词工具栏、页面自动化），"
-                    "Electron 版本保留全部 AI 自主能力（ReAct 循环、工具执行、文件操作），"
-                    "用户可根据使用场景选择最适合的形态。",
+            "title": "4.8 本地知识库与跨会话长期记忆双引擎",
+            "desc": "完全在本机的知识增强体系：知识库（RAG）侧支持多库导入与向量 + 关键词混合检索，"
+                    "中文采用最长命中片段化匹配（不依赖分词、消除子串误伤），回答附可点击引用溯源，检索失效时三级降级；"
+                    "长期记忆侧业务逻辑整体下推 Agent 端，与数据文件同进程保证原子性，检索采用关键词 + 语义向量双通道 RRF 名次融合，"
+                    "支持远端/本地两档 embedding 与三档降级，配合三级注入策略与压缩摘要自动沉淀。索引与记忆全部存本机，文件不出本地。",
+        },
+        {
+            "title": "4.9 长任务全链路可靠性",
+            "desc": "从推理到交付的工程级保障：任务状态锚点防止长任务被压缩后丢失目标；大工具结果卸载到工作目录文件保留全文可回读；"
+                    "阈值批量压缩与 400 超限自愈、429 Retry-After 退避；Checkpoint 断点 + SW 重启恢复扛住 MV3 生命周期；"
+                    "定时任务到点自动重跑；关键节点桌面通知。配合密钥混淆编码、配对认证与审计日志，具备长期运行的安全底座。",
         },
     ]
 
@@ -883,33 +919,37 @@ def build_pdf():
     story.append(h1_divider())
 
     story.append(Paragraph(normalize_text(
-        "AI Helper 已完成 v1.0.0 版本的全部核心功能开发，当前功能完成度如下："
+        "AI Helper 已完成 v2.2.0 版本的全部核心功能开发（已上架 Chrome / Edge 双商店），当前功能完成度如下："
     ), styles['body']))
 
     completion_data = [
         ["功能模块", "完成状态", "完成度", "备注"],
-        ["ReAct 推理循环", "已完成", "100%", "含工具预筛选、并行执行、Checkpoint 断点"],
-        ["三级反思系统", "已完成", "100%", "工具级/子任务/后置反思，7 维度评分"],
+        ["ReAct 推理循环", "已完成", "100%", "含工具预筛选、任务锚点、部分并行、Checkpoint 断点"],
+        ["二级反思系统", "已完成", "100%", "子任务/后置反思 + 零成本工具观察提示，7 维度评分"],
         ["40+ 内建工具", "已完成", "100%", "11 大类别，含敏感操作确认"],
-        ["多 Agent 管理", "已完成", "100%", "5 种模板 + 自定义 + 子任务分派"],
+        ["多 Agent 管理", "已完成", "100%", "5 种模板 + 自定义 + 子任务分派与计划视图"],
         ["MCP 协议扩展", "已完成", "100%", "多 Server + 动态注入 + 环境变量"],
         ["Skill 系统", "已完成", "100%", "Workflow + Agent 两种类型"],
+        ["本地知识库（RAG）", "已完成", "100%", "多库导入 + 混合检索 + 引用溯源 + 三级降级"],
+        ["长期记忆系统", "已完成", "100%", "关键词 + 语义向量双通道 + 三级注入 + 配置界面"],
+        ["会话上下文压缩", "已完成", "100%", "阈值半自动压缩 + 结构化摘要 + 沉淀入库"],
+        ["定时任务", "已完成", "100%", "Cron/间隔/一次性 + 运行历史 + 失败通知"],
+        ["桌面通知", "已完成", "100%", "完成/失败/等待确认全节点覆盖"],
+        ["多厂商配置切换", "已完成", "100%", "多套 OpenAI 兼容配置，侧边栏随切随用"],
         ["多模态输入", "已完成", "100%", "图片识别 + 文件提取（50+ 格式）+ 标注编辑"],
         ["划词浮动工具栏", "已完成", "100%", "自定义按钮 + 域名屏蔽 + 追问面板"],
         ["上下文管理", "已完成", "100%", "Token 预算 + 三级压力监测 + 增量摘要"],
         ["工作目录管理", "已完成", "100%", "目录树 + 上传/下载 + 文件预览 + 回收站"],
-        ["多会话管理", "已完成", "100%", "标签页 + 归档 + 导出/导入"],
-        ["Electron 桌面版", "已完成", "90%", "核心功能可用，部分浏览器特性降级"],
+        ["多会话管理", "已完成", "100%", "标签页 + 归档 + 导出/导入（Word/PDF/图片/JSON）"],
         ["消息搜索与收藏", "已完成", "100%", "全文搜索 + AND/OR 语法 + 书签收藏"],
-        ["长期记忆系统", "已完成", "100%", "store/recall/manage + 自动压缩"],
         ["审计日志", "已完成", "100%", "JSON Lines + 30 天保留 + API 查询"],
     ]
     add_small_table(story, create_styled_table(completion_data, col_widths=[1.5 * inch, 0.8 * inch, 0.6 * inch, 3.6 * inch], is_large=True))
 
     story.append(Spacer(1, 10))
     story.append(Paragraph(normalize_text(
-        "<b>说明</b>：Electron 桌面版完成度 90%，缺失的 10% 为浏览器特有功能（划词工具栏需要浏览器页面环境、"
-        "页面自动化需要 Content Script 注入），这些功能在桌面版中自动降级或隐藏，不影响核心 AI 助手能力。"
+        "<b>说明</b>：项目已完成从 Chrome 扩展到「扩展 + Agent 双进程」的架构演进：知识库、长期记忆等重逻辑均下推 Agent 端，"
+        "扩展保持轻量；未连接 Agent 时相关功能自动降级隐藏，核心对话与网页操控能力不受影响。"
     ), styles['body']))
 
     # ══════════════════════════════════════════════════════════════════════
@@ -926,18 +966,20 @@ def build_pdf():
         ["Side Panel API (Chrome 114+)", "侧边栏 UI，对话面板主界面"],
         ["Content Script", "页面注入，DOM 操作和页面交互"],
         ["Offscreen Document", "MV3 剪贴板操作兼容层"],
-        ["IndexedDB", "会话/原型/Token 统计/Checkpoint/收藏 持久化"],
-        ["chrome.storage.local/session", "配置存储 / 跨重启状态恢复"],
-        ["OpenAI Compatible API", "LLM 调用（含 Vision），支持流式响应"],
+        ["IndexedDB", "会话/原型/Token 统计/Checkpoint/收藏 持久化（DB v6，多连接安全关闭）"],
+        ["chrome.storage.local/session", "配置存储（密钥混淆编码）/ 跨重启状态恢复"],
+        ["OpenAI Compatible API", "LLM 调用（含 Vision），支持流式响应、多厂商配置切换"],
+        ["Embedding 服务", "知识库向量索引与记忆语义召回（远端 OpenAI 兼容 / 本地 BGE 双档）"],
         ["marked.js", "Markdown 渲染引擎"],
         ["mermaid.js", "图表渲染引擎（流程图/时序图/甘特图）"],
         ["pdfjs-dist", "PDF 文件文本提取"],
         ["mammoth.js", "Word .docx 文件文本提取"],
         ["SheetJS (xlsx)", "Excel .xlsx/.xls 文件文本提取"],
-        ["Node.js (Agent)", "本地文件/命令服务、Skill 系统、MCP 协议"],
+        ["Node.js (Agent)", "本地文件/命令服务、Skill 系统、MCP 协议、知识库 RAG、长期记忆服务"],
         ["WebSocket (Agent)", "命令输出实时流式传输"],
         ["MCP Protocol", "Model Context Protocol，第三方工具动态扩展"],
-        ["Electron", "桌面应用打包，跨平台支持"],
+        ["定时调度器", "定时任务 Cron/间隔/一次性调度与运行历史"],
+        ["Chrome / Edge 扩展商店", "正式发布渠道（双商店已上架）"],
     ]
     add_small_table(story, create_styled_table(tech_data, col_widths=[2.5 * inch, 4.0 * inch], is_large=True))
 
@@ -965,7 +1007,8 @@ def build_pdf():
     story.append(Paragraph(normalize_text("7.3 其他安全措施"), styles['h2']))
     security_measures = [
         "<b>路径沙箱</b>：realpathSync 解析符号链接，前缀匹配白名单路径，防止路径穿越攻击",
-        "<b>配对认证</b>：4 位动态码 + extensionId 配对，生成 Bearer Token",
+        "<b>配对认证</b>：4 位动态码 + extensionId 配对，生成 Bearer Token；集成测试不再硬编码真实 token，缺失时在发请求前失败",
+        "<b>密钥混淆编码</b>：持久化存储的 API Key / Token 经混淆编码后落盘，降低本地配置被直接读取的风险",
         "<b>脚本保护</b>：写入 .sh/.py/.js 等自动去除执行权限",
         "<b>大小限制</b>：请求体 10MB，单文件 50MB",
         "<b>文件回收站</b>：删除文件默认软删除至 ~/.ai-helper-agent/.trash/，7 天自动清理，支持恢复",
@@ -994,7 +1037,7 @@ def build_pdf():
     proj_structure = [
         ["模块", "路径", "说明"],
         ["Chrome 扩展", "src/", "Side Panel UI + Background SW + Content Script + Options Page + Storage"],
-        ["本地代理服务", "agent/", "Node.js 独立进程，文件系统/命令执行/Skill/MCP 协议支持"],
+        ["本地代理服务", "agent/", "Node.js 独立进程，文件系统/命令执行/Skill/MCP 协议/知识库 RAG/长期记忆"],
         ["第三方库", "libs/", "marked.js, mermaid.js, pdf.js, mammoth.js, SheetJS 等"],
         ["构建脚本", "scripts/", "fix-build.js, generate-icons.js, deploy-pages.sh 等"],
         ["文档", "docs/", "项目文档、截图、GitHub Pages"],
@@ -1004,9 +1047,10 @@ def build_pdf():
 
     story.append(Paragraph(normalize_text("8.2 构建与部署"), styles['h2']))
     story.append(Paragraph(normalize_text(
+        "用户安装（推荐）：Chrome / Edge 商店一键装；或从 GitHub Releases 下载扩展包解压加载\n"
+        "代理端一键安装：curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash（Windows 用 install.ps1），或 npm install -g ai-helper-agent && aha start -b\n"
         "开发模式：npm install && npm run dev（Vite 热重载开发）\n"
-        "生产构建：npm run build（Vite 构建 + fix-build.js 路径修复）\n"
-        "Agent 安装：npm install -g ai-helper-agent（全局安装本地代理服务）\n"
+        "生产构建：npm run build:silent（Vite 构建 + fix-build.js 路径修复）\n"
         "测试：npm run test:unit（Vitest 单元测试）、npm run test:e2e（Playwright E2E 测试）"
     ), styles['body']))
 
@@ -1016,7 +1060,8 @@ def build_pdf():
         "<b>模块化设计</b>：每个功能模块独立文件，职责单一，如 chat-manager.js、react-loop.js、tool-executor.js 等",
         "<b>双导出 Proxy 模式</b>：state.js 采用独特的双导出 Proxy 模式，80+ 状态字段无需框架即可共享",
         "<b>多连接 IndexedDB</b>：支持 SW + Side Panel 双连接安全关闭与重建",
-        "<b>自动化测试</b>：Vitest 单元测试 + Playwright E2E 测试",
+        "<b>自动化测试</b>：Vitest 单元测试（根套件 1340+ 用例 / 88 文件，Agent 端 430+ 用例含黄金评测集）+ Playwright E2E 测试 + 真实扩展端到端冒烟探针",
+        "<b>CI/CD</b>：GitHub Actions 自动构建发布产物（Releases zip）与双商店分发",
         "<b>国际化支持</b>：_locales/ 目录下多语言资源，支持中英文切换",
     ]
     for quality in code_quality:
@@ -1035,11 +1080,12 @@ def build_pdf():
 
     summary_points = [
         "<b>浏览器即操作系统</b>：40+ 工具让 LLM 在浏览器中拥有完整的操作能力，从内容提取到表单填写，从截图到文件下载",
-        "<b>质量优先</b>：三级反思系统确保输出质量，不是简单返回 LLM 原始结果，而是经过多维度评估和自动修订",
+        "<b>质量优先</b>：二级反思（子任务 + 后置）与零成本工具观察提示确保输出质量，不是简单返回 LLM 原始结果，而是经过多维度评估和自动修订",
         "<b>成本可控</b>：工具预筛选和 Token 预算管理大幅降低 API 成本，长对话质量不下滑",
         "<b>无限扩展</b>：MCP 协议和 Skill 系统让工具能力无限延伸，从数据库到 API 调用，从代码执行到文件转换",
-        "<b>双平台覆盖</b>：Chrome 扩展 + Electron 桌面应用，满足不同使用场景",
-        "<b>开源协作</b>：MIT License 完全开源，模块化设计便于社区贡献和功能扩展",
+        "<b>本地智能底座</b>：知识库（RAG）+ 长期记忆双引擎全部跑在本机，文件不出本地，助手越用越懂用户",
+        "<b>长期可运行</b>：任务锚点、断点续接、定时任务与桌面通知，把 AI 从聊天玩具变成能长期跑的生产力工具",
+        "<b>开源协作</b>：MIT License 完全开源，已上架 Chrome / Edge 双商店，模块化设计便于社区贡献和功能扩展",
     ]
     for point in summary_points:
         story.append(Paragraph(normalize_text(point), styles['bullet']))
@@ -1050,7 +1096,7 @@ def build_pdf():
         "持续丰富内建工具集，覆盖更多办公自动化场景",
         "优化 MCP 协议生态，支持更多第三方工具集成",
         "增强多 Agent 协作能力，支持更复杂的任务编排",
-        "完善 Electron 桌面版功能，提供更完整的桌面级体验",
+        "深化知识库与记忆的自动沉淀、自动关联能力，提升召回质量",
         "建设开源社区，吸引开发者贡献工具和 Skill",
     ]
     for plan in future_plans:
@@ -1061,7 +1107,7 @@ def build_pdf():
     # ══════════════════════════════════════════════════════════════════════
     story.append(Spacer(1, 16))
     story.append(Paragraph(normalize_text("附录：执行日志示例"), styles['h2']))
-    log_img_path = os.path.join(DOCS_IMAGES, "循环推理执行日志追踪.png")
+    log_img_path = os.path.join(DOCS_IMAGES, "new", "ai-helper-panel-02-执行日志追踪.png")
     if os.path.exists(log_img_path):
         add_figure(story, log_img_path, "图 13: ReAct 推理循环执行日志追踪", styles)
 
