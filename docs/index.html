@@ -604,6 +604,7 @@
     font-size: 12px; color: var(--accent); overflow-x: auto;
     border: 1px solid var(--border);
   }
+  .step .cmd-label { margin-top: 12px; font-size: 12px; color: var(--text-muted); }
 
   /* ─── CTA ─── */
   .cta-section {
@@ -1459,8 +1460,13 @@
     <div class="step">
       <div class="step-num">3</div>
       <h3 data-i18n="start-3-title">Install Agent (Optional)</h3>
-      <p data-i18n="start-3-desc">For local file read/write and command execution, install the agent service globally and start it. Copy the pairing code from terminal output into the extension's Agent settings to connect.</p>
-      <code>npm i -g ai-helper-agent &amp;&amp; ai-helper-agent start</code>
+      <p data-i18n="start-3-desc">For local file read/write and command execution, one-click install the agent service. Copy the pairing code from terminal output into the extension's Agent settings to connect.</p>
+      <div class="cmd-label" data-i18n="start-3-oneline-label">One-line install (macOS / Linux):</div>
+      <code style="margin-top:4px;">curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash</code>
+      <div class="cmd-label" data-i18n="start-3-win-label">Windows (PowerShell):</div>
+      <code style="margin-top:4px;">irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex</code>
+      <div class="cmd-label" data-i18n="start-3-npm-label">Or via npm:</div>
+      <code style="margin-top:4px;">npm i -g ai-helper-agent &amp;&amp; aha start -b</code>
     </div>
   </div>
 </section>
@@ -1924,7 +1930,10 @@
     'start-2-desc':      { en: 'Right-click extension icon → Options, enter your DeepSeek API Key (or other OpenAI-compatible API).', zh: '右键扩展图标 → 选项，填入 DeepSeek API Key（或其他 OpenAI 兼容 API）。' },
     'start-2-code':      { en: 'API Key → Enter → Save', zh: 'API Key → 填入 → 保存' },
     'start-3-title':     { en: 'Install Agent (Optional)', zh: '安装代理（可选）' },
-    'start-3-desc':      { en: 'For local file read/write and command execution, install the agent service globally and start it. Copy the pairing code from terminal output into the extension\'s Agent settings to connect.', zh: '如需本地文件读写和命令执行，全局安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。' },
+    'start-3-desc':      { en: 'For local file read/write and command execution, one-click install the agent service. Copy the pairing code from terminal output into the extension\'s Agent settings to connect.', zh: '如需本地文件读写和命令执行，可一键安装代理服务并启动，启动后将终端输出的配对码填入插件「代理」对应配置中完成连接。' },
+    'start-3-oneline-label': { en: 'One-line install (macOS / Linux):', zh: '一行命令安装（macOS / Linux）：' },
+    'start-3-win-label':     { en: 'Windows (PowerShell):', zh: 'Windows（PowerShell）：' },
+    'start-3-npm-label':     { en: 'Or via npm:', zh: '或通过 npm 安装：' },
     'cta-title':        { en: 'Ready to Get Started?', zh: '准备好了吗？' },
     'cta-desc':         { en: 'Open source & free, MIT License, welcome Star & PR', zh: '开源免费，MIT 协议，欢迎 Star & PR' },
     'cta-docs':         { en: 'View Docs', zh: '查看文档' },
