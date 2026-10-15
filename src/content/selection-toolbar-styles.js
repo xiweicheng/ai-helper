@@ -33,6 +33,8 @@ export function injectStyles() {
       opacity: 0;
       transform: translateY(2px);
       white-space: nowrap;
+      /* 浮层直接挂在宿主页面 DOM 上，阻断页面对 body/div 设置的 text-align 继承 */
+      text-align: left;
     }
     #aih-selection-toolbar.aih-show {
       opacity: 1;
@@ -117,6 +119,7 @@ export function injectStyles() {
       padding: 4px;
       min-width: 140px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      text-align: left;
     }
     .aih-overflow-dropdown .aih-dropdown-item {
       display: flex;
@@ -241,6 +244,8 @@ export function injectStyles() {
       color: #333;
       overflow: hidden;
       animation: aih-panel-in 0.2s ease-out;
+      /* 阻断宿主页面（如 body 居中对齐）的 text-align 继承 */
+      text-align: left;
     }
     @keyframes aih-panel-in {
       from { opacity: 0; transform: translateY(4px); }
@@ -292,6 +297,15 @@ export function injectStyles() {
     #aih-selection-result .aih-result-body {
       padding: 12px 14px;
       word-break: break-word;
+    }
+    /* 正文居左（兼容任意第三方宿主页，同时不破坏 Markdown 自身对齐）：
+       1) 容器级 text-align: left 阻断“页面通过 body 声明居中→继承下来”的污染（本次实际问题就是这种）；
+       2) 高特异性后代规则再兜底页面对正文子元素的直接命中污染（如 .article p 直接声明居中）。
+       关键点：【不加 !important】，使模型输出的内联 style="text-align"（如居中的 HTML 块）仍能生效；
+       排除 th/td 以保留 Markdown 表格列对齐（:---: / ---:）。 */
+    #aih-selection-result .aih-result-body,
+    #aih-selection-result .aih-result-body :not(th):not(td) {
+      text-align: left;
     }
     #aih-selection-result .aih-result-body p {
       margin: 0 0 8px;
@@ -355,7 +369,8 @@ export function injectStyles() {
     #aih-selection-result .aih-result-body td {
       border: 1px solid #e0e0e0;
       padding: 6px 10px;
-      text-align: left;
+      /* 不强制对齐方式：让 Markdown 表格列对齐（align 属性）生效，
+         无 align 的单元格则继承正文的居左 */
     }
     #aih-selection-result .aih-result-body th {
       background: #f5f5f5;
@@ -470,6 +485,7 @@ export function injectStyles() {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       animation: aih-token-popup-in 0.15s ease-out;
       box-sizing: border-box;
+      text-align: left;
     }
     @keyframes aih-token-popup-in {
       from { opacity: 0; transform: translateY(4px); }
