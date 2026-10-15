@@ -76,7 +76,7 @@ Content Script 侧的操作层处理三类硬骨头：Shadow DOM 内的元素寻
 
 ## 五、上手与开源
 
-AI Helper 基于 MIT 协议开源（GitHub: xiweicheng/ai-helper），已上架 Microsoft Edge 扩展商店；Chrome/Chromium 用户可通过开发者模式加载构建产物使用。填入任意 OpenAI 兼容端点的 API Key 即可开始对话，需要本地文件读写/命令执行时再可选安装本地代理服务。演示视频中英双语版、Demo 表单页与 Excel 数据源均在仓库与文档站公开，欢迎复现、挑刺、提 PR。
+AI Helper 基于 MIT 协议开源（GitHub: xiweicheng/ai-helper），已上架 Chrome 应用商店（ <https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac> ）与 Microsoft Edge 扩展商店；其他 Chromium 用户可通过开发者模式加载构建产物使用。填入任意 OpenAI 兼容端点的 API Key 即可开始对话，需要本地文件读写/命令执行时再可选安装本地代理服务。演示视频中英双语版、Demo 表单页与 Excel 数据源均在仓库与文档站公开，欢迎复现、挑刺、提 PR。
 
 ## 结语
 
@@ -88,5 +88,5 @@ AI Helper 基于 MIT 协议开源（GitHub: xiweicheng/ai-helper），已上架 
 
 - 建议封面：`docs/videos/cover-zh.jpg`（片头标题帧）；
 - 视频直链（可嵌入）：中文 <https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-zh.mp4> · 英文 <https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-en.mp4>；
-- 项目地址：<https://github.com/xiweicheng/ai-helper> · Edge 商店：<https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl>；
+- 项目地址：<https://github.com/xiweicheng/ai-helper> · Chrome 商店：<https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac> · Edge 商店：<https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl>；
 - 备选标题：《67 秒，看 AI 插件把 Excel 变成已提交的表单》《不让大模型只陪聊：一个浏览器 Agent 的批量填表全链路拆解》。
