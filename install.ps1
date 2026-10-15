@@ -1,12 +1,16 @@
 ﻿# AI Helper Agent - Windows 一键安装脚本
 # Usage: powershell -ExecutionPolicy Bypass -File install.ps1
 #        irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex
+# 指定代理版本（管道执行用环境变量，本地执行可用参数）:
+#        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $env:AGENT_VERSION='2.2.0'; irm .../install.ps1 | iex
+#        install.ps1 -AgentVersion 2.2.0
 param(
     [switch]$Uninstall,
     [switch]$Update,
     [switch]$Status,
     [switch]$NoAutostart,
-    [switch]$PurgeData
+    [switch]$PurgeData,
+    [string]$AgentVersion = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +44,17 @@ function Write-Ok    { Write-Host "[AI Helper] $args" -ForegroundColor Green }
 function Write-Warn  { Write-Host "[AI Helper] $args" -ForegroundColor Yellow }
 function Write-Err   { Write-Host "[AI Helper] $args" -ForegroundColor Red }
 function Die([string]$Msg) { Write-Err $Msg; exit 1 }
+
+# 解析要安装的代理版本：参数 -AgentVersion > 环境变量 AGENT_VERSION > latest
+# irm|iex 管道无法传参，那种场景靠环境变量 AGENT_VERSION
+# 仅允许版本号 / dist-tag 的安全字符集，防止拼接进 npm 参数时被注入
+function Get-TargetVersion {
+    $v = if ($AgentVersion) { $AgentVersion } elseif ($env:AGENT_VERSION) { $env:AGENT_VERSION } else { "latest" }
+    if ($v -notmatch '^[A-Za-z0-9.^~*+-]+$') {
+        Die "非法的版本标识: `"$v`"（仅接受版本号或 dist-tag，如 2.2.0 / latest / beta）"
+    }
+    return $v
+}
 
 # 容忍原生命令的 stderr 输出：PS 5.1 + ErrorActionPreference=Stop 会把原生命令 stderr 升级为终止错误（PS7 无此问题）
 function Invoke-Tolerant([scriptblock]$Block) {
@@ -195,7 +210,6 @@ function Install-Agent($Net) {
     # 内嵌 Node 进 PATH，保证包的安装脚本调用 node 时可用
     if ($env:Path -notlike "*$RuntimeDir*") { $env:Path = "$RuntimeDir;$env:Path" }
 
-    Write-Info "正在安装 AI Helper Agent..."
     New-Item -ItemType Directory -Path $AppDir -Force | Out-Null
 
     $pkgJson = Join-Path $AppDir "package.json"
@@ -206,12 +220,15 @@ function Install-Agent($Net) {
 
     $registryArg = if ($Net.Registry -ne $RegOfficial) { "--registry=$($Net.Registry)" } else { "" }
 
+    $targetVersion = Get-TargetVersion
+    Write-Info "正在安装 AI Helper Agent (版本: $targetVersion)..."
+
     Push-Location $AppDir
     $nodeExe = Join-Path $RuntimeDir "node.exe"
     if (Test-Path (Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js")) {
-        & $nodeExe (Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js") install "$NodePackage@latest" $registryArg "--no-audit" "--no-fund" "--loglevel=error"
+        & $nodeExe (Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js") install "$NodePackage@$targetVersion" $registryArg "--no-audit" "--no-fund" "--loglevel=error"
     } else {
-        & $npm install "$NodePackage@latest" $registryArg "--no-audit" "--no-fund" "--loglevel=error"
+        & $npm install "$NodePackage@$targetVersion" $registryArg "--no-audit" "--no-fund" "--loglevel=error"
     }
     Pop-Location
 
@@ -354,26 +371,30 @@ function Do-Update {
     $pkgJson = Join-Path $AppDir "node_modules\ai-helper-agent\package.json"
     $current = if (Test-Path $pkgJson) { (Get-Content $pkgJson | ConvertFrom-Json).version } else { "0.0.0" }
 
-    # 查最新
-    $registryArg = if ($net.Registry -ne $RegOfficial) { "--registry=$($net.Registry)" } else { "" }
-    $npmCli = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js"
-    # npm 的 notice 信息走 stderr，PS5.1+Stop 会误判为终止错误，需容忍
-    $latest = Invoke-Tolerant {
-        if (Test-Path $npmCli) {
-            & $nodeExe $npmCli view $NodePackage version $registryArg 2>$null
-        } else {
-            & (Join-Path $RuntimeDir "npm.cmd") view $NodePackage version $registryArg 2>$null
+    # 确定目标版本：显式指定则用指定值（可回退/锁定），否则升级到最新
+    $requested = Get-TargetVersion
+    $target = $requested
+    if ($target -eq "latest") {
+        $registryArg = if ($net.Registry -ne $RegOfficial) { "--registry=$($net.Registry)" } else { "" }
+        $npmCli = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js"
+        # npm 的 notice 信息走 stderr，PS5.1+Stop 会误判为终止错误，需容忍
+        $target = Invoke-Tolerant {
+            if (Test-Path $npmCli) {
+                & $nodeExe $npmCli view $NodePackage version $registryArg 2>$null
+            } else {
+                & (Join-Path $RuntimeDir "npm.cmd") view $NodePackage version $registryArg 2>$null
+            }
         }
+        $target = "$target".Trim()
     }
-    $latest = "$latest".Trim()
 
-    if ($latest -eq $current) { Write-Ok "已是最新版本 v$current"; return }
+    if ($target -eq $current) { Write-Ok "已是目标版本 v$current"; return }
 
-    Write-Info "正在从 v$current 更新到 v$latest..."
+    Write-Info "正在从 v$current 更新到 v$target..."
     Invoke-Tolerant { & (Join-Path $BinDir "aha.cmd") stop 2>$null }
     Install-Agent $net
     Start-AgentService
-    Write-Ok "更新完成: v$current → v$latest"
+    Write-Ok "更新完成: v$current → v$target"
 }
 
 # ==================== 主入口 ====================

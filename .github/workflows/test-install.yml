@@ -77,3 +77,78 @@ jobs:
           $logDir = Join-Path $env:USERPROFILE ".ai-helper-agent\logs"
           if (Test-Path $logDir) { Get-ChildItem $logDir | ForEach-Object { Write-Host "== $($_.Name) =="; Get-Content $_.FullName -Tail 100 } }
           Get-Content (Join-Path $env:USERPROFILE ".ai-helper-agent\mirrors.json") -ErrorAction SilentlyContinue
+
+  # ============================================================
+  # 以下两个 job 专门验证「插件端一键复制」粘贴出去的确切命令，
+  # 而非直接 & 脚本文件（后者参数能绑定，掩盖了管道|iex 路径的真实风险）。
+  # 脚本内容取自本地 checkout，复现管道 stdin / iex 语义，不依赖已推送的 raw URL。
+  # ============================================================
+  unix-pipe-install:
+    name: install.sh 复制命令（curl|bash 等价 + 指定版本）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 以 `| AGENT_VERSION=$VER bash` 等价方式从 stdin 执行本地脚本
+        run: |
+          set -euo pipefail
+          VER="$(node -e "console.log(require('./src/config/version.json').version)")"
+          echo "目标版本: $VER"
+          # 复现 `curl -fsSL .../install.sh | AGENT_VERSION=$VER bash` 的 stdin 执行
+          cat ./install.sh | AGENT_VERSION="$VER" bash
+
+      - name: 校验安装版本与请求一致且服务在线
+        run: |
+          set -euo pipefail
+          VER="$(node -e "console.log(require('./src/config/version.json').version)")"
+          INSTALLED="$(node -e "console.log(require(process.env.HOME+'/.ai-helper-agent/INSTALL_MANIFEST.json').version)")"
+          echo "installed=$INSTALLED requested=$VER"
+          if [ "$INSTALLED" != "$VER" ]; then echo "版本不一致"; exit 1; fi
+          curl -s http://127.0.0.1:18910/api/status
+
+      - name: 卸载清理
+        if: always()
+        run: bash ./install.sh --uninstall </dev/null || true
+
+  windows-iex-probe:
+    name: install.ps1 复制命令（irm|iex 等价 + param/env 探针）
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 核心疑问：脚本顶部 param() 块经 iex 执行是否报错？$env 回退能否被读到？
+      # （不用 here-string：其闭合 '@ 需顶格，会与 YAML 块缩进冲突）
+      - name: 探针 - param 块经 iex + $env:AGENT_VERSION 回退
+        run: |
+          $f = Join-Path $env:TEMP 'ai-helper-probe.ps1'
+          Set-Content -Path $f -Value '# leading comment (param 前有非空行，与真实脚本一致)'
+          Add-Content -Path $f -Value "param([string]`$AgentVersion='')"
+          Add-Content -Path $f -Value 'if ($AgentVersion) { "param:$AgentVersion" } elseif ($env:AGENT_VERSION) { "env:$env:AGENT_VERSION" } else { "latest" }'
+          $env:AGENT_VERSION = '2.2.0'
+          $out = (iex (Get-Content $f -Raw))
+          Write-Host "PROBE RESULT = $out"
+          if ($out -notmatch 'env:2\.2\.0') { throw "param-under-iex 或 env 回退不成立，得到: $out" }
+
+      - name: 用本地脚本内容复现 irm|iex 全流程并锁定版本
+        run: |
+          $ver = (Get-Content .\src\config\version.json -Raw | ConvertFrom-Json).version
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $env:AGENT_VERSION = $ver
+          $raw = Get-Content .\install.ps1 -Raw
+          iex $raw
+          $mf = Join-Path $env:USERPROFILE ".ai-helper-agent\INSTALL_MANIFEST.json"
+          $installed = (Get-Content $mf -Raw | ConvertFrom-Json).version
+          Write-Host "installed=$installed requested=$ver"
+          if ($installed -ne $ver) { throw "版本不一致：$installed != $ver" }
+
+      - name: 卸载清理
+        if: always()
+        run: |
+          & .\install.ps1 -Uninstall -PurgeData

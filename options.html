@@ -576,6 +576,29 @@
         </div>
       </div>
 
+      <!-- 代理端安装指引（与当前插件版本匹配，一键复制） -->
+      <div class="agent-install-guide" id="agentInstallGuide">
+        <div class="agent-install-guide-header">
+          <h3 id="agentInstallTitle" data-i18n="agentConfig.installGuideTitle">安装代理端</h3>
+          <button class="btn btn-primary" id="copyInstallAuto" data-i18n="agentConfig.copyCmdAuto">一键复制（按当前系统）</button>
+        </div>
+        <p class="agent-install-guide-hint" data-i18n="agentConfig.installGuideHint">复制下方命令到终端执行，将安装与当前插件版本一致的代理端，避免版本不匹配导致无法连接。</p>
+        <div class="agent-install-cmd-row">
+          <div class="agent-install-cmd-main">
+            <span class="agent-install-os-label" data-i18n="agentConfig.installGuideMacLinux">macOS / Linux</span>
+            <code class="agent-install-cmd" id="installCmdUnix"></code>
+          </div>
+          <button class="btn btn-secondary agent-install-copy-btn" id="copyInstallUnix" data-i18n="agentConfig.copyCmd">复制</button>
+        </div>
+        <div class="agent-install-cmd-row">
+          <div class="agent-install-cmd-main">
+            <span class="agent-install-os-label">Windows (PowerShell)</span>
+            <code class="agent-install-cmd" id="installCmdWin"></code>
+          </div>
+          <button class="btn btn-secondary agent-install-copy-btn" id="copyInstallWin" data-i18n="agentConfig.copyCmd">复制</button>
+        </div>
+      </div>
+
       <div class="info-box collapsible collapsed" style="margin-top: 15px;">
         <h3 class="collapsible-header"><span data-i18n="agentConfig.useInstructionTitle">💡 使用说明及安全提示</span> <span class="collapsible-arrow">▶</span></h3>
         <div class="collapsible-body" style="display:none;">
@@ -750,7 +773,7 @@
 
       <div id="memoryGate" style="display:none;"></div>
 
-      <!-- 页面底部那颗「保存」写扩展设置，这颗写代理配置；不写清就会被人当成重复按钮 -->
+      <!-- 本 Tab 的配置在点底部「保存」时写入代理 config.json（代理未连接则跳过）；底部保存同时存扩展自身设置 -->
       <div class="memory-scope-hint" data-i18n="memoryPanel.scopeHint"></div>
 
       <div id="memoryMain">
@@ -807,8 +830,8 @@
           <span data-i18n="memoryPanel.localNotice">本地档无需测试连通性：保存后直接重建向量索引（首次使用需下载模型，可能数十分钟）。嵌入在 512 token 处静默截断，超长条目只有前部进入向量。</span>
         </div>
 
+        <!-- 「保存到代理」按钮已并入底部全局「保存配置」：点保存时若代理已连接会自动推到这里 -->
         <div class="form-group" style="display:flex; gap:12px; align-items:center;">
-          <button class="toolbox-add-btn" type="button" id="memorySaveBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="memoryPanel.saveBtn">保存配置</button>
           <button class="toolbox-add-btn" type="button" id="memoryReindexBtn" style="width:auto; margin:0; padding:8px 18px; border-style:solid;" data-i18n="memoryPanel.reindexBtn">重建向量索引</button>
         </div>
 

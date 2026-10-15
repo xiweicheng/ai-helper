@@ -26,8 +26,9 @@ import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
-import { initMemoryPanel, refreshMemoryPanel } from './memory-panel.js';
+import { initMemoryPanel, refreshMemoryPanel, saveMemoryFromGlobalSave } from './memory-panel.js';
 import { initSaveBarSticky } from './save-bar.js';
+import { initInstallGuide } from './install-guide.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
@@ -38,6 +39,29 @@ let currentTools = [];
 // 激活一共有四条路径（按钮点击、hash 直达、optionsInitialTab、SWITCH_TAB 消息），它们最终都汇到
 // switchTab；刷新若只挂在按钮 click 上，F5 和从侧边栏跳进来这两条就会停在空数据。
 const tabRefreshers = {};
+
+// Tab 的「代理端保存」注册表。底部那颗全局「保存配置」在存完扩展自身设置后，
+// 若当前 Tab 在此注册了代理保存入口，就顺带把该 Tab 的配置推到代理端；
+// 连接态判断与离线跳过由各个 saver 自己负责（记忆 Tab 未连接时静默跳过）。
+const tabAgentSavers = {};
+
+function getActiveTabName() {
+  return document.querySelector('.tab-panel.active')?.dataset.tab || null;
+}
+
+// 全局保存：先走原有的扩展设置保存，再触发当前 Tab 已注册的代理端保存。
+// 两者解耦——即使 saveConfig 因扩展必填项校验失败提前返回，代理端那份仍按连接态独立处理。
+async function onGlobalSave() {
+  saveConfig();
+  const saver = tabAgentSavers[getActiveTabName()];
+  if (saver) {
+    try {
+      await saver();
+    } catch (err) {
+      logger.warn('[Options] tab agent save failed:', err.message);
+    }
+  }
+}
 
 // Tab 切换函数
 function switchTab(tabName) {
@@ -178,9 +202,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   });
   
+  // 代理端安装指引（版本匹配 + 一键复制）
+  initInstallGuide();
+
   // 记忆面板的数据源在 agent 侧，注册刷新入口必须在 activateByHash 之前：
   // F5 时 hash 会直接激活记忆 Tab，等到下面 initMemoryPanel() 才注册就漏了这一条路径
   tabRefreshers.memory = refreshMemoryPanel;
+  tabAgentSavers.memory = saveMemoryFromGlobalSave;
 
   // 工具箱与知识库同理，必须挤在同一个窗口里注册。两者的 refresh 都是自包含的
   // （只读 storage / DOM，不依赖各自 init 里的临时状态），因此早于 initToolbox()
@@ -231,8 +259,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   
-  // 保存按钮事件
-  document.getElementById('saveBtn').addEventListener('click', saveConfig);
+  // 保存按钮事件：存扩展设置 + 顺带触发当前 Tab 的代理端保存
+  document.getElementById('saveBtn').addEventListener('click', onGlobalSave);
 
   // 保存按钮栏：内容超出一屏时吸附视口底部（保证保存按钮始终可见）
   initSaveBarSticky();

@@ -2,6 +2,9 @@
 # AI Helper Agent - 跨平台一键安装脚本 (macOS / Linux)
 # Usage: curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash
 #        bash install.sh [--uninstall|--update|--status|--no-autostart]
+# 指定代理版本（管道执行用环境变量，本地执行可用参数）:
+#        curl -fsSL .../install.sh | AGENT_VERSION=2.2.0 bash
+#        bash install.sh --agent-version=2.2.0
 set -euo pipefail
 
 # ==================== 常量 ====================
@@ -16,6 +19,10 @@ readonly NODE_VERSION="22.13.0"
 readonly NODE_PACKAGE="ai-helper-agent"
 readonly DEFAULT_PORT=18910
 readonly PROBE_TIMEOUT=3
+
+# 要安装的代理版本：来自环境变量 AGENT_VERSION 或 --agent-version 参数，默认 latest
+# 注: 非 readonly——允许 main 解析参数时覆盖
+AGENT_VERSION="${AGENT_VERSION:-latest}"
 
 # 下载源
 readonly NODE_OFFICIAL="https://nodejs.org/dist"
@@ -35,6 +42,16 @@ ok()    { echo -e "${GREEN}[AI Helper]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[AI Helper]${NC} $*"; }
 err()   { echo -e "${RED}[AI Helper]${NC} $*" >&2; }
 die()   { err "$@"; exit 1; }
+
+# 校验版本标识合法性（仅允许版本号 / dist-tag 的安全字符集，防止拼接进 npm 参数时被注入）
+validate_agent_version() {
+  local v="$1"
+  # 正则存于变量：避免 [[ ]] 内未引用的 > / * 等被 shell 当作重定向/glob 解析
+  local re='^[A-Za-z0-9.^~*+-]+$'
+  if [[ -z "$v" || ! "$v" =~ $re ]]; then
+    die "非法的版本标识: \"$v\"（仅接受版本号或 dist-tag，如 2.2.0 / latest / beta）"
+  fi
+}
 
 # 探测 URL 可达性（3s 超时，curl/wget 回退）
 probe_url() {
@@ -224,7 +241,7 @@ install_agent() {
     registry_flag="--registry=$NPM_REGISTRY"
   fi
 
-  info "正在安装 AI Helper Agent..."
+  info "正在安装 AI Helper Agent (版本: ${AGENT_VERSION})..."
   mkdir -p "$APP_DIR"
 
   # 在 app/ 目录内作为项目安装（非全局，不需 sudo）
@@ -232,7 +249,7 @@ install_agent() {
     echo '{"name":"ai-helper-agent-host","private":true}' > "$APP_DIR/package.json"
   fi
 
-  (cd "$APP_DIR" && "$npm" install "$NODE_PACKAGE@latest" $registry_flag --no-audit --no-fund --loglevel=error)
+  (cd "$APP_DIR" && "$npm" install "$NODE_PACKAGE@$AGENT_VERSION" $registry_flag --no-audit --no-fund --loglevel=error)
 
   # 写入 INSTALL_MANIFEST.json
   local agent_version
@@ -456,29 +473,33 @@ do_update() {
     registry_flag="--registry=$NPM_REGISTRY"
   fi
 
-  # 查最新版本
-  local latest
-  latest=$(cd "$APP_DIR" && "$npm" view "$NODE_PACKAGE" version $registry_flag 2>/dev/null)
+  # 确定目标版本：显式指定则用指定值（可回退/锁定），否则升级到最新
+  local target
+  if [ "$AGENT_VERSION" != "latest" ]; then
+    target="$AGENT_VERSION"
+  else
+    target=$(cd "$APP_DIR" && "$npm" view "$NODE_PACKAGE" version $registry_flag 2>/dev/null)
+  fi
   local current
   current=$(cat "$MANIFEST_FILE" 2>/dev/null | "$RUNTIME_DIR/bin/node" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})")
 
-  if [ "$latest" = "$current" ]; then
-    ok "已是最新版本 v$current"
+  if [ "$target" = "$current" ]; then
+    ok "已是目标版本 v$current"
     return 0
   fi
 
-  info "正在从 v$current 更新到 v$latest..."
+  info "正在从 v$current 更新到 v$target..."
 
   # 停止服务
   [ -x "$BIN_DIR/aha" ] && "$BIN_DIR/aha" stop 2>/dev/null || true
 
   # 更新
-  (cd "$APP_DIR" && "$npm" install "$NODE_PACKAGE@$latest" $registry_flag --no-audit --no-fund --loglevel=error)
+  (cd "$APP_DIR" && "$npm" install "$NODE_PACKAGE@$target" $registry_flag --no-audit --no-fund --loglevel=error)
 
   # 更新 manifest
   cat > "$MANIFEST_FILE" <<EOF
 {
-  "version": "$latest",
+  "version": "$target",
   "nodeVersion": "v$NODE_VERSION",
   "installedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "registry": "${NPM_REGISTRY:-default}",
@@ -489,7 +510,7 @@ EOF
 
   # 重启
   start_service
-  ok "更新完成: v$current → v$latest"
+  ok "更新完成: v$current → v$target"
 }
 
 # ==================== 状态查看 ====================
@@ -596,6 +617,15 @@ installed_menu() {
 
 # ==================== 入口路由 ====================
 main() {
+  # 第一遍：先提取 --agent-version（与环境变量同效），确保后续子命令路由时已就位
+  # 注: curl|bash 管道传不进参数，那种场景靠环境变量 AGENT_VERSION（已在顶部初始化）
+  for arg in "$@"; do
+    case "$arg" in
+      --agent-version=*) AGENT_VERSION="${arg#*=}" ;;
+    esac
+  done
+  validate_agent_version "$AGENT_VERSION"
+
   # 检测是否需要交互菜单（已安装 + 无特殊参数 + 交互终端）
   local has_subcommand=false
 
@@ -605,6 +635,7 @@ main() {
       --update)    has_subcommand=true; do_update; return ;;
       --status)    has_subcommand=true; do_status; return ;;
       --no-autostart) ;; # 传给 do_install
+      --agent-version=*) has_subcommand=true ;; # 已在第一遍处理，此处仅标记阻止走交互菜单
       *)           has_subcommand=true ;;
     esac
   done

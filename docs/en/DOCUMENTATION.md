@@ -954,7 +954,9 @@ Enter the pairing code shown in the terminal on the extension options page's "Ag
 
 ### Install (Recommended)
 
-Download the latest auto-built package `ai-helper-*.zip` from [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest), extract it, then open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder. (Alternatively, install from the Microsoft Edge Add-ons store.)
+One-click install from the [Chrome Web Store](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac) (click "Add to Chrome") or the [Microsoft Edge Add-ons store](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl) (click "Get").
+
+Alternatively, download the latest auto-built package `ai-helper-*.zip` from [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest), extract it, then open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select the extracted folder (for other Chromium browsers).
 
 ### Development Mode
 

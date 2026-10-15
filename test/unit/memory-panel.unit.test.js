@@ -19,8 +19,10 @@ let nextSave = null;   // 非 null 时接管保存响应，用来模拟接口失
 let nextRagStatus = null; // 非 null 时接管代理连接态，用来测门控是否锁住总开关
 let nextConfig = null;   // 非 null 时接管配置读取响应，用来测「未加载成功」守卫
 let configThrows = false; // true 时配置读取直接报错（网络断）
+let agentConnected = true; // 底部全局保存派发进来时的代理连接态，用来测离线跳过分支
 
 vi.mock('../../src/options/toolbox-shared.js', () => ({
+  getAgentConnection: vi.fn(async () => ({ url: 'http://127.0.0.1:18910', token: 't', connected: agentConnected })),
   agentApi: vi.fn(async (method, path, body) => {
     apiCalls.push({ method, path, body });
     if (method === 'GET' && path === '/api/memory/embedding-config') {
@@ -53,6 +55,7 @@ globalThis.chrome = {
 };
 
 const DOM = `<div class="knowledge-header"><input type="checkbox" id="memoryEnabled"><span id="memoryEnabledLabel"></span></div>
+<div class="memory-scope-hint"></div>
 <div id="memoryGate" style="display:none;"></div><div id="memoryMain">
 <div id="memoryStatus" class="memory-status"></div>
 <input type="radio" name="memoryEmbeddingMode" value="openai-compat" id="memModeRemote" checked>
@@ -64,7 +67,7 @@ const DOM = `<div class="knowledge-header"><input type="checkbox" id="memoryEnab
 <button id="memoryTestBtn" type="button"></button><span id="memoryTestResult"></span></div></div>
 <div id="memoryPrefixGroup"><input type="text" id="memoryPrefixInput"></div>
 <div id="memoryLocalNotice" style="display:none;"></div>
-<button id="memorySaveBtn" type="button"></button><button id="memoryReindexBtn" type="button"></button>
+<button id="memoryReindexBtn" type="button"></button>
 <div id="memoryResult" style="display:none;"></div></div>`;
 
 let mod;
@@ -82,6 +85,7 @@ beforeEach(async () => {
   nextReindex = { success: true, indexed: 41, total: 41, failedBatches: 0 };
   nextSave = null;
   nextRagStatus = null;
+  agentConnected = true;
   document.body.innerHTML = DOM;
   mod = await import('../../src/options/memory-panel.js');
   mod.initMemoryPanel();
@@ -113,7 +117,7 @@ describe('记忆面板：加载与显隐', () => {
 
 describe('记忆面板：提交体的「缺席」语义', () => {
   test('apiKey 留空 → 请求体里根本没有 apiKey 字段（留空 = 不修改）', async () => {
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
       expect(post).toBeTruthy();
@@ -129,7 +133,7 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     document.getElementById('memoryModelInput').value = 'BAAI/bge-m3';
     document.getElementById('memoryPrefixInput').value = 'query: ';
     document.getElementById('memoryDimsInput').value = '1024';
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
       expect(post.body).toEqual({ enabled: true, mode: 'local', modelName: '', queryPrefix: '', dimensions: 0 });
@@ -141,7 +145,7 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     // 默认就是远端档（夹具 checked）
     expect(document.getElementById('memoryModelGroup').style.display).not.toBe('none');
     document.getElementById('memoryModelInput').value = 'BAAI/bge-large-en';
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
       expect(post.body.modelName).toBe('BAAI/bge-large-en');
@@ -169,7 +173,7 @@ describe('记忆面板：提交体的「缺席」语义', () => {
     document.getElementById('memoryModelInput').value = '   ';
     document.getElementById('memoryPrefixInput').value = '';
     document.getElementById('memoryDimsInput').value = '';
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => {
       const post = apiCalls.find(c => c.method === 'POST' && c.path === '/api/memory/embedding-config');
       expect(post).toBeTruthy();
@@ -215,7 +219,7 @@ describe('记忆面板：陈旧与重建', () => {
 
   test('接口失败走 error toast，不清空已填表单', async () => {
     nextSave = { success: false, error: 'invalid_embedding_mode' };
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => {
       expect(toastCalls.some(([m, kind]) => kind === 'error' && m.includes('invalid_embedding_mode'))).toBe(true);
     });
@@ -322,7 +326,7 @@ describe('记忆面板：配置未加载成功时不得保存', () => {
     mod.refreshMemoryPanel();
     await vi.waitFor(() => expect(
       apiCalls.filter(c => c.method === 'GET' && c.path === '/api/memory/embedding-config')).toHaveLength(2));
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => expect(
       toastCalls.some(([m, kind]) => kind === 'error' && m.includes(t('memoryPanel.configNotLoaded')))).toBe(true));
     expect(apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(0);
@@ -337,7 +341,7 @@ describe('记忆面板：配置未加载成功时不得保存', () => {
     CONFIG.modelName = 'BAAI/bge-m3-recovered';
     mod.refreshMemoryPanel();
     await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3-recovered'));
-    document.getElementById('memorySaveBtn').click();
+    mod.saveMemoryFromGlobalSave();
     await vi.waitFor(() => expect(
       apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(1));
   });
@@ -409,5 +413,42 @@ describe('记忆面板：总开关切换即持久化', () => {
     nextRagStatus = { connected: false, ragAvailable: true, nodeVersion: 'v22.0.0' };
     mod.refreshMemoryPanel();
     await vi.waitFor(() => expect(toggle().disabled).toBe(true));
+    // 对齐知识库：未连接时整块隐藏配置（不再半透明），并隐藏说明行
+    expect(document.getElementById('memoryMain').style.display).toBe('none');
+    expect(document.querySelector('.memory-scope-hint').style.display).toBe('none');
+    // 门控卡片用知识库同款 .toolbox-empty，带一个「前往代理 Tab」的跳转按钮
+    const gate = document.getElementById('memoryGate');
+    expect(gate.style.display).toBe('');
+    expect(gate.querySelector('.toolbox-empty')).toBeTruthy();
+    expect(gate.querySelector('[data-goto-tab="agent"]')).toBeTruthy();
+  });
+
+  test('代理已连接（无门控）时配置与说明行可见、门控收起', async () => {
+    await vi.waitFor(() => expect(document.getElementById('memoryGate').style.display).toBe('none'));
+    expect(document.getElementById('memoryMain').style.display).toBe('');
+    expect(document.querySelector('.memory-scope-hint').style.display).toBe('');
+  });
+});
+
+// 「保存到代理」独立按钮已并入底部全局「保存配置」：saveMemoryFromGlobalSave 是那条派发入口。
+// 连接态判断与离线跳过都在这一层：未连接必须一个请求都不发、只轻提示；已连接才转给 onSave。
+describe('记忆面板：全局保存派发的连接态分支', () => {
+  test('代理未连接：不调 agentApi、发轻提示，不产生 embedding-config 的 POST', async () => {
+    agentConnected = false;
+    await mod.saveMemoryFromGlobalSave();
+    expect(apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config')).toHaveLength(0);
+    expect(toastCalls.some(([m]) => m === t('memoryPanel.saveSkippedOffline'))).toBe(true);
+  });
+
+  test('代理已连接：转给 onSave、一发 embedding-config POST，且成功不弹自己那条 toast（方案B）', async () => {
+    agentConnected = true;
+    await vi.waitFor(() => expect(document.getElementById('memoryModelInput').value).toBe('BAAI/bge-m3'));
+    toastCalls.length = 0;   // 清空回填阶段的任何提示，只看保存本身是否多弹
+    await mod.saveMemoryFromGlobalSave();
+    await vi.waitFor(() => expect(
+      apiCalls.filter(c => c.method === 'POST' && c.path === '/api/memory/embedding-config').length).toBeGreaterThanOrEqual(1));
+    // 方案B：写入成功时记忆这边一个 toast 都不发，交给底部全局「保存成功」统一代表
+    expect(toastCalls.filter(([m]) => m === t('memoryPanel.saveSuccess'))).toHaveLength(0);
+    expect(toastCalls.filter(([m]) => m === t('memoryPanel.saveSkippedOffline'))).toHaveLength(0);
   });
 });

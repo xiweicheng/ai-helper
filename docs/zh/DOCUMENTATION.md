@@ -952,7 +952,9 @@ npm start
 
 ### 安装（推荐）
 
-从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的最新扩展包 `ai-helper-*.zip`，解压后打开 `chrome://extensions/` 开启「开发者模式」，点击「加载已解压的扩展程序」选择解压后的文件夹。（也可从 Microsoft Edge 扩展商店一键安装。）
+从 [Chrome 应用商店](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac)（点击「添加至 Chrome」）或 [Microsoft Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)（点击「获取」）一键安装。
+
+也可从 [GitHub Releases](https://github.com/xiweicheng/ai-helper/releases/latest) 下载自动构建的最新扩展包 `ai-helper-*.zip`，解压后打开 `chrome://extensions/` 开启「开发者模式」，点击「加载已解压的扩展程序」选择解压后的文件夹（适用于其他 Chromium 浏览器）。
 
 ### 开发模式
 

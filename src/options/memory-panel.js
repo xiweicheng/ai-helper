@@ -3,7 +3,7 @@
 // 明文 apiKey 永不回显（agent 已脱敏），所以表单的 key 框只有「填了才提交」一种语义。
 // 与知识库向量卡同构但不共用代码：记忆配置是 agent 全局单份，不是每库一份，字段与生效路径都不同。
 
-import { agentApi, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
+import { agentApi, escapeHtml, showToast, showCustomConfirm, getAgentConnection } from './toolbox-shared.js';
 import { loadRagStatus } from './toolbox-rag.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
@@ -144,7 +144,6 @@ function renderStatusOffline() {
 // 而 agentApi 是裸 fetch 无超时，中途再点一次会并发两个全量重建。
 function setBusy(on) {
   $('memoryReindexBtn').disabled = on;
-  $('memorySaveBtn').disabled = on;
   $('memoryTestBtn').disabled = on || isLocal();
   $('memoryApiKeyClearBtn').disabled = on;   // 清除也是写操作，防连点
 }
@@ -171,23 +170,40 @@ async function onTest() {
   }
 }
 
+// onSave 只负责写代理并返回结果，不再自己弹 toast：
+// 底部那颗是全局「保存配置」，记忆写入成功时由它那条统一代表，避免连弹两条。
+// reason 供上层决定文案：notLoaded=配置没读到（禁止把代理真配置覆盖成空）；error=接口失败。
 async function onSave() {
-  // WYSIWYG 后表单即真值：配置没加载成功时保存 = 把代理里的真配置覆盖成空表单，必须拦
-  if (configLoadFailed) {
-    showToast(t('memoryPanel.configNotLoaded'), 'error');
-    return;
-  }
+  if (configLoadFailed) return { ok: false, reason: 'notLoaded' };
   setBusy(true);
   try {
     const res = await agentApi('POST', '/api/memory/embedding-config', collectPayload());
     if (!res || res.success !== true) throw new Error(res?.error || 'unknown');
     $('memoryApiKeyInput').value = '';
-    showToast(t('memoryPanel.saveSuccess'), 'info');
     await loadAll();
+    return { ok: true };
   } catch (err) {
-    showToast(t('memoryPanel.saveFail', { error: err.message }), 'error');
+    return { ok: false, reason: 'error', error: err.message };
   } finally {
     setBusy(false);
+  }
+}
+
+// 底部全局「保存配置」在记忆 Tab 上的代理保存入口（原独立的「保存到代理」按钮已并入）。
+// toast 收敛（方案B）：代理已连接且写入成功 → 不弹自己那条，交给底部「保存成功」统一代表；
+// 只有离线跳过 / 配置未加载 / 接口失败才补一条，让异常不被子按钮的成功提示淹没。
+export async function saveMemoryFromGlobalSave() {
+  const conn = await getAgentConnection();
+  if (!conn || !conn.connected) {
+    showToast(t('memoryPanel.saveSkippedOffline'), 'info');
+    return;
+  }
+  const result = await onSave();
+  if (result.ok) return;
+  if (result.reason === 'notLoaded') {
+    showToast(t('memoryPanel.configNotLoaded'), 'error');
+  } else {
+    showToast(t('memoryPanel.saveFail', { error: result.error }), 'error');
   }
 }
 
@@ -285,20 +301,40 @@ async function loadAll() {
 function renderGate(status) {
   const gate = $('memoryGate');
   const main = $('memoryMain');
+  const hint = document.querySelector('.memory-scope-hint');
   const blocked = !status.connected || (currentMode() === 'local' && !status.ragAvailable);
   gateBlocked = blocked;
   applyToggleLock();
-  gate.style.display = blocked ? '' : 'none';
-  main.style.opacity = blocked ? '0.5' : '';
-  ['memorySaveBtn', 'memoryReindexBtn', 'memoryTestBtn'].forEach((id) => { const el = $(id); if (el) el.disabled = blocked; });
-  if (blocked) {
-    const title = !status.connected ? t('memoryPanel.gateAgentOffTitle') : t('memoryPanel.gateRagTitle');
-    const body = !status.connected
-      ? t('memoryPanel.gateAgentOffBody')
-      : t('memoryPanel.gateRagMissing');
-    // 门控样式用本面板自己的类（knowledge 的 gate 是一套带安装引导的渲染器，不适合直接搬用）
-    gate.innerHTML = `<div class="memory-gate"><span class="memory-gate-title">${escapeHtml(title)}</span><span class="memory-gate-body">${escapeHtml(body)}</span></div>`;
+  ['memoryReindexBtn', 'memoryTestBtn'].forEach((id) => { const el = $(id); if (el) el.disabled = blocked; });
+
+  if (!blocked) {
+    // 就绪：收起门控，正常展示配置与说明行
+    gate.style.display = 'none';
+    gate.innerHTML = '';
+    main.style.display = '';
+    if (hint) hint.style.display = '';
+    return;
   }
+
+  // 未就绪：整块隐藏配置（对齐知识库，不再半透明叠放），同时隐藏说明行；
+  // 门控卡片用知识库同款 .toolbox-empty（图标 + 标题 + 描述 + 跳转按钮），保证视觉统一。
+  main.style.display = 'none';
+  if (hint) hint.style.display = 'none';
+  gate.style.display = '';
+  const agentOff = !status.connected;
+  const icon = agentOff ? '🔌' : '📚';
+  const title = agentOff ? t('memoryPanel.gateAgentOffTitle') : t('memoryPanel.gateRagTitle');
+  const desc = agentOff ? t('memoryPanel.gateAgentOffBody') : t('memoryPanel.gateRagMissing');
+  const btnLabel = agentOff ? t('memoryPanel.goToAgentTab') : t('memoryPanel.goToToolboxTab');
+  const gotoTab = agentOff ? 'agent' : 'toolbox';
+  gate.innerHTML = `
+    <div class="toolbox-empty" style="text-align:left; padding:24px 20px;">
+      <div style="display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:#555;">
+        <span style="font-size:22px;">${icon}</span><span>${escapeHtml(title)}</span>
+      </div>
+      <div style="margin-top:8px; line-height:1.7; color:#888; font-size:13px;">${escapeHtml(desc)}</div>
+      <button class="toolbox-add-btn" data-goto-tab="${gotoTab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(btnLabel)}</button>
+    </div>`;
 }
 
 /**
@@ -335,9 +371,15 @@ export function initMemoryPanel() {
   initialized = true;
 
   $('memoryTestBtn')?.addEventListener('click', onTest);
-  $('memorySaveBtn')?.addEventListener('click', onSave);
   $('memoryReindexBtn')?.addEventListener('click', onReindex);
   $('memoryApiKeyClearBtn')?.addEventListener('click', onClearApiKey);
+  // 门控卡片的「前往…标签页」按钮：事件委托（卡片随门控重建，不能直接绑），
+  // 点对应 tab 导航按钮即可，复用 index.js 的 switchTab 链路（与知识库同款）
+  $('memoryGate')?.addEventListener('click', (e) => {
+    const gotoBtn = e.target.closest('[data-goto-tab]');
+    if (!gotoBtn) return;
+    document.querySelector(`.tab-nav-btn[data-tab="${gotoBtn.dataset.gotoTab}"]`)?.click();
+  });
   document.querySelectorAll('input[name="memoryEmbeddingMode"]').forEach((r) => {
     r.addEventListener('change', () => { applyModeVisibility(); renderGate(lastStatus); });
   });

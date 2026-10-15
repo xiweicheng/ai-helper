@@ -791,6 +791,13 @@ export default {
     selectedTotalCount: '(Selected {selected} / Total {total})',
     toggleCategoryAll: 'Click to toggle select all/deselect all in this category',
     useInstructionTitle: '💡 Usage Instructions and Safety Tips',
+    installGuideTitle: '📥 Install Agent v{version} (matches current extension version)',
+    installGuideHint: 'Copy the command below and paste it into a terminal to install the agent version that matches this extension, avoiding version-mismatch connection failures.',
+    installGuideMacLinux: 'macOS / Linux',
+    copyCmd: 'Copy',
+    copyCmdAuto: 'Copy (for current OS)',
+    copyCmdSuccess: 'Install command copied to clipboard',
+    copyCmdFailed: 'Copy failed, please select and copy the command manually',
     method1: 'Method 1: NPM global install (recommended)',
     method1Step1: '(requires Node.js ≥ 18)',
     method1Step2: ' or shorthand ',
@@ -1118,8 +1125,8 @@ export default {
     testRunning: 'Testing…',
     testOk: 'OK: {model} returns {dims} dimensions',
     testFail: 'Test failed: {error}',
-    saveBtn: 'Save to Agent',
-    scopeHint: 'This tab writes into the agent service config.json; the Save button at the page bottom only stores extension settings, they do not affect each other',
+    scopeHint: 'Clicking the bottom “Save” also writes this tab’s config into the agent service config.json; when the agent is offline this item is skipped and only extension settings are saved',
+    saveSkippedOffline: 'Agent not connected — memory vector config was not saved (only extension settings saved)',
     saveSuccess: 'Memory vector config saved',
     saveFail: 'Save failed: {error}',
     toggleOnSaved: 'Semantic vector recall enabled',
@@ -1134,9 +1141,11 @@ export default {
     reindexSkipped: 'Rebuild skipped: vector tier is disabled',
     reindexFail: 'Rebuild failed: {error}',
     gateAgentOffTitle: 'Agent not connected',
-    gateAgentOffBody: 'Memory vector config is managed by the local Agent. Connect it in the Extensions tab first.',
+    gateAgentOffBody: 'Memory vector config is provided by the local agent. Connect an agent in the "Agent" tab first, then come back here.',
     gateRagTitle: 'Local model dependency missing',
-    gateRagMissing: 'Local models require the RAG dependency. Install it in the Extensions panel first.'
+    gateRagMissing: 'Local models require the RAG dependency. Install it in the "Extensions" panel first, then come back here.',
+    goToAgentTab: 'Go to "Agent" tab',
+    goToToolboxTab: 'Go to "Extensions" tab'
   },
 
   // Knowledge base management panel (options.html Knowledge tab)

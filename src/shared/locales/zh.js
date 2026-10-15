@@ -791,6 +791,13 @@ export default {
     selectedTotalCount: '(已选 {selected} / 共 {total})',
     toggleCategoryAll: '点击切换该分类全选/取消全选',
     useInstructionTitle: '💡 使用说明及安全提示',
+    installGuideTitle: '📥 安装代理端 v{version}（与当前插件版本匹配）',
+    installGuideHint: '复制下方命令粘贴到终端执行，将安装与当前插件版本一致的代理端，避免版本不匹配导致无法连接。',
+    installGuideMacLinux: 'macOS / Linux',
+    copyCmd: '复制',
+    copyCmdAuto: '一键复制（按当前系统）',
+    copyCmdSuccess: '安装命令已复制到剪贴板',
+    copyCmdFailed: '复制失败，请手动选中命令复制',
     method1: '方式一：NPM 全局安装（推荐）',
     method1Step1: '（要求 Node.js ≥ 18）',
     method1Step2: ' 或简写 ',
@@ -1118,8 +1125,8 @@ export default {
     testRunning: '测试中…',
     testOk: '连通正常：{model} 输出 {dims} 维',
     testFail: '测试失败：{error}',
-    saveBtn: '保存到代理',
-    scopeHint: '本 Tab 的配置写入代理（本地 agent 服务）的 config.json；页面底部的「保存」只存扩展自身设置，两者互不影响',
+    scopeHint: '本 Tab 的配置会在点击底部「保存配置」时一并写入代理（本地 agent 服务）的 config.json；代理未连接时跳过该项，仅保存扩展自身设置',
+    saveSkippedOffline: '代理未连接，记忆向量配置未保存（仅保存了扩展设置）',
     saveSuccess: '记忆向量配置已保存',
     saveFail: '保存失败：{error}',
     toggleOnSaved: '已启用语义向量召回',
@@ -1134,9 +1141,11 @@ export default {
     reindexSkipped: '未重建：向量档未启用',
     reindexFail: '重建失败：{error}',
     gateAgentOffTitle: '代理未连接',
-    gateAgentOffBody: '记忆向量配置由本地 Agent 管理，请先在「扩展」中连接 Agent。',
+    gateAgentOffBody: '记忆向量配置由本地代理提供。请先在「代理」标签页完成代理连接，再回到这里配置。',
     gateRagTitle: '本地模型依赖未就绪',
-    gateRagMissing: '本地模型需要 RAG 依赖，请先在「扩展」面板完成安装。'
+    gateRagMissing: '本地模型需要 RAG 依赖。请先在「扩展」面板完成安装，再回到这里配置。',
+    goToAgentTab: '前往「代理」标签页',
+    goToToolboxTab: '前往「扩展」标签页'
   },
 
   // 知识库管理面板（options.html 知识库标签页）

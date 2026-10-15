@@ -304,6 +304,78 @@ textarea {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
 }
+
+/* 代理端安装指引（版本匹配 + 一键复制，常显） */
+.agent-install-guide {
+  background: #f0fff4;
+  border: 1px solid #9ae6b4;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 15px;
+  margin-bottom: 20px;
+}
+.agent-install-guide h3 {
+  color: #276749;
+  margin: 0;
+  font-size: 14px;
+}
+.agent-install-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.agent-install-guide-header .btn {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+.agent-install-guide-hint {
+  font-size: 13px;
+  color: #4a5568;
+  line-height: 1.6;
+  margin: 10px 0 14px;
+}
+.agent-install-cmd-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.agent-install-cmd-row:last-child {
+  margin-bottom: 0;
+}
+.agent-install-cmd-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.agent-install-os-label {
+  font-size: 12px;
+  color: #718096;
+  font-weight: 600;
+}
+.agent-install-cmd {
+  background: #e2e8f0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: #2d3748;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.agent-install-copy-btn {
+  width: auto;
+  margin: 0;
+  align-self: flex-end;
+  flex-shrink: 0;
+  min-width: 64px;
+}
 .warning-box {
   background: #fefcbf;
   border: 1px solid #faf089;
@@ -3760,9 +3832,6 @@ textarea {
 .memory-status-muted { color: #999; font-size: 12px; }
 /* 状态读取失败（含代理版本旧没有这个端点）：跟 stale 同色系，但语义是“读不到”而不是“数据旧” */
 .memory-status-badge.fail { background: #fed7d7; color: #c53030; }
-/* 职责说明行：本面板写代理配置，与页面底部那颗「保存」分开 */
+/* 职责说明行：只在代理就绪、配置可见时展示（代理未连接时由面板隐藏，避免与门控卡片叠在一起） */
 .memory-scope-hint { font-size: 12px; color: #999; line-height: 1.5; margin: -6px 0 12px; }
-/* 门控引导区（未连接 / 本地档缺 RAG 依赖） */
-.memory-gate { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border: 1px solid #e0e0e0; border-radius: 8px; background: #f7fafc; }
-.memory-gate-title { font-size: 14px; font-weight: 600; }
-.memory-gate-body { font-size: 13px; color: #666; }
+/* 门控引导区复用知识库同款 .toolbox-empty（图标 + 标题 + 描述 + 跳转按钮），不再用面板专属样式 */

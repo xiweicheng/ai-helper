@@ -12,7 +12,7 @@ const optionsJs = readFileSync(new URL('../../src/options/index.js', import.meta
 const IDS = ['memoryGate', 'memoryEnabled', 'memoryBaseUrlInput', 'memoryApiKeyInput',
   'memoryApiKeyClearBtn',
   'memoryDimsInput', 'memoryPrefixInput', 'memoryModelInput', 'memoryModelGroup', 'memoryLocalNotice',
-  'memoryTestRow', 'memoryTestBtn', 'memoryTestResult', 'memorySaveBtn',
+  'memoryTestRow', 'memoryTestBtn', 'memoryTestResult',
   'memoryReindexBtn', 'memoryStatus', 'memoryResult'];
 
 test('记忆 Tab 已挂进导航与面板容器', () => {
@@ -54,17 +54,23 @@ test('memoryPanel 命名空间中英键完全对齐', () => {
   expect(enKeys).toEqual(zhKeys);
 });
 
-// 文案钉：面板里的保存与页面底部那颗同名同形，用户分不清各写哪里，
-// 所以「写代理」与「两者互不影响」必须写进文案，而不靠用户自己推测。
-test('保存按钮文案点明写到代理，且有职责说明行', () => {
+// 文案钉：「保存到代理」独立按钮已取消，改为底部全局「保存配置」顺带推代理。
+// 所以不再有 saveBtn 键，但必须有：职责说明行（scopeHint）+ 离线跳过的轻提示键，中英齐备。
+test('无独立“保存到代理”按钮；有职责说明行与离线跳过提示', () => {
   const block = (src) => src.match(/\n  memoryPanel: \{([\s\S]*?)\n  \},/)[1];
-  expect(block(zh).match(/^    saveBtn: '([^']+)'/m)[1]).toBe('保存到代理');
-  expect(block(en).match(/^    saveBtn: '([^']+)'/m)[1]).toMatch(/agent/i);
+  // 面板里不再出现那颗按钮的 id
+  expect(html).not.toContain('id="memorySaveBtn"');
+  expect(block(zh)).not.toMatch(/^    saveBtn:/m);
+  expect(block(en)).not.toMatch(/^    saveBtn:/m);
   // 说明行：页面上要有承载元素 + 中英都有文案
   expect(html).toContain('data-i18n="memoryPanel.scopeHint"');
   for (const [label, src] of [['zh', zh], ['en', en]]) {
     expect(block(src), `${label} 缺 memoryPanel.scopeHint`).toMatch(/^    scopeHint: '([^']+)'/m);
+    expect(block(src), `${label} 缺 memoryPanel.saveSkippedOffline`).toMatch(/^    saveSkippedOffline: '([^']+)'/m);
   }
+  // 代理保存入口已在选项页入口注册并挂到全局保存按钮
+  expect(optionsJs).toMatch(/tabAgentSavers\.memory = saveMemoryFromGlobalSave/);
+  expect(optionsJs).toMatch(/getElementById\('saveBtn'\)\.addEventListener\('click', onGlobalSave\)/);
 });
 
 // 状态三态的钉：失败态文案缺键时会退成「memoryPanel.statusFail」这种键名直出
