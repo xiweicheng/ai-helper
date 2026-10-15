@@ -836,6 +836,35 @@
         </div>
 
         <div id="memoryResult" class="memory-status" style="display:none;"></div>
+
+        <!-- 记忆条目管理区：真源在 agent 的 global-memory.json。列表走 manage(review)（只读枚举，
+             不走 recall——recall 会更新访问统计并做会话去重，管理端轮询会污染召回数据）；
+             编辑/删除走 store（agent 端负责向量懒补与 dropVectors）；低价值淘汰走 manage(compact) -->
+        <div class="form-group memory-entries-section">
+          <div class="memory-entries-head">
+            <label data-i18n="memoryEntries.title">记忆条目</label>
+            <span id="memoryEntriesCount" class="memory-entries-count"></span>
+            <button class="toolbox-add-btn" type="button" id="memoryEntriesRefreshBtn" style="width:auto; margin:0; padding:6px 14px; border-style:solid;" data-i18n="memoryEntries.refreshBtn">刷新</button>
+          </div>
+          <div class="memory-entries-filter">
+            <input type="text" id="memoryEntriesSearch" data-i18n-placeholder="memoryEntries.searchPlaceholder" placeholder="">
+            <select id="memoryEntriesTypeFilter">
+              <option value="all" data-i18n="memoryEntries.filterAll">全部类型</option>
+              <option value="fact" data-i18n="memoryEntries.filterFact">事实</option>
+              <option value="summary" data-i18n="memoryEntries.filterSummary">摘要</option>
+            </select>
+            <!-- 排序规则直接暴露在选项文案里；纯前端对 review 全量重排，不发明新端点 -->
+            <select id="memoryEntriesSort">
+              <option value="createdDesc" data-i18n="memoryEntries.sortCreatedDesc">创建时间（新→旧）</option>
+              <option value="importanceDesc" data-i18n="memoryEntries.sortImportanceDesc">重要度（高→低）</option>
+              <option value="valueDesc" data-i18n="memoryEntries.sortValueDesc">价值分（高→低）</option>
+              <option value="valueAsc" data-i18n="memoryEntries.sortValueAsc">价值分（低→高）</option>
+            </select>
+          </div>
+          <div id="memoryEntriesCandidates" class="memory-entries-candidates" style="display:none;"></div>
+          <div id="memoryEntriesStatus" class="memory-entries-status" style="display:none;"></div>
+          <div id="memoryEntriesList" class="memory-entries-list"></div>
+        </div>
       </div>
     </div><!-- /tab-memory -->
 

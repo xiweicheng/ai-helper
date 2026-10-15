@@ -3835,3 +3835,48 @@ textarea {
 /* 职责说明行：只在代理就绪、配置可见时展示（代理未连接时由面板隐藏，避免与门控卡片叠在一起） */
 .memory-scope-hint { font-size: 12px; color: #999; line-height: 1.5; margin: -6px 0 12px; }
 /* 门控引导区复用知识库同款 .toolbox-empty（图标 + 标题 + 描述 + 跳转按钮），不再用面板专属样式 */
+/* ===== 记忆条目管理区（记忆 Tab 底部，数据源 manage(review)）===== */
+.memory-entries-section { margin-top: 20px; }
+.memory-entries-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.memory-entries-head label { margin-bottom: 0; }
+.memory-entries-count { font-size: 12px; color: #999; }
+.memory-entries-head .toolbox-add-btn { margin-left: auto; }
+.memory-entries-filter { display: flex; gap: 8px; margin-bottom: 10px; }
+/* 宽字符不撑破弹性行：搜索框 flex 增长但 min-width 必须归零（历史挤压陷阱） */
+.memory-entries-filter input[type="text"] { flex: 1; min-width: 0; margin-bottom: 0; }
+.memory-entries-filter select { width: 130px; flex-shrink: 0; }
+/* 排序选项文案带箭头与括号，且中英长度差一档（探针实测：固定 168px 会截断 "Created (newest first)"）
+   改为按内容自适应 + 下限，配合 .memory-entries-filter select 的 flex-shrink:0 不会挤压搜索框 */
+#memoryEntriesSort { width: auto; min-width: 168px; }
+.memory-entries-candidates { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fffaf0; border: 1px solid #feebc8; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; color: #975a16; }
+.memory-entries-candidates .memory-entries-compact-btn { font-family: inherit; font-size: 12px; padding: 4px 14px; border-radius: 6px; border: 1px solid #dd6b20; background: #fff; color: #dd6b20; cursor: pointer; margin-left: auto; }
+.memory-entries-candidates .memory-entries-compact-btn:hover { background: #dd6b20; color: #fff; }
+.memory-entries-status { font-size: 12px; color: #999; margin-bottom: 8px; }
+/* 列表自身限高内滚（同 .toolbox-list 惯例）：条目多时不把整页撑到几屏外。
+   min(420px, 50vh) 里的 50vh 是防矮视口：本区上方还有向量配置面板，只定 420px 仍会顶出多屏。
+   筛选/排序/候选条故意留在滚动区外，否则翻几条就找不到筛选框。
+   编辑弹窗是 body 级 position:fixed，不受本容器 overflow 裁切（内嵌弹层会被裁，勿改回内联）。*/
+.memory-entries-list { display: flex; flex-direction: column; gap: 8px; max-height: min(420px, 50vh); overflow-y: auto; padding-right: 4px; }
+.memory-entries-list::-webkit-scrollbar { width: 6px; }
+.memory-entries-list::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+.memory-entries-list::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.memory-entries-list::-webkit-scrollbar-thumb:hover { background: #999; }
+.memory-entries-empty { font-size: 13px; color: #999; padding: 12px 0; }
+.memory-entry-item { border: 1px solid #eee; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.memory-entry-item:hover { border-color: #d6dcff; }
+/* 低价值候选条目淡高亮，和淘汰区提示呼应 */
+.memory-entry-item.low-value { background: #fffdf5; border-color: #feebc8; }
+.memory-entry-top { display: flex; align-items: flex-start; gap: 8px; }
+.memory-entry-badge { flex-shrink: 0; font-size: 11px; padding: 1px 8px; border-radius: 9px; }
+.memory-entry-badge.fact { background: #eef2ff; color: #5a67d8; }
+.memory-entry-badge.summary { background: #f0fff4; color: #2f855a; }
+/* 默认两行截断，点击展开；min-width:0 + word-break 防止连续宽字符撑爆行 */
+.memory-entry-content { flex: 1; min-width: 0; line-height: 1.6; color: #444; cursor: pointer; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; word-break: break-word; }
+.memory-entry-item.expanded .memory-entry-content { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.memory-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.memory-entry-actions button { font-family: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; border: 1px solid #ddd; background: #fff; color: #555; cursor: pointer; }
+.memory-entry-actions button:hover { color: #667eea; border-color: #667eea; }
+.memory-entry-actions button.memory-entry-del:hover { color: #c53030; border-color: #c53030; }
+.memory-entry-actions button:disabled { opacity: 0.5; cursor: default; }
+.memory-entry-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 11px; color: #999; }
+.memory-entry-tag-chip { display: inline-block; background: #f3f4f6; color: #667eea; border-radius: 8px; padding: 0 7px; font-size: 11px; margin-right: 3px; }

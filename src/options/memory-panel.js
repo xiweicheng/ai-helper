@@ -5,6 +5,7 @@
 
 import { agentApi, escapeHtml, showToast, showCustomConfirm, getAgentConnection } from './toolbox-shared.js';
 import { loadRagStatus } from './toolbox-rag.js';
+import { initMemoryEntries, refreshMemoryEntries } from './memory-entries.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
 
@@ -370,6 +371,7 @@ export function initMemoryPanel() {
   if (initialized) return;
   initialized = true;
 
+  initMemoryEntries();
   $('memoryTestBtn')?.addEventListener('click', onTest);
   $('memoryReindexBtn')?.addEventListener('click', onReindex);
   $('memoryApiKeyClearBtn')?.addEventListener('click', onClearApiKey);
@@ -393,6 +395,9 @@ export async function refreshMemoryPanel() {
   const status = await loadRagStatus();
   lastStatus = status;
   renderGate(status);
-  if (!status.connected) { renderStatusOffline(); return; }
+  // 条目区自带连接态判断（离线时如实展示），两条路径都要带刷：
+  // 它是本 Tab 的第二个数据入口，不能只刷配置不刷列表
+  if (!status.connected) { renderStatusOffline(); await refreshMemoryEntries(); return; }
   await loadAll();
+  await refreshMemoryEntries();
 }
