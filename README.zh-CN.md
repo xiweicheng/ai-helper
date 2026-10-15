@@ -30,15 +30,15 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 <video src="docs/videos/ai-helper-intro-video-zh.mp4" controls preload="metadata" width="100%"></video>
 
-- ▶️ 中文版：[在线观看](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-zh.mp4) · 仓库内 [`docs/videos/ai-helper-intro-video-zh.mp4`](docs/videos/ai-helper-intro-video-zh.mp4)
-- ▶️ English：[Watch online](https://xiweicheng.github.io/ai-helper/videos/ai-helper-intro-video-en.mp4) · 仓库内 [`docs/videos/ai-helper-intro-video-en.mp4`](docs/videos/ai-helper-intro-video-en.mp4)
+- ▶️ 中文版：[在线观看（Bilibili）](https://www.bilibili.com/video/BV1tZHZ6NEAr/) · 仓库内 [`docs/videos/ai-helper-intro-video-zh.mp4`](docs/videos/ai-helper-intro-video-zh.mp4)
+- ▶️ English：[Watch on YouTube](https://www.youtube.com/watch?v=6UtuvmZ1Pm8) · 仓库内 [`docs/videos/ai-helper-intro-video-en.mp4`](docs/videos/ai-helper-intro-video-en.mp4)
 
 **AI 插件自动批量录入表单**（67 秒 · 带旁白与字幕）：附 Excel 数据源一句话下单，插件自动跳转表单页、逐行读取、自动填入并提交，结尾与源数据分屏核对。
 
 <video src="docs/videos/form-autofill-demo-zh.mp4" poster="docs/videos/cover-zh.jpg" controls preload="metadata" width="100%"></video>
 
-- ▶️ 中文版：[在线观看](https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-zh.mp4) · 仓库内 [`docs/videos/form-autofill-demo-zh.mp4`](docs/videos/form-autofill-demo-zh.mp4)
-- ▶️ 英文版：[Watch online](https://xiweicheng.github.io/ai-helper/videos/form-autofill-demo-en.mp4) · 仓库内 [`docs/videos/form-autofill-demo-en.mp4`](docs/videos/form-autofill-demo-en.mp4)
+- ▶️ 中文版：[在线观看（Bilibili）](https://www.bilibili.com/video/BV1E5Hf6WECq/) · 仓库内 [`docs/videos/form-autofill-demo-zh.mp4`](docs/videos/form-autofill-demo-zh.mp4)
+- ▶️ 英文版：[Watch on YouTube](https://www.youtube.com/watch?v=mA1x2QiuXPo) · 仓库内 [`docs/videos/form-autofill-demo-en.mp4`](docs/videos/form-autofill-demo-en.mp4)
 
 ## 它能帮你做什么
 
