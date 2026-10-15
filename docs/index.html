@@ -1180,12 +1180,12 @@
     <p data-i18n="demo-desc">Product introduction & real-world automation demos</p>
   </div>
   <div style="max-width:960px;margin:0 auto 40px;">
-    <video id="introVideo" controls preload="metadata" width="100%" style="border-radius:12px;background:#000;display:block;" src="videos/ai-helper-intro-video-en.mp4"></video>
+    <iframe id="introVideo" title="AI Helper Product Introduction" style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000;display:block;" src="https://www.youtube.com/embed/6UtuvmZ1Pm8" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
     <h3 style="margin:14px 0 6px;" data-i18n="intro-cap-title">AI Helper Product Introduction</h3>
     <p style="margin:0;opacity:.75;" data-i18n="intro-cap-desc">Complete walkthrough of AI Helper: ReAct reasoning loop, 40+ built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.</p>
   </div>
   <div style="max-width:960px;margin:0 auto;">
-    <video id="demoVideo" controls preload="metadata" width="100%" style="border-radius:12px;background:#000;display:block;" src="videos/form-autofill-demo-en.mp4" poster="videos/cover-en.jpg"></video>
+    <iframe id="demoVideo" title="Auto Batch Form Filling" style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px;background:#000;display:block;" src="https://www.youtube.com/embed/mA1x2QiuXPo" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
     <h3 style="margin:14px 0 6px;" data-i18n="demo-cap-title">Auto Batch Form Filling · English Narration</h3>
     <p style="margin:0;opacity:.75;" data-i18n="demo-cap-desc">Attach an Excel data source and order in one sentence: the plugin opens the form page, reads rows one by one, fills and submits automatically, then verifies against the source in a split screen.</p>
   </div>
@@ -2010,26 +2010,24 @@
       lbZoomLabel.textContent = translations['lb-fit'][lang];
     }
 
-    // Switch demo video source & cover poster to match interface language
-    var demoVideo = document.getElementById('demoVideo');
-    if (demoVideo) {
-      var videoSrc = 'videos/form-autofill-demo-' + lang + '.mp4';
-      if (demoVideo.getAttribute('src') !== videoSrc) {
-        demoVideo.src = videoSrc;
-        demoVideo.poster = 'videos/cover-' + lang + '.jpg';
-        demoVideo.load();
+    // Switch embedded videos to online players matching interface language (en → YouTube, zh → Bilibili)
+    var videoEmbedSources = {
+      introVideo: {
+        en: 'https://www.youtube.com/embed/6UtuvmZ1Pm8',
+        zh: 'https://player.bilibili.com/player.html?bvid=BV1tZHZ6NEAr&page=1&autoplay=0'
+      },
+      demoVideo: {
+        en: 'https://www.youtube.com/embed/mA1x2QiuXPo',
+        zh: 'https://player.bilibili.com/player.html?bvid=BV1E5Hf6WECq&page=1&autoplay=0'
       }
-    }
-
-    // Switch intro video source to match interface language
-    var introVideo = document.getElementById('introVideo');
-    if (introVideo) {
-      var introSrc = 'videos/ai-helper-intro-video-' + lang + '.mp4';
-      if (introVideo.getAttribute('src') !== introSrc) {
-        introVideo.src = introSrc;
-        introVideo.load();
+    };
+    Object.keys(videoEmbedSources).forEach(function(id) {
+      var frame = document.getElementById(id);
+      var src = videoEmbedSources[id][lang];
+      if (frame && src && frame.getAttribute('src') !== src) {
+        frame.setAttribute('src', src);
       }
-    }
+    });
 
     // Switch screenshot cards (zh/en screenshot pairs) to match interface language
     document.querySelectorAll('.screenshot-card[data-src-zh]').forEach(function(card) {

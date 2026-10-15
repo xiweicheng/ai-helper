@@ -12,11 +12,11 @@
 
 ## 发布（README / GitHub Pages）
 
-构建脚本将成片与封面直接写入 `docs/videos/`（ASCII 文件名），Pages 站点与两份 README 均引用该目录，无需手动拷贝：
+成片已上传至在线平台（YouTube / Bilibili），Pages 与 README 均改为引用在线地址，不再依赖仓库内的 MP4：
 
-- **Pages**：`docs/index.html` 的「演示视频 / Demo Videos」分区（导航栏同有入口），随界面语言只渲染对应的一条视频（`applyLang` 中切换 `#demoVideo` 的 src 与 poster）；
-- **README**：中/英 README 的「演示视频 / Demo Videos」小节（内嵌 `<video>` + Pages 在线观看链接）。
-- 重新出片后直接提交 `docs/videos/` 下的变更即可（构建脚本已同步覆盖成片与封面）。
+- **Pages**：`docs/index.html` 的「演示视频 / Demo Videos」分区（导航栏同有入口）以 `<iframe>` 嵌入在线播放器，随界面语言切换（`applyLang` 中按 `#introVideo` / `#demoVideo` 切换 src：英文 → YouTube embed，中文 → Bilibili player）；
+- **README**：中/英 README 的「演示视频 / Demo Videos」小节仅保留 YouTube / Bilibili 在线观看链接（GitHub README 不支持 iframe 嵌入）。
+- 若重新出片，需将新成片重新上传至两个平台并同步更新 `docs/index.html`（两处 embed 地址）与两份 README 中的链接。
 
 ## 依赖
 
