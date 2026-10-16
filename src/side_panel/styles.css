@@ -5289,10 +5289,15 @@ body {
 .input-container > .file-preview-bar {
   margin-bottom: -6px;
 }
-/* 自适应测量期间（toolbar-adapt.js 临时添加）：禁用过渡，保证同步测量读到终值布局 */
+/* 自适应测量期间（toolbar-adapt.js 临时添加）：禁用过渡，保证同步测量读到终值布局。
+   同时中和 transform：发送按钮 :hover/:stop-mode:hover 的 scale(1.05) 会让元素
+   探出底行右边界，scrollWidth 被视觉放大 1px → 全宽下误判溢出、整行误降级为
+   图标模式（鼠标悬停/点击发送触发，Enter 发送不触发）；测量只关心布局溢出，
+   与禁 transition 同理须在 measuring 期间归零。 */
 .input-container.measuring,
 .input-container.measuring * {
   transition: none !important;
+  transform: none !important;
 }
 .input-container textarea {
   flex: 1;

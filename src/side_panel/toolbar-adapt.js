@@ -81,10 +81,14 @@ export function adaptInputToolbar() {
   const container = bar?.closest('.input-container') || null;
   if (!bar || !container) return;
 
-  // 测量期间禁用容器内过渡：.memory-limit-label / .tool-config-btn 等带
-  // transition:all，会过渡 border-width / padding 等布局属性——“移除降级类→
-  // 同帧读 scrollWidth”读到的是过渡起点值（仍接近降级态），空间恢复时会被
-  // 误判为“无需降级”，而布局稍后展开为溢出且不再自愈。测量全同步
+  // 测量期间禁用容器内过渡与 transform：
+  // - .memory-limit-label / .tool-config-btn 等带 transition:all，会过渡
+  //   border-width / padding 等布局属性——“移除降级类→同帧读 scrollWidth”
+  //   读到的是过渡起点值（仍接近降级态），空间恢复时会被误判为“无需降级”，
+  //   而布局稍后展开为溢出且不再自愈；
+  // - 发送按钮 :hover 的 scale(1.05) 会让元素探出底行右边界，scrollWidth 被
+  //   视觉放大 1px——鼠标悬停/点击发送时全宽也会误判溢出而整行误降级。
+  // 测量只关心布局终值，两者同在 measuring 期间中和（styles.css）。测量全同步
   // （scrollWidth 强制 reflow），同一帧内添加与移除，浏览器不渲染中间态。
   container.classList.add('measuring');
   try {
