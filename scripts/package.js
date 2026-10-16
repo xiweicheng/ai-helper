@@ -100,9 +100,24 @@ function main() {
   console.log(`\n📦 Creating ${zipName} (manifest.json at zip root)...\n`);
   try {
     // -r recursive, -X strip extra attrs (no __MACOSX); run inside dist so paths are relative to root
-    execFileSync('zip', ['-r', '-X', zipPath, '.', '-x', '*.DS_Store'], { cwd: distDir, stdio: 'inherit' });
+    // *.map 一并排除：商店包里带源码映射等于公开源码（SEC-13），vite 已关，这里是第2道防线
+    execFileSync('zip', ['-r', '-X', zipPath, '.', '-x', '*.DS_Store', '-x', '*.map'], { cwd: distDir, stdio: 'inherit' });
   } catch {
     fail('Failed to create zip. Is the `zip` command available? (macOS/Linux)');
+  }
+
+  // 归档内复核一次，防「配置被改回 + 排除写法失效」静默飘过
+  let listing = null;
+  try {
+    listing = execFileSync('unzip', ['-l', zipPath], { encoding: 'utf-8' });
+  } catch {
+    console.log('⚠️  `unzip` not available, skipped zip content check');
+  }
+  if (listing) {
+    const leakedMaps = listing.split('\n').filter((line) => line.trim().endsWith('.map'));
+    if (leakedMaps.length) {
+      fail(`Store zip contains sourcemap files: ${leakedMaps.map((l) => l.trim().split(/\s+/).pop()).join(', ')}`);
+    }
   }
 
   console.log(`\n✅ Package ready: ${zipPath}`);

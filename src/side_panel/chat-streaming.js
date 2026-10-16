@@ -564,12 +564,7 @@ export async function refreshAgentNames() {
 function getAgentName(agentId) {
   return agentNameCache.get(agentId) || agentId;
 }
-import {
-  exportAssistantMessageToDocx,
-  exportAssistantMessageToPdf,
-  exportAssistantMessageToMarkdown,
-  exportAssistantMessageToImage,
-} from './chat-export.js';
+// 导出函数改为按需加载，避免 chat-export 的 docx 依赖进入首屏 chunk（PERF-05）
 import logger from '../shared/logger.js';
 
 // 从 chat-manager.js 反向导入（依赖注入方向：chat-manager → chat-streaming）
@@ -1795,26 +1790,30 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   ].join('');
   
   const docxBtn = exportDropdown.querySelector('.export-docx-item');
-  docxBtn.addEventListener('click', (e) => {
+  docxBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const { exportAssistantMessageToDocx } = await import('./chat-export.js');
     exportAssistantMessageToDocx(element, docxBtn, exportDropdown);
   });
   
   const mdBtn = exportDropdown.querySelector('.export-md-item');
-  mdBtn.addEventListener('click', (e) => {
+  mdBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const { exportAssistantMessageToMarkdown } = await import('./chat-export.js');
     exportAssistantMessageToMarkdown(element, mdBtn, exportDropdown);
   });
   
   const pdfBtn = exportDropdown.querySelector('.export-pdf-item');
-  pdfBtn.addEventListener('click', (e) => {
+  pdfBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const { exportAssistantMessageToPdf } = await import('./chat-export.js');
     exportAssistantMessageToPdf(element, pdfBtn, exportDropdown);
   });
   
   const imageBtn = exportDropdown.querySelector('.export-image-item');
-  imageBtn.addEventListener('click', (e) => {
+  imageBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const { exportAssistantMessageToImage } = await import('./chat-export.js');
     exportAssistantMessageToImage(element, imageBtn, exportDropdown);
   });
   

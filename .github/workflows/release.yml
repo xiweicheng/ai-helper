@@ -90,8 +90,13 @@ jobs:
         run: |
           ZIP="ai-helper-${TAG}.zip"
           cd dist
-          zip -r "../${ZIP}" .
+          # 不带源码映射：vite 已关 sourcemap，这里是第2道防线（防配置被改回）
+          zip -r "../${ZIP}" . -x "*.map"
           cd ..
+          if unzip -l "$ZIP" | grep '\.map'; then
+            echo "::error::Release zip contains sourcemap files (.map) - source code would ship publicly"
+            exit 1
+          fi
           ls -lh "$ZIP"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 

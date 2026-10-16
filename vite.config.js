@@ -26,7 +26,10 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // 产物是直装进 Chrome 扩展包的，开 map 等于把源码（含注释）一起发布：
+    // 此前 dist 内 16 个 .map 共 10 MB，最大的 side_panel.js.map 4.2 MB（SEC-13）。
+    // 调试请看 src（单测与 e2e 都是从 src 现打），不要在这里改回 true
+    sourcemap: false,
     rollupOptions: {
       input: {
         background: 'src/background/index.js',

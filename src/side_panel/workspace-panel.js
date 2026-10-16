@@ -18,7 +18,8 @@ import state from './state.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, splitTableCells, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
-import { renderMermaidInContainer, convertSvgsToImages, createTextRuns } from './chat-export.js';
+// chat-export 的 mermaid/docx 辅助改为按需加载：它的顶层 docx 依赖会把 MB 级代码
+// 拖进 side_panel 首屏 chunk（PERF-05）
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 
 import DOMPurify from 'dompurify';
@@ -515,6 +516,16 @@ let focusedIndex = -1;
 // 预览是否因产物入口（previewArtifactFile）而自动展开面板：
 // 为 true 时关闭预览会一并收起面板，避免残留空的工作目录页面（用户需关闭两次）
 let previewAutoClosePanel = false;
+// 预览期注册的 window 级监听（拖拽平移 / 缩放重算）统一挂在这个 signal 上。
+// 以前这些监听只注册从不移除，每预览一个文件就永久多出 3 个常驻监听
+// 以及它们闭包里抱住的 pdf / pptx / image 数据（PERF-06）
+let previewAbortController = null;
+
+// 预览期 window 监听的唯一注册入口：带上当前这一轮的 signal；
+// signal 缺失时退化为普通注册，不影响既有行为
+function addPreviewWindowListener(type, handler) {
+  window.addEventListener(type, handler, previewAbortController ? { signal: previewAbortController.signal } : undefined);
+}
 
 /**
  * 初始化工作目录面板
@@ -1992,6 +2003,11 @@ async function fetchFileArrayBuffer(filePath) {
  * 预览文件（按类型分支）
  */
 async function previewFile(filePath, fileName) {
+  // 上一轮预览的 window 监听到此作废（含它们闭包里的文档数据），
+  // 三个预览分支（pdf / pptx / image）都只从本函数进，所以在这里收口一次
+  if (previewAbortController) previewAbortController.abort();
+  previewAbortController = new AbortController();
+
   const previewArea = document.getElementById('workspacePreviewArea');
   const previewContent = document.getElementById('workspacePreviewContent');
   const previewFilename = document.getElementById('workspacePreviewFilename');
@@ -2391,7 +2407,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
     e.preventDefault();
   });
 
-  window.addEventListener('mousemove', (e) => {
+  addPreviewWindowListener('mousemove', (e) => {
     if (!pdfIsDragging) return;
     pdfPanX = pdfDragPanStartX + (e.clientX - pdfDragStartX);
     pdfPanY = pdfDragPanStartY + (e.clientY - pdfDragStartY);
@@ -2399,7 +2415,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
     applyPdfTransform();
   });
 
-  window.addEventListener('mouseup', () => {
+  addPreviewWindowListener('mouseup', () => {
     if (pdfIsDragging) {
       pdfIsDragging = false;
       viewport.style.cursor = pdfVisualScale > pdfFitScale ? 'grab' : 'default';
@@ -2437,7 +2453,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   });
 
   // resize 重新计算 fit 并重新渲染
-  window.addEventListener('resize', () => {
+  addPreviewWindowListener('resize', () => {
     if (!currentPdfDoc) return;
     renderPdfPageInternal();
   });
@@ -2608,7 +2624,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
     e.preventDefault();
   });
 
-  window.addEventListener('mousemove', (e) => {
+  addPreviewWindowListener('mousemove', (e) => {
     if (!pptxIsDragging) return;
     pptxPanX = pptxDragPanStartX + (e.clientX - pptxDragStartX);
     pptxPanY = pptxDragPanStartY + (e.clientY - pptxDragStartY);
@@ -2616,7 +2632,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
     applyPptxTransform();
   });
 
-  window.addEventListener('mouseup', () => {
+  addPreviewWindowListener('mouseup', () => {
     if (pptxIsDragging) {
       pptxIsDragging = false;
       viewport.style.cursor = pptxVisualScale > pptxFitScale ? 'grab' : 'default';
@@ -2667,7 +2683,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
   });
 
   // resize 重新计算 fit 并应用
-  window.addEventListener('resize', () => {
+  addPreviewWindowListener('resize', () => {
     if (!pptxSlidesHtml || pptxSlidesHtml.length === 0) return;
     // 用 rAF 确保全屏切换后 DOM 布局已完成
     requestAnimationFrame(() => {
@@ -3043,7 +3059,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
     e.preventDefault();
   });
 
-  window.addEventListener('mousemove', (e) => {
+  addPreviewWindowListener('mousemove', (e) => {
     if (!isDragging) return;
     panX = dragPanStartX + (e.clientX - dragStartX);
     panY = dragPanStartY + (e.clientY - dragStartY);
@@ -3051,7 +3067,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
     applyTransform();
   });
 
-  window.addEventListener('mouseup', () => {
+  addPreviewWindowListener('mouseup', () => {
     if (isDragging) {
       isDragging = false;
       viewport.style.cursor = scale > fitScale ? 'grab' : 'default';
@@ -3087,7 +3103,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
   });
 
   // 窗口 resize 时重新计算 fit
-  window.addEventListener('resize', () => {
+  addPreviewWindowListener('resize', () => {
     fitScale = calcFitScale();
     clampPan();
     applyTransform();
@@ -3313,6 +3329,7 @@ async function handleExport(type) {
 
 async function preRenderMermaidForExport(container) {
   if (typeof mermaid === 'undefined') return;
+  const { renderMermaidInContainer, convertSvgsToImages } = await import('./chat-export.js');
   await renderMermaidInContainer(container);
   await convertSvgsToImages(container);
 }
@@ -3324,6 +3341,7 @@ async function preRenderMermaidForExport(container) {
 async function renderMermaidBlocksToImagesLocal(markdownContent) {
   if (typeof mermaid === 'undefined') return markdownContent;
   if (!/```mermaid/i.test(markdownContent)) return markdownContent;
+  const { renderMermaidInContainer, convertSvgsToImages } = await import('./chat-export.js');
 
   try {
     const htmlContent = formatMarkdown(markdownContent);
@@ -3400,6 +3418,7 @@ async function exportWorkspaceDocx(fileName) {
 
 async function parseMarkdownToDocxChildrenLocal(markdown) {
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip } = await import('docx');
+  const { createTextRuns } = await import('./chat-export.js');
   
   if (!markdown || !markdown.trim()) {
     return [new Paragraph({ children: [new TextRun({ text: '' })] })];

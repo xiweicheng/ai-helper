@@ -28,6 +28,7 @@ import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 import { decodeSecret } from '../shared/secret.js';
+import { debounce } from '../shared/utils.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -3503,9 +3504,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     adjustInputHeight();
   });
 
+  // 滚动位置：以前每次 scroll 事件直接写 storage，滚动全程高频同步 IO（PERF-04）。
+  // 改为静默 200ms 后只写最后一次；key 与 scrollTop 都在事件发生时捕获，
+  // 否则延迟落盘时 activeSessionId 可能已切走，会把位置写到别的会话上
+  const saveScrollPosition = debounce((key, top) => {
+    chrome.storage.local.set({ [key]: top });
+  }, 200);
   chatContainerEl.addEventListener('scroll', () => {
-    const key = 'scrollPosition_' + (state.activeSessionId || 'default');
-    chrome.storage.local.set({ [key]: chatContainerEl.scrollTop });
+    saveScrollPosition('scrollPosition_' + (state.activeSessionId || 'default'), chatContainerEl.scrollTop);
+  });
+  // 面板收起时 debounce 可能还在等，兜底立即落一次，不丢最后一段滚动
+  window.addEventListener('pagehide', () => {
+    chrome.storage.local.set({
+      ['scrollPosition_' + (state.activeSessionId || 'default')]: chatContainerEl.scrollTop,
+    });
   });
 
   // 更多操作下拉菜单

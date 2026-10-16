@@ -320,6 +320,15 @@ function renameToStableNames(assetsDir, backgroundFile, contentFile, sidePanelFi
   replaceInFile(sidePanelHtmlPath, renameMap);
   replaceInFile(optionsHtmlPath, renameMap);
 
+  // chunk 之间是静态 import，说明符用的就是带 hash 的文件名。入口一旦被改名，
+  // 反向引用它的 chunk 会指向不存在的文件，运行时表现为
+  // "Failed to fetch dynamically imported module"（chat-export 拆成按需 chunk 后
+  // 引用 side_panel-<hash>.js 正是这种情况），所以改名映射也要写进 chunk 源码。
+  for (const file of fs.readdirSync(assetsDir)) {
+    if (!file.endsWith('.js')) continue;
+    replaceInFile(path.join(assetsDir, file), renameMap);
+  }
+
   console.log('');
 }
 
