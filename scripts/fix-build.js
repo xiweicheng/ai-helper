@@ -69,6 +69,33 @@ function removeFile(filePath) {
   console.log(`🗑️  Removed file: ${path.relative(distDir, filePath)}`);
 }
 
+function patchJsPDFRemoteCode(libsDir) {
+  // Chrome MV3 政策禁止远程托管代码（拒审参考 ID: Blue Argon）。
+  // jsPDF 官方打包在 pdfobjectnewwindow 模式（本扩展未使用，仅用 pdf.save() 下载）中
+  // 内置 cdnjs PDFObject URL，会被商店自动扫描命中。将该死代码路径中的远程 URL
+  // 中和为本地 blob 页，消除扫描信号；pdf.save 正常路径不受影响。
+  const file = path.join(libsDir, 'jspdf.min.js');
+  if (!fs.existsSync(file)) {
+    console.warn('⚠️  libs/jspdf.min.js not found, skip remote-code patch');
+    return;
+  }
+  const remoteUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdfobject/2.1.1/pdfobject.min.js';
+  let content = fs.readFileSync(file, 'utf-8');
+  if (!content.includes(remoteUrl)) {
+    console.log('✅ jspdf.min.js already free of remote-code URL');
+    return;
+  }
+  const from = 'case"pdfobjectnewwindow":if("[object Window]"===Object.prototype.toString.call(r)){var o="' + remoteUrl + '",s=';
+  const to = 'case"pdfobjectnewwindow":if("[object Window]"===Object.prototype.toString.call(r)){var o=URL.createObjectURL(new Blob([""],{type:"text/javascript"})),s=';
+  if (!content.includes(from)) {
+    console.error('❌ jspdf remote-code patch anchor not found — vendor file may have changed');
+    process.exit(1);
+  }
+  content = content.replace(from, to);
+  fs.writeFileSync(file, content);
+  console.log('✅ Neutralized remote PDFObject URL in libs/jspdf.min.js (MV3 compliance)');
+}
+
 function cleanDevArtifacts() {
   console.log('🧹 Cleaning dev artifacts...\n');
 
@@ -351,6 +378,8 @@ async function copyOffscreenDocument() {
 }
 
 async function run() {
+  patchJsPDFRemoteCode(path.join(distDir, 'libs'));
+
   cleanDevArtifacts();
   
   const contentFile = findContentFile(assetsDir);
