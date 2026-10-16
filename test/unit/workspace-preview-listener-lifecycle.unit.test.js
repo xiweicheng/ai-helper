@@ -76,7 +76,9 @@ vi.mock('../../src/side_panel/workspace-manager.js', async (importOriginal) => {
 });
 
 // fetchFileArrayBuffer 是逐块读 resp.body.getReader()，桩要供得上这个契约
-globalThis.fetch = async () => ({
+globalThis.fetch = async () => {
+  if (fetchDelayMs) await new Promise((r) => setTimeout(r, fetchDelayMs));
+  return {
   ok: true,
   status: 200,
   body: {
@@ -93,9 +95,13 @@ globalThis.fetch = async () => ({
   },
   text: async () => '',
   json: async () => ({}),
-});
+  };
+};
 
 let previewArtifactFile;
+let closePreview;
+// 取文件的延迟：并发取证要让两轮真的交叠在一起，必须能在 await 处可控地停住
+let fetchDelayMs = 0;
 
 beforeAll(async () => {
   document.body.innerHTML = `
@@ -125,6 +131,7 @@ beforeAll(async () => {
   }
   const mod = await import('../../src/side_panel/workspace-panel.js');
   previewArtifactFile = mod.previewArtifactFile;
+  closePreview = mod.closePreview;
 });
 
 const previewTypes = ['mousemove', 'mouseup', 'resize'];
@@ -199,5 +206,65 @@ describe('PERF-06：预览轮次之间 window 监听不累积', () => {
     const all = previewListeners();
     expect(all.length).toBe(9);
     expect(all.filter((l) => !l.options.signal.aborted).length).toBe(3);
+  });
+
+  // 并发才是这条改动的真正难点：previewFile 在 await 取文件时让出，若另一轮
+  // 挤进来把模块级 controller 换掉，读模块变量的注册会把旧轮的监听挂到新轮上，
+  // 旧轮闭包里的文档数据就得等第三轮才回收。
+  test('两轮预览交叠时，每轮的监听绑的是自己那一轮的 signal', async () => {
+    fetchDelayMs = 25;
+    const before = previewListeners().length;
+
+    const p1 = previewArtifactFile('/ws/race-a.png', 'race-a.png');
+    const p2 = previewArtifactFile('/ws/race-b.png', 'race-b.png');
+    await Promise.all([p1, p2]);
+    fetchDelayMs = 0;
+
+    const round = previewListeners().slice(before);
+    const sigA = round.find((l) => l.type === 'mousemove')?.options.signal;
+    const sigB = round.length > 3 ? round[3].options.signal : round[0].options.signal;
+
+    // 交错次序不作取证前提：谁先注册取决于桩的唤醒顺序，两种次序都必须在
+    // 「旧轮不工作」上收敛。生产侧的 signal?.aborted 早退让陈旧轮压根不注册，
+    // 于是注册总数就是最小值。
+    expect(round.length, `交叠两轮的注册总数为 ${round.length}，不应超过一轮的 3 个`).toBeLessThanOrEqual(3);
+    expect(round.length).toBeGreaterThanOrEqual(3);
+
+    // 新轮自己的 3 个必须齐全、绑同一个 signal、且未被作废
+    const live = round.filter((l) => !l.options.signal.aborted);
+    expect(live.length, `存活 ${live.length} 个，应为最后一轮的 3 个`).toBe(3);
+    const liveSig = live[0].options.signal;
+    for (const l of live) expect(l.options.signal, '存活监听没有同属一轮').toBe(liveSig);
+    expect(new Set(live.map((l) => l.type)).size).toBe(3);
+
+    // 任何挂在该 signal 上的注册都必须是新轮自己的（旧轮挂错即驻留）
+    const onLiveSignal = round.filter((l) => l.options.signal === liveSig);
+    expect(onLiveSignal.length, `同一个 signal 上挂了 ${onLiveSignal.length} 个，说明有旧轮串味`).toBe(3);
+
+    // 行为面：派发 resize，已作废的那一档一个都不许被调到
+    const callsBefore = round.map((l) => l.calls);
+    window.dispatchEvent(new Event('resize'));
+    const deadFired = round.filter((l, i2) => l.options.signal.aborted && l.calls > callsBefore[i2]);
+    expect(deadFired.length, `已作废的旧轮监听被调用了 ${deadFired.length} 个`).toBe(0);
+    const liveResize = round.find((l) => l.type === 'resize' && !l.options.signal.aborted);
+    expect(liveResize.calls, '存活的 resize 没被调用，本轮取证无效').toBeGreaterThan(callsBefore[round.indexOf(liveResize)]);
+    void sigA; void sigB;
+  });
+
+  test('关闭预览即作废本轮监听（不再活到下一次预览）', async () => {
+    await previewArtifactFile('/ws/close.png', 'close.png');
+    const mine = previewListeners().filter((l) => !l.options.signal.aborted);
+    expect(mine.length, '本轮应恰好 3 个存活监听，本轮取证无效').toBe(3);
+
+    await closePreview(true);
+
+    for (const l of mine) {
+      expect(l.options.signal.aborted, `${l.type} 在关闭预览后仍未作废`).toBe(true);
+    }
+    const callsBefore = mine.map((l) => l.calls);
+    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, clientY: 5 }));
+    const fired = mine.filter((l, i) => l.calls > callsBefore[i]);
+    expect(fired.length, `关闭预览后仍有 ${fired.length} 个监听在工作`).toBe(0);
   });
 });

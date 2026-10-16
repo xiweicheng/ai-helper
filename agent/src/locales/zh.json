@@ -189,7 +189,16 @@
     "cmdSc": "服务管理 (sc)",
     "cmdTaskkillF": "强制结束进程 (taskkill /f)",
     "cmdPsRemoveItem": "PowerShell 递归/强制删除 (Remove-Item)",
-    "cmdPsEncoded": "执行 base64 编码的 PowerShell 脚本"
+    "cmdPsEncoded": "执行 base64 编码的 PowerShell 脚本",
+    "cmdCmdSubstitution": "命令中包含命令替换（$( … ) 或反引号）",
+    "cmdDdWrite": "使用 dd 裸写文件内容",
+    "cmdShred": "不可恢复地销毁文件 (shred)",
+    "cmdTruncate": "清空文件内容 (truncate)",
+    "cmdChmodDestroy": "修改权限致文件不可用 (chmod 000/777/a-rwx)",
+    "cmdChown": "修改文件属主 (chown)",
+    "cmdNetwork": "向外发起网络连接",
+    "cmdKillProcess": "结束进程 (kill/pkill/killall)",
+    "cmdSystemService": "修改系统服务/计划任务/内核参数"
   },
   "trash": {
     "moveFailed": "移至回收站失败: {message}",

@@ -189,7 +189,16 @@
     "cmdSc": "Service management (sc)",
     "cmdTaskkillF": "Force kill process (taskkill /f)",
     "cmdPsRemoveItem": "PowerShell recursive/forced delete (Remove-Item)",
-    "cmdPsEncoded": "Execute base64-encoded PowerShell script"
+    "cmdPsEncoded": "Execute base64-encoded PowerShell script",
+    "cmdCmdSubstitution": "Command contains command substitution ($( ) or backticks)",
+    "cmdDdWrite": "Write raw file content via dd",
+    "cmdShred": "Destroy file irrecoverably (shred)",
+    "cmdTruncate": "Truncate file content to zero (truncate)",
+    "cmdChmodDestroy": "Change permissions making file unusable (chmod 000/777/a-rwx)",
+    "cmdChown": "Change file owner (chown)",
+    "cmdNetwork": "Initiate outbound network connection",
+    "cmdKillProcess": "Terminate processes (kill/pkill/killall)",
+    "cmdSystemService": "Modify system services / cron / kernel parameters"
   },
   "trash": {
     "moveFailed": "Move to trash failed: {message}",

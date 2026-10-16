@@ -229,15 +229,69 @@ async function checkPath(pathStr, tFn) {
 }
 
 // ==================== 命令分级管控 ====================
+//
+// 档位语义（见 checkCommand）：
+// - 黑名单 → level='deny'：不给确认弹窗、force 也不可绕过，只留给「目标本身就该绝对禁止」的动作
+// - 灰名单 → level='confirm'：真实用户确认弹窗；force（用户点确认 / 关闭确认开关）可跳过
+//
+// 已知能力边界（不在本层解决，遇到时以注释说明而不是假装防住）：
+// 1. 命令通道不受 allowedPaths 路径沙箱约束（checkPath 只作用于文件类工具），
+//    因此 `cat /etc/passwd` 这类「读取即外泄」的动作无法在本层拦截。
+// 2. 变量间接执行（`S=rm; $S -rf x`）与脚本文件的正文内容静态不可判（另见 collectCommandScopes 注释）。
+// 3. curl/wget/kill 等条目会给常规用法带来确认弹窗，属预期摩擦，可用「本次任务放行」降低频次。
+//
+// 豁免边界：下面 SUBSTITUTION_HARMLESS_HEADS 的只读豁免只适用于「命令替换」这一项
+// 语法特征，黑名单与其余灰名单条目不享任何豁免。
+
+// 命令替换特征用的两类只读名单：
+// - WHITELIST_HEADS 与原黑名单同源（纯输出命令：结果只会被打印）
+// - HARMLESS_HEADS 额外包含只读/不落盘的头命令（cd/true/test 等），
+//   仅用于判定「链式命令的原始整串」要不要参与替换特征，避免整串一票否决
+const SUBSTITUTION_WHITELIST_HEADS =
+  '(?:echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)';
+const SUBSTITUTION_HARMLESS_HEADS =
+  '(?:echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type|true|false|test|cd|dir)';
+const SUBSTITUTION_BACKTICK = /`[^`\n]*`/;
+const SUBSTITUTION_DOLLAR = /\$\s*\((?:[^()]|\([^)]*\))*\)/;
+
+/**
+ * 命令替换特征的送检集合（档位纠偏后的误报控制）
+ * - 子段：只要段首不是纯输出命令就送检（`a=$(echo hi)`、剥壳后的内联载荷）
+ * - 原始整串：仅当整串头命令不在只读名单里才送检，否则 `pwd; echo $(date)`、
+ *   `cd /tmp; echo $(date)` 会被整串一票否决（原始误报根源）
+ * @param {string} whole 原始整串
+ * @param {string[]} scopes 全部子命令范围
+ * @returns {string[]}
+ */
+function substitutionCheckScopes(whole, scopes) {
+  // 拆分器会整段保留 `$( … )`/反引号，extractSubstitutions 再把同一文本递回来一遍；
+  // 只看剥掉替换后的外层位置，否则 `echo $(date)` 会因内层 `date` 不自替换而被重复送检
+  const positions = new Set(splitShellSegments(whole).map(stripEnvAssignments));
+  const out = scopes.filter((s) => s !== whole && !positions.has(s));
+  const isPlainOutput = new RegExp(`^${SUBSTITUTION_WHITELIST_HEADS}\\s`, 'i').test(whole);
+  const isHarmlessHead = new RegExp(`^(${SUBSTITUTION_HARMLESS_HEADS})\\b`, 'i').test(whole);
+  if (!isHarmlessHead && !isPlainOutput) out.push(whole);
+  // 回落：替换藏在引号参数里时（`git commit -m "feat: $(date)"`），拆分器不产出携带它的子段，
+  // 头命令豁免也不送整串——此时只扫含替换的那段引号文本，不得扩大到整个串
+  if (out.length === 0 && !isPlainOutput) {
+    const quoted = (whole.match(/"[^"]*"|'[^']*'/g) || []).filter(
+      (frag) => SUBSTITUTION_BACKTICK.test(frag) || SUBSTITUTION_DOLLAR.test(frag)
+    );
+    out.push(...quoted);
+  }
+  return out;
+}
 
 const BLACKLIST_PATTERNS = [
   // 高危写入系统目录
   /^\s*rm\s+-rf\s+\/(\*|\s|$)/,
   /^\s*rm\s+-rf\s+~(\*|\s|$)/,
   /^\s*rm\s+-rf\s+\/dev\//,
-  /^\s*rm\s+-rf\s+\/etc\//,
   /^\s*rm\s+-rf\s+\/proc\//,
   /^\s*rm\s+-rf\s+\/sys\//,
+  // 递归删除关键系统目录：原表只列了 /dev /etc /proc /sys，/usr /var /bin /root 等同样删了就起不来
+  // 目标紧跟分隔符或结尾，因此 /tmp、/private/tmp 之类不会被误判成系统目录
+  /^\s*rm\s+-(?:[rRf]+|--recursive|--force)\s+(-\S+\s+)*(\/usr|\/var|\/bin|\/sbin|\/lib32|\/lib64|\/lib|\/etc|\/boot|\/opt|\/sys|\/dev|\/root|\/System|\/Library)(\/|\*|\s|$)/,
   // 格式化/磁盘破坏
   /^\s*mkfs\./,
   /^\s*dd\s+if=.*of=\/dev\//,
@@ -256,9 +310,8 @@ const BLACKLIST_PATTERNS = [
   // 修改根目录权限
   /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\//,
   /^\s*chown\s+-R\s+\S+\s+\//,
-  // Shell 命令替换注入 — 允许 echo/printf 等纯输出命令中使用
-  /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*`[^`]*`/,
-  /^\s*(?!(echo|printf|cat|head|tail|wc|ls|pwd|date|whoami|hostname|uname|id|env|printenv|which|type)\s).*\$\s*\([^)]*\)/,
+  // 注：命令替换（$( … ) / 反引号）属「语法可疑」而非「效果危险」，已下调到灰名单，
+  //     否则 `a=$(echo hi)`、`ts=$(date +%s)` 这类零风险写法连确认机会都没有就被硬拒
   // Windows 高危破坏性命令（大小写不敏感）
   /^\s*format\s+[a-zA-Z]:/i,                                                          // 格式化磁盘
   /^\s*diskpart\b/i,                                                                  // 磁盘分区操作
@@ -276,11 +329,34 @@ const GRAYLIST_PATTERNS = [
   { pattern: /npm\s+(i|install)\s+-g\s/, reasonKey: 'security.cmdNpmGlobal' },
   { pattern: /pip\s+(install|uninstall)\s/, reasonKey: 'security.cmdPip' },
   { pattern: /^\s*chmod\s+-R\s+777\s/, reasonKey: 'security.cmdChmod777' },
-  { pattern: /^\s*rm\s+-rf\s+(?!\/|~)/, reasonKey: 'security.cmdRmrf' },
+  // 递归强制删除：原表只拦了 `-rf` 这一种拼写，`rm -r -f x`、`rm --recursive --force x` 原本静默执行。
+  // 必须同时带递归与强删（`rm -f x` 不拦）；黑名单只留给目标本身就该绝对禁止的系统目录
+  { pattern: /^\s*rm\s+(?:-(?=[a-zA-Z]*[rR][a-zA-Z]*[fF])[a-zA-Z]+|-(?=[a-zA-Z]*[rR])[a-zA-Z]+\s*(?:-(?=[a-zA-Z]*[fF])[a-zA-Z]+|--force|--recursive)|--recursive\s*--force|--force\s*--recursive)\s/, reasonKey: 'security.cmdRmrf' },
   { pattern: /git\s+push\s+(-f|--force)/, reasonKey: 'security.cmdGitForcePush' },
   { pattern: /^\s*(shutdown|reboot|halt|poweroff)/, reasonKey: 'security.cmdShutdown' },
   { pattern: /^\s*>\s*\/etc\/hosts/, reasonKey: 'security.cmdHosts' },
   { pattern: /\beval\s+/, reasonKey: 'security.cmdEval' },
+
+  // 命令替换（$( … ) / 反引号）：从黑名单下调至此。只扫「替换确实落在有风险位置」的范围：
+  // 子段只看非纯输出段，整串只看非只读头命令（见 substitutionCheckScopes）
+  { pattern: SUBSTITUTION_BACKTICK, substitutionOnly: true, reasonKey: 'security.cmdCmdSubstitution' },
+  { pattern: SUBSTITUTION_DOLLAR, substitutionOnly: true, reasonKey: 'security.cmdCmdSubstitution' },
+
+  // 裸写/销毁文件内容：原表只拦了 `of=/dev/`，写普通文件同样能毁数据
+  { pattern: /^\s*dd\s+.*\bof=/, reasonKey: 'security.cmdDdWrite' },
+  { pattern: /^\s*shred\b/, reasonKey: 'security.cmdShred' },
+  { pattern: /^\s*truncate\s+.*(?:-s\s*0\b|--size[=\s][+-]?0\b)/, reasonKey: 'security.cmdTruncate' },
+
+  // 权限/属主变更：原表只拦 777 与 +x，`chmod 000` 一样致文件不可用
+  { pattern: /^\s*chmod\s+(-R\s+)?(0?00[0-7]|0?777|a-rwx)\b/, reasonKey: 'security.cmdChmodDestroy' },
+  { pattern: /^\s*chown\s+/, reasonKey: 'security.cmdChown' },
+
+  // 网络外联：原表只拦 `curl … | sh`，而拉取/上传本身就是数据外泄面
+  { pattern: /^\s*(curl|wget|nc|telnet|ssh|scp)\b/, reasonKey: 'security.cmdNetwork' },
+
+  // 进程操作与系统服务/计划任务
+  { pattern: /^\s*(kill|pkill|killall)\s+/, reasonKey: 'security.cmdKillProcess' },
+  { pattern: /^\s*(systemctl|launchctl|crontab|sysctl)\b/, reasonKey: 'security.cmdSystemService' },
 
   // 脚本解释器执行外部文件
   { pattern: new RegExp(`^\\s*${SCRIPT_INTERPRETERS}(\\s+[^-]\\S*)*\\s+\\S*\\.${SCRIPT_EXTENSIONS}\\b`), reasonKey: 'security.cmdExecExternalScript' },
@@ -404,32 +480,42 @@ function extractInlinePayloads(segment) {
  */
 function extractSubstitutions(segment) {
   const found = [];
-  for (let i = 0; i < segment.length; i++) {
-    const ch = segment[i];
-    if (ch === '`') {
-      const end = segment.indexOf('`', i + 1);
-      if (end > i) {
-        found.push(segment.slice(i + 1, end));
-        i = end;
+  const scan = (text) => {
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '`') {
+        const end = text.indexOf('`', i + 1);
+        if (end > i) {
+          found.push(text.slice(i + 1, end));
+          i = end;
+        }
+        continue;
       }
-      continue;
-    }
-    if (ch === '$' && segment[i + 1] === '(') {
-      let depth = 0;
-      let j = i + 1;
-      for (; j < segment.length; j++) {
-        if (segment[j] === '(') depth++;
-        else if (segment[j] === ')') {
-          depth--;
-          if (depth === 0) break;
+      if (ch === '$' && text[i + 1] === '(') {
+        let depth = 0;
+        let j = i + 1;
+        for (; j < text.length; j++) {
+          if (text[j] === '(') depth++;
+          else if (text[j] === ')') {
+            depth--;
+            if (depth === 0) break;
+          }
+        }
+        if (j < text.length) {
+          found.push(text.slice(i + 2, j));
+          i = j;
         }
       }
-      if (j < segment.length) {
-        found.push(segment.slice(i + 2, j));
-        i = j;
-      }
     }
+  };
+
+  scan(segment);
+  // 拆分器在引号内不扫替换（为了不把 `"a && b"` 误拆），于是被引号包住的替换内层会整个逃检：
+  // `bash -c "echo `rm -rf /`"` 曾直接判 allow。这里补扫引号片段内部，使内层命令照常进名单
+  for (const frag of segment.match(/"[^"]*"|'[^']*'/g) || []) {
+    scan(frag.slice(1, -1));
   }
+
   return found.map((s) => s.trim()).filter(Boolean);
 }
 
@@ -574,6 +660,8 @@ function checkCommand(command, force = false, tFn) {
   // 0. 子命令范围：原始整串 + 链式拆分段 + 解释器内联载荷
   //    黑名单与灰名单逐段判定，不得只看命令串开头
   const scopes = collectCommandScopes(trimmed);
+  // 命令替换特征另有自己的送检集合（只读头命令豁免），不得复用整串
+  const substScopes = substitutionCheckScopes(trimmed, scopes);
 
   // 1. 黑名单始终生效（即使是 force 模式也不可绕过）
   for (const scope of scopes) {
@@ -610,12 +698,15 @@ function checkCommand(command, force = false, tFn) {
   // 3. 检查灰名单（逐段：`cd x && sudo y` 里的 sudo 同样要用户确认）
   for (const scope of scopes) {
     for (const entry of GRAYLIST_PATTERNS) {
-      if (entry.pattern.test(scope)) {
-        return {
-          safe: false,
-          level: 'confirm',
-          reason: tr(entry.reasonKey, undefined, tFn)
-        };
+      const candidates = entry.substitutionOnly ? substScopes : [scope];
+      for (const candidate of candidates) {
+        if (entry.pattern.test(candidate)) {
+          return {
+            safe: false,
+            level: 'confirm',
+            reason: tr(entry.reasonKey, undefined, tFn)
+          };
+        }
       }
     }
   }

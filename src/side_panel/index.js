@@ -3724,17 +3724,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     auditLogEmpty.style.display = 'none';
     auditLogList.style.display = 'block';
     auditLogList.innerHTML = entries.map((entry) => {
-      const cat = CATEGORY_LABELS_MAP[entry.category] || entry.category || '-';
-      const level = LEVEL_LABELS_MAP[entry.level] || entry.level?.toUpperCase() || 'INFO';
+      // SEC-11：审计字段源自工具调用记录（文件路径/命令/URL 等），且渲染在扩展页面里，
+      // 未转义即成 XSS 注入点——用户可控的 cat/level/action/details 一律 escapeHtml 后再插值
+      const cat = escapeHtml(CATEGORY_LABELS_MAP[entry.category] || entry.category || '-');
+      const level = escapeHtml(LEVEL_LABELS_MAP[entry.level] || entry.level?.toUpperCase() || 'INFO');
       const levelClass = LEVEL_CLASS_MAP[entry.level] || 'audit-level-info';
       const time = formatAuditTime(entry.timestamp);
-      const details = formatAuditDetails(entry);
+      const details = escapeHtml(formatAuditDetails(entry));
       return `<div class="audit-entry">
         <div class="audit-entry-header">
           <span class="audit-time">${time}</span>
           <span class="audit-level ${levelClass}">${level}</span>
           <span class="audit-category">${cat}</span>
-          <span class="audit-action">${entry.action || '-'}</span>
+          <span class="audit-action">${escapeHtml(entry.action || '-')}</span>
         </div>
         ${details ? `<div class="audit-details">${details}</div>` : ''}
       </div>`;

@@ -110,9 +110,9 @@ All file operations are restricted to directories listed in the `allowedPaths` w
 | Type | Examples |
 |------|----------|
 | Disk destruction | `rm -rf /`, `mkfs.*`, `dd if=... of=/dev/...` |
+| Recursive delete of critical system dirs | `rm -rf /usr`, `/var`, `/bin`, `/sbin`, `/lib`, `/boot`, `/opt`, `/root`, `/System`, `/Library` |
 | System file overwrite | `> /etc/passwd`, `> /etc/shadow` |
 | Malicious pipe execution | `curl ... \| bash`, `git clone ... \| sh` |
-| Shell injection | Backticks, `$()`, `${}` command substitution |
 | Fork bomb | `:(){ :\|:& };:` |
 
 **Greylist** — Requires user confirmation before execution:
@@ -122,10 +122,18 @@ All file operations are restricted to directories listed in the `allowedPaths` w
 | `sudo ...` | Requires admin privileges |
 | `npm install -g ...` | Global package installation |
 | `pip install/uninstall` | Python package management |
-| `chmod -R 777` | Recursive permission modification |
-| `rm -rf ...` | Recursive forced deletion |
+| `chmod -R 777`, `chmod 000`, `chmod a-rwx` | Permission change that renders a file unusable |
+| `chown ...` | Change file owner |
+| `rm -rf ...` (incl. `rm -r -f`, `rm --recursive --force`) | Recursive forced deletion |
+| `dd of=...`, `shred`, `truncate -s 0` | Raw overwrite / destroy / empty a file |
+| `curl`, `wget`, `nc`, `ssh`, `scp` | Outbound network connection |
+| `kill`, `pkill`, `killall` | Terminate processes |
+| `systemctl`, `launchctl`, `crontab`, `sysctl` | System service / scheduled jobs / kernel parameters |
 | `git push --force` | Force push |
 | `shutdown/reboot` | System shutdown/restart |
+| backticks, `$()` command substitution | Statically unclear where the substituted result flows |
+
+> Command substitution (`$(…)`, backticks) is treated as *suspicious syntax*, not a *dangerous effect*: it sits in the greylist (confirm), not the blacklist, and read-only heads such as `echo`/`pwd`/`cd` are exempted so `pwd; echo $(date)` runs directly. Commands **inside** a substitution — including one nested in quotes, e.g. `bash -c "echo \`rm -rf /\`"` — are still checked against the black/grey lists.
 
 ### Authentication
 

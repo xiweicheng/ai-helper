@@ -2,6 +2,31 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-17
+
+### 安全（命令分级档位纠偏与危险动作覆盖补齐）
+> 用户探针实测：一批零风险写法被硬拒，而 `dd`/`chmod` 这类真破坏动作静默执行。结论：现规则拦「语法形似注入」，不拦「效果具备破坏性」，且档位放反了。
+
+- **命令替换特征从黑名单下调至灰名单**：`$( … )` / 反引号两条模式原在 `BLACKLIST_PATTERNS`，命中即 `deny`——**不给确认弹窗、`force` 也不可绕过**，于是 `a=$(echo hi)`、`ts=$(date +%s)` 这类只取值/只打印的写法被当绝对禁止。下调为 `confirm`：真用户确认弹窗，`force`（用户点确认 / 关闭确认开关）可跳过。判定逻辑不变，只改档位。
+- **修正整串一票否决的误报根源**：`collectCommandScopes` 始终先把原始整串送检，而替换特征只看段首命令名——`pwd; echo $(date)`、`cd /tmp && echo \`ls\`` 因整串首 token 不是 `echo` 而被拦。新增 `substitutionCheckScopes`：子段只看非纯输出段，整串只在头命令不属于只读类（`pwd`/`cd`/`whoami`/`test` 等）时参与；替换藏在引号参数里（`git commit -m "feat: $(date)"`）时另扫该引号片段，不扩大到整串。`$( … )` 内的敏感命令仍由 `extractSubstitutions` 逐段送检，防护不降。
+- **连带堵住一个真缺口（旧版就存在）**：拆分器为了不把 `"a && b"` 误拆，在引号内不扫替换，于是**被引号包住的替换内层完全不进送检集合**——`bash -c "echo \`rm -rf /\`"` 实测判 `allow`，连「force 也不可绕过」的黑名单都绕过（内联载荷解开后只剩 `echo \`rm -rf /\``，顶不上任何模式）。修：`extractSubstitutions` 补扫引号片段内部，使内层命令照常逐层进名单；没有替换的引号文本（`echo "plain text"`、`grep -c "sudo rm -rf /" notes.txt`）仍不拆。
+- **真危险动作补齐覆盖**（原先即使确认开关打开也 `allow`）：灰名单新增 `dd of=`（裸写任意文件，原表只拦 `of=/dev/`）、`shred`、`truncate -s 0`/`--size=0`、`chmod 000`/`a-rwx`（原表只拦 777 与 `+x`）、`chown`、`curl/wget/nc/telnet/ssh/scp`（原表只拦 `curl|sh`）、`kill/pkill/killall`、`systemctl/launchctl/crontab/sysctl`。
+- **`rm` 两类静默执行的拼写/目标收口**：原灰名单只写了 `-rf` 且排除了 `/` 开头，于是 `rm -r -f x`、`rm --recursive --force x`、`rm -rf /tmp/x` 全部 `allow`。改为「同时具备递归与强删」即确认（`rm -f x` 不新增摩擦）；黑名单在 `/dev /etc /proc /sys` 之外补上 `/usr /var /bin /sbin /lib /boot /opt /root /System /Library`，且保留「目标紧跟分隔符或结尾」的边界，`/tmp`、`/private/tmp` 不误判为系统目录。
+- **已知局限写入代码注释**（不再假装防住）：命令通道不受 `allowedPaths` 路径沙箱约束（`checkPath` 只作用于文件类工具），故 `cat /etc/passwd` 这类「读取即外泄」无法在本层拦；变量间接执行与脚本正文内容静态不可判；只读头命令豁免**仅适用于替换这一项语法特征**，黑名单与其余灰名单条目不享豁免。
+- **测试**：`agent/test/unit/command-security-check.unit.test.js` 新增 4 组——误杀回归（含用户原探针 8 条写法）、覆盖补齐、黑名单 `force` 不可越、既有防线不退化（`curl|sh`、链式 `sudo`、包装器剥壳、常规构建命令零摩擦）；并补两组「被引号包住的替换内层同样逐层送检」用例（覆盖上面那个真缺口）。另加一组守卫：灰名单 `reasonKey` 必须在中英语言包都有文案且非空（弹框直接展示 `reason`，漏一侧会给用户展出裸 key）。
+- **验证**：agent 单测 **473 例全绿**，根目录全量 **104 文件 / 1600 测试全绿**，eslint 0，`npm run build:silent` 成功。
+- **待办（不属本次改动）**：`timeoutMs` 配置与 `tool-executor.js` 硬编码 120s 强杀、有输出时自动延长 5 倍三者冲突，导致配置值名存实亡，另案处理。
+
+## 2026-10-17
+
+### 安全（SEC-11：审计日志渲染转义）
+> 审计底账里与 SEC-05、NEW-05 并批的一条。核实后只有本条同时满足「确认是真问题 + 改动纯追加式、风险很低」，故单独收口；另两条结论见下。
+
+- **SEC-11 已修**：`side_panel/index.js` 的 `renderAuditLogs` 把审计条目拼成 HTML 直赋 `innerHTML`，其中 `cat` / `level` / `entry.action` / `details` 源自工具调用记录（文件路径 / 命令 / URL）且未转义。因渲染发生在**扩展页面**，注入成功即拿到扩展上下文、能 `chrome.runtime.sendMessage` 唤起其它 handler，真实危害高于其标称「中」等级。修法：四处一律过已引入的 `escapeHtml`（元素文本位）后再插值；`time`（Date 生成）与 `levelClass`（固定 map 兜底字面量）本就安全，未动。
+- **守卫**：新增 `test/unit/audit-log-escape.unit.test.js` 11 例——4 例源码接线形状（`cat/level/details` 赋值包 `escapeHtml`、action 插值过 `escapeHtml`、旧裸插值/裸赋值不得复现）+ 7 例行为不变量（用真 `escapeHtml` 驱 5 类 payload 复刻渲染位，断言注不进真元素且 `.textContent` 原样保留 + 一条「不转义确会注入」的正向对照）。负向对照：`git checkout` 还原 SEC-11 → 3 条源码接线守卫转红（行为层与源码无关，仍绿）。全量 **104 文件 / 1600 测试全绿**，eslint 0，已重跑 `npm run build:silent`。
+- **NEW-05（mermaid 缺已渲染守卫）复核后判定为误报，未改**：① 每条新流式消息走的是作用域化的 `renderMessageMermaid(messageDiv)`，不是全文档扫描；② `renderSingleMermaid` 首行已有 `if (container.querySelector('svg')) return` 守卫，已渲染的图不会重跑 `mermaid.run()`；③ `renderMermaidCharts()` 只在会话切换 / 历史恢复两个批处理点调用，而那里重建 `addMermaidControls` 是**有意的**（虚拟 DOM 缓存恢复后事件监听失效需重挂）。加「已渲染跳过」标记反会让恢复后的图表控制按钮失灵——既非真缺陷、也不低风险。
+- **SEC-05（iframe 消息无来源校验）确认为真问题，但修法不低风险，暂缓待决**：`selection-toolbar.js` 的 `window.addEventListener('message')` 不校验 `event.origin/source`，发送侧 `postMessage(...,'*')`。但内容脚本与页面脚本共用同一 `window` 消息通道，`origin` 校验对同源 iframe 无效、`event.source` 只能区分层级不能区分是否真内容脚本；要真正收口需迁到 `chrome.runtime` 或跨域 iframe 实测——回归面（选区上报被打断）远大于改动本身，且只能靠真扩展 iframe 探针取证。仅加「字段形状校验」堵不住本条的真实威胁（伪造者可发格式正确的假选区）。待用户定夺是否配探针单做。
+
 ## 2026-10-16
 
 ### 新增（确认/澄清弹窗单模态闸门与并发排队）
@@ -53,6 +78,15 @@
 - **测试**：新增 `test/unit/audit-small-fixes.unit.test.js` 21 例（四项的源码/构建脚本/产物接线形状 + `debounce` 与 `signal` 两条真语义契约 + 产物引用图完整性）与 `test/unit/workspace-preview-listener-lifecycle.unit.test.js` 4 例（用真 `workspace-panel.js` 驱真 `previewArtifactFile` 连做三轮图片预览，只桩网络层；给每个已注册 handler 套调用计数，旧轮次 **0 次调用**、存活的这轮照常收到调用）。另有 `test/unit/export-click-lazy-import.unit.test.js` 7 例（NEW-07 的回归守卫）。全量 **103 文件 / 1579 测试全绿**。负向对照均已跑：八个改动文件一起 `git stash`（不重建 dist）后重跑两个文件 → **17 例红 / 8 例绿**，其中守卫文件 13 红、行为取证文件 4 例全红；绿的 8 例全部是契约类与 dist 产物级（产物仍是修好的那个），说明红点精确落在源码与构建脚本的改动上。
 - **真扩展冒烟**（`test-results-probes/_audit-small-fixes-smoke.mjs`，27 项全绿）：把 dist 真装进 Chrome 验 ① 首屏 0 个 `.map` 请求、0 个 chat-export 请求 ② chunk 间静态 import 无悬空目标（23 个 chunk 全 OK）③ 滚动 20 次期间 0 次写入、静默后 1 次、`pagehide` 再 1 次 ④ 扩展内可动态 import 按需 chunk 且引用方取用的 7 个符号全部可用 ⑤ docx 代码确实落在按需链里且首屏从未拉取 ⑥ 真跑一次 Word 导出并校验产物。负向对照分两次跑：回退四项改动 → **9 项红**（B1 直接量化出改前 20 次滚动写入 20 次、D1 量出改前主 chunk 1,316 KB 含 OOXML）；只把 8 个导出回调还原成 await 后取 `currentTarget` → **F1/F2 红**（实测「捕获 0 个」与「8 个晚取」）。
 - **未覆盖面（需人工点验）**：真扩展里已把 Word 导出跑到产出物（上一那条），但 PDF / Markdown / 图片三类导出仍只验到「函数可取、按钮非空」这一层；PDF/PPTX 预览也没真跑（要先把 agent 起起来走完配对并备齐三种二进制素材，装置成本远超这些改动本身的风险面），所以预览那两条路径只验到「监听生命周期」与「chunk 可拉取」两层。
+
+### 工程质量（代码审查驱动：守卫升级 AST 版 / 产物级断言去静默绿 / 预览监听并发修正）
+> 起因：对上一批 NEW-07 修复与守卫做代码审查。审查确认 8 处修复本身成立，但指出守卫有 4 个「假绿」洞、`audit-small-fixes` 产物断言可能静默绿，并顺带撞出 PERF-06 在并发下的作废语义不成立。本批是把这三处补硬，未改生产代码的功能面（除 PERF-06 的并发修正）。
+
+- **`export-click-lazy-import.unit.test.js` 三层守卫由字符串正则/大括号配对整体重写为 acorn AST（7 → 15 例）**，逐个堵审查点名的假绿洞：① jsdom 把 click 派发到按钮本身时 `target === currentTarget`，测不出「晚取的是 target 还是 currentTarget」——改为派发到按钮内部 `<span>`/`<svg>`，复刻真机落点使二者可区分；② 锚点原以 `chat-export` 的 import 语句为界，改为回调体内**首个 `await`** 的字节位置（用 AST 定位，提前 await、嵌套括号实参都拦得住）；③ `restoreMessageFromHtml` 此前只有形状覆盖没有行为覆盖——`test.each` 把「驱动函数 × 导出类型」交叉跑（2 驱动 × 4 导出 = 8 例），断言导出函数收到的按钮非空且 `tagName === 'BUTTON'`；④ 别名（`const ev = e; ev.currentTarget`）与解构（`const { currentTarget: btn } = e`）漏扫——追踪事件参数派生名集合，成员访问与解构两形态都查。`acorn` 提为直接 devDependency。
+- **负向对照**（`test-results-probes/_new07-guard-negative-control.mjs`）：对守卫本身做 M0–M6 共 7 个变体（复现 await 后取值、改 `e.target`、import 前插 await、解构改写、别名晚取、内联实参晚取、删捕获行），逐个注入 git HEAD 前的坏形态再跑该文件，**7 变体全部转红、基线全绿、还原后 src 与 HEAD 逐字节一致**——证明这层守卫不是摆设。（踩坑记录：目录沙箱方案因 `vi.mock` 按解析后真实模块 id 匹配、依赖链断导致整文件被 skip 而误判绿，改回原地注入；vitest 汇总行含 ANSI 色码须先 stripAnsi。）
+- **`audit-small-fixes.unit.test.js` 的 5 条产物级断言此前在本机也从未真跑（静默绿）**：根因是 `DIST_ASSETS = new URL('../../dist/assets/', import.meta.url)` 在 vitest 环境里 pathname 解析成 `/dist/assets`（前缀丢失），`existsSync` 恒 false → `distReady` 恒 false，那 5 条 `if (!distReady) return;` 直接静默通过。改为 `resolve(__dirname, '../../dist')` + `join`，并把 5 处静默 `return` 换成 `test.skipIf(!distReady)`（缺失时显式 skip 而非假装绿）。修复后 21 例全跑全绿，再临时收紧阈值（size<10、carriers>999）验证它们确会红。
+- **PERF-06 并发下作废语义不成立（本批生产侧唯一功能修正）**：`addPreviewWindowListener` 原读模块变量 `previewAbortController`，而 `previewFile` 在 `await` 取文件期间会让出——此时若另起一轮预览，模块变量已被换成新 controller，读模块变量的写法会让**旧轮监听挂到新轮 controller 上驻留**，旧轮闭包里的 pdf/pptx/image 数据要等第三轮才回收。改为 signal 逐轮作参数透传（`previewFile` 建局部 `previewSignal`，三分支加 `signal` 形参、9 个注册点透传）；`closePreview` 提为 export 并在关闭时 `abort` 本轮 controller；`previewImage` 的 `resize` 回调补 `isConnected` 存活守卫；注册入口加 `if (signal?.aborted) return;`（真浏览器丢弃已 aborted 的 signal，jsdom 仍登记——实测语义差异，不能让陈旧轮继续注册）。生命周期测试 4 → 6 例（新增「两轮并发交叠」与「关闭即作废」两例，断言对交错次序保持不敏感）。
+- **复验（全部实测）**：`npm run build:silent` → BUILD_SUCCESS；全量 **103 文件 / 1589 测试全绿**；eslint 0；真扩展冒烟 `_audit-small-fixes-smoke.mjs` **27 项全绿**（重建后按需 chunk 为 `chat-export-cl7EOC1O.js`，F1/F2 验产物 8 个回调仍在 await 前捕获）；`chat-manager.js` 相对 HEAD 无改动（本批只动守卫、产物断言与 workspace-panel）。本批改动尚未提交。
 
 ## 2026-10-15
 

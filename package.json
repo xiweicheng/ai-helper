@@ -23,6 +23,7 @@
     "@antfu/eslint-config": "^9.1.0",
     "@crxjs/vite-plugin": "^2.7.0",
     "@playwright/test": "^1.62.1",
+    "acorn": "^8.19.0",
     "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "jsdom": "^29.1.1",

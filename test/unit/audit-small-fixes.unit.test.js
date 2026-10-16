@@ -10,6 +10,7 @@
 // 证明修法依赖的浏览器语义真的成立（signal 能摘监听、debounce 只落最后一次）。
 import { describe, test, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
 
@@ -23,12 +24,16 @@ const CHAT_MANAGER = read('../../src/side_panel/chat-manager.js');
 const CHAT_STREAMING = read('../../src/side_panel/chat-streaming.js');
 const CHAT_EXPORT = read('../../src/side_panel/chat-export.js');
 
-const DIST_ASSETS = new URL('../../dist/assets/', import.meta.url);
+const DIST_ROOT = resolve(__dirname, '../../dist');
+const DIST_ASSETS = join(DIST_ROOT, 'assets');
 const distReady = existsSync(DIST_ASSETS);
 
-/** dist 是否已构建出本次改动的产物（未构建时跳过产物级断言，不误红） */
+/**
+ * dist 未构建时这五条以 skip 呈现（而不是 return 后报绿）。
+ * 静默绿会让人以为产物级守卫在跑，而 NEW-06 恰恰只有产物级能抓到。
+ */
 function distFile(name) {
-  return readFileSync(new URL(name, DIST_ASSETS), 'utf8');
+  return readFileSync(join(DIST_ASSETS, name), 'utf8');
 }
 
 function listDistJs() {
@@ -55,9 +60,8 @@ describe('SEC-13：产物不得携带 sourcemap', () => {
     expect(PACKAGE_JS).toMatch(/contains sourcemap files/);
   });
 
-  test('已构建产物里不存在 .map（dist 存在时校验）', () => {
-    if (!distReady) return;
-    const maps = readdirSync(new URL('../../dist/', import.meta.url), { recursive: true })
+  test.skipIf(!distReady)('产物里不存在 .map（需先构建，未构建则 skip）', () => {
+    const maps = readdirSync(DIST_ROOT, { recursive: true })
       .filter((p) => String(p).endsWith('.map'));
     expect(maps).toEqual([]);
   });
@@ -128,8 +132,7 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
     expect(CHAT_MANAGER).not.toMatch(/from 'docx'/);
   });
 
-  test('产物：主 chunk 静态依赖里没有 chat-export/docx，且 OOXML 特征串已移出', () => {
-    if (!distReady) return;
+  test.skipIf(!distReady)('产物：主 chunk 静态依赖里没有 chat-export/docx，且 OOXML 特征串已移出', () => {
     const main = distFile('side_panel.js');
     expect(main).not.toMatch(/from"\.\/chat-export-/);
     expect(main).toMatch(/await import\(`\.\/chat-export-/);
@@ -137,14 +140,12 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
     expect(main).not.toContain('schemas.openxmlformats.org/wordprocessingml');
   });
 
-  test('产物：主 chunk 体积守住收益（改前 1.38 MB，回退即红）', () => {
-    if (!distReady) return;
-    const size = statSync(new URL('side_panel.js', DIST_ASSETS)).size;
+  test.skipIf(!distReady)('产物：主 chunk 体积守住收益（改前 1.38 MB，回退即红）', () => {
+    const size = statSync(join(DIST_ASSETS, 'side_panel.js')).size;
     expect(size).toBeLessThan(1_100_000);
   });
 
-  test('产物：docx 落在按需 chunk 里（确实打出来了，只是不首屏加载）', () => {
-    if (!distReady) return;
+  test.skipIf(!distReady)('产物：docx 落在按需 chunk 里（确实打出来了，只是不首屏加载）', () => {
     const carriers = listDistJs().filter((f) => distFile(f).includes('schemas.openxmlformats.org/wordprocessingml'));
     expect(carriers.length).toBeGreaterThan(0);
     expect(carriers).not.toContain('side_panel.js');
@@ -161,11 +162,11 @@ describe('PERF-06：预览期 window 监听必须配对清理', () => {
     expect(naked).toEqual([]);
   });
 
-  test('三组预览共 9 个 window 监听全部走 addPreviewWindowListener', () => {
-    const total = (WORKSPACE_PANEL.match(/addPreviewWindowListener\('/g) || []).length;
+  test('三组预览共 9 个 window 监听全部走 addPreviewWindowListener 并透传本轮 signal', () => {
+    const total = (WORKSPACE_PANEL.match(/addPreviewWindowListener\(signal, '/g) || []).length;
     expect(total).toBe(9);
     for (const type of PREVIEW_TYPES) {
-      expect((WORKSPACE_PANEL.match(new RegExp(`addPreviewWindowListener\\('${type}'`, 'g')) || []).length)
+      expect((WORKSPACE_PANEL.match(new RegExp(`addPreviewWindowListener\\(signal, '${type}'`, 'g')) || []).length)
         .toBe(3);
     }
   });
@@ -179,12 +180,15 @@ describe('PERF-06：预览期 window 监听必须配对清理', () => {
     expect(head).toMatch(/previewAbortController = new AbortController\(\);/);
   });
 
-  test('封装在 signal 缺失时退化为普通注册（不因初始化顺序丢监听）', () => {
+  test('封装按传入 signal 注册，signal 缺失时退化（signal 来自形参而非读模块变量）', () => {
     const helper = WORKSPACE_PANEL.slice(
       WORKSPACE_PANEL.indexOf('function addPreviewWindowListener('),
-      WORKSPACE_PANEL.indexOf('function addPreviewWindowListener(') + 300
+      WORKSPACE_PANEL.indexOf('function addPreviewWindowListener(') + 400
     );
-    expect(helper).toMatch(/previewAbortController \? \{ signal: previewAbortController\.signal \} : undefined/);
+    // 并发关键：signal 必须是形参，不能读模块变量 previewAbortController
+    expect(helper).toMatch(/function addPreviewWindowListener\(signal, type, handler\)/);
+    expect(helper).toMatch(/signal \? \{ signal \} : undefined/);
+    expect(helper).not.toMatch(/previewAbortController \? \{ signal: previewAbortController\.signal \}/);
   });
 
   test('契约：signal 作废后，同一 window 上的匿名监听不再触发', () => {
@@ -210,9 +214,8 @@ describe('构建产物引用图完整性（入口改名不得留下悬空引用�
     expect(tail, '应遍历 assets 下的 .js 修正 chunk 间引用').toMatch(/endsWith\('\.js'\)[\s\S]{0,120}replaceInFile\(path\.join\(assetsDir, file\), renameMap\)/);
   });
 
-  test('已构建产物里全部静态 import 都有实体文件（dist 存在时校验）', () => {
-    if (!distReady) return;
-    const names = readdirSync(new URL('../../dist/assets/', import.meta.url)).filter((f) => f.endsWith('.js'));
+  test.skipIf(!distReady)('产物里全部静态 import 都有实体文件（需先构建，未构建则 skip）', () => {
+    const names = readdirSync(DIST_ASSETS).filter((f) => f.endsWith('.js'));
     const dangling = [];
     for (const f of names) {
       const src = distFile(f);

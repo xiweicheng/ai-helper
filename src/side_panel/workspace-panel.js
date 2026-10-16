@@ -521,10 +521,16 @@ let previewAutoClosePanel = false;
 // 以及它们闭包里抱住的 pdf / pptx / image 数据（PERF-06）
 let previewAbortController = null;
 
-// 预览期 window 监听的唯一注册入口：带上当前这一轮的 signal；
+// 预览期 window 监听的唯一注册入口：绑定「本轮预览自己」的 signal。
+// controller 必须显式传进来而不能读模块变量：previewFile 在 await 取文件期间会让出，
+// 此时若另起一轮预览，模块变量已被换成新 controller —— 读模块变量的写法会让旧轮的
+// 监听挂到新轮上，旧轮闭包里的 pdf/pptx/image 数据要等第三轮才回收（作废语义在并发下不成立）。
 // signal 缺失时退化为普通注册，不影响既有行为
-function addPreviewWindowListener(type, handler) {
-  window.addEventListener(type, handler, previewAbortController ? { signal: previewAbortController.signal } : undefined);
+function addPreviewWindowListener(signal, type, handler) {
+  // 已被作废的轮次不再注册：真浏览器里带已 aborted 的 signal 会被直接丢弃，
+  // 但 jsdom 仍会登记（实测），且更实际的问题是别让陈旧轮继续往里塞东西
+  if (signal?.aborted) return;
+  window.addEventListener(type, handler, signal ? { signal } : undefined);
 }
 
 /**
@@ -2004,9 +2010,11 @@ async function fetchFileArrayBuffer(filePath) {
  */
 async function previewFile(filePath, fileName) {
   // 上一轮预览的 window 监听到此作废（含它们闭包里的文档数据），
-  // 三个预览分支（pdf / pptx / image）都只从本函数进，所以在这里收口一次
+  // 三个预览分支（pdf / pptx / image）都只从本函数进，所以在这里收口一次。
+  // 局部 signal 才是「本轮」；模块变量只用来标记最新一轮，供关闭预览时作废
   if (previewAbortController) previewAbortController.abort();
   previewAbortController = new AbortController();
+  const previewSignal = previewAbortController.signal;
 
   const previewArea = document.getElementById('workspacePreviewArea');
   const previewContent = document.getElementById('workspacePreviewContent');
@@ -2157,7 +2165,7 @@ async function previewFile(filePath, fileName) {
     switch (previewType) {
       case 'pdf':
         fullscreenBtn.style.display = '';
-        await previewPdf(arrayBuffer, fileName, previewContent, previewArea);
+        await previewPdf(arrayBuffer, fileName, previewContent, previewArea, previewSignal);
         break;
       case 'docx':
         fullscreenBtn.style.display = '';
@@ -2165,11 +2173,11 @@ async function previewFile(filePath, fileName) {
         break;
       case 'pptx':
         fullscreenBtn.style.display = '';
-        await previewPptx(arrayBuffer, fileName, previewContent, previewArea);
+        await previewPptx(arrayBuffer, fileName, previewContent, previewArea, previewSignal);
         break;
       case 'image':
         fullscreenBtn.style.display = '';
-        await previewImage(arrayBuffer, fileName, previewContent);
+        await previewImage(arrayBuffer, fileName, previewContent, previewSignal);
         break;
       case 'video':
       case 'audio':
@@ -2232,7 +2240,7 @@ let pdfDragPanStartX = 0, pdfDragPanStartY = 0;
 let pdfZoomRenderTimer = null;
 let pdfRenderZoom = 1;   // canvas 渲染时的缩放因子
 
-async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
+async function previewPdf(arrayBuffer, fileName, previewContent, previewArea, signal) {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'libs/pdf.worker.min.js';
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -2407,7 +2415,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
     e.preventDefault();
   });
 
-  addPreviewWindowListener('mousemove', (e) => {
+  addPreviewWindowListener(signal, 'mousemove', (e) => {
     if (!pdfIsDragging) return;
     pdfPanX = pdfDragPanStartX + (e.clientX - pdfDragStartX);
     pdfPanY = pdfDragPanStartY + (e.clientY - pdfDragStartY);
@@ -2415,7 +2423,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
     applyPdfTransform();
   });
 
-  addPreviewWindowListener('mouseup', () => {
+  addPreviewWindowListener(signal, 'mouseup', () => {
     if (pdfIsDragging) {
       pdfIsDragging = false;
       viewport.style.cursor = pdfVisualScale > pdfFitScale ? 'grab' : 'default';
@@ -2453,7 +2461,7 @@ async function previewPdf(arrayBuffer, fileName, previewContent, previewArea) {
   });
 
   // resize 重新计算 fit 并重新渲染
-  addPreviewWindowListener('resize', () => {
+  addPreviewWindowListener(signal, 'resize', () => {
     if (!currentPdfDoc) return;
     renderPdfPageInternal();
   });
@@ -2504,7 +2512,7 @@ let pptxIsDragging = false;
 let pptxDragStartX = 0, pptxDragStartY = 0;
 let pptxDragPanStartX = 0, pptxDragPanStartY = 0;
 
-async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
+async function previewPptx(arrayBuffer, fileName, previewContent, previewArea, signal) {
   previewArea.dataset.previewType = 'pptx';
 
   const { pptxToHtml } = await import('@jvmr/pptx-to-html');
@@ -2624,7 +2632,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
     e.preventDefault();
   });
 
-  addPreviewWindowListener('mousemove', (e) => {
+  addPreviewWindowListener(signal, 'mousemove', (e) => {
     if (!pptxIsDragging) return;
     pptxPanX = pptxDragPanStartX + (e.clientX - pptxDragStartX);
     pptxPanY = pptxDragPanStartY + (e.clientY - pptxDragStartY);
@@ -2632,7 +2640,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
     applyPptxTransform();
   });
 
-  addPreviewWindowListener('mouseup', () => {
+  addPreviewWindowListener(signal, 'mouseup', () => {
     if (pptxIsDragging) {
       pptxIsDragging = false;
       viewport.style.cursor = pptxVisualScale > pptxFitScale ? 'grab' : 'default';
@@ -2683,7 +2691,7 @@ async function previewPptx(arrayBuffer, fileName, previewContent, previewArea) {
   });
 
   // resize 重新计算 fit 并应用
-  addPreviewWindowListener('resize', () => {
+  addPreviewWindowListener(signal, 'resize', () => {
     if (!pptxSlidesHtml || pptxSlidesHtml.length === 0) return;
     // 用 rAF 确保全屏切换后 DOM 布局已完成
     requestAnimationFrame(() => {
@@ -2944,7 +2952,7 @@ function renderXlsxSheet(rows, colCount, totalRows, content) {
 // 图片预览（滚轮缩放 + 拖拽平移）
 // ============================================================
 
-async function previewImage(arrayBuffer, fileName, previewContent) {
+async function previewImage(arrayBuffer, fileName, previewContent, signal) {
   const ext = (fileName.split('.').pop() || '').toLowerCase();
   const mimeMap = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
@@ -3059,7 +3067,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
     e.preventDefault();
   });
 
-  addPreviewWindowListener('mousemove', (e) => {
+  addPreviewWindowListener(signal, 'mousemove', (e) => {
     if (!isDragging) return;
     panX = dragPanStartX + (e.clientX - dragStartX);
     panY = dragPanStartY + (e.clientY - dragStartY);
@@ -3067,7 +3075,7 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
     applyTransform();
   });
 
-  addPreviewWindowListener('mouseup', () => {
+  addPreviewWindowListener(signal, 'mouseup', () => {
     if (isDragging) {
       isDragging = false;
       viewport.style.cursor = scale > fitScale ? 'grab' : 'default';
@@ -3103,7 +3111,10 @@ async function previewImage(arrayBuffer, fileName, previewContent) {
   });
 
   // 窗口 resize 时重新计算 fit
-  addPreviewWindowListener('resize', () => {
+  addPreviewWindowListener(signal, 'resize', () => {
+    // 预览已关闭（节点被摘走）时不再重算：否则每次窗口尺寸变化都会对已 detach 的
+    // viewport/pan 重算并写 style，直到下一轮预览才回收
+    if (!viewport.isConnected) return;
     fitScale = calcFitScale();
     clampPan();
     applyTransform();
@@ -4133,7 +4144,8 @@ function bindCodeCopyButtonsInContainer(container) {
   }
 }
 
-async function closePreview(force = false) {
+/** 导出仅供测试直接驱动监听作废；面板内的关闭按钮仍走内部绑定 */
+export async function closePreview(force = false) {
   const previewArea = document.getElementById('workspacePreviewArea');
   // 编辑模式下检查未保存修改（force=true 时跳过确认，直接丢弃）
   if (!force && previewArea.dataset.editMode === 'true' && previewArea.classList.contains('has-unsaved')) {
@@ -4142,6 +4154,12 @@ async function closePreview(force = false) {
   }
   // 无论是否处于编辑模式，都清除编辑状态，避免关闭后残留导致下次再次弹出确认框
   exitEditMode(false);
+  // 关闭预览后本轮的 window 监听没有存在意义了：不作废的话，它们会一直活到
+  // 下一次预览，期间每次窗口 resize 都对已摘除的节点重算并写 style
+  if (previewAbortController) {
+    previewAbortController.abort();
+    previewAbortController = null;
+  }
   const panel = document.getElementById('workspacePanel');
   const previewContent = document.getElementById('workspacePreviewContent');
   previewContent.classList.remove('xlsx-mode');
