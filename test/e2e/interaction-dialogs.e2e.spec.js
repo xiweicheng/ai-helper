@@ -195,6 +195,43 @@ test.describe('确认与澄清弹窗的并发交互（真实浏览器 + 真实�
     await expect(page.locator('#confirmOverlay')).not.toBeVisible();
   });
 
+  test('关联 ID 重复但命令不同（模型对并行调用复用 id）：两条都得弹，不得被去重吞掉', async ({ page }) => {
+    await setupPage(page);
+
+    // 只看 ID 的去重会把第二条当成副本直接丢弃：它在后台挂着等确认，用户却永远看不到，
+    // 而一旦它和第一条共用一键，用户点一次又会把后台的所有挂起确认一并放行
+    const dup = (command) => ({
+      type: 'SHOW_CONFIRM_DIALOG',
+      data: {
+        toolName: 'agent_exec',
+        toolLabel: '本地命令执行',
+        args: { command },
+        toolCallId: 'tcDup',
+        sessionId: 'TASK',
+        timeout: 300000,
+      },
+    });
+    await page.evaluate((m) => window.__dispatch(m), dup('sudo apt install a'));
+    await page.evaluate((m) => window.__dispatch(m), dup('sudo git push -f'));
+
+    await expect(page.locator('#confirmOverlay')).toBeVisible();
+    expect(await messageText(page, 'confirmArgsSummary')).toContain('sudo apt install a');
+    expect(await messageText(page, 'confirmMessage')).toContain('另有 1 条待确认');
+
+    await page.click('#confirmApproveOnceBtn');
+
+    // 第二条顶上，它的应答由用户单独作出
+    await expect(page.locator('#confirmArgsSummary')).toContainText('sudo git push -f');
+    expect((await sent(page, 'INTERACTION_DISPLAYED')).map((m) => m.data.toolCallId))
+      .toEqual(['tcDup', 'tcDup']);
+
+    await page.click('#confirmDenyBtn');
+    const responses = await sent(page, 'TOOL_CONFIRMATION_RESPONSE');
+    expect(responses).toHaveLength(2);
+    expect(responses[1]).toMatchObject({ toolCallId: 'tcDup', confirmed: false });
+    await expect(page.locator('#confirmOverlay')).not.toBeVisible();
+  });
+
   test('澄清不再压住确认：确认按钮可真实点击，答完才交接给澄清', async ({ page }) => {
     await setupPage(page);
 

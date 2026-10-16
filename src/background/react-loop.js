@@ -116,6 +116,28 @@ const loopApprovedSessions = new Set();
 // 用途："当前任务放行"时一并结算同任务内已在等待的确认；以及超时/送达失败后下行撤销面板弹窗
 const pendingConfirmations = new Map();
 
+// 在途确认的关联键集合：用于保证关联键“同一次请求”唯一
+// （模型给的 tool_call.id 并不保证唯一，详见 buildConfirmKey）
+const inFlightConfirmKeys = new Set();
+
+/**
+ * 生成本次确认请求的关联键。
+ * 关联键重复会同时造成两个故障：一次点击命中所有挂起 handler（未点过的命令被集体
+ * 放行），以及面板把后到的真实请求当成副本吞掉（新命令再也不弹框）。
+ * 因此：缺失 ID 时当场生成唯一键（绝不回退工具名），与在途请求撞车时追加序号区分。
+ * @param {string|null} correlationId - 调用方给出的本次调用 ID
+ * @param {string} toolName - 工具名，仅作无 ID 时的键前缀
+ * @returns {string}
+ */
+function buildConfirmKey(correlationId, toolName) {
+  const base = correlationId || `${toolName}_${crypto.randomUUID().slice(0, 8)}`;
+  let key = base;
+  let seq = 1;
+  while (inFlightConfirmKeys.has(key)) key = `${base}~${++seq}`;
+  inFlightConfirmKeys.add(key);
+  return key;
+}
+
 // 子任务派生会话后缀：`${parent}_subtask_${index}`（见 executeSubtasks）
 const SUBTASK_SESSION_SUFFIX = /_subtask_\d+$/;
 
@@ -246,15 +268,16 @@ function confirmSessionMatches(respondedSessionId, expectedSessionId) {
  * @param {Object} toolArgs
  * @param {number|null} tabId
  * @param {string|null} sessionId
- * @param {string|null} [correlationId] - 本次调用的唯一 ID；缺失时回退工具名（仅单会话场景安全）
+ * @param {string|null} [correlationId] - 本次调用的唯一 ID；缺失或与在途请求重复时另生唯一键
  * @returns {Promise<boolean>}
  */
 export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId, correlationId = null) {
   const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
   const confirmTimeout = INTERACTION_CONFIRM_TIMEOUT_MS; // 5分钟确认超时
-  // 关联键：优先用本次调用的唯一 ID，避免同名工具确认互相误伤
-  const confirmKey = correlationId || toolName;
+  // 关联键必须“本次请求”唯一：共用一键会让一次点击释放所有同名挂起确认，
+  // 并被面板的去重当成重复投递吞掉（见 buildConfirmKey）
+  const confirmKey = buildConfirmKey(correlationId, toolName);
 
   logger.debug(`[Background] requesting user confirmation for tool operation: ${toolName}`, toolArgs);
 
@@ -296,6 +319,7 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
         panelCheckId = null;
       }
       pendingConfirmations.delete(pendingKey);
+      inFlightConfirmKeys.delete(confirmKey);
       clearInteractionNotification(sessionId);
       if (opts.dismiss) {
         sendConfirmDialogCommand('DISMISS_CONFIRM_DIALOG', { toolCallId: confirmKey, sessionId }, sessionId);
@@ -1651,6 +1675,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           })();
           // 防御：流式模式下 tool_call.id 可能为空，用 index 生成回退 id
           const toolCallId = toolCall.id || `tc_fallback_${crypto.randomUUID()}`;
+          // 回写规范化 ID：下游 executeTool（agent_exec 灰名单确认、结果的 tool_call_id）
+          // 与本处的敏感工具确认必须共用同一个关联键，否则两条通道各拿一个 ID 无法配对
+          if (!toolCall.id) toolCall.id = toolCallId;
           // 本轮 tool_calls 中的声明序号：并行路径下 loopRecords 的 push 顺序 = 协程完成顺序，
           // 而检测器的 refEnum 步进 / 振荡尾迹判定依赖声明顺序，flush 前须按此序号重排
           const callOrder = assistantMessage.tool_calls.indexOf(toolCall);
@@ -1678,7 +1705,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
 
               let confirmed;
               try {
-                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId, toolCall?.id || null);
+                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId, toolCallId);
               } finally {
                 // 无论确认/拒绝/超时，都恢复超时计时
                 resumeLoopTimer();

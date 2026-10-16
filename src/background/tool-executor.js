@@ -2132,7 +2132,9 @@ export async function executeTool(toolCall, tabId, sessionId = null) {
   
   // 兼容不同的工具调用格式
   let toolName = name || (functionObj && functionObj.name);
-  let toolCallId = id;
+  // 关联 ID 兜底：部分流式响应不返 tool_call.id。留空会让同名工具的并行调用
+  // 共用一个确认关联键（一次点击集体放行 + 面板去重吞掉后续请求），此处补唯一 ID
+  let toolCallId = id || `tc_fb_${crypto.randomUUID().slice(0, 8)}`;
   let args = {};
   
   console.log('[Background] tool callraw data:', JSON.stringify(toolCall));

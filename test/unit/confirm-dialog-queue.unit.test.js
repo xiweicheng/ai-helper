@@ -219,4 +219,29 @@ describe('确认弹窗并发队列（不再互相覆盖）', () => {
     expect(document.getElementById('confirmMessage').textContent)
       .not.toContain(t('dialog.pendingQueue', { count: 1 }));
   });
+
+  test('关联 ID 重复但命令不同（模型对并行调用复用 id）：两条都得呈现，不得被去重吞掉', async () => {
+    const first = showConfirmDialog(request('callDup', 'S', 'sudo apt install a'));
+    const second = showConfirmDialog(request('callDup', 'S', 'git push -f'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 只看 ID 的去重会把第二条当成副本直接丢掉：它在后台挂着等确认，用户却永远看不到
+    expect(document.getElementById('confirmArgsSummary').innerHTML).toContain('sudo apt install a');
+    expect(document.getElementById('confirmMessage').textContent)
+      .toContain(t('dialog.pendingQueue', { count: 1 }));
+
+    document.getElementById('confirmApproveOnceBtn').click();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 第二条顶上，且各自都上报过自己的呈现回执（后台据此才分别起倒计时）
+    expect(displayed().map((m) => m.data.toolCallId)).toEqual(['callDup', 'callDup']);
+    expect(document.getElementById('confirmArgsSummary').innerHTML).toContain('git push -f');
+
+    // 第二条的应答由用户单独作出，不会跟着第一条一起放行
+    document.getElementById('confirmDenyBtn').click();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(false);
+    expect(document.getElementById('confirmOverlay').style.display).toBe('none');
+  });
 });

@@ -253,6 +253,44 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     expect(rb.error).toBe('executed-with-force');
   });
 
+  test('关联键退化回归：模型对并行调用复用同一个 tool_call.id（甚至全部留空）时，一次点击仍只释放一条', async () => {
+    vi.mocked(AgentClient.execCommand).mockImplementation(async (cmd, cwd, force) =>
+      force ? { success: false, error: 'executed-with-force' } : { success: true, level: 'confirm', reason: 'sudo' }
+    );
+
+    // 同一会话内的三条并行命令：前两条拿到重复 id，第三条连 id 都没有
+    const pA = toolExecutor.executeAgentExecCommand({ command: 'sudo apt install a' }, 'tcDup', 'S');
+    const pB = toolExecutor.executeAgentExecCommand({ command: 'sudo apt install b' }, 'tcDup', 'S');
+    const pC = toolExecutor.executeAgentExecCommand({ command: 'sudo apt install c' }, undefined, 'S');
+    await vi.advanceTimersByTimeAsync(0);
+
+    const keys = sentMessages
+      .filter((m) => m.type === 'SHOW_CONFIRM_DIALOG')
+      .map((m) => m.data.toolCallId);
+    // 三条必须有三个不同的关联键：共用一键会让一次点击命中全部挂起确认（集体放行），
+    // 并让面板把后到的真实请求当成副本吞掉（新命令再也不弹框）
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[0]).toBe('tcDup');
+    expect(keys).not.toContain('agent_exec');
+
+    const forceCommands = () => vi.mocked(AgentClient.execCommand)
+      .mock.calls.filter((c) => c[2] === true).map((c) => c[0]);
+
+    // 只对第一条点“本次放行”：后两条不得被一并放行
+    await respondConfirmation(true, 'single', keys[0]);
+    expect(forceCommands()).toEqual(['sudo apt install a']);
+
+    await respondConfirmation(true, 'single', keys[1]);
+    expect(forceCommands()).toEqual(['sudo apt install a', 'sudo apt install b']);
+
+    await respondConfirmation(true, 'single', keys[2]);
+    await Promise.all([pA, pB, pC]);
+    expect(forceCommands().sort()).toEqual([
+      'sudo apt install a', 'sudo apt install b', 'sudo apt install c',
+    ]);
+  });
+
   test('开关关闭：灰名单自动放行（用户显式选择），不弹确认框', async () => {
     configModule.getStoredConfig.mockResolvedValue(baseConfig({
       reactConfig: { toolConfirmationEnabled: false, toolTimeout: 600000 },

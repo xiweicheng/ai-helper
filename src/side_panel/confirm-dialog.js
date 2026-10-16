@@ -24,14 +24,11 @@ import {
 
 const CONFIRM = INTERACTION_KIND.CONFIRM;
 
-// 待呈现的确认请求（队头为下一条要显示的）
+// 待呈现的确认请求（队头为下一条要显示的），每项自带自己的 resolve
 const confirmQueue = [];
 // 正在呈现的确认请求（无则为 null）
 let visibleConfirm = null;
-// toolCallId -> 面板侧 Promise 的 resolve
-const confirmResolvers = new Map();
 
-let activeResolve = null;
 let countdownTimer = null;
 let autoTimeoutId = null;
 
@@ -56,6 +53,22 @@ function clearActiveTimers() {
     clearTimeout(autoTimeoutId);
     autoTimeoutId = null;
   }
+}
+
+/**
+ * 是否同一请求的重复投递（同一条后台请求可能经 port 与广播各送一次）。
+ * 必须关联 ID + 会话 + 参数全同：只比 ID 会把另一条真实请求当成副本吞掉 ——
+ * 部分提供方对一轮内多个并行 tool_calls 复用同一个 id（甚至都留空），
+ * 被吞掉的那条在后台等着却永远弹不出来，用户看不到也拒绝不了。
+ * @param {Object} a
+ * @param {Object} b
+ * @returns {boolean}
+ */
+function isSameConfirmRequest(a, b) {
+  return !!a.toolCallId
+    && a.toolCallId === b.toolCallId
+    && (a.sessionId || null) === (b.sessionId || null)
+    && JSON.stringify(a.args ?? null) === JSON.stringify(b.args ?? null);
 }
 
 /**
@@ -168,17 +181,14 @@ function presentConfirm() {
   if (confirmQueue.length === 0) return false;
 
   const item = confirmQueue.shift();
-  const resolve = confirmResolvers.get(item.toolCallId);
 
   if (!renderActiveConfirm(item)) {
     // DOM 缺失，无法呈现：按拒绝结算这一条，后台会 fail-closed 拒用，不让它占位
-    confirmResolvers.delete(item.toolCallId);
-    if (resolve) resolve(false);
+    if (item.resolve) item.resolve(false);
     return false;
   }
 
   visibleConfirm = item;
-  activeResolve = resolve;
   // 上报呈现回执：后台此刻才开始倒计时
   reportInteractionDisplayed(CONFIRM, item);
   return true;
@@ -214,13 +224,9 @@ function tryAdvanceDisplay() {
 
 /** 结算正在呈现的那一条并推进队列（不回发后台，用于非用户应答路径） */
 function settleVisible(result) {
-  const resolve = activeResolve;
-  const settled = visibleConfirm;
-
+  const resolve = visibleConfirm?.resolve;
   visibleConfirm = null;
-  activeResolve = null;
   clearActiveTimers();
-  if (settled) confirmResolvers.delete(settled.toolCallId);
   if (resolve) resolve(result);
 
   tryAdvanceDisplay();
@@ -236,19 +242,18 @@ export function showConfirmDialog(data) {
 
   logger.debug('[SidePanel] showconfirm dialog:', item.toolName, data);
 
-  // 去重：同一确认请求可能经 port 与广播两条通道重复投递
-  if (visibleConfirm && visibleConfirm.toolCallId === item.toolCallId) {
+  // 去重：同一条请求可能经 port 与广播两条通道重复投递（见 isSameConfirmRequest）
+  if (visibleConfirm && isSameConfirmRequest(visibleConfirm, item)) {
     logger.debug('[SidePanel] duplicate confirm request, ignored:', item.toolCallId);
     return Promise.resolve(false);
   }
-  if (confirmQueue.some((q) => q.toolCallId === item.toolCallId)) {
+  if (confirmQueue.some((q) => isSameConfirmRequest(q, item))) {
     logger.debug('[SidePanel] queued duplicate confirm, ignored:', item.toolCallId);
     return Promise.resolve(false);
   }
 
   return new Promise((resolve) => {
-    confirmQueue.push(item);
-    confirmResolvers.set(item.toolCallId, resolve);
+    confirmQueue.push({ ...item, resolve });
     // 向闸门申请呈现：空闲（或本就持有）时立即呈现队头，否则排队等待交接
     requestDisplay(CONFIRM);
     // 排队条数变化：自己持有闸门时刷新自己的提示，被另一类挡住时由对方代为刷新
@@ -312,9 +317,7 @@ export function dismissConfirmDialog(data) {
   if (idx >= 0) {
     logger.debug('[SidePanel] drop queued confirm dialog (already settled by background):', toolCallId);
     const [item] = confirmQueue.splice(idx, 1);
-    const resolve = confirmResolvers.get(item.toolCallId);
-    confirmResolvers.delete(item.toolCallId);
-    if (resolve) resolve(false);
+    if (item.resolve) item.resolve(false);
     refreshPendingHint();
     notifyPendingChanged(CONFIRM);
   }

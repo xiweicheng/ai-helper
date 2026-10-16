@@ -217,6 +217,26 @@ describe('澄清弹窗并发队列（不再互相覆盖）', () => {
     expect(displayed()).toHaveLength(1);
   });
 
+  test('关联 ID 重复但问题不同（并行调用复用 id）：两条都得呈现，不得被去重吞掉', async () => {
+    showClarifyDialog(request('callDup', 'S', '要不要现在发布？'));
+    showClarifyDialog(request('callDup', 'S', '回滚哪个版本？'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(document.getElementById('clarifyQuestion').textContent).toContain('要不要现在发布');
+    // 第二条不得被当成副本丢掉，而是排队告知
+    expect(document.getElementById('clarifyQuestion').textContent)
+      .toContain(t('dialog.pendingQueueClarify', { count: 1 }));
+
+    document.getElementById('clarifyConfirmBtn').click();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 第二条顶上，用户还能单独回答它
+    expect(document.getElementById('clarifyQuestion').textContent).toContain('回滚哪个版本');
+    document.getElementById('clarifyConfirmBtn').click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(responses()).toHaveLength(2);
+  });
+
   test('弹窗 DOM 缺失：按未澄清回发结算，不让后台白等', async () => {
     mountDom({ withOverlay: false });
 

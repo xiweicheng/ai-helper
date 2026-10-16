@@ -375,6 +375,20 @@ function settleClarifyVisible() {
 }
 
 /**
+ * 是否同一条澄清请求的重复投递（port 与广播两条通道各送一次）。
+ * 只比关联 ID 不够：并行调用可能共用一个 id，那样会把另一条真实澄清吞掉。
+ * @param {Object} a
+ * @param {Object} b
+ * @returns {boolean}
+ */
+function isSameClarifyRequest(a, b) {
+  return !!a.toolCallId
+    && a.toolCallId === b.toolCallId
+    && (a.sessionId || null) === (b.sessionId || null)
+    && a.question === b.question;
+}
+
+/**
  * 显示问题澄清对话框（并发请求自动排队，不互相覆盖，也不遮挡其他弹窗）
  * @param {Object} data - { question, options, recommendedOption, allowCustomInput, allowAdditionalInfo, toolCallId, timeout, sessionId }
  */
@@ -383,12 +397,12 @@ export function showClarifyDialog(data) {
 
   logger.debug('[SidePanel] showclarification dialog:', item.toolCallId, data);
 
-  // 去重：同一澄清请求可能经 port 与广播两条通道重复投递
-  if (visibleClarify && visibleClarify.toolCallId === item.toolCallId) {
+  // 去重：同一条请求可能经 port 与广播两条通道重复投递（见 isSameClarifyRequest）
+  if (visibleClarify && isSameClarifyRequest(visibleClarify, item)) {
     logger.debug('[SidePanel] duplicate clarify request, ignored:', item.toolCallId);
     return;
   }
-  if (clarifyQueue.some((q) => q.toolCallId === item.toolCallId)) {
+  if (clarifyQueue.some((q) => isSameClarifyRequest(q, item))) {
     logger.debug('[SidePanel] queued duplicate clarify, ignored:', item.toolCallId);
     return;
   }

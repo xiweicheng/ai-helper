@@ -86,6 +86,18 @@ function makePort() {
   };
 }
 
+/** 取出已发出确认弹窗的关联键（无 correlationId 时由后台当场生成） */
+function dialogKeys(messages = sentMessages) {
+  return messages.filter((m) => m.type === 'SHOW_CONFIRM_DIALOG').map((m) => m.data.toolCallId);
+}
+
+/** 模拟面板/旧客户端上行一条消息 */
+function dispatch(message) {
+  for (const l of [...messageListeners]) {
+    l(message, {}, noop);
+  }
+}
+
 /**
  * 模拟面板真正呈现了该条（回发 INTERACTION_DISPLAYED）。
  * 后台的确认倒计时不在发出弹窗时起，而在该回执到达起 —— 面板侧确认与澄清
@@ -116,12 +128,14 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     expect(sent.type).toBe('SHOW_CONFIRM_DIALOG');
     expect(sent.data.sessionId).toBe('cs-port');
     expect(sent.data.toolName).toBe('debug_page');
-    expect(sent.data.toolCallId).toBe('debug_page');
+    // 关联键不得退化回工具名：同名工具的并行调用一旦共用一键，
+    // 一次点击会释放所有挂起确认，面板也会把后续真实请求当成副本吞掉
+    expect(sent.data.toolCallId).toMatch(/^debug_page_[0-9a-f]{8}$/);
     // 广播通道不应出现确认消息（这正是串台的根因路径）
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG')).toBe(false);
 
     // 收敛：呈现后确认超时默认拒绝
-    await drainToTimeout('debug_page', 'cs-port');
+    await drainToTimeout(sent.data.toolCallId, 'cs-port');
     const result = await p;
     expect(result).toBe(false);
 
@@ -134,7 +148,7 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG' && m.data?.sessionId === 'cs-bg')).toBe(true);
 
-    await drainToTimeout('debug_page', 'cs-bg');
+    await drainToTimeout(dialogKeys()[0], 'cs-bg');
     await p;
   });
 
@@ -148,7 +162,7 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG' && m.data?.sessionId === 'cs-dead')).toBe(true);
 
-    await drainToTimeout('debug_page', 'cs-dead');
+    await drainToTimeout(dialogKeys()[0], 'cs-dead');
     await p;
     bgState.unregisterKeepalivePort('cs-dead', port);
   });
@@ -160,11 +174,10 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     const p = requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'cs-resp');
     await vi.advanceTimersByTimeAsync(0);
     expect(port.postMessage).toHaveBeenCalledTimes(1);
+    const key = port.postMessage.mock.calls[0][0].data.toolCallId;
 
     // 模拟发起实例提交确认结果（响应回程仍为 runtime.sendMessage 广播）
-    for (const l of [...messageListeners]) {
-      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: true, scope: 'single', sessionId: 'cs-resp' }, {}, noop);
-    }
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: key, confirmed: true, scope: 'single', sessionId: 'cs-resp' });
 
     const result = await p;
     expect(result).toBe(true);
@@ -199,9 +212,7 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     expect(dialogs.map((d) => d.data.toolCallId)).toEqual(['call-A', 'call-B']);
 
     // 只应答 call-B
-    for (const l of [...messageListeners]) {
-      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-B', confirmed: true, scope: 'single', sessionId: 'S_1' }, {}, noop);
-    }
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-B', confirmed: true, scope: 'single', sessionId: 'S_1' });
     expect(await pB).toBe(true);
 
     // call-A 仍在等待，未被误放行
@@ -211,33 +222,36 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     expect(aSettled).toBe(false);
 
     // call-A 自己应答后才结算
-    for (const l of [...messageListeners]) {
-      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-A', confirmed: false, scope: 'single', sessionId: 'S_0' }, {}, noop);
-    }
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-A', confirmed: false, scope: 'single', sessionId: 'S_0' });
     expect(await pA).toBe(false);
   });
 
-  test('跨会话误伤回归：无 correlationId 回退工具名时，sessionId 不匹配的响应必须被忽略', async () => {
+  test('跨会话误伤回归：无 correlationId 时两条各自拿到唯一键，退化键与会话不符的响应均被忽略', async () => {
     const pMine = requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'S_mine');
     const pOther = requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'S_other');
     await vi.advanceTimersByTimeAsync(0);
 
-    // 另一会话的“当前任务放行”（同名工具、同回退关联键）不得结算本会话的确认
-    for (const l of [...messageListeners]) {
-      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: true, scope: 'loop', sessionId: 'S_other' }, {}, noop);
-    }
-    expect(await pOther).toBe(true);
+    // 旧行为：无 correlationId 就回退工具名，两条并行确认共用一键，只能靠会话隔离兜住
+    const keys = dialogKeys();
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+
+    // 退化到工具名的陈旧键不得命中任何一条
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: true, scope: 'loop', sessionId: 'S_mine' });
+    // 与会话不符的键（另一会话那一条）也不得命中本会话
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: keys[1], confirmed: true, scope: 'loop', sessionId: 'S_mine' });
 
     let mineSettled = false;
     pMine.then(() => { mineSettled = true; });
     await vi.advanceTimersByTimeAsync(0);
     expect(mineSettled).toBe(false); // 未被跨会话放行
-    // 且他会话的 loop 授权不得记到本会话头上
+    // 且未真正应答时不得把 loop 授权记到本会话头上
     expect(hasLoopApproval('S_mine')).toBe(false);
 
-    for (const l of [...messageListeners]) {
-      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: false, scope: 'single', sessionId: 'S_mine' }, {}, noop);
-    }
+    // 各条按自己的键 + 自己的会话应答才结算
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: keys[1], confirmed: true, scope: 'single', sessionId: 'S_other' });
+    expect(await pOther).toBe(true);
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: keys[0], confirmed: false, scope: 'single', sessionId: 'S_mine' });
     expect(await pMine).toBe(false);
   });
 
