@@ -132,3 +132,12 @@ export const BUILTIN_TOOLS_UI = RAW_TOOLS.map(t => ({
 export const TOOL_TIMEOUT_MS = {
   // 预留扩展：按需为各工具配置独立超时
 };
+
+// ==================== 用户交互弹窗（确认 / 澄清）计时约定 ====================
+// 后台发出 SHOW_CONFIRM_DIALOG / SHOW_CLARIFY_DIALOG 时不立即启动倒计时：
+// 面板侧两类弹窗共用单模态闸门，请求可能在排队，未被用户看到的弹窗不该消耗时间，
+// 否则会出现「澄清压住确认，用户在答澄清时确认已被无声判拒」。
+// 倒计时只在面板回发 INTERACTION_DISPLAYED（这一条真正呈现）之后启动。
+// 未呈现期间用 Side Panel 存活性轮询兜底：面板已关闭则尽快 fail-closed，任务不悬挂。
+export const INTERACTION_CONFIRM_TIMEOUT_MS = 300000; // 敏感操作确认：5 分钟
+export const INTERACTION_PANEL_POLL_MS = 5000;        // Side Panel 存活性轮询间隔

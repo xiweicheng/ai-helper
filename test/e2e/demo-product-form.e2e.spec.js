@@ -1,15 +1,23 @@
 // test/e2e/demo-product-form.e2e.spec.js
 // 商品录入 Demo 页面冒烟测试：file:// 直开，验证向导流转/模态框/双语/列表
+//
+// 被测页面是演示素材（.resources/ 不进仓库），因此素材缺失时整组自动跳过：
+// 本地有素材就跑出真实覆盖，克隆仓库的人不会看到无关的红用例。
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { getContentBundle, callTool } from './helpers/load-module.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pageUrl = 'file://' + join(__dirname, '../../docs/demo/form-autofill/product-form.html');
+const demoPath = join(__dirname, '../../.resources/demo/form-autofill/product-form.html');
+const pageUrl = 'file://' + demoPath;
+const hasDemo = existsSync(demoPath);
+const demoSuite = hasDemo ? test.describe : test.describe.skip;
 
 let bundle;
 test.beforeAll(async () => {
+  if (!hasDemo) return;
   bundle = await getContentBundle();
 });
 
@@ -42,7 +50,7 @@ async function submitOnce(page) {
   await page.click('#modal-confirm');
 }
 
-test.describe('商品录入 Demo 页面', () => {
+demoSuite('商品录入 Demo 页面', () => {
   test('完整流程：4 步向导 → 模态框 → 提交 → 列表追加 → 重置', async ({ page }) => {
     await page.goto(pageUrl);
     await fillStep1(page);

@@ -86,8 +86,20 @@ function makePort() {
   };
 }
 
-/** 推进到确认超时（默认 300000ms），确保被测 Promise 收敛、监听器清理 */
-async function drainToTimeout() {
+/**
+ * 模拟面板真正呈现了该条（回发 INTERACTION_DISPLAYED）。
+ * 后台的确认倒计时不在发出弹窗时起，而在该回执到达起 —— 面板侧确认与澄清
+ * 共用单模态闸门，排队未被看到的确认不得消耗用户的应答窗口。
+ */
+function markDisplayed(toolCallId, sessionId = null) {
+  for (const l of [...messageListeners]) {
+    l({ type: 'INTERACTION_DISPLAYED', data: { kind: 'confirm', toolCallId, sessionId } }, {}, noop);
+  }
+}
+
+/** 呈现后推进到确认超时（默认 300000ms），确保被测 Promise 收敛、监听器清理 */
+async function drainToTimeout(toolCallId, sessionId = null) {
+  markDisplayed(toolCallId, sessionId);
   await vi.advanceTimersByTimeAsync(300000 + 1000);
 }
 
@@ -108,8 +120,8 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     // 广播通道不应出现确认消息（这正是串台的根因路径）
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG')).toBe(false);
 
-    // 收敛：确认超时默认拒绝
-    await drainToTimeout();
+    // 收敛：呈现后确认超时默认拒绝
+    await drainToTimeout('debug_page', 'cs-port');
     const result = await p;
     expect(result).toBe(false);
 
@@ -122,7 +134,7 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG' && m.data?.sessionId === 'cs-bg')).toBe(true);
 
-    await drainToTimeout();
+    await drainToTimeout('debug_page', 'cs-bg');
     await p;
   });
 
@@ -136,7 +148,7 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG' && m.data?.sessionId === 'cs-dead')).toBe(true);
 
-    await drainToTimeout();
+    await drainToTimeout('debug_page', 'cs-dead');
     await p;
     bgState.unregisterKeepalivePort('cs-dead', port);
   });
@@ -300,12 +312,69 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     const p = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKZ_subtask_0', 'call-Z0');
     await vi.advanceTimersByTimeAsync(0);
 
-    await drainToTimeout();
+    markDisplayed('call-Z0', 'TASKZ_subtask_0');
+    await vi.advanceTimersByTimeAsync(300000 + 1000);
     expect(await p).toBe(false);
 
     const dismiss = sentMessages.find((m) => m.type === 'DISMISS_CONFIRM_DIALOG');
     expect(dismiss?.data?.toolCallId).toBe('call-Z0');
     expect(dismiss?.data?.sessionId).toBe('TASKZ_subtask_0');
+  });
+
+  test("未被呈现时不起计时：面板排队期间不得消耗确认窗口，回执到达后才起超时", async () => {
+    const p = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKW_subtask_0', 'call-W0');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 旧行为：发出弹窗即起 5 分钟计时，被另一个弹窗压住时到点静默判拒
+    let settled = false;
+    p.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(300000 + 1000);
+    expect(settled).toBe(false);
+    expect(sentMessages.some((m) => m.type === 'DISMISS_CONFIRM_DIALOG')).toBe(false);
+
+    // 面板轮到它并呈现 → 上报回执 → 此时才开始消耗倒计时
+    markDisplayed('call-W0', 'TASKW_subtask_0');
+    await vi.advanceTimersByTimeAsync(300000 - 1);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await p).toBe(false);
+    const dismiss = sentMessages.find((m) => m.type === 'DISMISS_CONFIRM_DIALOG');
+    expect(dismiss?.data?.toolCallId).toBe('call-W0');
+  });
+
+  test('重复呈现回执幂等：不会顺延已经开始的倒计时', async () => {
+    const p = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKU_subtask_0', 'call-U0');
+    await vi.advanceTimersByTimeAsync(0);
+
+    markDisplayed('call-U0', 'TASKU_subtask_0');
+    await vi.advanceTimersByTimeAsync(290000);
+
+    // 面板侧异常路径会补发同一份回执：倒计时不得重新起算
+    markDisplayed('call-U0', 'TASKU_subtask_0');
+    await vi.advanceTimersByTimeAsync(11000);
+
+    expect(await p).toBe(false);
+  });
+
+  test("面板已关闭且从未呈现：存活轮询当拍 fail-closed，不白等 5 分钟", async () => {
+    // 面板已经关闭：getContexts 返回空列表
+    const original = globalThis.chrome.runtime.getContexts;
+    globalThis.chrome.runtime.getContexts = () => Promise.resolve([]);
+
+    try {
+      const p = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKV_subtask_0', 'call-V0');
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(await p).toBe(false);
+      // 同样要下行撤销，避免面板重新打开后残留陈旧弹窗
+      const dismiss = sentMessages.find((m) => m.type === 'DISMISS_CONFIRM_DIALOG');
+      expect(dismiss?.data?.toolCallId).toBe('call-V0');
+      // 监听器不得泄漏
+      expect(messageListeners).toHaveLength(0);
+    } finally {
+      globalThis.chrome.runtime.getContexts = original;
+    }
   });
 });
 

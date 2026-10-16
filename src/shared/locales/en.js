@@ -36,6 +36,8 @@ export default {
     approveOnce: 'Allow Once',
     approveLoop: 'Allow for This Task',
     pendingQueue: '(+{count} queued)',
+    pendingQueueClarify: '(+{count} awaiting clarification)',
+    otherPending: '(+{count} other waiting)',
   },
 
   // Sensitive tool display names

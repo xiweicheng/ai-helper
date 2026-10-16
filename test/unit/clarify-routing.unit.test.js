@@ -88,8 +88,20 @@ function makePort() {
   };
 }
 
-/** 推进到澄清超时（默认 300000ms），确保被测 Promise 收敛、定时器清理 */
-async function drainToTimeout() {
+/**
+ * 模拟面板真正呈现了该条澄清（回发 INTERACTION_DISPLAYED）。
+ * 后台的澄清超时不在发出弹窗时起，而在该回执到达起：面板侧确认与澄清
+ * 共用单模态闸门，排队未被看到的澄清不得被无声计到超时。
+ */
+function markDisplayed(toolCallId) {
+  for (const l of [...messageListeners]) {
+    l({ type: 'INTERACTION_DISPLAYED', data: { kind: 'clarify', toolCallId } }, {}, noop);
+  }
+}
+
+/** 呈现后推进到澄清超时（默认 300000ms），确保被测 Promise 收敛、定时器清理 */
+async function drainToTimeout(toolCallId) {
+  markDisplayed(toolCallId);
   await vi.advanceTimersByTimeAsync(300000 + 1000);
 }
 
@@ -133,7 +145,7 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
     expect(sentMessages.some((m) => m.type === 'SHOW_CLARIFY_DIALOG')).toBe(false);
 
     // 超时通知同样走 port 定向（不打扰其他实例）
-    await drainToTimeout();
+    await drainToTimeout('tc-port');
     const result = await p;
     expect(result.success).toBe(false);
     expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT')).toBe(true);
@@ -147,7 +159,7 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CLARIFY_DIALOG' && m.sessionId === 'sess-bg')).toBe(true);
 
-    await drainToTimeout();
+    await drainToTimeout('tc-bg');
     await p;
   });
 
@@ -161,7 +173,7 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CLARIFY_DIALOG' && m.sessionId === 'sess-dead')).toBe(true);
 
-    await drainToTimeout();
+    await drainToTimeout('tc-dead');
     await p;
     bgState.unregisterKeepalivePort('sess-dead');
   });
@@ -185,5 +197,82 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
     expect(result.content).toContain('选项乙');
 
     bgState.unregisterKeepalivePort('sess-resp');
+  });
+
+  test('并行子任务的两个澄清：响应按 toolCallId 分别结算，一次作答不释放另一条', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('TASKS_subtask_0', port);
+
+    const pA = executeClarifyQuestion({ question: 'A？', options: ['a1'] }, 'tc-A', 'TASKS_subtask_0');
+    const pB = executeClarifyQuestion({ question: 'B？', options: ['b1'] }, 'tc-B', 'TASKS_subtask_1');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 两条都带自己唯一的关联 ID（port 只属于发起实例，第二条在另一个会话上发出）
+    const dialogs = port.postMessage.mock.calls
+      .filter((c) => c[0].type === 'SHOW_CLARIFY_DIALOG')
+      .map((c) => c[0].data.toolCallId);
+    expect(dialogs).toEqual(['tc-A']);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'CLARIFY_RESPONSE', toolCallId: 'tc-A', selectedOption: 0, customInput: '', additionalInfo: '' }, {}, noop);
+    }
+    const resultA = await pA;
+    expect(resultA.success).toBe(true);
+
+    // B 仍在等待，未被一并结算
+    let bSettled = false;
+    pB.then(() => { bSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bSettled).toBe(false);
+
+    // 收敛 B
+    for (const l of [...messageListeners]) {
+      l({ type: 'CLARIFY_RESPONSE', toolCallId: 'tc-B', selectedOption: 0, customInput: '', additionalInfo: '' }, {}, noop);
+    }
+    expect((await pB).success).toBe(true);
+
+    bgState.unregisterKeepalivePort('TASKS_subtask_0');
+  });
+
+  test('未被呈现时不起计时：回执到达后面板排队期间不得被计到超时', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('sess-defer', port);
+
+    const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-defer', 'sess-defer');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 旧行为：发出弹窗即起 5 分钟计时，被确认弹窗压住时到点静默失败
+    let settled = false;
+    p.then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(300000 + 1000);
+    expect(settled).toBe(false);
+
+    // 呈现后才起计时
+    markDisplayed('tc-defer');
+    await vi.advanceTimersByTimeAsync(300000 + 1000);
+    const result = await p;
+    expect(result.success).toBe(false);
+    // 超时后下行通知面板撤销这一条
+    expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT' && c[0].toolCallId === 'tc-defer')).toBe(true);
+
+    bgState.unregisterKeepalivePort('sess-defer');
+  });
+
+  test('面板已关闭且从未呈现：存活轮询提前终止等待，不白等 5 分钟', async () => {
+    // 面板已经关闭：getContexts 返回空列表
+    const original = globalThis.chrome.runtime.getContexts;
+    globalThis.chrome.runtime.getContexts = () => Promise.resolve([]);
+
+    try {
+      const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-closed', 'sess-closed');
+      await vi.advanceTimersByTimeAsync(5000);
+
+      const result = await p;
+      expect(result.success).toBe(false);
+      // 监听器不得泄漏
+      expect(messageListeners).toHaveLength(0);
+    } finally {
+      globalThis.chrome.runtime.getContexts = original;
+    }
   });
 });

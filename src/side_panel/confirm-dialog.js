@@ -1,20 +1,34 @@
 // confirm-dialog.js - 敏感操作确认对话框
 //
-// 并发确认队列：多个子任务 / 会话可能同时请求敏感操作确认。
-// 旧实现是单槽位（state.currentConfirmToolCallId 被后续请求直接覆盖），
-// 后果是：用户只看到一条弹窗并点了「本次放行」，其余挂起确认在界面上不可见，
-// 且后台按工具名匹配响应把它们一并放行（串扰）。
-// 现在改为逐条排队展示，每条各自应答，并在文案中告知还有多少条待确认。
+// 并发确认队列 + 单模态闸门：
+// 1) 多个子任务 / 会话可能同时请求敏感操作确认。旧实现是单槽位（state.currentConfirmToolCallId
+//    被后续请求直接覆盖），后果是：用户只看到一条弹窗并点了「本次放行」，其余挂起确认在界面上
+//    不可见，且后台按工具名匹配响应把它们一并放行（串扰）。现在改为逐条排队展示、各自应答。
+// 2) 确认与澄清都是全屏遮罩且 z-index 相同，旧实现各自直接显示会互相压住：澄清压住确认时
+//    用户点不到确认按钮，而后台确认倒计时照常消耗。现在统一向 interaction-gate 申请呈现权，
+//    同一时刻只呈现一个，并在真正呈现的那一刻上报回执，后台据此才开始计时——
+//    排队未被看到的确认不消耗用户的应答窗口。
 
 import state from './state.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
+import {
+  INTERACTION_KIND,
+  registerInteractionPresenter,
+  requestDisplay,
+  releaseDisplay,
+  notifyPendingChanged,
+  getOtherPendingCount,
+  reportInteractionDisplayed,
+} from './interaction-gate.js';
 
-// 当前正在展示的确认请求 { toolCallId, sessionId, ...原始 data }
-let activeConfirm = null;
-// 其后排队中的确认请求
+const CONFIRM = INTERACTION_KIND.CONFIRM;
+
+// 待呈现的确认请求（队头为下一条要显示的）
 const confirmQueue = [];
-// toolCallId -> 面板侧 Promise 的 resolve（队列项被展示/响应时才结算）
+// 正在呈现的确认请求（无则为 null）
+let visibleConfirm = null;
+// toolCallId -> 面板侧 Promise 的 resolve
 const confirmResolvers = new Map();
 
 let activeResolve = null;
@@ -45,11 +59,28 @@ function clearActiveTimers() {
 }
 
 /**
- * 渲染一条确认请求到 DOM 并启动倒计时
+ * 组装弹窗说明文案：本条描述 + 自己后面还排几条 + 另一类被闸门挡住几条
+ * @param {Object} data
+ * @returns {string}
+ */
+function buildConfirmMessage(data) {
+  const base = data.message
+    || t('dialog.confirmAction', { name: data.toolLabel || data.toolName });
+  const mine = confirmQueue.length;
+  const others = getOtherPendingCount(CONFIRM);
+  let text = base;
+  if (mine > 0) text += ` ${t('dialog.pendingQueue', { count: mine })}`;
+  if (others > 0) text += ` ${t('dialog.otherPending', { count: others })}`;
+  return text;
+}
+
+/**
+ * 渲染一条确认请求到 DOM 并启动面板侧倒计时
  * @param {Object} data - { toolName, toolLabel, args, message, toolCallId, sessionId, timeout }
+ * @returns {boolean} 是否渲染成功（DOM 缺失时返回 false，由调用方按拒绝结算）
  */
 function renderActiveConfirm(data) {
-  const { toolName, toolLabel, args, message, timeout = 300000 } = data;
+  const { toolName, toolLabel, args, timeout = 300000 } = data;
 
   state.currentConfirmToolCallId = data.toolCallId;
   state.currentConfirmSessionId = data.sessionId || null;
@@ -81,14 +112,10 @@ function renderActiveConfirm(data) {
     }
   }
 
-  // 显示说明消息：排队中还有别的确认时明确告知，避免用户以为已经全部处理完
+  // 显示说明消息：排队中还有别的请求时明确告知，避免用户以为已经全部处理完
   const messageEl = document.getElementById('confirmMessage');
   if (messageEl) {
-    const base = message || t('dialog.confirmAction', { name: toolLabel || toolName });
-    const pending = confirmQueue.length;
-    messageEl.textContent = pending > 0
-      ? `${base} ${t('dialog.pendingQueue', { count: pending })}`
-      : base;
+    messageEl.textContent = buildConfirmMessage(data);
   }
 
   clearActiveTimers();
@@ -132,28 +159,33 @@ function renderActiveConfirm(data) {
   return true;
 }
 
-/** 结算当前项并推进队列：展示下一条，队列空则关闭弹层 */
-function settleActive(result) {
-  const resolve = activeResolve;
-  activeConfirm = null;
-  activeResolve = null;
-  if (resolve) resolve(result);
+/**
+ * 闸门授权后的呈现：呈现队头，已在呈现则保持，无内容则返回 false（交还闸门）
+ * @returns {boolean}
+ */
+function presentConfirm() {
+  if (visibleConfirm) return true;
+  if (confirmQueue.length === 0) return false;
 
-  clearActiveTimers();
+  const item = confirmQueue.shift();
+  const resolve = confirmResolvers.get(item.toolCallId);
 
-  if (confirmQueue.length > 0) {
-    const next = confirmQueue.shift();
-    const nextResolve = confirmResolvers.get(next.toolCallId);
-    confirmResolvers.delete(next.toolCallId);
-    activeConfirm = next;
-    activeResolve = nextResolve;
-    if (!renderActiveConfirm(next)) {
-      // 渲染失败（DOM 缺失）：直接按拒绝结算该条并继续推进，避免后台白等 5 分钟
-      settleActive(false);
-    }
-    return;
+  if (!renderActiveConfirm(item)) {
+    // DOM 缺失，无法呈现：按拒绝结算这一条，后台会 fail-closed 拒用，不让它占位
+    confirmResolvers.delete(item.toolCallId);
+    if (resolve) resolve(false);
+    return false;
   }
 
+  visibleConfirm = item;
+  activeResolve = resolve;
+  // 上报呈现回执：后台此刻才开始倒计时
+  reportInteractionDisplayed(CONFIRM, item);
+  return true;
+}
+
+/** 关闭弹层并清空面板侧当前态 */
+function hideOverlayAndState() {
   const overlay = document.getElementById('confirmOverlay');
   if (overlay) {
     overlay.style.display = 'none';
@@ -168,7 +200,34 @@ function settleActive(result) {
 }
 
 /**
- * 显示工具操作确认对话框（并发请求自动排队，不互相覆盖）
+ * 当前项结算后推进：还有排队项就再次申请呈现（持有闸门时立即呈现下一条，
+ * 被另一类占着则排队等交接），队列空则关闭弹层并交还闸门。
+ */
+function tryAdvanceDisplay() {
+  if (confirmQueue.length > 0) {
+    requestDisplay(CONFIRM);
+    return;
+  }
+  hideOverlayAndState();
+  releaseDisplay(CONFIRM);
+}
+
+/** 结算正在呈现的那一条并推进队列（不回发后台，用于非用户应答路径） */
+function settleVisible(result) {
+  const resolve = activeResolve;
+  const settled = visibleConfirm;
+
+  visibleConfirm = null;
+  activeResolve = null;
+  clearActiveTimers();
+  if (settled) confirmResolvers.delete(settled.toolCallId);
+  if (resolve) resolve(result);
+
+  tryAdvanceDisplay();
+}
+
+/**
+ * 显示工具操作确认对话框（并发请求自动排队，不互相覆盖，且不遮挡其他弹窗）
  * @param {Object} data - { toolName, toolLabel, args, message, toolCallId, sessionId, timeout }
  * @returns {Promise<boolean>} 面板侧结果（后台真正采信的是回发的 TOOL_CONFIRMATION_RESPONSE）
  */
@@ -178,7 +237,7 @@ export function showConfirmDialog(data) {
   logger.debug('[SidePanel] showconfirm dialog:', item.toolName, data);
 
   // 去重：同一确认请求可能经 port 与广播两条通道重复投递
-  if (activeConfirm && activeConfirm.toolCallId === item.toolCallId) {
+  if (visibleConfirm && visibleConfirm.toolCallId === item.toolCallId) {
     logger.debug('[SidePanel] duplicate confirm request, ignored:', item.toolCallId);
     return Promise.resolve(false);
   }
@@ -188,21 +247,13 @@ export function showConfirmDialog(data) {
   }
 
   return new Promise((resolve) => {
-    if (!activeConfirm) {
-      activeConfirm = item;
-      if (renderActiveConfirm(item)) {
-        activeResolve = resolve;
-      } else {
-        // DOM 缺失，无法呈现：按拒绝结算，后台会收到拒用而 fail-closed
-        activeConfirm = null;
-        resolve(false);
-      }
-    } else {
-      confirmQueue.push(item);
-      confirmResolvers.set(item.toolCallId, resolve);
-      // 更新当前弹窗上的「仍有 N 条待确认」提示
-      refreshPendingHint();
-    }
+    confirmQueue.push(item);
+    confirmResolvers.set(item.toolCallId, resolve);
+    // 向闸门申请呈现：空闲（或本就持有）时立即呈现队头，否则排队等待交接
+    requestDisplay(CONFIRM);
+    // 排队条数变化：自己持有闸门时刷新自己的提示，被另一类挡住时由对方代为刷新
+    if (visibleConfirm) refreshPendingHint();
+    notifyPendingChanged(CONFIRM);
   });
 }
 
@@ -213,10 +264,10 @@ export function showConfirmDialog(data) {
  */
 function handleConfirmResponse(confirmed, scope = 'single') {
   // 没有正在展示的确认：忽略陈旧点击（例如队列已推进完毕）
-  if (!activeConfirm) return;
+  if (!visibleConfirm) return;
 
-  const respondedToolCallId = activeConfirm.toolCallId;
-  const respondedSessionId = activeConfirm.sessionId;
+  const respondedToolCallId = visibleConfirm.toolCallId;
+  const respondedSessionId = visibleConfirm.sessionId;
 
   clearActiveTimers();
 
@@ -231,24 +282,19 @@ function handleConfirmResponse(confirmed, scope = 'single') {
     logger.debug('[SidePanel] send confirmationresponse failed:', err.message);
   });
 
-  settleActive(confirmed);
+  settleVisible(confirmed);
 }
 
-/** 刷新当前弹窗上的"仍有 N 条待确认"提示 */
+/** 刷新当前弹窗上的排队提示（自己后面还有几条 + 另一类还有几条） */
 function refreshPendingHint() {
-  if (!activeConfirm) return;
+  if (!visibleConfirm) return;
   const messageEl = document.getElementById('confirmMessage');
   if (!messageEl) return;
-  const base = activeConfirm.message
-    || t('dialog.confirmAction', { name: activeConfirm.toolLabel || activeConfirm.toolName });
-  const pending = confirmQueue.length;
-  messageEl.textContent = pending > 0
-    ? `${base} ${t('dialog.pendingQueue', { count: pending })}`
-    : base;
+  messageEl.textContent = buildConfirmMessage(visibleConfirm);
 }
 
 /**
- * 撤销一条确认请求（后台已自行结算：超时 / 送达失败 / 任务级放行扩散）。
+ * 撤销一条确认请求（后台已自行结算：超时 / 送达失败 / 任务级放行扩散 / 面板已关闭）。
  * 不得回发 TOOL_CONFIRMATION_RESPONSE：后台已经处理过这一条，重发只会误伤后续请求。
  * @param {Object} data - { toolCallId, sessionId }
  */
@@ -256,10 +302,9 @@ export function dismissConfirmDialog(data) {
   const toolCallId = data?.toolCallId;
   if (!toolCallId) return;
 
-  if (activeConfirm && activeConfirm.toolCallId === toolCallId) {
+  if (visibleConfirm && visibleConfirm.toolCallId === toolCallId) {
     logger.debug('[SidePanel] dismiss active confirm dialog (already settled by background):', toolCallId);
-    clearActiveTimers();
-    settleActive(false);
+    settleVisible(false);
     return;
   }
 
@@ -271,8 +316,17 @@ export function dismissConfirmDialog(data) {
     confirmResolvers.delete(item.toolCallId);
     if (resolve) resolve(false);
     refreshPendingHint();
+    notifyPendingChanged(CONFIRM);
   }
 }
+
+// 注册呈现器到单模态闸门：模块加载即注册，保证任何投递路径都走同一调度
+registerInteractionPresenter(CONFIRM, {
+  present: presentConfirm,
+  // 未呈现的条数：供另一类弹窗告知用户「还有 N 条其他请求在排队」
+  pendingCount: () => confirmQueue.length,
+  refresh: () => { if (visibleConfirm) refreshPendingHint(); },
+});
 
 /**
  * 初始化确认对话框事件

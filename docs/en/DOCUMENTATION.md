@@ -249,8 +249,9 @@ ai-helper/
 │   │   ├── token-stats-panel.js        # Token statistics panel
 │   │   ├── session-manager.js          # Multi-session storage API
 │   │   ├── session-manager-ui.js       # Session tabs UI (switch, rename, archive)
-│   │   ├── clarify-dialog.js           # Clarification dialog (countdown, audio alert)
-│   │   ├── confirm-dialog.js           # Sensitive operation confirmation dialog
+│   │   ├── clarify-dialog.js           # Clarification dialog (concurrent queue, countdown, audio alert)
+│   │   ├── confirm-dialog.js           # Sensitive operation confirmation dialog (concurrent queue)
+│   │   ├── interaction-gate.js         # Single-modal gate for confirm/clarify (FIFO display arbitration + displayed receipt upstream)
 │   │   ├── ui-prototype.js             # UI prototype preview & management
 │   │   ├── message-toc.js              # Message table of contents (auto-nav)
 │   │   ├── input-history.js            # Input history (arrow key recall)
@@ -759,7 +760,7 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 ### AI Collaboration (7)
 | Tool | Description |
 |------|-------------|
-| `clarify_question` | Show clarification dialog (suggestions, countdown, audio alert) |
+| `clarify_question` | Show clarification dialog (suggestions, countdown, audio alert; concurrent requests queue and show one at a time) |
 | `plan_task` | Complex task decomposition planner (parallel/sequential/conditional) |
 | `preview_ui` | UI prototype preview & management (preview/get actions) |
 | `search_chats` | Search chat memory (current session / all history sessions) |
@@ -795,10 +796,12 @@ When connected to third-party MCP servers, tools are automatically registered. Q
 
 ### Sensitive Tool Security Confirmation
 
-The following tool operations show a confirmation dialog before execution (30-second timeout auto-reject, can be globally disabled):
+The following tool operations show a confirmation dialog before execution (**5-minute timeout auto-reject**, gated by the `reactConfig.toolConfirmationEnabled` master switch; when off, sensitive operations run without asking):
 
 - `manage_tab` (close action), `download_file`, `manage_cookies`, `clear_data`
 - `agent_file` (delete action), `agent_exec`
+
+> 💡 **Queuing & when the clock starts**: parallel subtasks can raise several confirmations / clarifications at once. Both dialog kinds share a **single-modal gate** and are displayed **one at a time in FIFO order** (the visible dialog tells you "+N other waiting"), so one dialog can no longer cover another one's buttons. The timeout countdown only starts once an item is **actually displayed** — queued requests burn no time, so you can never be denied without ever seeing the dialog. If the side panel is closed or the dialog cannot be delivered, the operation fails **closed** immediately instead of waiting out the 5 minutes.
 
 Agent command execution three-tier security:
 1. **Blacklist** (always blocked): `rm -rf /`, `mkfs.*`, fork bombs, curl-to-shell pipes, etc.

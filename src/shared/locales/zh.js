@@ -36,6 +36,8 @@ export default {
     approveOnce: '本次放行',
     approveLoop: '当前任务放行',
     pendingQueue: '（另有 {count} 条待确认）',
+    pendingQueueClarify: '（另有 {count} 条待澄清）',
+    otherPending: '（另有 {count} 条其他请求在排队）',
   },
 
   // 敏感操作显示名

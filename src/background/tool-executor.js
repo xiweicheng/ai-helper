@@ -1,5 +1,5 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, INTERACTION_PANEL_POLL_MS } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype, getSession } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
@@ -2540,6 +2540,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     let timeoutId = null;
     let clarifyResponseHandler = null;
     let sidePanelCheckId = null;
+    let countdownStarted = false;
     
     /**
      * 清理函数：确保监听器和计时器都被正确清理
@@ -2560,9 +2561,49 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     };
     
     /**
-     * 处理澄清响应
+     * 面板真正把这一条澄清呈现出来后启动超时计时（计时约定见 constants）：
+     * 面板侧确认与澄清共用单模态闸门，排队而未被看到的澄清不得消耗用户时间。
      */
-    const handleResponse = (msg) => {
+    const startCountdown = () => {
+      if (countdownStarted) return;
+      countdownStarted = true;
+      console.log('[Background] clarification dialogdisplayed, timeout:', clarifyTimeout, 'ms');
+
+      timeoutId = setTimeout(() => {
+        console.error('[Background] clarification dialogtimeout');
+        cleanup(); // 确保清理
+        // 澄清等待超时 → 清除交互提醒
+        clearInteractionNotification(sessionId);
+
+        // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）
+        sendToInitiator({
+          type: 'CLARIFY_TIMEOUT',
+          toolCallId: toolCallId,
+          sessionId
+        });
+
+        resolve({ 
+          success: false, 
+          error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
+          tool_call_id: toolCallId 
+        });
+      }, clarifyTimeout);
+    };
+
+    /**
+     * 处理面板上来的澄清相关消息：呈现回执（启动计时）与用户响应（结算）
+     * 关联靠每次调用唯一的 toolCallId，不得比会话或工具名，否则并行子任务会串台。
+     */
+    const handleMessage = (msg) => {
+      if (
+        msg.type === 'INTERACTION_DISPLAYED' &&
+        msg.data?.kind === 'clarify' &&
+        msg.data.toolCallId === toolCallId
+      ) {
+        startCountdown();
+        return;
+      }
+
       if (msg.type === 'CLARIFY_RESPONSE' && msg.toolCallId === toolCallId) {
         cleanup();
         // 用户已响应 → 清除交互提醒（未创建时为无操作）
@@ -2615,63 +2656,46 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     };
 
     /**
-     * 启动等待：超时计时 + Side Panel 存活性轮询 + 用户响应监听
+     * 开始等待：Side Panel 存活性轮询 + 消息监听。
+     * 必须早于发出弹窗完成注册：面板的呈现回执（INTERACTION_DISPLAYED）与
+     * 用户响应可能紧挨着送达，监听器后挂就会错过计时起点。
      */
-    const startWaiting = () => {
-      console.log('[Background] clarification dialogsent, timeout:', clarifyTimeout, 'ms');
-
-      // 设置超时处理（使用配置的澄清超时时间）
-      timeoutId = setTimeout(() => {
-        console.error('[Background] clarification dialogtimeout');
-        cleanup(); // 确保清理
-        // 澄清等待超时 → 清除交互提醒
-        clearInteractionNotification(sessionId);
-
-        // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）
-        sendToInitiator({
-          type: 'CLARIFY_TIMEOUT',
-          toolCallId: toolCallId,
-          sessionId
-        });
-
-        resolve({ 
-          success: false, 
-          error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
-          tool_call_id: toolCallId 
-        });
-      }, clarifyTimeout);
+    const startListening = () => {
+      console.log('[Background] clarification dialogwaiting started, timeout:', clarifyTimeout, 'ms (从呈现回执起计)');
 
       // 定期检测 Side Panel 是否关闭，避免监听器和计时器泄漏
-      // 若 Side Panel 已关闭，提前终止等待（无需等到超时）
-      sidePanelCheckId = setInterval(async () => {
-        try {
-          const contexts = await chrome.runtime.getContexts({
-            contextTypes: ['SIDE_PANEL']
-          });
-          if (!contexts || contexts.length === 0) {
-            console.warn('[Background] Side Panel closed,early terminateclarificationwaiting');
-            cleanup();
-            // 面板已关闭、无人处理 → 清除交互提醒
-            clearInteractionNotification(sessionId);
-            sendToInitiator({
-              type: 'CLARIFY_TIMEOUT',
-              toolCallId: toolCallId,
-              sessionId
+      // 若 Side Panel 已关闭，提前终止等待（无需等到超时，也不依赖呈现回执）
+      if (typeof chrome?.runtime?.getContexts === 'function') {
+        sidePanelCheckId = setInterval(async () => {
+          try {
+            const contexts = await chrome.runtime.getContexts({
+              contextTypes: ['SIDE_PANEL']
             });
-            resolve({
-              success: false,
-              error: t('toolExec.clarifyPanelClosed'),
-              tool_call_id: toolCallId
-            });
+            if (!contexts || contexts.length === 0) {
+              console.warn('[Background] Side Panel closed,early terminateclarificationwaiting');
+              cleanup();
+              // 面板已关闭、无人处理 → 清除交互提醒
+              clearInteractionNotification(sessionId);
+              sendToInitiator({
+                type: 'CLARIFY_TIMEOUT',
+                toolCallId: toolCallId,
+                sessionId
+              });
+              resolve({
+                success: false,
+                error: t('toolExec.clarifyPanelClosed'),
+                tool_call_id: toolCallId
+              });
+            }
+          } catch {
+            // getContexts 不可用时静默忽略（回退到超时机制）
           }
-        } catch {
-          // getContexts 不可用时静默忽略（回退到超时机制）
-        }
-      }, 5000);
+        }, INTERACTION_PANEL_POLL_MS);
+      }
 
-      // 监听用户的澄清响应
-      clarifyResponseHandler = (msg, sender, sendResponse) => {
-        handleResponse(msg);
+      // 监听呈现回执与用户的澄清响应
+      clarifyResponseHandler = (msg) => {
+        handleMessage(msg);
       };
 
       chrome.runtime.onMessage.addListener(clarifyResponseHandler);
@@ -2682,10 +2706,11 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     // 避免 chrome.runtime.sendMessage 广播导致所有 Tab 的侧边栏都弹框；
     // 无 port（定时任务发起、实例已关闭/刷新）或 port 失效时回退广播兜底。
     const initMsg = { type: 'SHOW_CLARIFY_DIALOG', sessionId, data: clarifyData };
+    startListening();
     if (trySendViaPort(initMsg)) {
       // 弹窗已送达发起实例；看不到面板时由通知中心补桌面提醒（可见性判定在 notifier 内）
+      // 超时倒计时不在此处启动，等面板回发 INTERACTION_DISPLAYED（可能在排队）
       notifyInteractionRequired({ kind: 'clarify', sessionId, detail: question }).catch(() => {});
-      startWaiting();
     } else {
       chrome.runtime.sendMessage(initMsg, (response) => {
         if (chrome.runtime.lastError) {
@@ -2698,10 +2723,9 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           });
           return;
         }
-        console.log('[Background] clarification dialogsent to  Side Panel,timeout:', clarifyTimeout, 'ms');
+        console.log('[Background] clarification dialogsent to  Side Panel');
         // 广播送达兜底（无 port 场景）：同样在看不到面板时补桌面提醒
         notifyInteractionRequired({ kind: 'clarify', sessionId, detail: question }).catch(() => {});
-        startWaiting();
       });
     }
   });

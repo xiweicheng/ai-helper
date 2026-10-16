@@ -241,8 +241,9 @@ ai-helper/
 │   │   ├── token-stats-panel.js        # Token 统计面板
 │   │   ├── session-manager.js          # 多会话存储 API
 │   │   ├── session-manager-ui.js       # 会话标签页 UI（切换、重命名、归档）
-│   │   ├── clarify-dialog.js           # 澄清对话框（倒计时、音频提醒）
-│   │   ├── confirm-dialog.js           # 敏感操作确认对话框
+│   │   ├── clarify-dialog.js           # 澄清对话框（并发队列、倒计时、音频提醒）
+│   │   ├── confirm-dialog.js           # 敏感操作确认对话框（并发队列）
+│   │   ├── interaction-gate.js         # 确认/澄清单模态闸门（FIFO 呈现权仲裁 + 呈现回执上行）
 │   │   ├── ui-prototype.js             # UI 原型预览与管理（缩放、下载、库）
 │   │   ├── message-toc.js              # 消息目录（自动生成导航栏）
 │   │   ├── input-history.js            # 输入历史（上下箭头回填）
@@ -750,7 +751,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 ### AI 协作（7 个）
 | 工具 | 说明 |
 |------|------|
-| `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒） |
+| `clarify_question` | 弹出澄清对话框（推荐选项、倒计时、音频提醒；多条并发时逐条排队呈现） |
 | `plan_task` | 复杂任务拆解规划（支持并行/顺序/条件执行） |
 | `preview_ui` | UI 原型预览与管理（支持 preview/get 两种 action） |
 | `search_chats` | 搜索对话记忆（当前会话 / 所有历史会话） |
@@ -786,10 +787,12 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 ### 敏感工具安全确认
 
-以下工具操作前会弹出确认对话框（30 秒超时自动拒绝，可全局关闭）：
+以下工具操作前会弹出确认对话框（**5 分钟超时自动拒绝**，由 `reactConfig.toolConfirmationEnabled` 总开关控制，关闭后敏感操作直接放行）：
 
 - `manage_tab`（close action）、`download_file`、`manage_cookies`、`clear_data`
 - `agent_file`（delete action）、`agent_exec`
+
+> 💡 **并发排队与计时起点**：并行子任务可能同时请求多条确认 / 澄清。两类弹窗共用一个**单模态闸门**，按 FIFO **逐条呈现**（同一时刻只弹一个，当前弹窗上会告知「另有 N 条在排队」），不会出现后一个遮住前一个、点不到按钮的情况。超时倒计时只在某条**真正显示出来**之后才开始消耗 —— 排队中的请求不计时，因此不存在「没机会拒绝就被判拒」。面板关闭或弹窗无法送达时按 **fail-closed** 立即拒绝，不白等 5 分钟。
 
 Agent 命令执行三级安全：
 1. **黑名单**（始终禁止）：`rm -rf /`、`mkfs.*`、fork 炸弹、curl-to-shell 管道等

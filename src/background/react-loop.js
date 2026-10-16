@@ -2,7 +2,7 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
-import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS } from './constants.js';
+import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS } from './constants.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, truncateContentSmart, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './stream-controller.js';
@@ -234,9 +234,13 @@ function confirmSessionMatches(respondedSessionId, expectedSessionId) {
  * 与会话 ID。不得仅按工具名匹配：并行子任务 / 多会话同时等待确认时，
  * 工具名相同会使一次点击释放所有同名的挂起确认（串扰）。
  *
- * 一律 fail-closed：仅当用户点击“确认”才 resolve(true)；拒绝 / 5 分钟超时 /
- * 弹框无法送达（无 keepalive port 且广播无接收方）均 resolve(false)。
+ * 一律 fail-closed：仅当用户点击“确认”才 resolve(true)；拒绝 / 超时 /
+ * 弹框无法送达（无 keepalive port 且广播无接收方）/ 面板已关闭均 resolve(false)。
  * 调用方两条通道（浏览器侧敏感工具、agent_exec 灰名单命令）共享此语义。
+ *
+ * 计时起点：倒计时不在发出弹窗时启动，而在面板回发 INTERACTION_DISPLAYED
+ * （该条真正呈现）后才走。面板侧确认与澄清共用单模态闸门，排队未被看到的
+ * 确认不得消耗用户的应答窗口；未呈现期间靠面板存活轮询保证不悬挂。
  *
  * @param {string} toolName
  * @param {Object} toolArgs
@@ -248,7 +252,7 @@ function confirmSessionMatches(respondedSessionId, expectedSessionId) {
 export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId, correlationId = null) {
   const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
-  const confirmTimeout = 300000; // 5分钟确认超时
+  const confirmTimeout = INTERACTION_CONFIRM_TIMEOUT_MS; // 5分钟确认超时
   // 关联键：优先用本次调用的唯一 ID，避免同名工具确认互相误伤
   const confirmKey = correlationId || toolName;
 
@@ -273,16 +277,24 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
     // 注册表 key 带上会话：同名工具在无 correlationId 回退时也不会互相顶掉
     const pendingKey = `${sessionId || ''}\u0000${confirmKey}`;
 
+    let timeoutId = null;
+    let panelCheckId = null;
+    let countdownStarted = false;
+
     /**
      * 统一结算：清理监听器 / 计时器 / 注册表 / 交互提醒。
      * @param {boolean} confirmed
      * @param {{dismiss?: boolean}} [opts]
-     *   dismiss=true 表示非用户应答的结算（超时 / 送达失败 / 任务放行扩散），
+     *   dismiss=true 表示非用户应答的结算（超时 / 送达失败 / 任务放行扩散 / 面板已关），
      *   面板可能仍在展示或排队这一条，必须下行撤销，避免陈旧弹窗占位并吞掉后续确认
      */
     const settle = (confirmed, opts = {}) => {
       chrome.runtime.onMessage.removeListener(handler);
       clearTimeout(timeoutId);
+      if (panelCheckId) {
+        clearInterval(panelCheckId);
+        panelCheckId = null;
+      }
       pendingConfirmations.delete(pendingKey);
       clearInteractionNotification(sessionId);
       if (opts.dismiss) {
@@ -291,7 +303,36 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
       resolve(confirmed);
     };
 
+    /**
+     * 面板真正把这一条呈现出来后启动倒计时（计时约定见 constants）：
+     * 面板侧确认与澄清共用单模态闸门，排队未被看到的弹窗不得消耗用户的确认窗口。
+     */
+    const startCountdown = () => {
+      if (countdownStarted) return;
+      countdownStarted = true;
+      timeoutId = setTimeout(() => {
+        // 超时默认拒绝 → 清除交互提醒 + 撤销面板弹窗
+        logger.debug(`[Background] confirmtimeout,defaultdeny: ${toolName}`);
+        settle(false, { dismiss: true });
+      }, confirmTimeout);
+    };
+
     const handler = (message) => {
+      // 呈现回执：只有面板真正展示了这一条，才开始消耗倒计时
+      if (message.type === 'INTERACTION_DISPLAYED') {
+        const shown = message.data;
+        if (
+          shown &&
+          shown.kind === 'confirm' &&
+          shown.toolCallId === confirmKey &&
+          confirmSessionMatches(shown.sessionId, sessionId)
+        ) {
+          logger.debug(`[Background] confirm dialog displayed, start countdown: ${toolName}`);
+          startCountdown();
+        }
+        return;
+      }
+
       // 双重匹配：关联 ID + 会话归属。只比工具名会让并发的同名工具确认被一次点击集体放行
       if (
         message.type === 'TOOL_CONFIRMATION_RESPONSE' &&
@@ -310,12 +351,22 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
     };
     
     chrome.runtime.onMessage.addListener(handler);
-    
-    const timeoutId = setTimeout(() => {
-      // 超时默认拒绝 → 清除交互提醒 + 撤销面板弹窗
-      logger.debug(`[Background] confirmtimeout,defaultdeny: ${toolName}`);
-      settle(false, { dismiss: true });
-    }, confirmTimeout);
+
+    // 未呈现 / 等待应答期间的兜底：面板已关闭则无人可应答，尽快 fail-closed，
+    // 不让任务因等不到呈现回执而悬挂（旧行为是最长白等 5 分钟）
+    if (typeof chrome?.runtime?.getContexts === 'function') {
+      panelCheckId = setInterval(async () => {
+        try {
+          const contexts = await chrome.runtime.getContexts({ contextTypes: ['SIDE_PANEL'] });
+          if (!contexts || contexts.length === 0) {
+            logger.debug(`[Background] confirm panel closed, default deny: ${toolName}`);
+            settle(false, { dismiss: true });
+          }
+        } catch {
+          // getContexts 异常时不以此判定面板已关闭，交回超时机制收敛
+        }
+      }, INTERACTION_PANEL_POLL_MS);
+    }
 
     // 登记挂起确认：供任务级放行扩散结算与超时撤销
     pendingConfirmations.set(pendingKey, { sessionId, settle });
