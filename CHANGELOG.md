@@ -2,6 +2,25 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-16
+
+### 新增（确认/澄清弹窗单模态闸门与并发排队）
+> 痛点：并行工具调用会同时发多条命令确认，面板一次渲染一个模态——后到的弹窗直接覆盖先到的，用户点一次「本次放行」被结算到别的命令上；澄清弹窗同理由并发丢失。
+
+- **新增 `src/side_panel/interaction-gate.js`（单模态闸门）**：确认与澄清注册为同一组展示者，`requestDisplay/releaseDisplay` 决定谁能占屏；`reportInteractionDisplayed` 回执驱动的倒计时只在真正展示出来的那一条上跑（未展示的不得吃掉超时）。面板侧所有结算路径统一走 `settleClarifyVisible → advanceClarifyDisplay`，闸门无泄漏路径。
+- **并发排队可见化**：非展示条目排队并在同一条弹窗上显示「另有 N 条待确认」，逐条答复；后台 `tool-executor`/`react-loop` 按 `toolCallId` 逐条挂起与结算，不做会话级合并。
+- **测试**：`interaction-gate.unit.test.js` 248 行、`clarify-dialog-queue.unit.test.js`、`confirm-dialog-queue.unit.test.js`；新增 e2e `interaction-dialogs.e2e.spec.js`（真浏览器里验证排队/逐条结算/回执倒计时）。
+
+### 修复（点一次「本次放行」后此后再也不弹确认框）
+> 用户真机复测反馈：选「本次放行」（scope=single）后，同会话后续所有新命令都不再弹框，行为等同于选了「当前任务放行」。排查发现两个能各自造成该症状的缺陷，都与点的是哪个按钮无关。
+
+- **关联键退化导致一次点击集体放行**（`1c1840e`）：确认关联键（`toolCallId`/`confirmKey`）缺失时退化成同一个空键，面板双通道投递的去重把不同命令当作重复投递吞掉、结算串位。修：键强制唯一 + `inFlightConfirmKeys` 唯一性守卫 + 去重只按完整键匹配。新增双侧同总线集成回归 `confirm-loop-cross-talk.unit.test.js`（真后台模块与真面板模块挂同一条 `chrome` 消息总线、用真按钮 click 驱动）证明两侧接缝已闭合。
+- **agent 命令名单锚定串开头造成链式命令零确认**（`7613e5e`）：`BLACKLIST/GRAYLIST_PATTERNS` 绝大多数是 `^\s*sudo\s` 这类开头锚定模式，而模型很习惯写 `cd /tmp && sudo apt install foo`、`echo 1234 | sudo -S …`、`bash -c "sudo …"`——实测这些全部判 `allow`（连「force 也不可绕过」的黑名单都绕过：`cd /tmp && rm -rf /` 也是 allow）。修：`collectCommandScopes` 将判定集合展开为原始整串（保留 fork bomb 这类自带控制符的既有语义）+ shell 控制符逐段（引号/反引号/`$()` 内不拆）+ 环变量前缀剥离，黑名单与灰名单逐段判定，只加不减强度；纯空白命令改 fail-closed deny。
+- **任务级放行跨任务驻留**（`7613e5e`）：`loopApprovedSessions` 按 `getRootSessionId(sessionId)` 记账，而 finally 只 `delete(sessionId)`；sessionId 在很多入口等于聊天会话 ID（跟任务不同生命周期），一次运行未走到收尾就长期驻留。修：新增 `revokeTaskLoopApproval(sessionId)`（连带清掉 `${sessionId}_` 子任务树），挂在 `reactLoopImpl` 起点与 finally 两处——一次性授权必须在运行起点与收尾两处复位。
+- **四类仍能绕过名单的写法**（`18a6703`）：前缀包装器（`nohup/time/env/command/timeout/nice/stdbuf/exec/xargs sudo …`）、sudo 同类替代品（`doas`、`runas /user:` 根本没进名单）、Windows 内联载荷（`cmd /c /k`、`powershell -Command`、`-EncodedCommand` 的 base64/UTF-16LE）、`$( … )` 与反引号内部。修：逐段之上再追加剥壳范围（`stripCommandWrappers`/`extractInlinePayloads`/`extractSubstitutions`），灰名单补 `Remove-Item -Recurse/-Force` 与 `pwsh -EncodedCommand`：内联载荷静态看不出内容的，「看不出来」按需要确认而非放行。新增 zh/en 三键。
+- **测试**：`agent/test/unit/command-security-check.unit.test.js` 20 例（原有语义不变/链式不绕灰名单/逐段不放宽强度也不误伤/剥壳拆解）；`confirm-routing.unit.test.js` 补任务级放行生命周期 2 例与接线守卫 2 例（源码正则）。均先做负向对照：还原 `security.js` → 5 例红，还原 `react-loop.js` → 7 例红。agent 单测 454/454，扩展 96 文件 / 1439 测试全绿，eslint 0。
+- **已知能力边界**（显式写入注释）：变量间接执行 `S=rm; $S -rf ./x` 静态不可分类，不在本层解决；要堵需先定策略（如拒绝一切含未展开变量调用的命令）。另：改动要在全局安装的 `aha` 守护进程上生效必须 `npm i -g ./agent && aha stop && aha start`，否则真机仍跑旧代码。
+
 ## 2026-10-15
 
 ### 新增（选项页记忆 Tab：代理端持久化记忆的条目查看与管理区）
