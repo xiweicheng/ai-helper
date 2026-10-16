@@ -217,6 +217,7 @@ Chrome 商店 Privacy 标签页需要回答"扩展是否处理以下数据"。AI
 其余勾选项：
 
 - **Privacy policy URL：** `https://xiweicheng.github.io/ai-helper/privacy-policy.html`
+  - ⚠️ 此链接**必须填在 Dashboard 中该条目「隐私权（Privacy）」标签页的指定字段**，不得放在产品说明/描述文案里（首次拒审参考 ID: Purple Nickel，即因未填指定字段）。
 - **Single purpose：** 见第 4 节
 - **User data 是否售卖/共享：** No（一切数据仅留在用户设备与用户自选的模型服务之间）
 
@@ -245,6 +246,7 @@ Chrome 商店 Privacy 标签页需要回答"扩展是否处理以下数据"。AI
 与 Edge 版一致，Chrome MV3 政策对远程代码是**红线**：
 
 - 所有 JavaScript（含 marked、mermaid、html2canvas、jspdf 等第三方库）均打包在扩展内随包分发，不远程加载或执行任何脚本。
+- **jsPDF PDFObject 死代码已中和（首次 Blue Argon 拒审点）**：官方 jspdf 包在扩展未使用的 `pdfobjectnewwindow` 输出模式内内置了 cdnjs 上的 `pdfobject.min.js` URL，会被商店自动扫描命中。`scripts/fix-build.js` 的 `patchJsPDFRemoteCode` 会在每次构建后将 `dist/libs/jspdf.min.js` 中该死路径的远程 URL 替换为本地空 blob（扩展实际只用 `pdf.save()` 下载，功能不受影响）；当前仓内 `libs/jspdf.min.js` 也已同步打补丁。**勿在未经 AUDIT 的情况下用 npm 新版覆盖 `libs/jspdf.min.js`**，否则需重新核实该扫描信号。
 - manifest CSP 为 `script-src 'self'`，机制上禁止远程脚本。
 - 扩展仅有的网络请求是调用**用户自行配置**的 LLM API，传输 JSON 数据。
 - 若审核追问 Skill 功能：Skill 仅为本地配置（提示词/工具编排描述），扩展不会把任何远程返回内容当作脚本执行。
@@ -254,7 +256,7 @@ Chrome 商店 Privacy 标签页需要回答"扩展是否处理以下数据"。AI
 ## 9. 提交与审核注意事项
 
 1. **注册开发者账号**：$5 一次性费用；Dashboard → Account 页补齐开发者名称与已验证联系邮箱，否则无法提交。
-2. **打包**：`npm run package`（内部先 `build:silent`，并校验 `_locales` 与 `__MSG_` 键完整性），产物为根目录 `ai-helper@2.2.0.zip`。切勿 Finder 右键压缩（会把 manifest 藏进 `dist/` 子目录）。
+2. **打包**：`npm run package`（内部先 `build:silent`，并校验 `_locales` 与 `__MSG_` 键完整性），产物为根目录 `ai-helper@<版本>.zip`。切勿 Finder 右键压缩（会把 manifest 藏进 `dist/` 子目录）。被拒后重提必须上传**版本号更高的新包**（如 2.3.0 被拒 → 先按既有发布流程 bump 到 2.3.1 再打包）。提交前可自检：`grep -r "cdnjs" dist/` 应无任何命中。
 3. **locale 代码**：`default_locale` 必须是 `zh_CN`（裸 `zh` 会被商店忽略并报"缺少 default_locale"），当前 manifest 已正确。
 4. **`<all_urls>` + `debugger` + `webNavigation`** 是本扩展最可能被追问的三项，理由已强调"用户主动触发、不监听、不采集"。若 `debugger` 理由被拒，可先提交不含调试功能的版本（从 manifest 移除 `debugger`），过审后作为更新再加回。
 5. **名称政策**：Item name 不得使用 "Chrome" 字样、不能全大写、避免与热门扩展撞名；本方案 "AI Helper" 已核查为通用组合词，若被判定与现有条目高度相似，备选名："AI Helper – Web Smart Assistant"。
