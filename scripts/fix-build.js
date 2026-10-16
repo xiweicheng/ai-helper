@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as esbuild from 'esbuild';
+import { resolveContentScriptLibs } from './content-libs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -221,14 +222,23 @@ function fixBuild() {
 
   if (manifest.content_scripts && manifest.content_scripts[0]) {
     const oldJs = JSON.stringify(manifest.content_scripts[0].js);
+    // 注入清单以源码 manifest.json 的声明为唯一真相源，不再扫描 dist/libs 目录：
+    // 目录扫描会把 side_panel 专用的 html2canvas / jspdf / pdf.worker（约 1.61 MB）
+    // 一并塞进每个页面的每个 iframe，而内容脚本产物对它们的引用数为 0。
+    const rootManifestPath = path.join(__dirname, '..', 'manifest.json');
+    const rootManifest = JSON.parse(fs.readFileSync(rootManifestPath, 'utf-8'));
     const libsDir = path.join(distDir, 'libs');
-    const libFiles = fs.existsSync(libsDir) 
-      ? fs.readdirSync(libsDir)
-          .filter(f => f.endsWith('.js') && f !== 'mermaid.min.js')
-          .map(f => `libs/${f}`)
+    const libsDirExists = fs.existsSync(libsDir);
+    const libFiles = libsDirExists
+      ? fs.readdirSync(libsDir).filter(f => f.endsWith('.js'))
       : [];
+    const contentLibs = resolveContentScriptLibs({
+      sourceManifestJs: rootManifest.content_scripts?.[0]?.js,
+      libsDirFiles: libFiles,
+      libsDirExists,
+    });
     manifest.content_scripts[0].js = [
-      ...libFiles,
+      ...contentLibs,
       `assets/content-iife.js`
     ];
     console.log(`✅ Fixed content_scripts: ${oldJs} -> ${JSON.stringify(manifest.content_scripts[0].js)}`);

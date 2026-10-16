@@ -21,6 +21,15 @@
 - **测试**：`agent/test/unit/command-security-check.unit.test.js` 20 例（原有语义不变/链式不绕灰名单/逐段不放宽强度也不误伤/剥壳拆解）；`confirm-routing.unit.test.js` 补任务级放行生命周期 2 例与接线守卫 2 例（源码正则）。均先做负向对照：还原 `security.js` → 5 例红，还原 `react-loop.js` → 7 例红。agent 单测 454/454，扩展 96 文件 / 1439 测试全绿，eslint 0。
 - **已知能力边界**（显式写入注释）：变量间接执行 `S=rm; $S -rf ./x` 静态不可分类，不在本层解决；要堵需先定策略（如拒绝一切含未展开变量调用的命令）。另：改动要在全局安装的 `aha` 守护进程上生效必须 `npm i -g ./agent && aha stop && aha start`，否则真机仍跑旧代码。
 
+### 性能（内容脚本注入清单：每个 iframe 每帧 1.61 MB 死重）
+> 起因：审计条目 PERF-01 的复核。构建脚本生成 `content_scripts.js` 时用的是「扫 `dist/libs` 目录、除 mermaid 外全部注入」，而不是按需声明。而 dist/libs 里同时放着**只给 side panel 用**的重型库（side panel 靠 `libs-loader.js` 往自己文档插 `<script src="libs/…">`，依赖的是文件存在，与 content_scripts 声明无关）——于是它们被塞进每个页面的每个 iframe（`all_frames` + `match_about_blank`），而内容脚本产物对它们的引用数为 0。
+
+- **注入清单改为以源码 `manifest.json` 声明为唯一真相源**（新增 `scripts/content-libs.js` 的 `resolveContentScriptLibs`，`fix-build.js` 调用）：不再扫目录、也不再逐个排除 mermaid，以后确实需要给内容脚本加库只需写进 manifest。声明项在 `dist/libs` 里缺失时**抛错而非静默丢库**（静默丢失会退化成运行时 `typeof marked === 'undefined'` 降级分支，难归因）。
+- **效果**：注入 libs 从 1.64 MB（`pdf.worker` 1.06 MB + `jspdf` 357 KB + `html2canvas` 194 KB + `marked` 39 KB + `qrcode` 23 KB）降到 **61 KB**，每页每 iframe 少解析 **1.61 MB**；`dist/libs/` 文件全部保留，side panel 侧行为不变。
+- **确认为问题的四层证据**：源码 manifest 只声明 2 个库；产物中五个重型库标识引用数全为 0（`marked` 8 / `QRCode` 5）；产物无 `window[…]`/`globalThis[…]` 间接取值；内容脚本唯一的 `canvas.toDataURL`（`advanced-tools.js:105`/`:197`）经读码确认是二维码绘制而非截图导出。mermaid 此前已排除且功能正常，等于预先验证过这类排除是安全的。
+- **测试**：新增 `test/unit/content-script-libs.unit.test.js` 11 例（派生语义 6 + 仓库真实状态 3 + 构建脚本接线守卫 2，含注入体积上限锁与「旧写法不得复现」断言）；负向对照已验——`git stash` 掉 `fix-build.js` 后接线守卫立即 2 例红。扩展全量 97 文件 / 1450 测试全绿，eslint 0，已重跑 `npm run build:silent`。
+- **真扩展冒烟**（`test-results-probes/_content-libs-trim-smoke.mjs`，12 项全通过）：现有 `test/e2e/*.spec.js` 走的是 esbuild 从 `src/` 现打 IIFE，**完全不经过 `dist/manifest.json`**，判不了这次改动；探针改为把 `dist` 真装进 Chrome，验 ① 内容脚本在顶层帧与同源 iframe 里都完成初始化（以 `initSelectionToolbar()` 首步无条件插入的 `<style id="aih-selection-toolbar-styles">` 为 canary，244 ms 内出现）② 声明注入的 `qrcode`/`marked` 在扩展内可取 ③ 移出清单的 `html2canvas`/`jspdf`/`pdf.worker` 文件仍在 `dist` 且可取（面板 `libs-loader` 的依赖没被误删）④ side panel 正常渲染无报错。**负向对照同样跑过**：往 `content_scripts.js` 塞一个不存在的文件后，Chrome 直接起不来（`launchPersistentContext` 超时）——印证「清单写错」是加载级故障而非降级，也正是 `resolveContentScriptLibs` 选择抛错的理由。**仍需人工点验**：选区翻译/解释、二维码出图、侧边栏导出图片/PDF、工作区 PDF 预览（这些要真实交互与产出物，探针只能证明「脚本起来了、库取得到」）。
+
 ## 2026-10-15
 
 ### 新增（选项页记忆 Tab：代理端持久化记忆的条目查看与管理区）
