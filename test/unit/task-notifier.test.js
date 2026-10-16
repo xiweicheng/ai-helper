@@ -150,6 +150,31 @@ describe('可见性抑制', () => {
     expect(isVisible).toHaveBeenCalledWith('s1', null);
     expect(createMock).not.toHaveBeenCalled();
   });
+
+  // 首次安装冷启动竞态修复的契约：判定改为异步（await 启动补水完成后再判）后，
+  // notifier 必须 await 结果——否则返回的 Promise 恒为真值会永远抑制通知（漏弹）。
+  test('异步 isPanelVisible 返回 false（冷启动补水后确认不可见）：创建通知', async () => {
+    notifier.initNotifier({ isPanelVisible: async () => false, revealPanel: () => {} });
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 's1' });
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('异步 isPanelVisible 返回 true（冷启动补水后确认可见）：抑制通知', async () => {
+    notifier.initNotifier({ isPanelVisible: async () => true, revealPanel: () => {} });
+    await notifier.notifyTaskFeedback({ success: true, sessionId: 's1' });
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  test('交互提醒异步判定：await false 创建 / await true 抑制', async () => {
+    notifier.initNotifier({ isPanelVisible: async () => false, revealPanel: () => {} });
+    await notifier.notifyInteractionRequired({ kind: 'confirm', sessionId: 's1', detail: 'x' });
+    expect(createMock).toHaveBeenCalledTimes(1);
+
+    createMock.mockClear();
+    notifier.initNotifier({ isPanelVisible: async () => true });
+    await notifier.notifyInteractionRequired({ kind: 'clarify', sessionId: 's1', detail: 'q' });
+    expect(createMock).not.toHaveBeenCalled();
+  });
 });
 
 // ============ 通知 id：固定 + 覆盖非叠加 ============

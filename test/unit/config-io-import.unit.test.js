@@ -227,3 +227,29 @@ describe('confirmImport（剥离已下线的工具级反思配置）', () => {
     expect(store.reflectionConfig.enabled).toBe(true);
   });
 });
+
+describe('confirmImport（内网访问策略不参与导入）', () => {
+  // 安全约定（SEC-03）：内网总闸与白名单不能在配置文件里飘移，否则一个导出的
+  // （或被手改的）配置就能静默把内网访问打开，跟用户在设置页看到的开关不一致
+  test('文件里的 networkAccessEnabled / allowedNetworkHosts 被丢弃，本机已有值不受影响', async () => {
+    mockLocal();
+    store.networkAccessEnabled = false;
+    store.allowedNetworkHosts = ['192.168.1.5'];
+
+    setupDom({
+      version: 1,
+      config: {
+        modelName: 'm-imported',
+        networkAccessEnabled: true,
+        allowedNetworkHosts: ['10.0.0.1', '127.0.0.1'],
+      },
+    }, { replace: true });
+
+    await confirmImport();
+
+    expect(store.networkAccessEnabled).toBe(false);
+    expect(store.allowedNetworkHosts).toEqual(['192.168.1.5']);
+    // 同文件里的普通配置仍正常导入，证明只剔了那两个键
+    expect(store.modelName).toBe('m-imported');
+  });
+});

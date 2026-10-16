@@ -22,6 +22,12 @@ import {
   removeBlockedDomain
 } from './toolbar-config.js';
 import { showExportDialog, triggerImport, handleImportFile, initConfigIOEvents } from './config-io.js';
+import {
+  loadNetworkAllowlistUI,
+  addNetworkHost,
+  removeNetworkHost,
+  setNetworkAllowlistVisible
+} from './network-access-config.js';
 import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
 import { initToolbox, refreshToolbox } from './toolbox-config.js';
@@ -1230,6 +1236,73 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
+
+  // 内网地址访问总闸：切换即写入 storage；关闸只改开关与白名单区块的显隐，绝不动 allowedNetworkHosts
+  const networkAccessEnabledEl = document.getElementById('networkAccessEnabled');
+  const networkAccessEnabledLabel = document.getElementById('networkAccessEnabledLabel');
+  if (networkAccessEnabledEl && networkAccessEnabledLabel) {
+    networkAccessEnabledEl.addEventListener('change', function() {
+      networkAccessEnabledLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
+      setNetworkAllowlistVisible(this.checked); // 关闸时收起整块，省界面空间（条目不清）
+      chrome.storage.local.set({ networkAccessEnabled: this.checked });
+    });
+    networkAccessEnabledLabel.textContent = networkAccessEnabledEl.checked ? t('common.enabled') : t('common.disabled');
+    setNetworkAllowlistVisible(networkAccessEnabledEl.checked);
+  }
+
+  // 内网允许列表 - 添加
+  const networkHostAddBtn = document.getElementById('networkHostAddBtn');
+  const networkHostAddInput = document.getElementById('networkHostAddInput');
+  if (networkHostAddBtn && networkHostAddInput) {
+    networkHostAddBtn.addEventListener('click', function() {
+      addNetworkHost(networkHostAddInput.value, (result) => {
+        if (result.error) {
+          showToast('❌ ' + result.error, 'error');
+        } else {
+          networkHostAddInput.value = '';
+        }
+      });
+    });
+    networkHostAddInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        addNetworkHost(this.value, (result) => {
+          if (result.error) {
+            showToast('❌ ' + result.error, 'error');
+          } else {
+            this.value = '';
+          }
+        });
+      }
+    });
+  }
+
+  // 内网允许列表 - 移除（事件委托）
+  const networkAllowlistList = document.getElementById('networkAllowlistList');
+  if (networkAllowlistList) {
+    networkAllowlistList.addEventListener('click', function(e) {
+      const removeBtn = e.target.closest('.domain-blocklist-item-remove');
+      if (removeBtn) {
+        removeNetworkHost(removeBtn.dataset.host);
+      }
+    });
+  }
+
+  loadNetworkAllowlistUI();
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (changes.allowedNetworkHosts) {
+      loadNetworkAllowlistUI();
+    }
+    // 列表会跟随远端变更重渲，开关与区块显隐也得跟着同步，否则会出现
+    // 「条目在刷新、开关与展开状态还是旧的」这种不一致
+    if (changes.networkAccessEnabled && networkAccessEnabledEl && networkAccessEnabledLabel) {
+      const enabled = changes.networkAccessEnabled.newValue === true;
+      networkAccessEnabledEl.checked = enabled;
+      networkAccessEnabledLabel.textContent = t(enabled ? 'common.enabled' : 'common.disabled');
+      setNetworkAllowlistVisible(enabled);
+    }
+  });
 
   // 启用执行日志开关状态标签
   const enableExecutionLogEl = document.getElementById('enableExecutionLog');

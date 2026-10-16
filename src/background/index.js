@@ -617,13 +617,18 @@ chrome.windows?.onFocusChanged?.addListener?.((windowId) => {
   _chromeWindowFocused = windowId !== chrome.windows.WINDOW_ID_NONE;
 });
 // 冷启动补水：仅在未知时写入，避免覆盖已被事件更新的值；查询失败保持 null（保守弹）
-chrome.windows?.getLastFocused?.()?.then?.((win) => {
-  if (_chromeWindowFocused === null) _chromeWindowFocused = win?.focused === true;
-})?.catch?.(() => {});
+// 记下补水 Promise：首次安装时 onFocusChanged / onActivated 从未触发，镜像一直是 null，
+// 通知可见性判定必须等这两份补水完成后再读，否则会把“还没补水”误当成“未聚焦/无聚焦窗口”
+// 保守弹通知（用户明明看着面板仍弹）——即“切换一次开关后才正常”的根因（切开关会触发焦点事件）。
+const _focusSeed = Promise.resolve(
+  chrome.windows?.getLastFocused?.()?.then?.((win) => {
+    if (_chromeWindowFocused === null) _chromeWindowFocused = win?.focused === true;
+  })
+).catch(() => {});
 // 启动补水：SW 被任意事件唤醒后尽快把当前窗口的活跃 tab 放进镜像，
 // 下一次按键即可走同步路径
 // （SW 终止/重载竞态下 tabs.query 可能不可用：跳过本次镜像补水）
-(async () => {
+const _windowSeed = (async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab?.id) return;
@@ -633,6 +638,8 @@ chrome.windows?.getLastFocused?.()?.then?.((win) => {
     /* 静默降级 */
   }
 })();
+// 可见性判定所需的内存镜像补水完成信号（focus + focusedWindow/tab 两份都 settle 后 resolve）
+const _visibilityMirrorsReady = Promise.all([_focusSeed, _windowSeed]).catch(() => {});
 
 // 快捷键是否真的被绑定（被其它扩展占用时 Chrome 会静默不绑，表现为“按了没反应”）
 chrome.commands?.getAll?.().then((commands) => {
@@ -830,7 +837,13 @@ initPanelVisibility({
   getScope: () => _sidePanelScope,
 });
 initNotifier({
-  isPanelVisible: isPanelVisibleToUser,
+  // 冷启动竞态修复：判定前 await 一次启动补水完成，让首次安装后的第一个任务也能读到
+  // 真实焦点态（而非尚未补水、被同步读到 null 而保守误判“不可见”→明明看着面板仍弹通知）。
+  // 补水后仍是 null（真·失焦 / 无聚焦窗口）时才按不可见处理，保留“宁可多弹不漏弹”语义。
+  isPanelVisible: async (sessionId, snapshot) => {
+    await _visibilityMirrorsReady;
+    return isPanelVisibleToUser(sessionId, snapshot);
+  },
   revealPanel: ensureSidePanelVisibleFromGesture,
 });
 

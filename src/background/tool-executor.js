@@ -8,6 +8,7 @@ import { decodeSecret } from '../shared/secret.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
+import { decideNetworkAccess } from '../shared/network-scope.js';
 import { executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './state.js';
@@ -38,6 +39,10 @@ registerTranslations('zh', {
     clarifyPanelClosed: 'Side Panel 已关闭，澄清操作中止',
     missingUrlParam: '缺少 URL 参数',
     invalidUrlFormat: '无效的 URL 格式: {url}',
+    schemeBlocked: '出于安全限制，仅允许 http/https 协议，已拒绝访问 {scheme} 目标。请改用完整的 http(s) 地址后重试。',
+    networkGateClosed: '目标 {hostname} 属于本机/内网地址，当前未开启「内网地址访问」，请求已被拒绝。若确实需要访问，请让用户在扩展设置页「推理」标签的「内网地址访问」中打开总开关，并把该主机加入允许列表；未获得用户明确同意前不要反复重试同一个内网地址。',
+    networkNoAllowlist: '总开关已开启，但内网允许列表为空，因此仍拒绝访问 {hostname}。请让用户在扩展设置页「推理」标签的内网允许列表中填写具体主机（如 127.0.0.1 或 intranet.example.com）；不要建议用户放开整个内网。',
+    networkHostNotAllowed: '目标 {hostname} 未命中内网允许列表，请求已被拒绝。请让用户把该主机加入允许列表，或改用公网可访问的地址。',
     readResponseFailed: '读取响应内容失败: {error}',
     tabNotFound: '未找到当前标签页',
     getRequiresName: 'get操作需要提供name参数',
@@ -233,6 +238,10 @@ registerTranslations('en', {
     clarifyPanelClosed: 'Side Panel closed, clarification aborted',
     missingUrlParam: 'Missing URL parameter',
     invalidUrlFormat: 'Invalid URL format: {url}',
+    schemeBlocked: 'For security reasons only http/https are allowed; the {scheme} target was blocked. Retry with a full http(s) URL.',
+    networkGateClosed: 'Target {hostname} is a loopback/private address and "Allow private network access" is turned off, so the request was blocked. If it is really needed, ask the user to enable the master switch in Settings → ReAct → Private network access and add this host to the allowlist. Do not retry the same private address repeatedly without the user\'s explicit consent.',
+    networkNoAllowlist: 'The master switch is on but the private-network allowlist is empty, so {hostname} is still blocked. Ask the user to add the specific host (e.g. 127.0.0.1 or intranet.example.com) to the allowlist; never suggest opening up the whole private network.',
+    networkHostNotAllowed: 'Target {hostname} does not match the private-network allowlist, so the request was blocked. Ask the user to add this host to the allowlist, or use a public address instead.',
     readResponseFailed: 'Failed to read response content: {error}',
     tabNotFound: 'Current tab not found',
     getRequiresName: 'get operation requires name parameter',
@@ -2962,6 +2971,30 @@ export async function executeFetchUrl(args, toolCallId) {
     };
   }
   
+  // 内网/本机访问拦截（SEC-03）：扩展自身发起的 fetch 不受 Chrome PNA 预检约束，
+  // 127.0.0.1 / localhost / ::1 可直达，因此这里做唯一的一道闸门：
+  // scheme 限 http/https，内网目标必须「总开关开 + 命中白名单」才放行。
+  // 判定实现见 src/shared/network-scope.js（B2 语义）。
+  const config = await getStoredConfig();
+  const decision = decideNetworkAccess(url, {
+    enabled: config.reactConfig.networkAccessEnabled,
+    allowedHosts: config.reactConfig.allowedNetworkHosts,
+  });
+  if (!decision.allowed) {
+    const errorKey = {
+      schemeBlocked: 'toolExec.schemeBlocked',
+      gateClosed: 'toolExec.networkGateClosed',
+      noAllowlistedHost: 'toolExec.networkNoAllowlist',
+      hostNotAllowlisted: 'toolExec.networkHostNotAllowed',
+    }[decision.reason];
+    console.log('[Background] fetch_url blocked by network scope:', decision.reason, 'host=', decision.hostname, 'scheme=', decision.scheme);
+    return {
+      success: false,
+      error: t(errorKey || 'toolExec.invalidUrlFormat', { url, scheme: decision.scheme, hostname: decision.hostname }),
+      tool_call_id: toolCallId
+    };
+  }
+
   // Service Worker 的 fetch() 对 headers 类型校验严格，所有值必须是 ByteString。
   // AI 模型可能传入 non-string 类型的 header 值（如 number、boolean、null），
   // 需要先做类型清洗，避免 "is not of type '(record<ByteString, ByteString>'" 错误。

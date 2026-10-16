@@ -54,7 +54,9 @@ const INTERACTION_DETAIL_MAX = 120;
 const FEEDBACK_NAME_MAX = 80;
 
 // 依赖注入（index.js 调用 initNotifier 接线；避免 notifier → index 循环导入）
-let _isPanelVisible = null; // (sessionId) => boolean：发起实例的面板当前是否对用户可见
+// isPanelVisible 允许返回 Promise<boolean>：冷启动时判定方需 await 内存镜像补水完成
+// 后再判，避免首次安装时镜像还没就绪就被同步读到 null 而保守误判“不可见”。
+let _isPanelVisible = null; // (sessionId, snapshot) => boolean | Promise<boolean>：发起实例的面板当前是否对用户可见
 let _revealPanel = null; // () => void：打开/聚焦侧边栏
 
 /**
@@ -178,7 +180,8 @@ export async function notifyTaskFeedback({ success, sessionId = null, name = '',
     if (!(await _readEnabled(enabledKey))) return;
     // 聊天任务：只在“看不到发起实例的面板”时弹（按发起实例身份判定，多实例互不误判）；
     // 定时任务：后台执行无面板实例、无音效等其他提醒渠道 → 不做可见性抑制
-    if (source === 'chat' && sessionId && _isPanelVisible && _isPanelVisible(sessionId, panelSnapshot)) return;
+    // await 结果：判定方可能因冷启动补水而异步，不 await 会把返回的 Promise 当真值恒抑制
+    if (source === 'chat' && sessionId && _isPanelVisible && await _isPanelVisible(sessionId, panelSnapshot)) return;
 
     // 显示名优先用调用方传入的 name（聊天=本次用户问题，定时任务=任务名），
     // 而非会话标题：一个会话可能问多个问题，标题通常只反映首个问题，
@@ -220,8 +223,8 @@ export async function notifyTaskFeedback({ success, sessionId = null, name = '',
 export async function notifyInteractionRequired({ kind = 'confirm', sessionId = null, detail = '' } = {}) {
   try {
     if (!(await _readEnabled('interactionNotificationEnabled'))) return;
-    // 看得到发起实例的面板时不打扰（用户能直接操作弹窗），智能抑制
-    if (sessionId && _isPanelVisible && _isPanelVisible(sessionId)) return;
+    // 看得到发起实例的面板时不打扰（用户能直接操作弹窗），智能抑制（同上 await 异步判定）
+    if (sessionId && _isPanelVisible && await _isPanelVisible(sessionId)) return;
 
     const isConfirm = kind !== 'clarify';
     _create(ID_PREFIX + 'interaction|' + (isConfirm ? 'confirm' : 'clarify') + '|' + (sessionId || 'global'), {

@@ -15,6 +15,7 @@ export function getStoredConfig() {
       'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
       'enableToolPreselect',
       'toolConfirmationEnabled',
+      'networkAccessEnabled', 'allowedNetworkHosts',
       'reflectionConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
@@ -37,6 +38,9 @@ export function getStoredConfig() {
           enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
           preselectMinToolCount: DEFAULT_REACT_CONFIG.preselectMinToolCount,
           toolConfirmationEnabled: result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled,
+          // 内网地址访问：总闸 + 白名单（两者独立存储，关总闸不会清空白名单）
+          networkAccessEnabled: result.networkAccessEnabled === true,
+          allowedNetworkHosts: Array.isArray(result.allowedNetworkHosts) ? result.allowedNetworkHosts : DEFAULT_REACT_CONFIG.allowedNetworkHosts,
           // 反思配置（从 storage 读取，否则使用默认值）
           reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
         },

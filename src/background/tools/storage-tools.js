@@ -76,7 +76,7 @@ export const STORAGE_TOOLS = [
     type: 'function',
     function: {
       name: 'fetch_url',
-      description: 'Send HTTP GET/POST request to a URL. Returns response body as text. For JavaScript-rendered pages, use manage_tab(open)+page_content instead',
+      description: 'Send HTTP GET/POST request to a URL. Returns response body as text. For JavaScript-rendered pages, use manage_tab(open)+page_content instead. Restricted: only http/https targets can be reached, and loopback/private-network targets are refused unless the user enables "Private network access" in extension settings and allowlists that exact host — do not retry a refused private address',
       parameters: {
         type: 'object',
         properties: {

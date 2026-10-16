@@ -939,6 +939,7 @@ export function loadConfig() {
     'imageApiBase', 'imageApiKey', 'enableFileInput',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
     'preselectMinToolCount', 'toolConfirmationEnabled',
+    'networkAccessEnabled',
     'enableExecutionLog',
     'reflectionConfig',
     'streamEnabled',
@@ -1016,6 +1017,11 @@ export function loadConfig() {
     document.getElementById('toolConfirmationEnabled').checked =
       result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled;
     document.getElementById('toolConfirmationEnabled').dispatchEvent(new Event('change'));
+
+    // 加载内网地址访问总闸（白名单列表由 network-access-config.js 单独渲染）
+    document.getElementById('networkAccessEnabled').checked =
+      result.networkAccessEnabled === true;
+    document.getElementById('networkAccessEnabled').dispatchEvent(new Event('change'));
 
     // 加载对话配置
 
@@ -1175,6 +1181,7 @@ export function saveConfig() {
   const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
   // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
+  const networkAccessEnabled = document.getElementById('networkAccessEnabled').checked;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
 
   // 获取流式输出配置
@@ -1251,6 +1258,8 @@ export function saveConfig() {
     reactToolTimeout: reactToolTimeout,
     // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
     toolConfirmationEnabled: toolConfirmationEnabled,
+    // 内网访问总闸；白名单 allowedNetworkHosts 不在这里写，避免点「保存」时覆盖用户已录入的列表
+    networkAccessEnabled: networkAccessEnabled,
     enableExecutionLog: enableExecutionLog,
     // 图片识别配置
     enableImageInput: enableImageInput,

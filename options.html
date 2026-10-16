@@ -357,6 +357,31 @@
 
       <div class="react-config-item">
         <label>
+          <span data-i18n="react.networkAccess">内网地址访问</span>
+          <span class="hint-text" data-i18n="react.networkAccessHint">（控制 fetch_url 等工具能否访问本机与内网地址）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="networkAccessEnabled">
+          <span class="toggle-switch"></span>
+          <span id="networkAccessEnabledLabel" data-i18n="react.disabled">已停用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          <span data-i18n="react.networkAccessDesc1">默认关闭：工具只能访问公网地址，127.0.0.1、localhost、192.168.x.x 等本机与内网地址会被直接拒绝。</span><br>
+          <span data-i18n="react.networkAccessDesc2">开启后仍需在下方的允许列表中逐台添加主机；列表为空时依然拒绝全部内网。关闭开关只是收起该区块，不会清空已录入的列表。</span>
+        </div>
+        <div class="domain-blocklist-section" id="networkAllowlistWrap" style="display: none;">
+          <h3 class="domain-blocklist-title" data-i18n="react.networkAllowlistTitle">内网允许列表</h3>
+          <p class="subtitle" style="margin-top: 2px;" data-i18n="react.networkAllowlistDesc">支持主机名、IP 与 *.example.com 子域通配（不填协议与端口）；只有列在这里的内网主机才会被放行。</p>
+          <div class="domain-add-row">
+            <input type="text" id="networkHostAddInput" data-i18n-placeholder="react.networkHostAddPlaceholder" placeholder="例如：127.0.0.1 或 intranet.example.com" class="domain-add-input">
+            <button class="btn btn-primary" id="networkHostAddBtn" style="width: auto; flex-shrink: 0;" data-i18n="react.networkHostAdd">添加</button>
+          </div>
+          <div class="domain-blocklist-list" id="networkAllowlistList"></div>
+        </div>
+      </div>
+
+      <div class="react-config-item">
+        <label>
           <span data-i18n="react.enableExecutionLog">启用执行日志</span>
           <span class="hint-text" data-i18n="react.enableExecutionLogHint">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
         </label>

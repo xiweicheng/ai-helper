@@ -13,9 +13,9 @@
 
 | 判定 | 数量 | 条目 |
 |---|---|---|
-| ✅ 已修复 / 已完成 | 8 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建） |
-| 🔴 成立，值得排期 | 11 | SEC-01、SEC-03、SEC-07、SEC-08、SEC-10、SEC-11、SEC-12、SEC-13、PERF-02、PERF-05、PERF-06 |
-| 🟡 成立，但等级应下调 | 5 | SEC-05（高→低）、SEC-06（高→低）、SEC-04（高→策略取舍）、PERF-03（高→中低）、PERF-09（中→低） |
+| ✅ 已修复 / 已完成 | 9 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建） |
+| 🔴 成立，值得排期 | 11 | SEC-01、SEC-03（残余：`manage_tab` 免确认打开内网页，带用户 cookie）、SEC-07、SEC-08、SEC-10、SEC-11、SEC-12、SEC-13、PERF-02、PERF-05、PERF-06 |
+| 🟡 成立，但等级应下调 | 5 | SEC-05（高→低）、SEC-06（高→中，见第二节：原降级理由只对"网页发起"成立）、SEC-04（高→策略取舍）、PERF-03（高→中低）、PERF-09（中→低） |
 | 🔵 报告原判即"可接受"，我此前误列为待修 | 2 | PERF-12（报告原文："均有上限/清理，属可接受范围"）、SEC-09（报告原等级即"中·纵深防御"） |
 | ⚪ 需产品/策略决策才能动工 | 3 | P1-2（已搁置）、P1-3、SEC-04 |
 | 🆔 两份底账都没有的新发现 | 5 | NEW-01 … NEW-05（见第五节） |
@@ -23,7 +23,7 @@
 **最高性价比的三件**（都不需要你先做策略决定）：
 
 1. ~~**NEW-01 / PERF-01**~~ ✅ **已于本次修完**：`fix-build.js` 的 `libs/` 目录无脑全量注入已改为以源码 manifest 声明为唯一真相源，注入 libs 从 1.64 MB 降到 61 KB（每页每 iframe 少解析 1.61 MB 死重）。
-2. **SEC-03**：`fetch_url` 免确认 + 只做 URL 格式校验 → 模型可自主发起内网请求。
+2. ~~**SEC-03**~~ ✅ **拦截主体已修**：`fetch_url` 现过内网/scheme 闸门（默认关、需总闸 + 白名单双条件），设置页"推理"Tab 有总开关与允许列表。残余一条门：`manage_tab` 仍可免确认打开内网页面。
 3. **SEC-13 + PERF-05 + PERF-06**：三个 1–10 行级的独立小修（关 sourcemap / `chat-export.js` 改动态 import / `previewPdf` 监听配对移除）。
 
 ---
@@ -34,10 +34,10 @@
 |---|---|---|---|---|
 | SEC-01 | 严重 | 🔴 成立（定性修正为中） | 6 个位点全部未消毒：`selection-toolbar.js:784`、`:1022`、`:1033`、`:1582`、`:1991`、`:2027`；`DOMPurify` 全仓仅 `src/side_panel/markdown-render.js`、`workspace-panel.js`；`dist/assets/content.js` 中 `DOMPurify` 出现 **0 次** | **定性修正**：innerHTML 插入的 `<script>` 不执行，内联 handler 在**宿主页面主世界**执行，非扩展上下文 → 不是提权，是页面级 XSS。仍应加消毒，但不属"最危险"档 |
 | SEC-02 | 严重 | ✅ 已修复 | `tool-executor.js:4279` `requestCommandUserConfirmation`，三处调用 `:4341`/`:4655`/`:4723`；模型自带 `force` 不采信；开关判定 `:4320` | 提交 `fda111e`；延伸修复 `7613e5e`、`18a6703` |
-| SEC-03 | 严重 | 🔴 成立（半条已修） | 定义 `tools/storage-tools.js:75` `requiresConfirmation: false`；执行体 `tool-executor.js:2940-2977` **仅** `new URL(url)` 格式校验，无环回/私网/元数据/scheme 限制，headers 任意透传。报告所指"日志打印请求头"**已不存在**：`:2943` 现只打 method/url/timeout | 加内网与 scheme 拦截；是否纳入确认需你定（会新增一类弹窗） |
+| SEC-03 | 严重 | ✅ 拦截主体已修（残余 `manage_tab`） | 新增 `src/shared/network-scope.js`：scheme 限 http/https，内网目标需"总闸开 + 命中白名单"（B2 语义，开关开着但白名单为空仍拒绝）。接入点 `tool-executor.js:2944` `executeFetchUrl` 在 `new URL` 后调 `decideNetworkAccess`，拒绝时返回带开关位置的可执行文案；配置链 `config.js` 读 `networkAccessEnabled`/`allowedNetworkHosts`（默认 false / 空，`constants.js:19-23`），设置页"推理"Tab 新增总闸与白名单（关闸只改开关并把白名单区块收起、绝不清空列表，实测验证），配置导入剔除这两个键（安全闸门不允许被文件飘移）。工具定义 `storage-tools.js:79` 描述已写明限制。报告所指"日志打印请求头"**已不存在**：`:2943` 现只打 method/url/timeout | 已修部分按你的决定保持免确认（不新增弹窗）。**残余**：`tab-tools.js:5-10` `manage_tab` 仍 `requiresConfirmation: false` 且 `confirmationActions: ['close']` → open/navigate 到内网免确认，且带用户 cookie，光封 `fetch_url` 拦不住这条 | 
 | SEC-04 | 高 | 🟡 成立，但属有意取舍 | `debugger/debugger-rules.js:126-131` 注释明写"headers 对调试场景最有价值……故完整暴露"；`serializeNetworkEntry` 返回 `requestHeaders`/`responseHeaders`；全仓 grep `redact`/header 脱敏 **0 命中** | 不是遗漏，是策略。要脱敏或纳入确认需你先定调试能力的边界 |
 | SEC-05 | 高 | 🟡 成立（高→低） | 真身确为 `selection-toolbar.js:2129-2167`（`window.addEventListener('message')`，无 `event.origin`/`event.source` 校验），报告行号**本来就对**；发送侧 `postMessage` 在 `:1359`、`:1388`、`:1478` | 影响限于"伪造选区文本 + 按坐标弹出工具栏"，不能自行发起 AI 请求、不读数据，仍需用户再点一次 → 降为低。修法：校验 `event.source === window.parent` + 收敛 `targetOrigin` |
-| SEC-06 | 高 | 🟡 成立（高→低） | `agent/src/server.js:502-509`：`isLocal` 为真即跳过认证 | 逻辑存在，但公网页→环回的 POST 现被浏览器 **Private Network Access** 预检挡住（agent 未实现 `Access-Control-Request-Private-Network` 授权头）→ 真实可达面是同机进程/自家扩展页 |
+| SEC-06 | 高 | 🟡 成立（高→中） | `agent/src/server.js:502-509`：`isLocal` 为真即跳过认证，名单含 `127.0.0.1`/`::1`/`::ffff:127.0.0.1`/`localhost` | **原降级理由已推翻**：我以 Chrome PNA 预检为依据把本条降到"低"，但实测（真扩展 SW 发起）表明**扩展自身发起的请求不受 PNA 约束** —— 环回 GET/POST 全 200、无 `Access-Control-Request-Private-Network`、无 OPTIONS。PNA 只挡"网页发起"的那一类。因此回评为中：`fetch_url` 这条发起路径本轮已被 SEC-03 闸门封住，残余可达面是同机进程、自家扩展页与 `manage_tab` |
 | SEC-07 | 高 | 🔴 成立（描述修正） | 扩展 `src/shared/secret.js:22-30` `decodeSecret = atob`；agent `src/crypto-lite.js:1` 文件头自称"落盘混淆（Base64 + `enc:` 前缀）"；全 `src/` grep `encrypt\|decrypt` **0 命中**；WS 仍走 query：`local-agent-client.js:681` `?token=` | **描述修正**：两侧同一水平（Base64 混淆，非加密），不存在"agent 已加密 / 扩展明文"的不对称。要不要上真加密取决于威胁模型（能读磁盘者亦能读 `chrome.storage`） |
 | SEC-08 | 高 | 🔴 成立 | `content/page-extract.js:747-750` 与 `:801-804`，两处均直接重写**真实** `document.body.innerHTML`（已确认非克隆文档） | 每次"页内搜索+高亮"清掉全站事件监听/选中态，SPA 可能崩 → 属功能型缺陷。改 DOM Range 高亮 |
 | SEC-09 | 中 | 🔵 无可达路径（撤销"外部源"表述） | 主入口 `background/index.js:907`，全 `src/background/` 无 `sender.id`/`sender.url` 校验；但 manifest **未声明 `externally_connectable`** → `chrome.runtime.onMessage` 只收自家扩展页 + 自家内容脚本；且这些 handler 本身在用 `sender.tab?.id` 做路由 | 报告原等级即"中·纵深防御"，我此前"任意外部源可投递"的措辞是加重。作为加固项保留，不作为缺陷 |
@@ -100,8 +100,10 @@
 ## 六、对既有文档与口头结论的勘误
 
 1. **本报告内**：SEC-13 的 map 体积 3.68 MB → 现 **4.43 MB**；PERF-01 的"约 1.93 MB"实测为 **1.64 MB libs + 274 KB content.js**；SEC-03 的"日志打印请求头"半条已不成立。
-2. **报告"一、结论速览"的两处判断需一并修正**：①"内容脚本渲染链路是本项目唯一的真实 XSS 通道"——SEC-11（审计日志未转义）同样可达，且它发生在扩展页面、危害更高；②"风险集中在两处"中的第二处（命令确认失守）已于今日修复。
-3. **对话转述勘误（2026-10-16 我前几轮的错误，以本文件为准）**：
+2. **SEC-06 的降级理由作废（2026-10-16）**：我先前据 Chrome PNA 预检把 SEC-06 从"高"降到"低"，并顺手用同一理由给 SEC-03 的可达性降级。实测推翻了这个前提：PNA 只约束**网页发起**的请求，**扩展自身（SW）发起的请求不受约束**，环回 GET/POST 直连且响应体可读。两条的等级与处置已按实测重写。
+3. **agent 侧 `ragUrlIngest` 语义（本轮只查证、未改动）**：`agent/src/rag/url-guard.js:73-78` 现行是"白名单非空则总开关被完全忽略"，即 `allowPrivateNetwork: false` + 白名单非空 → 那台内网照样放行；且唯一锁这套语义的用例（`agent/test/unit/rag-url-ingest-guard.unit.test.js:76-81`）两条断言的开关都是 `true`，"关 + 白名单非空"这一档从无覆盖。你已选 **B2（AND 闸语义）** 并要求连 agent 一起改，本轮按你后面的指示（"代理端知识库的先不要动"）**暂未动手**，仅扩展侧落地。
+4. **报告"一、结论速览"的两处判断需一并修正**：①"内容脚本渲染链路是本项目唯一的真实 XSS 通道"——SEC-11（审计日志未转义）同样可达，且它发生在扩展页面、危害更高；②"风险集中在两处"中的第二处（命令确认失守）已于今日修复。
+5. **对话转述勘误（2026-10-16 我前几轮的错误，以本文件为准）**：
    - 把 SEC-09 说成"任意外部源可投递消息"——报告原等级即"中·纵深防御"，且已注明"manifest 未声明 `externally_connectable`，网页无法直连 Background"。
    - 声称"SEC-05 报告行号错了、真身在 2129"——**报告行号本来就是 `:2129-2167`**，错在我的前一轮转述。
    - 把 PERF-12 列为"待修/前提不成立"——报告原判即"可接受范围"。
@@ -114,11 +116,12 @@
 
 ## 七、复核局限（务必连同本表一起引用）
 
-- 全部结论来自**静态代码与构建产物**取证：没有做运行时压测、火焰图、也没有对 SEC-01/03/05/08/11/12 构造真机 PoC。"成立"的含义是**缺陷逻辑确实缺失或确实存在**，不代表已在真实浏览器中复现危害。
+- 全部结论来自**静态代码与构建产物**取证：没有做运行时压测、火焰图，也没有对 SEC-01/05/08/11/12 构造真机 PoC。"成立"的含义是**缺陷逻辑确实缺失或确实存在**，不代表已在真实浏览器中复现危害。（例外：SEC-03 与 NEW-01/PERF-01 已补运行时取证，见下）
 - PERF 类判定是**代码形态推断**（如"每块全量重渲染""每次预览注册监听"），实际体感幅度未经测量；PERF-02/01/05 的改动会改变渲染与注入形态，建议与真机复测分批进行，避免归因混淆。
-- SEC-06 的可利用性依赖浏览器 PNA 策略的当前实现版本，若 Chrome 放宽或 agent 改为非环回监听，结论需重估。
+- SEC-06 的残余可达面仍依赖浏览器行为与 agent 监听地址：本轮实测只覆盖"环回 + 默认配置"，公网页→环回那一段因无法在本机构造公网前提而未测（已标为 inconclusive）；若 agent 改为非环回监听，结论需重估。
 - 底账二（第四节）来源于对话而非文档，其中"dispatch 竞态"一条至今无法定位代码指代，标记为待澄清。
-- 例外：**NEW-01 / PERF-01 已在真实浏览器中验证**（`dist` 装进 Chrome，见探针脚本），不再是纯静态推断；但探针只证明"脚本初始化、资源可取、面板能起"，选区翻译/解释、二维码出图、导出图片/PDF、PDF 预览这类需真实交互与产出物的路径仍未人工点验。另需注意：`test/e2e/*.spec.js` 全部从 `src/` 现打模块，**不经过 `dist/manifest.json`**，因此对构建产物的改动没有现成 e2e 覆盖——这是本轮才暴露出的测试盲区。
+- 例外：**NEW-01 / PERF-01 与 SEC-03 的闸门已在真实浏览器中验证**（`dist` 装进 Chrome，见探针脚本），不再是纯静态推断；但探针只证明"脚本初始化、资源可取、面板能起、产物里的判定函数逐档行为正确、设置页三态与 storage 往返正确"，选区翻译/解释、二维码出图、导出图片/PDF、PDF 预览这类需真实交互与产出物的路径仍未人工点验。另需注意：`test/e2e/*.spec.js` 全部从 `src/` 现打模块，**不经过 `dist/manifest.json`**，因此对构建产物的改动没有现成 e2e 覆盖——这是本轮才暴露出的测试盲区。
+- SEC-03 的"模型可自主发起内网请求"已从静态成立升级为**运行时证实可达**（真 SW 里环回 GET/POST 全 200）；`POST /api/shutdown` 能关掉 agent 那一跳**没有真发**（会杀开发进程），属强推断。
 
 ---
 
@@ -127,13 +130,15 @@
 **第一批（无需决策，独立可验）**
 
 1. ~~NEW-01 / PERF-01~~ ✅ **已完成**：`scripts/content-libs.js` + `fix-build.js` 接线 + 11 例守卫，注入 libs 1.64 MB → 61 KB；已重跑构建，并用真扩展冒烟（12 项全绿）+ 负向对照验过。
-2. SEC-03 —— `fetch_url` 增加环回/私网/元数据与 scheme 拦截（保持免确认）。
-3. SEC-13（`sourcemap`）+ PERF-05（NEW-03）+ PERF-06（NEW-04）+ PERF-04 —— 四项各 1–10 行，可并一个提交。
+2. ~~SEC-03 —— `fetch_url` 增加环回/私网/元数据与 scheme 拦截（保持免确认）~~ ✅ **已完成**：`src/shared/network-scope.js`（B2 语义）+ `executeFetchUrl` 接线 + 配置链 + 设置页"推理"Tab 总闸与允许列表（关闸不清空列表）+ 导入不飘移；1543 例单测全绿（本条新增 92 例），真扩展冒烟 26 项全绿。
+3. **SEC-03 残余：`manage_tab` 的 open/navigate 到内网同样免确认，且带用户 cookie** —— 不堵这条，模型换个工具照样能进内网。同属一行级改动（复用同一份 `decideNetworkAccess`）。
+4. SEC-13（`sourcemap`）+ PERF-05（NEW-03）+ PERF-06（NEW-04）+ PERF-04 —— 四项各 1–10 行，可并一个提交。
 
 **第二批（各需你一句话）**
 
-4. SEC-11 转义 + SEC-05 origin 校验 + NEW-05 mermaid 守卫（同属面板渲染，一批做完一次回归）。
-5. SEC-01 内容脚本消毒（DOMPurify 进内容脚本或复用 `libs-loader` 懒加载）。
-6. SEC-07 凭据保护策略 / SEC-04 抓包头脱敏策略 / SEC-12 xlsx 替换 / P1-3 记忆来源分级 —— 这四条都在"要不要改变产品行为"这一层，不在代码难度层。
+5. SEC-11 转义 + SEC-05 origin 校验 + NEW-05 mermaid 守卫（同属面板渲染，一批做完一次回归）。
+6. SEC-01 内容脚本消毒（DOMPurify 进内容脚本或复用 `libs-loader` 懒加载）。
+7. SEC-07 凭据保护策略 / SEC-04 抓包头脱敏策略 / SEC-12 xlsx 替换 / P1-3 记忆来源分级 —— 这四条都在"要不要改变产品行为"这一层，不在代码难度层。
+8. agent 侧 `ragUrlIngest` 改 B2（AND 闸语义）+ 补"关 + 白名单非空"用例 —— 语义已定（你选了 B2），本轮按你的指示暂未动代理端。
 
-**搁置**：P1-2（工具级放行粒度）。**已完成的前置动作**：dist 已重建（NEW-02），当前产物含 `279cd74` 与本次构建修改；新构建去掉了每帧 1.61 MB 的死重注入，真机验证时请重点上表 PERF-01 行列出的 5 个功能点。
+**搁置**：P1-2（工具级放行粒度）。**已完成的前置动作**：dist 已重建（NEW-02），当前产物含 `279cd74`、内容脚本注入瘦身与 SEC-03 闸门；真机验证时请重点上表 PERF-01 行列出的 5 个功能点，以及新设置项的三态（默认关 / 开闸但列表空 / 开闸且命中条目）。

@@ -275,10 +275,14 @@ export async function confirmImport() {
 
   const importDataStr = modal.dataset.importData;
   if (!importDataStr) return;
-
+  
   try {
     const importData = JSON.parse(importDataStr);
     const config = importData.config || importData;
+    // 内网访问策略不参与导入：它属于安全闸门，不能让一个配置文件（包括手改的
+    // 导出文件）静默把总闸打开并灌入内网白名单，只能在设置页当面改
+    delete config.networkAccessEnabled;
+    delete config.allowedNetworkHosts;
     // 清理旧导出文件中可能仍存在的已下线反思配置（工具级反思），避免回灌进 storage
     stripRetiredReflectionKeys(config);
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';

@@ -15,7 +15,11 @@ export const DEFAULT_REACT_CONFIG = {
   apiRetryBaseDelay: 1000,    // API 重试基础延迟 (ms) (500-30000)，指数退避
   enableToolPreselect: false, // 是否启用工具预筛选（默认关闭）
   preselectMinToolCount: 10,  // 工具预筛选最小触发数量（工具数超过此值才启动预筛选）
-  toolConfirmationEnabled: true  // 是否启用敏感操作确认（关闭后敏感操作直接放行）
+  toolConfirmationEnabled: true,  // 是否启用敏感操作确认（关闭后敏感操作直接放行）
+  // 内网地址访问（SEC-03）：B2 语义 —— 默认关，且允许列表默认为空；
+  // 开启总闸但列表为空时仍拒绝全部内网，必须逐台主机加白名单
+  networkAccessEnabled: false,
+  allowedNetworkHosts: []
 };
 
 // 反思配置默认值
