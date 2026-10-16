@@ -109,8 +109,91 @@ import {
 // 当 onConnect 发现 keepalive 端口重连但 sessionId 不在其中时，说明 SW 已重启
 export const activeReactLoops = new Set();
 
-// 已获得"当前任务放行"的会话集合，后续敏感操作自动通过
+// 已获得"当前任务放行"的会话集合（按根任务会话记录，覆盖整棵子任务树）
 const loopApprovedSessions = new Set();
+
+// 挂起中的确认请求：`${sessionId}\0${confirmKey}` -> { sessionId, settle }
+// 用途："当前任务放行"时一并结算同任务内已在等待的确认；以及超时/送达失败后下行撤销面板弹窗
+const pendingConfirmations = new Map();
+
+// 子任务派生会话后缀：`${parent}_subtask_${index}`（见 executeSubtasks）
+const SUBTASK_SESSION_SUFFIX = /_subtask_\d+$/;
+
+/**
+ * 逐层剥离派生后缀，得到从自身到根任务的会话祖先链。
+ * @param {string|null} sessionId
+ * @returns {string[]}
+ */
+export function getSessionAncestry(sessionId) {
+  const chain = [];
+  let cur = sessionId;
+  while (typeof cur === 'string' && cur) {
+    chain.push(cur);
+    const next = cur.replace(SUBTASK_SESSION_SUFFIX, '');
+    if (next === cur) break;
+    cur = next;
+  }
+  return chain;
+}
+
+/** 取根任务会话（无派生后缀时即自身） */
+function getRootSessionId(sessionId) {
+  const chain = getSessionAncestry(sessionId);
+  return chain.length > 0 ? chain[chain.length - 1] : null;
+}
+
+/**
+ * 查询会话是否已获得"本次任务放行"（单一数据源谓词）。
+ * 供浏览器侧敏感工具与 agent_exec 灰名单命令两条确认通道共同采纳，
+ * 保证"单次放行 / 任务级放行"语义在两个通道一致。
+ *
+ * 任务级授权按根任务会话记录：并行子任务共享同一根，
+ * 故"当前任务放行"对整棵任务树一致生效（而不是只对单个子任务）。
+ * @param {string|null} sessionId
+ * @returns {boolean}
+ */
+export function hasLoopApproval(sessionId) {
+  if (!sessionId) return false;
+  return getSessionAncestry(sessionId).some((id) => loopApprovedSessions.has(id));
+}
+
+/**
+ * 授予"当前任务放行"：按根任务会话记录，并把同一任务内仍在等待的确认一并按放行结算。
+ * 否则已挂起的条目不受闸门影响（闸门只在发起确认前检查），
+ * 用户会看到排队的同任务确认继续弹、还得逐条重点一次。
+ * @param {string|null} sessionId - 本次应答所属会话
+ */
+function grantTaskLoopApproval(sessionId) {
+  const root = getRootSessionId(sessionId);
+  if (!root) return;
+  loopApprovedSessions.add(root);
+  logger.debug(`[Background] task ${root} set as current taskallow`);
+  for (const [key, pending] of [...pendingConfirmations]) {
+    if (getRootSessionId(pending.sessionId) === root) {
+      logger.debug('[Background] taskallow releases pending confirm:', key);
+      pending.settle(true, { dismiss: true });
+    }
+  }
+}
+
+/**
+ * 向发起实例的侧边栏下发确认相关指令（如撤销陈旧弹窗）。
+ * 通道选择与 SHOW_CONFIRM_DIALOG 一致：port 定向优先，无 port 回退广播。
+ * 面板不可达时静默放弃：后台已按 fail-closed 结算，不会因此漏放。
+ */
+function sendConfirmDialogCommand(type, data, sessionId) {
+  const msg = { type, data };
+  const port = sessionId ? getKeepalivePort(sessionId) : null;
+  if (port) {
+    try {
+      port.postMessage(msg);
+      return;
+    } catch (e) {
+      logger.debug(`[Background] ${type} port postMessage failed, fallback to broadcast:`, e?.message);
+    }
+  }
+  chrome.runtime.sendMessage(msg).catch(() => {});
+}
 
 // 敏感操作显示名映射（i18n）
 const TOOL_DISPLAY_NAME_KEYS = {
@@ -120,6 +203,7 @@ const TOOL_DISPLAY_NAME_KEYS = {
   manage_tab: 'sensitiveTool.manage_tab',
   agent_file: 'sensitiveTool.agent_file',
   debug_page: 'sensitiveTool.debug_page',
+  agent_exec: 'sensitiveTool.agent_exec',
 };
 
 /**
@@ -133,14 +217,41 @@ function parseToolCallArgs(toolCall) {
 }
 
 /**
- * 请求用户确认敏感操作
- * 发送消息到 Side Panel 显示确认对话框，等待用户响应
+ * 会话归属判定：防止一次点击误伤其他会话的同名工具确认。
+ * 两侧任一没有会话标识（全局模式 / 旧消息）时不以此拒绝，避免把确认通道打死；
+ * 两侧都有标识时必须一致。
  */
-export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId) {
+function confirmSessionMatches(respondedSessionId, expectedSessionId) {
+  if (!expectedSessionId || !respondedSessionId) return true;
+  return expectedSessionId === respondedSessionId;
+}
+
+/**
+ * 请求用户确认敏感操作
+ * 发送消息到 Side Panel 显示确认对话框，等待用户响应。
+ *
+ * 关联标识：响应必须同时匹配 correlationId（一次工具调用的唯一 ID，即 OpenAI toolCall.id）
+ * 与会话 ID。不得仅按工具名匹配：并行子任务 / 多会话同时等待确认时，
+ * 工具名相同会使一次点击释放所有同名的挂起确认（串扰）。
+ *
+ * 一律 fail-closed：仅当用户点击“确认”才 resolve(true)；拒绝 / 5 分钟超时 /
+ * 弹框无法送达（无 keepalive port 且广播无接收方）均 resolve(false)。
+ * 调用方两条通道（浏览器侧敏感工具、agent_exec 灰名单命令）共享此语义。
+ *
+ * @param {string} toolName
+ * @param {Object} toolArgs
+ * @param {number|null} tabId
+ * @param {string|null} sessionId
+ * @param {string|null} [correlationId] - 本次调用的唯一 ID；缺失时回退工具名（仅单会话场景安全）
+ * @returns {Promise<boolean>}
+ */
+export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId, correlationId = null) {
   const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
   const confirmTimeout = 300000; // 5分钟确认超时
-  
+  // 关联键：优先用本次调用的唯一 ID，避免同名工具确认互相误伤
+  const confirmKey = correlationId || toolName;
+
   logger.debug(`[Background] requesting user confirmation for tool operation: ${toolName}`, toolArgs);
 
   // 为 manage_tab(close) 获取标签页标题和 URL，帮助用户判断
@@ -159,31 +270,55 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
   }
   
   return new Promise((resolve) => {
+    // 注册表 key 带上会话：同名工具在无 correlationId 回退时也不会互相顶掉
+    const pendingKey = `${sessionId || ''}\u0000${confirmKey}`;
+
+    /**
+     * 统一结算：清理监听器 / 计时器 / 注册表 / 交互提醒。
+     * @param {boolean} confirmed
+     * @param {{dismiss?: boolean}} [opts]
+     *   dismiss=true 表示非用户应答的结算（超时 / 送达失败 / 任务放行扩散），
+     *   面板可能仍在展示或排队这一条，必须下行撤销，避免陈旧弹窗占位并吞掉后续确认
+     */
+    const settle = (confirmed, opts = {}) => {
+      chrome.runtime.onMessage.removeListener(handler);
+      clearTimeout(timeoutId);
+      pendingConfirmations.delete(pendingKey);
+      clearInteractionNotification(sessionId);
+      if (opts.dismiss) {
+        sendConfirmDialogCommand('DISMISS_CONFIRM_DIALOG', { toolCallId: confirmKey, sessionId }, sessionId);
+      }
+      resolve(confirmed);
+    };
+
     const handler = (message) => {
-      if (message.type === 'TOOL_CONFIRMATION_RESPONSE' && message.toolCallId === toolName) {
-        chrome.runtime.onMessage.removeListener(handler);
-        clearTimeout(timeoutId);
-        // 用户已响应（确认或拒绝）→ 清除交互提醒（未创建时为无操作）
-        clearInteractionNotification(sessionId);
+      // 双重匹配：关联 ID + 会话归属。只比工具名会让并发的同名工具确认被一次点击集体放行
+      if (
+        message.type === 'TOOL_CONFIRMATION_RESPONSE' &&
+        message.toolCallId === confirmKey &&
+        confirmSessionMatches(message.sessionId, sessionId)
+      ) {
         logger.debug(`[Background] userconfirmresult: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
-        if (message.confirmed && message.scope === 'loop') {
-          // 当前任务放行：后续工具调用自动通过
-          loopApprovedSessions.add(sessionId);
-          logger.debug(`[Background] session ${sessionId} set as current taskallow`);
+        const approvedForTask = message.confirmed && message.scope === 'loop';
+        // 用户亲自应答：面板已自行关闭该条，无需再下行撤销
+        settle(message.confirmed);
+        if (approvedForTask) {
+          // 任务级放行：按整棵任务树生效，并释放同任务内其他挂起确认
+          grantTaskLoopApproval(sessionId);
         }
-        resolve(message.confirmed);
       }
     };
     
     chrome.runtime.onMessage.addListener(handler);
     
     const timeoutId = setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(handler);
-      // 超时默认拒绝 → 清除交互提醒
-      clearInteractionNotification(sessionId);
+      // 超时默认拒绝 → 清除交互提醒 + 撤销面板弹窗
       logger.debug(`[Background] confirmtimeout,defaultdeny: ${toolName}`);
-      resolve(false); // 超时默认拒绝
+      settle(false, { dismiss: true });
     }, confirmTimeout);
+
+    // 登记挂起确认：供任务级放行扩散结算与超时撤销
+    pendingConfirmations.set(pendingKey, { sessionId, settle });
     
     // 发送显示确认对话框的消息：
     // 定向优先（keepalive port 点对点）——本实例发起的确认只弹在发起实例上，
@@ -195,7 +330,7 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
         toolName,
         toolLabel,
         args: toolArgs,
-        toolCallId: toolName,
+        toolCallId: confirmKey,
         sessionId,
         timeout: confirmTimeout,
         message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined
@@ -219,11 +354,10 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
         // 广播送达兜底（无 port 场景）：同样在看不到面板时补桌面提醒
         notifyInteractionRequired({ kind: 'confirm', sessionId, detail: toolLabel }).catch(() => {});
       }).catch(err => {
-        logger.debug('[Background] sendconfirm dialogmessage failed:', err.message);
-        // 发送失败，直接放行
-        chrome.runtime.onMessage.removeListener(handler);
-        clearTimeout(timeoutId);
-        resolve(true);
+        logger.debug('[Background] sendconfirm dialogmessage failed, defaultdeny:', err.message);
+        // 弹框无法送达（侧边栏已关闭 / 无消息接收方）= 未获得用户授权，
+        // 一律 fail-closed 拒用：安全确认不得因界面不可达而静默放行
+        settle(false, { dismiss: true });
       });
     }
   });
@@ -1478,7 +1612,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           const needsConfirmation = (toolLevelConfirm || actionLevelConfirm) && reactConfig.toolConfirmationEnabled;
           if (needsConfirmation) {
             // 如果该会话已获得"当前任务放行"，跳过确认
-            if (sessionId && loopApprovedSessions.has(sessionId)) {
+            if (hasLoopApproval(sessionId)) {
               logger.debug(`[Background] session ${sessionId} got currenttaskallow,skip confirm: ${toolName}`);
             } else {
               // 暂停整体循环超时 + 通知前端暂停单次请求超时
@@ -1493,7 +1627,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
 
               let confirmed;
               try {
-                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId);
+                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId, toolCall?.id || null);
               } finally {
                 // 无论确认/拒绝/超时，都恢复超时计时
                 resumeLoopTimer();

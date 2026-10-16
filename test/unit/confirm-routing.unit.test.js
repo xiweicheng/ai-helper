@@ -59,11 +59,13 @@ globalThis.chrome = {
 };
 
 let requestToolConfirmation;
+let hasLoopApproval;
 let bgState;
 
 beforeAll(async () => {
   const rl = await import('../../src/background/react-loop.js');
   requestToolConfirmation = rl.requestToolConfirmation;
+  hasLoopApproval = rl.hasLoopApproval;
   bgState = await import('../../src/background/state.js');
 });
 
@@ -156,6 +158,154 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     expect(result).toBe(true);
 
     bgState.unregisterKeepalivePort('cs-resp', port);
+  });
+
+  test('弹框无法送达（无 port 且广播无接收方）：fail-closed 拒用，不静默放行', async () => {
+    // 侧边栏已关闭（MV3 下广播无接收方 → sendMessage 直接 reject）
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = () => Promise.reject(
+      new Error('Could not establish connection. Receiving end does not exist.')
+    );
+
+    try {
+      // 无需推进到 5 分钟超时：送达失败当拍即拒
+      const result = await requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'cs-nolistener');
+      expect(result).toBe(false);
+      expect(messageListeners).toHaveLength(0); // 监听器已清理，不得泄漏
+    } finally {
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+
+  test('同名工具并发确认：响应按 correlationId 区分，一次点击不释放另一条', async () => {
+    const pA = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'S_0', 'call-A');
+    const pB = requestToolConfirmation('agent_exec', { command: 'b' }, null, 'S_1', 'call-B');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 弹窗关联键为本次调用唯一 ID，不再共用工具名
+    const dialogs = sentMessages.filter((m) => m.type === 'SHOW_CONFIRM_DIALOG');
+    expect(dialogs.map((d) => d.data.toolCallId)).toEqual(['call-A', 'call-B']);
+
+    // 只应答 call-B
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-B', confirmed: true, scope: 'single', sessionId: 'S_1' }, {}, noop);
+    }
+    expect(await pB).toBe(true);
+
+    // call-A 仍在等待，未被误放行
+    let aSettled = false;
+    pA.then(() => { aSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(aSettled).toBe(false);
+
+    // call-A 自己应答后才结算
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-A', confirmed: false, scope: 'single', sessionId: 'S_0' }, {}, noop);
+    }
+    expect(await pA).toBe(false);
+  });
+
+  test('跨会话误伤回归：无 correlationId 回退工具名时，sessionId 不匹配的响应必须被忽略', async () => {
+    const pMine = requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'S_mine');
+    const pOther = requestToolConfirmation('debug_page', { action: 'attach' }, 1, 'S_other');
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 另一会话的“当前任务放行”（同名工具、同回退关联键）不得结算本会话的确认
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: true, scope: 'loop', sessionId: 'S_other' }, {}, noop);
+    }
+    expect(await pOther).toBe(true);
+
+    let mineSettled = false;
+    pMine.then(() => { mineSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mineSettled).toBe(false); // 未被跨会话放行
+    // 且他会话的 loop 授权不得记到本会话头上
+    expect(hasLoopApproval('S_mine')).toBe(false);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'debug_page', confirmed: false, scope: 'single', sessionId: 'S_mine' }, {}, noop);
+    }
+    expect(await pMine).toBe(false);
+  });
+
+  test('任务级放行扩散：点“当前任务放行”后，同任务其他挂起确认一并放行并撤销弹窗', async () => {
+    // 两个并行子任务（同属一个根任务）各自挂起一条确认
+    const pA = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKX_subtask_0', 'call-X0');
+    const pB = requestToolConfirmation('agent_exec', { command: 'b' }, null, 'TASKX_subtask_1', 'call-X1');
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-X0', confirmed: true, scope: 'loop', sessionId: 'TASKX_subtask_0' }, {}, noop);
+    }
+
+    // 旧行为：B 不受闸门影响（闸门只在发起前检查），用户还得再点一次
+    expect(await pA).toBe(true);
+    expect(await pB).toBe(true);
+
+    // 面板必须收到撤销，否则排队的陈旧弹窗会继续占位并吞掉后续确认
+    const dismisses = sentMessages.filter((m) => m.type === 'DISMISS_CONFIRM_DIALOG');
+    expect(dismisses.map((d) => d.data.toolCallId)).toEqual(['call-X1']);
+    // 按整棵任务树记住放行：根会话与兄弟子任务后续均免确认
+    expect(hasLoopApproval('TASKX')).toBe(true);
+    expect(hasLoopApproval('TASKX_subtask_1')).toBe(true);
+  });
+
+  test('单次放行不扩散：同任务另一条挂起确认仍需用户自己应答', async () => {
+    const pA = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKY_subtask_0', 'call-Y0');
+    const pB = requestToolConfirmation('agent_exec', { command: 'b' }, null, 'TASKY_subtask_1', 'call-Y1');
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-Y0', confirmed: true, scope: 'single', sessionId: 'TASKY_subtask_0' }, {}, noop);
+    }
+    expect(await pA).toBe(true);
+
+    let bSettled = false;
+    pB.then(() => { bSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bSettled).toBe(false); // 只放行了那一条
+    expect(sentMessages.some((m) => m.type === 'DISMISS_CONFIRM_DIALOG')).toBe(false);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-Y1', confirmed: false, scope: 'single', sessionId: 'TASKY_subtask_1' }, {}, noop);
+    }
+    expect(await pB).toBe(false);
+  });
+
+  test('跨任务不泄漏：任务 A 的放行不影响任务 B 的挂起确认', async () => {
+    const pA = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKA_subtask_0', 'call-TA0');
+    const pB = requestToolConfirmation('agent_exec', { command: 'b' }, null, 'TASKB_subtask_0', 'call-TB0');
+    await vi.advanceTimersByTimeAsync(0);
+
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-TA0', confirmed: true, scope: 'loop', sessionId: 'TASKA_subtask_0' }, {}, noop);
+    }
+    expect(await pA).toBe(true);
+
+    let bSettled = false;
+    pB.then(() => { bSettled = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(bSettled).toBe(false);
+    expect(hasLoopApproval('TASKB')).toBe(false);
+
+    // 收敛：应答 B
+    for (const l of [...messageListeners]) {
+      l({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-TB0', confirmed: false, scope: 'single', sessionId: 'TASKB_subtask_0' }, {}, noop);
+    }
+    expect(await pB).toBe(false);
+  });
+
+  test('确认超时：下行撤销面板弹窗，不留陈旧弹窗', async () => {
+    const p = requestToolConfirmation('agent_exec', { command: 'a' }, null, 'TASKZ_subtask_0', 'call-Z0');
+    await vi.advanceTimersByTimeAsync(0);
+
+    await drainToTimeout();
+    expect(await p).toBe(false);
+
+    const dismiss = sentMessages.find((m) => m.type === 'DISMISS_CONFIRM_DIALOG');
+    expect(dismiss?.data?.toolCallId).toBe('call-Z0');
+    expect(dismiss?.data?.sessionId).toBe('TASKZ_subtask_0');
   });
 });
 

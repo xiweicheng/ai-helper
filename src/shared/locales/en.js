@@ -35,6 +35,7 @@ export default {
     deny: 'Deny',
     approveOnce: 'Allow Once',
     approveLoop: 'Allow for This Task',
+    pendingQueue: '(+{count} queued)',
   },
 
   // Sensitive tool display names
@@ -44,6 +45,7 @@ export default {
     download_file: 'Download File',
     manage_tab: 'Tab Management',
     agent_file: 'File Operations',
+    agent_exec: 'Local Command Execution',
     debug_page: 'Page Debugger',
     debuggerAttachHint: '\n\nAfter enabling, a yellow "extension is debugging this browser" infobar appears on the tab until the session ends.',
     unknown: 'Unknown Operation',

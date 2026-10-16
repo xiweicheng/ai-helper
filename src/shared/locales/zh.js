@@ -35,6 +35,7 @@ export default {
     deny: '拒绝',
     approveOnce: '本次放行',
     approveLoop: '当前任务放行',
+    pendingQueue: '（另有 {count} 条待确认）',
   },
 
   // 敏感操作显示名
@@ -44,6 +45,7 @@ export default {
     download_file: '下载文件',
     manage_tab: '标签页管理',
     agent_file: '文件操作',
+    agent_exec: '本地命令执行',
     debug_page: '页面调试（Debugger）',
     debuggerAttachHint: '\n\n开启后该标签页顶部会显示"扩展程序正在调试此浏览器"提示条，结束后自动消失。',
     unknown: '未知操作',

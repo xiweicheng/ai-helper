@@ -16,6 +16,7 @@ import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
 import { executeSnapshotQuery, shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
+import { requestToolConfirmation, hasLoopApproval } from './react-loop.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -158,7 +159,9 @@ registerTranslations('zh', {
     agentStatusUnknown: '状态未知',
     agentStatusActive: ' ★当前活跃',
     commandExecFailed: '命令执行失败',
-    commandNeedConfirm: '⚠️ 命令需要用户确认：{reason}\n\n命令: `{command}`\n\n如果同意执行，请回复"确认"或"同意"，我会用 force: true 重新执行此命令。',
+    commandNeedConfirm: '⚠️ 命令 `{command}` 需要用户确认（{reason}），但确认流程不可用，已中止执行。请改用无需确认的替代方案，或请用户手动执行。',
+    commandUserDenied: '用户拒绝了该命令的执行。',
+    commandConfirmArgsReason: '确认原因',
     commandExecFailedWithOutput: '命令执行失败：{error}\n\n已收集的输出:\n{output}',
     exitCodeInfo: '(exitCode: {code})',
     noExitCodeInfo: '(无 exitCode)',
@@ -351,7 +354,9 @@ registerTranslations('en', {
     agentStatusUnknown: 'Unknown',
     agentStatusActive: ' ★Active',
     commandExecFailed: 'Command execution failed',
-    commandNeedConfirm: 'Command requires user confirmation: {reason}\n\nCommand: `{command}`\n\nIf you agree to execute, please reply "confirm" or "yes", I will re-execute this command with force: true.',
+    commandNeedConfirm: 'Command `{command}` requires user confirmation ({reason}), but the confirmation flow is unavailable and execution was aborted. Use an alternative that needs no confirmation, or ask the user to run it manually.',
+    commandUserDenied: 'The user declined this command execution.',
+    commandConfirmArgsReason: 'Reason',
     commandExecFailedWithOutput: 'Command execution failed: {error}\n\nCollected output:\n{output}',
     exitCodeInfo: '(exitCode: {code})',
     noExitCodeInfo: '(no exitCode)',
@@ -4232,15 +4237,62 @@ async function executeWithCancel(sessionId, toolCallId, taskPromise) {
 }
 
 /**
+ * 灰名单命令的用户确认（真实 UI 弹窗，复用敏感工具确认通道）。
+ * 命令三级分级语义：黑名单直接拒用（agent 端不可绕过）、灰名单需用户确认、
+ * 其余直接执行。确认放行与浏览器侧敏感工具共用同一语义：
+ *   - 单次放行：仅覆盖本次命令；
+ *   - 本次任务放行（hasLoopApproval）：同任务内后续灰名单命令自动放行。
+ * 确认结果只由用户点击弹窗决定，模型无法绕过；超时/弹窗失败默认拒绝（fail-closed）。
+ * @param {string} command
+ * @param {string} reason - agent 端安全分级给出的确认原因
+ * @param {string|null} sessionId
+ * @param {string|null} toolCallId - 本次工具调用的唯一 ID，作为确认关联键
+ *   （并行子任务各自等待命令确认时，一次点击只释放自己那条）
+ * @returns {Promise<boolean>}
+ */
+async function requestCommandUserConfirmation(command, reason, sessionId, toolCallId) {
+  // 任务级放行已授予：后续灰名单命令自动通过，不再弹窗
+  if (hasLoopApproval(sessionId)) {
+    logger.debug('[AgentExec] session got task-level approval, auto-pass command confirmation');
+    return true;
+  }
+  try {
+    return await requestToolConfirmation('agent_exec', { command, reason: reason || '' }, null, sessionId, toolCallId || null);
+  } catch (err) {
+    logger.debug('[AgentExec] command confirm dialog failed, default deny:', err?.message);
+    return false;
+  }
+}
+
+/**
+ * 构建用户拒绝命令的标准结果（含审计留痕）
+ */
+function commandDeniedResult(command, cwd, toolCallId) {
+  appendAuditLog('command_exec', `User denied command: ${command}`, { command, cwd });
+  return {
+    success: false,
+    error: t('toolExec.commandUserDenied'),
+    content: t('toolExec.commandUserDenied'),
+    tool_call_id: toolCallId
+  };
+}
+
+/**
  * Agent 命令执行
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
  */
-async function executeAgentExecCommand(args, toolCallId, sessionId) {
-  const { command, cwd, force, timeoutMs } = args;
+export async function executeAgentExecCommand(args, toolCallId, sessionId) {
+  const { command, cwd, timeoutMs } = args;
   if (!command) return { success: false, error: t('toolExec.missingCommand'), tool_call_id: toolCallId };
 
   const config = await getStoredConfig();
-  const effectiveForce = !!force || !config.reactConfig.toolConfirmationEnabled;
+  // 安全语义（与 agent 端 security.js 命令分级联动）：
+  // - 开关打开（默认）：灰名单命令必须经真实用户确认弹窗放行。模型自带的 force 参数
+  //   不可信（等于模型自我批准），一律忽略；force 只能由用户点击弹窗后由扩展端授予。
+  // - 开关关闭：用户已明确选择"灰名单自动放行"，此时才以 force 跳过灰名单
+  //   （黑名单始终不可绕过，见 agent 端 checkCommand）。
+  const confirmationEnabled = config.reactConfig.toolConfirmationEnabled !== false;
+  let effectiveForce = !confirmationEnabled;
   const useAgentStream = config.streamConfig?.streamEnabled !== false;
   
   const MIN_TIMEOUT_MS = 5000;
@@ -4250,7 +4302,7 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 
   if (useAgentStream) {
-    const initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
+    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
     
     if (initResult.level === 'deny') {
       return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
@@ -4259,15 +4311,20 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       return { success: false, error: initResult.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
     }
     if (initResult.level === 'confirm') {
-      return {
-        success: true,
-        level: 'confirm',
-        message: t('toolExec.commandNeedConfirm', { reason: initResult.reason, command }),
-        reason: initResult.reason,
-        command,
-        cwd,
-        tool_call_id: toolCallId
-      };
+      // 灰名单：弹真实用户确认框（模型无法绕过；超时/弹窗失败默认拒绝）
+      const confirmed = await requestCommandUserConfirmation(command, initResult.reason, sessionId, toolCallId);
+      if (!confirmed) {
+        return commandDeniedResult(command, cwd, toolCallId);
+      }
+      // 用户已在弹窗确认 → 以 force 重新初始化（跳过灰名单，黑名单仍生效）
+      effectiveForce = true;
+      initResult = await AgentClient.execCommand(command, cwd, true);
+      if (initResult.level === 'deny') {
+        return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
+      }
+      if (!initResult.success && !initResult.level) {
+        return { success: false, error: initResult.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
+      }
     }
 
     const { execId, wsUrl } = initResult;
@@ -4561,11 +4618,24 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
       console.warn('[AgentExec] fallback to syncmode:', errorMessage);
       // 为同步回退路径也注册取消机制
-      const result = await executeWithCancel(sessionId, toolCallId, 
+      let result = await executeWithCancel(sessionId, toolCallId, 
         AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
       );
       if (result.cancelled) {
         return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
+      }
+      // 灰名单：弹真实用户确认框，确认后以 force 重试（黑名单始终不可绕过）
+      if (result.value?.level === 'confirm') {
+        const confirmed = await requestCommandUserConfirmation(command, result.value.reason, sessionId, toolCallId);
+        if (!confirmed) {
+          return commandDeniedResult(command, cwd, toolCallId);
+        }
+        result = await executeWithCancel(sessionId, toolCallId,
+          AgentClient.execCommandWait(command, cwd, true, effectiveTimeout)
+        );
+        if (result.cancelled) {
+          return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
+        }
       }
       return formatAgentExecResult(result.value, command, cwd, toolCallId);
     }
@@ -4616,11 +4686,24 @@ async function executeAgentExecCommand(args, toolCallId, sessionId) {
     };
   }
 
-  const result = await executeWithCancel(sessionId, toolCallId,
+  let result = await executeWithCancel(sessionId, toolCallId,
     AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
   );
   if (result.cancelled) {
     return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
+  }
+  // 灰名单：弹真实用户确认框，确认后以 force 重试（黑名单始终不可绕过）
+  if (result.value?.level === 'confirm') {
+    const confirmed = await requestCommandUserConfirmation(command, result.value.reason, sessionId, toolCallId);
+    if (!confirmed) {
+      return commandDeniedResult(command, cwd, toolCallId);
+    }
+    result = await executeWithCancel(sessionId, toolCallId,
+      AgentClient.execCommandWait(command, cwd, true, effectiveTimeout)
+    );
+    if (result.cancelled) {
+      return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
+    }
   }
   return formatAgentExecResult(result.value, command, cwd, toolCallId);
 }

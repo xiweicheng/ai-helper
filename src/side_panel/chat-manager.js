@@ -3,7 +3,7 @@
 
 import state from './state.js';
 import { showClarifyDialog, handleClarifyTimeout } from './clarify-dialog.js';
-import { showConfirmDialog } from './confirm-dialog.js';
+import { showConfirmDialog, dismissConfirmDialog } from './confirm-dialog.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig, formatChatTime, formatChatTimeFull } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
@@ -3284,6 +3284,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       handleClarifyTimeout(msg);
     } else if (msg.type === 'SHOW_CONFIRM_DIALOG') {
       showConfirmDialog(msg.data);
+    } else if (msg.type === 'DISMISS_CONFIRM_DIALOG') {
+      // 后台已自行结算（超时 / 送达失败 / 任务级放行扩散）：撤掉本实例的陈旧弹窗
+      dismissConfirmDialog(msg.data);
     }
   });
 
