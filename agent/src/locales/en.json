@@ -168,6 +168,7 @@
     "commandInvalid": "Invalid command",
     "commandBlocked": "High-risk command blocked: \"{command}\"",
     "cmdSudo": "Command requires administrator privileges (sudo)",
+    "cmdDoas": "Command requires privilege escalation (doas/runas)",
     "cmdNpmGlobal": "Global npm package installation",
     "cmdPip": "pip install/uninstall package",
     "cmdChmod777": "Recursively change permissions to 777",
@@ -186,7 +187,9 @@
     "cmdReg": "Modify registry (reg)",
     "cmdNet": "User/group management (net)",
     "cmdSc": "Service management (sc)",
-    "cmdTaskkillF": "Force kill process (taskkill /f)"
+    "cmdTaskkillF": "Force kill process (taskkill /f)",
+    "cmdPsRemoveItem": "PowerShell recursive/forced delete (Remove-Item)",
+    "cmdPsEncoded": "Execute base64-encoded PowerShell script"
   },
   "trash": {
     "moveFailed": "Move to trash failed: {message}",

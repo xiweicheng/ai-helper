@@ -168,6 +168,7 @@
     "commandInvalid": "命令无效",
     "commandBlocked": "高危命令被拦截: \"{command}\"",
     "cmdSudo": "命令需要管理员权限 (sudo)",
+    "cmdDoas": "命令需要提权 (doas/runas)",
     "cmdNpmGlobal": "全局安装 npm 包",
     "cmdPip": "pip 安装/卸载包",
     "cmdChmod777": "递归修改权限为 777",
@@ -186,7 +187,9 @@
     "cmdReg": "修改注册表 (reg)",
     "cmdNet": "用户/用户组管理 (net)",
     "cmdSc": "服务管理 (sc)",
-    "cmdTaskkillF": "强制结束进程 (taskkill /f)"
+    "cmdTaskkillF": "强制结束进程 (taskkill /f)",
+    "cmdPsRemoveItem": "PowerShell 递归/强制删除 (Remove-Item)",
+    "cmdPsEncoded": "执行 base64 编码的 PowerShell 脚本"
   },
   "trash": {
     "moveFailed": "移至回收站失败: {message}",

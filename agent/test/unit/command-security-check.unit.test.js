@@ -60,6 +60,49 @@ describe('checkCommand - 链式命令不得绕过灰名单（回归）', () => {
   });
 });
 
+describe('checkCommand - 包装器/替代品/Windows 内联不得成为免费绕道', () => {
+  // 上一轮只补了链式拆分，这四类仍然会把敏感命令藏到段首正则看不见的后面
+  test('前缀包装器剥掉后照样命中灰名单', () => {
+    assert.equal(level('nohup sudo apt install foo'), 'confirm');
+    assert.equal(level('time sudo apt install foo'), 'confirm');
+    assert.equal(level('env FOO=1 sudo apt install foo'), 'confirm');
+    assert.equal(level('command sudo apt install foo'), 'confirm');
+    assert.equal(level('timeout 10 -k 5 sudo apt install foo'), 'confirm');
+    assert.equal(level('nice -n 5 sudo apt install foo'), 'confirm');
+  });
+
+  test('sudo 的同类替代品 doas / runas', () => {
+    assert.equal(level('doas apt install foo'), 'confirm');
+    assert.equal(level('runas /user:admin net user add x'), 'confirm');
+  });
+
+  test('Windows 侧内联载荷同样要过名单', () => {
+    assert.equal(level('cmd /c "del /f x"'), 'confirm');
+    assert.equal(level('powershell -Command "Remove-Item -Recurse x"'), 'confirm');
+    assert.equal(level('powershell -Command "Get-Date"'), 'allow');
+    // -EncodedCommand 是 base64(UTF-16LE)：能解开就按内容判，解不开也按确认处理
+    const encoded = Buffer.from('Remove-Item -Recurse C:\\tmp', 'utf16le').toString('base64');
+    assert.equal(level(`pwsh -EncodedCommand ${encoded}`), 'confirm');
+    assert.equal(level('pwsh -EncodedCommand !!!notbase64!!!'), 'confirm');
+  });
+
+  test('命令替换内部的敏感段也要送检', () => {
+    assert.equal(level('echo $(sudo id)'), 'confirm');
+    assert.equal(level('echo `sudo id`'), 'confirm');
+    // 黑名单对 echo/printf 这类纯输出命令的替换网开一面，不受这里影响
+    assert.equal(level('echo $(date)'), 'allow');
+    // 非白名单命令里的命令替换早就被黑名单拒掉（既有语义，不属本次修改）
+    assert.equal(level('git commit -m "feat: $(date)"'), 'deny');
+  });
+
+  test('包装器前缀不能把普通命令剥成误报', () => {
+    assert.equal(level('command -v node'), 'allow');
+    assert.equal(level('env | grep PATH'), 'allow');
+    assert.equal(level('nohup npm run build'), 'allow');
+    assert.equal(level('xargs -n1 echo hi'), 'allow');
+  });
+});
+
 describe('checkCommand - 逐段判定不得放宽既有强度或误伤', () => {
   test('fork bomb 这类自带控制符的命令仍按原始整串命中', () => {
     assert.equal(level(':(){ :|:& };:'), 'deny');
@@ -96,5 +139,16 @@ describe('collectCommandScopes - 子命令范围拆解', () => {
   test('嵌套解释器逐层解开（有深度上限）', () => {
     const scopes = collectCommandScopes('bash -c "sh -c \'rm -rf ./x\'"');
     assert.ok(scopes.includes('rm -rf ./x'));
+  });
+
+  test('包装器与命令替换各追加一个剥壳后的范围', () => {
+    assert.deepEqual(collectCommandScopes('nohup sudo apt install foo'), [
+      'nohup sudo apt install foo',
+      'sudo apt install foo',
+    ]);
+    assert.deepEqual(collectCommandScopes('echo $(sudo id)'), [
+      'echo $(sudo id)',
+      'sudo id',
+    ]);
   });
 });

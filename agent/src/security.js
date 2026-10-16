@@ -270,6 +270,9 @@ const SCRIPT_INTERPRETERS = '(bash|sh|zsh|python3?|node|ruby|perl|php|lua)';
 
 const GRAYLIST_PATTERNS = [
   { pattern: /^\s*sudo\s/, reasonKey: 'security.cmdSudo' },
+  // sudo 的同类替代品：不单独列进名单就成一个免费的提权绕道
+  { pattern: /^\s*doas\s/, reasonKey: 'security.cmdDoas' },
+  { pattern: /^\s*runas\s+\/user:/i, reasonKey: 'security.cmdDoas' },
   { pattern: /npm\s+(i|install)\s+-g\s/, reasonKey: 'security.cmdNpmGlobal' },
   { pattern: /pip\s+(install|uninstall)\s/, reasonKey: 'security.cmdPip' },
   { pattern: /^\s*chmod\s+-R\s+777\s/, reasonKey: 'security.cmdChmod777' },
@@ -295,6 +298,10 @@ const GRAYLIST_PATTERNS = [
   { pattern: /^\s*net\s+(user|localgroup)\b/i, reasonKey: 'security.cmdNet' },
   { pattern: /^\s*sc\s+(stop|delete|config)\b/i, reasonKey: 'security.cmdSc' },
   { pattern: /^\s*taskkill\s+\/[a-zA-Z]*f/i, reasonKey: 'security.cmdTaskkillF' },
+  // PowerShell 侧的破坏性 cmdlet 与 base64 内联载荷：
+  // -EncodedCommand 的内容静态看不出是什么，安全网关上“看不出来”只能当成需要确认
+  { pattern: /\bremove-item\b[\s\S]*-(?:recurse|force)/i, reasonKey: 'security.cmdPsRemoveItem' },
+  { pattern: /^\s*(?:powershell|pwsh)\b.*\s-(?:e|enc|encodedcommand)\s/i, reasonKey: 'security.cmdPsEncoded' },
 ];
 
 /**
@@ -302,11 +309,19 @@ const GRAYLIST_PATTERNS = [
  * `cd /x && sudo rm -rf y`、`echo pw | sudo -S apt install`、`bash -c "sudo ..."`，
  * 只检查整串开头会让后面几段完全绕过灰名单（用户表现为“点过一次后此后再也不弹框”）。
  * 这里把一条命令拆成逐个“子命令范围”，逐段比对，只增不减判定强度。
+ * 已知能力边界：变量间接执行（`S=rm; $S -rf x`）无法静态判定，不在本层解决。
  */
-// 会把内联脚本作为参数传入的解释器（只对它们解开 -c/-e 载荷，避免 grep -c 之类误报）
+// 会把内联脚本作为参数传入的解释器（只对它们解开内联载荷，避免 grep -c 之类误报）
 const INLINE_EXEC_INTERPRETERS = /^(?:\.\/|\/usr\/(?:local\/)?bin\/)?(?:sh|bash|zsh|dash|ksh|fish|powershell|pwsh|cmd|python[0-9.]*|node|perl|ruby|php|lua)\b/i;
 const INLINE_EXEC_FLAG = /\s-(?:c|e)\s+(.+)$/is;
+// Windows 侧的内联载荷：cmd 用 /c /k，PowerShell 用 -Command 与 -EncodedCommand（base64/UTF-16LE）
+const CMD_SLASH_FLAG = /\s\/([ck])\s+(.+)$/is;
+const PS_INLINE_FLAG = /\s-(?:command|encodedcommand|enc)\s+(.+)$/i;
+const PS_ENCODED_FLAG = /-(?:encodedcommand|enc)\b/i;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+// 前缀包装器：仅当整段以它们开头时才剥离（否则会把普通命令的参数误当成命令）
+const COMMAND_WRAPPERS = /^(?:nohup|time|timeout|nice|stdbuf|env|exec|command|xargs)\b/i;
+const OPTION_OR_SIZE_TOKEN = /^(?:[-+]|\d+(?:\.\d+)?[a-z%]*$)/i;
 
 /** 去掉包裹引号 */
 function unquote(text) {
@@ -323,6 +338,99 @@ function stripEnvAssignments(segment) {
   let i = 0;
   while (i < tokens.length && ENV_ASSIGNMENT.test(tokens[i])) i++;
   return tokens.slice(i).join(' ');
+}
+
+/**
+ * 剥离前缀包装器及其环变量/选项/数值参数：
+ * `nohup sudo …`、`time sudo …`、`env FOO=1 sudo …`、`timeout 10 -k 5 sudo …`、
+ * `nice -n 5 sudo …`、`command sudo …` 都得让后面的 sudo 暴露在段首。
+ * @param {string} segment
+ * @returns {string|null} 剥不出新形式时返回 null
+ */
+function stripCommandWrappers(segment) {
+  const tokens = segment.trim().split(/\s+/);
+  // 段首不是包装器就不动：否则 `ls -la` 之类会被剥成光杆参数
+  if (tokens.length < 2 || !COMMAND_WRAPPERS.test(tokens[0])) return null;
+  let i = 1;
+  while (
+    i < tokens.length &&
+    (COMMAND_WRAPPERS.test(tokens[i]) || ENV_ASSIGNMENT.test(tokens[i]) || OPTION_OR_SIZE_TOKEN.test(tokens[i]))
+  ) {
+    i++;
+  }
+  const rest = tokens.slice(i).join(' ');
+  return rest && rest !== segment ? rest : null;
+}
+
+/**
+ * 取出解释器内联载荷（POSIX `-c/-e`、cmd `/c /k`、PowerShell `-Command/-EncodedCommand`）
+ * @param {string} segment
+ * @returns {string[]}
+ */
+function extractInlinePayloads(segment) {
+  if (!INLINE_EXEC_INTERPRETERS.test(segment)) return [];
+  const payloads = [];
+
+  const posix = segment.match(INLINE_EXEC_FLAG);
+  if (posix) payloads.push(unquote(posix[1]));
+
+  const cmd = segment.match(CMD_SLASH_FLAG);
+  if (cmd) payloads.push(unquote(cmd[2]));
+
+  const ps = segment.match(PS_INLINE_FLAG);
+  if (ps) {
+    const raw = unquote(ps[1]);
+    if (PS_ENCODED_FLAG.test(segment)) {
+      // -EncodedCommand 走 base64(UTF-16LE)：解不出来就当作不命中，不当成放行依据
+      try {
+        payloads.push(Buffer.from(raw, 'base64').toString('utf16le'));
+      } catch {
+        /* 非法 base64：保留原文已由上面的 push 覆盖，不影响判定 */
+      }
+    } else {
+      payloads.push(raw);
+    }
+  }
+
+  return payloads.map((p) => String(p || '').trim()).filter(Boolean);
+}
+
+/**
+ * 取出 `$( … )` 与反引号内部的子命令
+ * 拆分器为了保留黑名单语义不拆这些位置，但里面的敏感段同样得过灰名单
+ * （如 `echo $(sudo id)`：黑名单对 echo 开头的替换网开一面，灰名单必须看到 sudo）
+ * @param {string} segment
+ * @returns {string[]}
+ */
+function extractSubstitutions(segment) {
+  const found = [];
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i];
+    if (ch === '`') {
+      const end = segment.indexOf('`', i + 1);
+      if (end > i) {
+        found.push(segment.slice(i + 1, end));
+        i = end;
+      }
+      continue;
+    }
+    if (ch === '$' && segment[i + 1] === '(') {
+      let depth = 0;
+      let j = i + 1;
+      for (; j < segment.length; j++) {
+        if (segment[j] === '(') depth++;
+        else if (segment[j] === ')') {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      if (j < segment.length) {
+        found.push(segment.slice(i + 2, j));
+        i = j;
+      }
+    }
+  }
+  return found.map((s) => s.trim()).filter(Boolean);
 }
 
 /**
@@ -426,10 +534,21 @@ function collectCommandScopes(command, depth = 3, out = []) {
     const normalized = stripEnvAssignments(seg);
     if (normalized && !out.includes(normalized)) out.push(normalized);
 
-    // `bash -c "sudo ..."` / `python -c '...'`：把内联载荷当作子命令再查一遍
-    if (INLINE_EXEC_INTERPRETERS.test(normalized)) {
-      const payload = normalized.match(INLINE_EXEC_FLAG)?.[1];
-      if (payload) collectCommandScopes(unquote(payload), depth - 1, out);
+    // `nohup sudo …`、`env FOO=1 sudo …`、`timeout 10 sudo …`：
+    // 包装器只是前缀，不能把敏感命令藏到段首正则看不见的后面
+    const unwrapped = stripCommandWrappers(normalized);
+    if (unwrapped) {
+      const inner = stripEnvAssignments(unwrapped);
+      if (inner && !out.includes(inner)) out.push(inner);
+    }
+
+    // 解释器内联载荷：POSIX `-c/-e`、cmd `/c /k`、PowerShell `-Command/-EncodedCommand`
+    for (const payload of extractInlinePayloads(seg)) {
+      collectCommandScopes(payload, depth - 1, out);
+    }
+    // `$( … )` 与反引号内部：拆分器为了保留黑名单语义整段不动，这里单独取出送检
+    for (const sub of extractSubstitutions(seg)) {
+      collectCommandScopes(sub, depth - 1, out);
     }
   }
   return out;
