@@ -298,6 +298,144 @@ const GRAYLIST_PATTERNS = [
 ];
 
 /**
+ * 链式命令拆分：黑白名单绝大多数模式锚定命令串开头，而模型很习惯写
+ * `cd /x && sudo rm -rf y`、`echo pw | sudo -S apt install`、`bash -c "sudo ..."`，
+ * 只检查整串开头会让后面几段完全绕过灰名单（用户表现为“点过一次后此后再也不弹框”）。
+ * 这里把一条命令拆成逐个“子命令范围”，逐段比对，只增不减判定强度。
+ */
+// 会把内联脚本作为参数传入的解释器（只对它们解开 -c/-e 载荷，避免 grep -c 之类误报）
+const INLINE_EXEC_INTERPRETERS = /^(?:\.\/|\/usr\/(?:local\/)?bin\/)?(?:sh|bash|zsh|dash|ksh|fish|powershell|pwsh|cmd|python[0-9.]*|node|perl|ruby|php|lua)\b/i;
+const INLINE_EXEC_FLAG = /\s-(?:c|e)\s+(.+)$/is;
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** 去掉包裹引号 */
+function unquote(text) {
+  const s = text.trim();
+  if (s.length >= 2 && ((s[0] === '"' && s.endsWith('"')) || (s[0] === "'" && s.endsWith("'")))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+/** 去掉开头的 `KEY=VAL` 环变量前缀（`FOO=1 sudo xxx` 依旧要看 sudo） */
+function stripEnvAssignments(segment) {
+  const tokens = segment.trim().split(/\s+/);
+  let i = 0;
+  while (i < tokens.length && ENV_ASSIGNMENT.test(tokens[i])) i++;
+  return tokens.slice(i).join(' ');
+}
+
+/**
+ * 按 shell 控制符拆分命令串（引号 / 反引号 / $( ) 内部不拆）
+ * @param {string} command
+ * @returns {string[]} 非空子命令段
+ */
+function splitShellSegments(command) {
+  const parts = [];
+  let buf = '';
+  let quote = null;
+  const push = () => {
+    const seg = buf.trim();
+    if (seg) parts.push(seg);
+    buf = '';
+  };
+
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+
+    if (quote) {
+      buf += ch;
+      if (ch === '\\' && quote === '"' && i + 1 < command.length) {
+        buf += command[++i];
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      buf += ch;
+      continue;
+    }
+
+    if (ch === '\\' && i + 1 < command.length) {
+      buf += ch + command[++i];
+      continue;
+    }
+
+    // 反引号命令替换：整段保留，不在此处拆分
+    if (ch === '`') {
+      buf += ch;
+      i++;
+      for (; i < command.length; i++) {
+        buf += command[i];
+        if (command[i] === '`') break;
+      }
+      continue;
+    }
+
+    // $( ... ) 命令替换：朴素配对一层括号
+    if (ch === '$' && command[i + 1] === '(') {
+      let depth = 0;
+      for (; i < command.length; i++) {
+        buf += command[i];
+        if (command[i] === '(') depth++;
+        else if (command[i] === ')') {
+          depth--;
+          if (depth === 0) break;
+        }
+      }
+      continue;
+    }
+
+    const two = command.slice(i, i + 2);
+    if (two === '&&' || two === '||') {
+      push();
+      i++;
+      continue;
+    }
+
+    if (ch === ';' || ch === '|' || ch === '&' || ch === '\n') {
+      push();
+      continue;
+    }
+
+    buf += ch;
+  }
+  push();
+  return parts;
+}
+
+/**
+ * 收集一条命令需要接受检查的全部“子命令范围”
+ * 始终包含原始整串（保留现有黑名单语义，例如 fork bomb 这种本身带控制符的模式），
+ * 再追加逐段拆分结果与解释器 -c/-e 内联载荷（递归一层层解开，深度封顶防死循环）。
+ * @param {string} command
+ * @param {number} [depth]
+ * @param {string[]} [out]
+ * @returns {string[]}
+ */
+function collectCommandScopes(command, depth = 3, out = []) {
+  const trimmed = String(command || '').trim();
+  if (!trimmed) return out;
+  if (!out.includes(trimmed)) out.push(trimmed);
+  if (depth <= 0) return out;
+
+  for (const seg of splitShellSegments(trimmed)) {
+    const normalized = stripEnvAssignments(seg);
+    if (normalized && !out.includes(normalized)) out.push(normalized);
+
+    // `bash -c "sudo ..."` / `python -c '...'`：把内联载荷当作子命令再查一遍
+    if (INLINE_EXEC_INTERPRETERS.test(normalized)) {
+      const payload = normalized.match(INLINE_EXEC_FLAG)?.[1];
+      if (payload) collectCommandScopes(unquote(payload), depth - 1, out);
+    }
+  }
+  return out;
+}
+
+/**
  * 检查命令安全性
  * @param {boolean} [force=false] - 用户已确认（跳过灰名单但保留黑名单）
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
@@ -309,15 +447,25 @@ function checkCommand(command, force = false, tFn) {
   }
 
   const trimmed = command.trim();
+  // 只有空白字符的命令同样无法分类：安全网关上“无法分类”不得当成 allow
+  if (!trimmed) {
+    return { safe: false, level: 'deny', reason: tr('security.commandInvalid', undefined, tFn) };
+  }
+
+  // 0. 子命令范围：原始整串 + 链式拆分段 + 解释器内联载荷
+  //    黑名单与灰名单逐段判定，不得只看命令串开头
+  const scopes = collectCommandScopes(trimmed);
 
   // 1. 黑名单始终生效（即使是 force 模式也不可绕过）
-  for (const pattern of BLACKLIST_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      return {
-        safe: false,
-        level: 'deny',
-        reason: tr('security.commandBlocked', { command: trimmed.substring(0, 100) }, tFn)
-      };
+  for (const scope of scopes) {
+    for (const pattern of BLACKLIST_PATTERNS) {
+      if (pattern.test(scope)) {
+        return {
+          safe: false,
+          level: 'deny',
+          reason: tr('security.commandBlocked', { command: trimmed.substring(0, 100) }, tFn)
+        };
+      }
     }
   }
 
@@ -340,14 +488,16 @@ function checkCommand(command, force = false, tFn) {
     return { safe: true, level: 'allow' };
   }
 
-  // 3. 检查灰名单
-  for (const entry of GRAYLIST_PATTERNS) {
-    if (entry.pattern.test(trimmed)) {
-      return {
-        safe: false,
-        level: 'confirm',
-        reason: tr(entry.reasonKey, undefined, tFn)
-      };
+  // 3. 检查灰名单（逐段：`cd x && sudo y` 里的 sudo 同样要用户确认）
+  for (const scope of scopes) {
+    for (const entry of GRAYLIST_PATTERNS) {
+      if (entry.pattern.test(scope)) {
+        return {
+          safe: false,
+          level: 'confirm',
+          reason: tr(entry.reasonKey, undefined, tFn)
+        };
+      }
     }
   }
 
@@ -355,4 +505,4 @@ function checkCommand(command, force = false, tFn) {
   return { safe: true, level: 'allow' };
 }
 
-export { checkPath, checkCommand, normalizePathFormat, isHardBlocked };
+export { checkPath, checkCommand, normalizePathFormat, isHardBlocked, collectCommandScopes };

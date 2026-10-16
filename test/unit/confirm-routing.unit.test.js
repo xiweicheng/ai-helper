@@ -8,6 +8,8 @@
 // 修复后的约定：与澄清一致——优先通过发起实例的 keepalive 长连接点对点发送；
 // port 不存在（定时任务发起、实例已关闭/刷新）或 postMessage 失败时回退广播兜底。
 import { describe, test, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const noop = () => {};
 let messageListeners = [];
@@ -60,12 +62,14 @@ globalThis.chrome = {
 
 let requestToolConfirmation;
 let hasLoopApproval;
+let revokeTaskLoopApproval;
 let bgState;
 
 beforeAll(async () => {
   const rl = await import('../../src/background/react-loop.js');
   requestToolConfirmation = rl.requestToolConfirmation;
   hasLoopApproval = rl.hasLoopApproval;
+  revokeTaskLoopApproval = rl.revokeTaskLoopApproval;
   bgState = await import('../../src/background/state.js');
 });
 
@@ -275,6 +279,9 @@ describe('工具确认弹框定向路由（多 Tab 侧边栏防串台）', () =>
     // 按整棵任务树记住放行：根会话与兄弟子任务后续均免确认
     expect(hasLoopApproval('TASKX')).toBe(true);
     expect(hasLoopApproval('TASKX_subtask_1')).toBe(true);
+
+    // 用例自己收尾：模块级的放行集合会带到下一个用例，不清干净会变成隐藏依赖
+    revokeTaskLoopApproval('TASKX');
   });
 
   test('单次放行不扩散：同任务另一条挂起确认仍需用户自己应答', async () => {
@@ -411,5 +418,71 @@ describe('keepalive port 注册表：断开清理防误删', () => {
     bgState.registerKeepalivePort('legacy-sess', port);
     bgState.unregisterKeepalivePort('legacy-sess');
     expect(bgState.getKeepalivePort('legacy-sess')).toBeNull();
+  });
+});
+
+// 缺陷背景：“当前任务放行”按根任务会话记录，而会话 ID 在很多入口下就是聊天会话 ID（跨任务复用）。
+// 若仅在循环结束时删除自身那一条，恢复执行/技能通道里授予的根授权会长期驻留，
+// 同一会话后续所有敏感命令静默放行，用户看到的就是“点过一次后此后再也不弹框”。
+describe('任务级放行只在授予它的那次任务运行内生效', () => {
+  test('授予后同任务免确认；任务收尾撤销后，下一轮任务重新弹框确认', async () => {
+    const p = requestToolConfirmation('agent_exec', { command: 'x' }, null, 'LIFETASK', 'call-life-1');
+    await vi.advanceTimersByTimeAsync(0);
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-life-1', confirmed: true, scope: 'loop', sessionId: 'LIFETASK' });
+    expect(await p).toBe(true);
+
+    expect(hasLoopApproval('LIFETASK')).toBe(true);
+    expect(hasLoopApproval('LIFETASK_subtask_2')).toBe(true);
+
+    // 任务收尾（reactLoopImpl 的 finally 与新一轮任务的起点走的是同一个撤销入口）
+    revokeTaskLoopApproval('LIFETASK');
+    expect(hasLoopApproval('LIFETASK')).toBe(false);
+    expect(hasLoopApproval('LIFETASK_subtask_2')).toBe(false);
+
+    // 下一轮任务：确认请求照旧发出弹窗，不得被上一轮的放行静默吃掉
+    const before = dialogKeys().length;
+    const p2 = requestToolConfirmation('agent_exec', { command: 'y' }, null, 'LIFETASK', 'call-life-2');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(dialogKeys().length).toBe(before + 1);
+
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-life-2', confirmed: false, scope: 'single', sessionId: 'LIFETASK' });
+    expect(await p2).toBe(false);
+  });
+
+  test('撤销只向下覆盖子任务树：子任务收尾不得提前清掉根任务的放行', async () => {
+    const p = requestToolConfirmation('agent_exec', { command: 'x' }, null, 'TREE_subtask_0', 'call-tree-0');
+    await vi.advanceTimersByTimeAsync(0);
+    dispatch({ type: 'TOOL_CONFIRMATION_RESPONSE', toolCallId: 'call-tree-0', confirmed: true, scope: 'loop', sessionId: 'TREE_subtask_0' });
+    expect(await p).toBe(true);
+
+    // 从子任务应答的“当前任务放行”记在根上，整棵树生效
+    expect(hasLoopApproval('TREE')).toBe(true);
+    expect(hasLoopApproval('TREE_subtask_1')).toBe(true);
+
+    // 单个子任务结束：只能清自己及自己的子树，根上的授权属于整个任务
+    revokeTaskLoopApproval('TREE_subtask_0');
+    expect(hasLoopApproval('TREE')).toBe(true);
+    expect(hasLoopApproval('TREE_subtask_1')).toBe(true);
+
+    // 根任务结束：整棵树一并失效
+    revokeTaskLoopApproval('TREE');
+    expect(hasLoopApproval('TREE_subtask_1')).toBe(false);
+  });
+});
+
+// 接线守卫：上面的用例能证明撤销入口本身的行为，但“起点 + 收尾都调了它”只能靠接线检查
+// ——驱动整条 reactLoop 需要 mock 完整个 API 层，成本过高，沿用仓库既有的源码接线守卫写法。
+describe('任务级放行清理接线守卫', () => {
+  // jsdom 环境下 import.meta.url 不是 file: 协议，按仓库同类接线守卫的写法走 cwd
+  const src = readFileSync(resolve(process.cwd(), 'src/background/react-loop.js'), 'utf8');
+
+  test('新一轮任务起点：标记活跃后立即丢掉上一轮可能残留的放行', () => {
+    expect(src).toMatch(/activeReactLoops\.add\(sessionId\);\s*(\/\/[^\n]*\n\s*)*revokeTaskLoopApproval\(sessionId\);/);
+  });
+
+  test('循环收尾：按整棵子任务树撤销，而不是只删自身那一条', () => {
+    expect(src).toMatch(/activeReactLoops\.delete\(sessionId\);\s*(\/\/[^\n]*\n\s*)*revokeTaskLoopApproval\(sessionId\);/);
+    // 单条 delete 会漏掉记在根会话上的授权，不得回退
+    expect(src).not.toMatch(/loopApprovedSessions\.delete\(sessionId\)/);
   });
 });

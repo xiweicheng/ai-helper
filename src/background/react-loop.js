@@ -180,6 +180,23 @@ export function hasLoopApproval(sessionId) {
 }
 
 /**
+ * 撤销任务级放行：清掉该会话自身的授权，以及它派生出去的整棵子任务树授权。
+ *
+ * 必要性：grantTaskLoopApproval 按根任务会话记账，而会话 ID 在很多场景下就是聊天会话 ID
+ * （不是每次任务运行唯一）。若只在循环结束时删自身那一条，一旦某次运行没走到收尾
+ * （恢复执行、技能/MCP/自动化等非 ReAct 通道里授予），这条授权就会长期驻留，
+ * 同一会话后续所有敏感命令静默自动放行——用户看到的是“点过一次后此后再也不弹框”。
+ * @param {string|null} sessionId
+ */
+export function revokeTaskLoopApproval(sessionId) {
+  if (!sessionId) return;
+  const prefix = `${sessionId}_`;
+  for (const id of [...loopApprovedSessions]) {
+    if (id === sessionId || id.startsWith(prefix)) loopApprovedSessions.delete(id);
+  }
+}
+
+/**
  * 授予"当前任务放行"：按根任务会话记录，并把同一任务内仍在等待的确认一并按放行结算。
  * 否则已挂起的条目不受闸门影响（闸门只在发起确认前检查），
  * 用户会看到排队的同任务确认继续弹、还得逐条重点一次。
@@ -740,7 +757,12 @@ export async function reactLoop(...args) {
  */
 async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null) {
   // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
-  if (sessionId) activeReactLoops.add(sessionId);
+  if (sessionId) {
+    activeReactLoops.add(sessionId);
+    // 任务级放行只在授予它的那次运行内生效：新一轮任务开始时先丢掉上一轮可能残留的授权，
+    // 否则后续任务会继承“当前任务放行”，敏感命令再不弹框
+    revokeTaskLoopApproval(sessionId);
+  }
 
   let iteration = 0;
   let totalReflectionRounds = 0; // 单次 ReAct 循环内反思总轮数，防止 API 调用次数远超 maxIterations
@@ -2337,7 +2359,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     // 标记该 session 的 ReAct 循环已结束，用于 SW 重启检测
     if (sessionId) {
       activeReactLoops.delete(sessionId);
-      loopApprovedSessions.delete(sessionId);  // 清除"当前任务放行"状态
+      // 清除"当前任务放行"状态：连同本会话派生出的子任务树一并清，
+      // 避免任务结束后同一会话的下一轮任务静默放行敏感命令
+      revokeTaskLoopApproval(sessionId);
     }
     // 注意：不在 finally 中清理 checkpoint！
     // 原因：页面刷新后 SW 中的 reactLoop 可能继续运行并正常完成，
