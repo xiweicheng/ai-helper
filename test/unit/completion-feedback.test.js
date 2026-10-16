@@ -312,13 +312,14 @@ describe('音效音符数量验证（区分成功/失败音色设计）', () => 
 describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
   test('成功反馈：上报 success=true + sessionId，error 为空', async () => {
     storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
-    await mod.playCompletionFeedback('sess-1');
+    await mod.playCompletionFeedback('sess-1', '帮我解读这封邮件');
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
     expect(sendMessageMock).toHaveBeenCalledWith({
       type: 'TASK_FEEDBACK_NOTIFY',
       success: true,
       sessionId: 'sess-1',
       error: '',
+      question: '帮我解读这封邮件',
       // 可见性快照：未 init 面板上下文 → 窗口/宿主 tab 为 null、作用域默认 global；jsdom 下 document.hidden=false
       panel: { windowId: null, hostTabId: null, scope: 'global', panelHidden: false },
     });
@@ -326,13 +327,14 @@ describe('桌面通知上报（TASK_FEEDBACK_NOTIFY）', () => {
 
   test('失败反馈：上报 success=false + sessionId + 错误文本', async () => {
     storageData = { completionSoundEnabled: false, completionConfettiEnabled: false };
-    await mod.playFailureFeedback('sess-2', 'connection timeout');
+    await mod.playFailureFeedback('sess-2', 'connection timeout', '第二个问题');
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
     expect(sendMessageMock).toHaveBeenCalledWith({
       type: 'TASK_FEEDBACK_NOTIFY',
       success: false,
       sessionId: 'sess-2',
       error: 'connection timeout',
+      question: '第二个问题',
       panel: { windowId: null, hostTabId: null, scope: 'global', panelHidden: false },
     });
   });

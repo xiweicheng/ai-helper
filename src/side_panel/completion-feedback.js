@@ -271,14 +271,17 @@ function _launchConfetti() {
  * @param {boolean} success
  * @param {string|null} sessionId 发起任务的会话 id（background 侧做可见性判定与通知 id）
  * @param {string} errorMessage 失败原因（成功时忽略）
+ * @param {string} [question] 本次用户问题原文（通知展示，对应到具体问题而非会话标题）
  */
-function _notifyDesktop(success, sessionId, errorMessage) {
+function _notifyDesktop(success, sessionId, errorMessage, question) {
   try {
     chrome.runtime.sendMessage({
       type: 'TASK_FEEDBACK_NOTIFY',
       success,
       sessionId: sessionId || null,
       error: errorMessage || '',
+      // 本次用户问题：background 侧用作通知显示名（一个会话可能多问题，不能用会话标题）
+      question: question || '',
       // 可见性快照：随消息携带发起时刻的实例数据（窗口 id / 宿主 tab / 作用域 / 面板是否隐藏），
       // background 判定不再依赖 keepalive 身份存活（端口先断、身份先删的跨通道竞速不影响结果）
       panel: getFeedbackSnapshot(sessionId),
@@ -293,8 +296,9 @@ function _notifyDesktop(success, sessionId, errorMessage) {
  * 由 chat-manager / prompt-manager / index 三处成功路径末尾调用
  * 各自独立读取开关；失败仅 debug 日志，绝不影响主链路
  * @param {string|null} [sessionId] 发起该任务的会话 id（桌面通知可见性判定；不传则按不可见处理）
+ * @param {string} [question] 本次用户问题原文（通知展示，对应到具体问题而非会话标题）
  */
-export async function playCompletionFeedback(sessionId = null) {
+export async function playCompletionFeedback(sessionId = null, question = '') {
   try {
     const now = Date.now();
     if (now - _lastPlayedAt < THROTTLE_MS) {
@@ -312,7 +316,7 @@ export async function playCompletionFeedback(sessionId = null) {
       _launchConfetti();
     }
     // 桌面通知上报：看不到发起实例面板时由 background 弹系统通知（与音效同享节流位）
-    _notifyDesktop(true, sessionId, '');
+    _notifyDesktop(true, sessionId, '', question);
   } catch (err) {
     // 反馈失败绝不能影响主链路
     logger.debug('[CompletionFeedback] unexpected error:', err?.message || err);
@@ -326,8 +330,9 @@ export async function playCompletionFeedback(sessionId = null) {
  * 与成功反馈共用 completionSoundEnabled 开关；confettiEnabled 对本函数无效
  * @param {string|null} [sessionId] 发起该任务的会话 id（桌面通知可见性判定）
  * @param {string} [errorMessage] 失败原因（桌面通知展示，截断后显示）
+ * @param {string} [question] 本次用户问题原文（通知展示，对应到具体问题而非会话标题）
  */
-export async function playFailureFeedback(sessionId = null, errorMessage = '') {
+export async function playFailureFeedback(sessionId = null, errorMessage = '', question = '') {
   try {
     const now = Date.now();
     if (now - _lastPlayedAt < THROTTLE_MS) {
@@ -341,7 +346,7 @@ export async function playFailureFeedback(sessionId = null, errorMessage = '') {
       _playFailureSound();
     }
     // 桌面通知上报：看不到发起实例面板时由 background 弹系统通知（与音效同享节流位）
-    _notifyDesktop(false, sessionId, errorMessage);
+    _notifyDesktop(false, sessionId, errorMessage, question);
   } catch (err) {
     logger.debug('[CompletionFeedback] unexpected error:', err?.message || err);
   }

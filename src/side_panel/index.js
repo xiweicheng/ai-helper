@@ -925,7 +925,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
         saveChatHistory();
       }
       // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中处理，不会到达此处
-      playCompletionFeedback(mySessionId);
+      playCompletionFeedback(mySessionId, prompt.content);
       return;
     } catch (errorResult) {
       removeLoadingMessage(loadingId);
@@ -941,7 +941,7 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
       // 失败反馈：用户主动取消不播放失败音；失败通知附带错误文本
       if (errorResult.message !== t('chatMsg.errTaskStopped')) {
-        playFailureFeedback(mySessionId, content);
+        playFailureFeedback(mySessionId, content, prompt.content);
       }
 
       throw errorResult;

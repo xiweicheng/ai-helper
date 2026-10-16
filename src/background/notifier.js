@@ -50,6 +50,8 @@ const ID_PREFIX = 'aih|';
 // 通知横幅显示空间有限，错误/详情文本做截断
 const FEEDBACK_ERROR_MAX = 160;
 const INTERACTION_DETAIL_MAX = 120;
+// 任务完成/失败通知里的显示名（用户问题 / 定时任务名）截断：横幅单行放不下长问题
+const FEEDBACK_NAME_MAX = 80;
 
 // 依赖注入（index.js 调用 initNotifier 接线；避免 notifier → index 循环导入）
 let _isPanelVisible = null; // (sessionId) => boolean：发起实例的面板当前是否对用户可见
@@ -178,11 +180,14 @@ export async function notifyTaskFeedback({ success, sessionId = null, name = '',
     // 定时任务：后台执行无面板实例、无音效等其他提醒渠道 → 不做可见性抑制
     if (source === 'chat' && sessionId && _isPanelVisible && _isPanelVisible(sessionId, panelSnapshot)) return;
 
-    let displayName = name;
+    // 显示名优先用调用方传入的 name（聊天=本次用户问题，定时任务=任务名），
+    // 而非会话标题：一个会话可能问多个问题，标题通常只反映首个问题，
+    // 通知须对应到“刚完成的这一个问题”。name 缺失时才回退会话标题。
+    let displayName = _truncate(name, FEEDBACK_NAME_MAX);
     if (!displayName && sessionId) {
       try {
         const session = await getSession(sessionId);
-        displayName = session?.title || '';
+        displayName = _truncate(session?.title, FEEDBACK_NAME_MAX);
       } catch { /* 读取失败走默认名 */ }
     }
     displayName = displayName || t('notify.defaultName');

@@ -1184,7 +1184,7 @@ export async function sendMessage() {
         state.messageHistory.push({ role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], messageId, resumable });
         saveChatHistory();
         // SW 重启视为失败：播放失败音效 + 桌面通知（用户主动取消已在上一分支处理）
-        playFailureFeedback(mySessionId, t('chat.taskInterruptedSwRestart'));
+        playFailureFeedback(mySessionId, t('chat.taskInterruptedSwRestart'), text);
         return;
       }
 
@@ -1201,7 +1201,7 @@ export async function sendMessage() {
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
 
       // 一般错误（网络/超时/API 错误）：播放失败音效 + 桌面通知；用户主动取消已在前面分支 return，不会到达此处
-      playFailureFeedback(mySessionId, content);
+      playFailureFeedback(mySessionId, content, text);
       return;
     }
     
@@ -1272,7 +1272,7 @@ export async function sendMessage() {
     state.messageHistory.push(msgEntry);
 
     // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
-    playCompletionFeedback(mySessionId);
+    playCompletionFeedback(mySessionId, text);
 
   } catch (error) {
     logger.error('[SidePanel] sendMessage exception:', error?.message || error);

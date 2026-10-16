@@ -1942,6 +1942,8 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     notifyTaskFeedback({
       success: !!message.success,
       sessionId: message.sessionId || null,
+      // 本次用户问题作为通知显示名（优先于会话标题）：一个会话可能多问题，须对应到刚完成的那个
+      name: message.question || '',
       error: message.error || '',
       source: 'chat',
       // 可见性快照：面板发送时附带（快照存在时判定不再依赖 keepalive 身份存活）
