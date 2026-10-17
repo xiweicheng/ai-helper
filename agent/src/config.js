@@ -20,8 +20,9 @@ const DEFAULTS = {
   pairCodeTTL: 30,
   commandTimeout: 300000,
   fileMaxSize: 50 * 1024 * 1024,
-  // RAG URL 导入内网访问策略：allowedPrivateHosts 非空时仅放行白名单命中（总开关不生效）；
-  // 为空时由 allowPrivateNetwork 决定；缺省均关闭（默认拒绝内网），公网访问不受影响
+  // RAG URL 导入内网访问策略（B2 AND 闸，与扩展侧 network-scope.js 同序）：
+  // allowPrivateNetwork 开启 **且** allowedPrivateHosts 命中才放行内网；关闸时白名单不生效，
+  // 开闸但白名单为空仍拒绝；缺省均关闭（默认拒绝内网），公网访问不受影响
   ragUrlIngest: { allowPrivateNetwork: false, allowedPrivateHosts: [] },
   // 长期记忆语义召回（hybrid recall）的 embedding 配置：缺省关闭 → recall 只走关键词通道（Tier A），
   // 不引入任何新的默认网络调用。mode: 'openai-compat'（远端，零依赖）| 'local'（本地模型，需 RAG 依赖）。

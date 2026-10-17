@@ -1,8 +1,8 @@
 // agent/src/rag/url-guard.js - RAG URL 导入的 SSRF 防护
 // 三层防线：
 //   1. 目标地址干预：DNS 解析后按真实 IP 判断私网/保留段，决定是否放行
-//      放行优先级：白名单非空 → 仅白名单命中放行（总开关不生效，白名单优先）；
-//                 白名单为空 → 由总开关 allowPrivateNetwork 决定（缺省关闭）
+//      内网放行采用「总闸 + 白名单」的 B2 AND 闸语义（与扩展侧 src/shared/network-scope.js 同序）：
+//      开关开 **且** 白名单命中才放行；关闸时白名单命中也拒绝；开闸但白名单为空仍拒绝
 //   2. 重定向逐跳校验：redirect: manual 手动跟随，每一跳都重新过第 1 层（防合法地址 302 跳内网）
 //   3. 响应体大小上限：流式累计，超限立即中断（防超大响应 OOM）
 // 注：DNS 校验与实际连接存在二次解析的理论窗口（DNS rebinding），
@@ -66,16 +66,30 @@ export function matchesHostAllowlist(hostname, allowlist) {
 }
 
 /**
- * 私网目标放行决策
- * 优先级：白名单非空 → 仅白名单命中放行（总开关不生效）；
- *         白名单为空（或仅空白条目）→ 由总开关 allowPrivateNetwork 决定
+ * 私网目标放行决策（B2 AND 闸，判定顺序与扩展侧 src/shared/network-scope.js 的 decideNetworkAccess 一致）：
+ *   1. 总开关关闭 → 拒绝（白名单命中也无效，白名单不被自动清空）
+ *   2. 开关开启 + 白名单为空（或仅空白条目）→ 拒绝（"启用能力"不等于"放行全部内网"）
+ *   3. 开关开启 + 白名单非空 → 仅放行命中条目
+ * @returns {{ allowed: boolean, reason: string }} reason: gateClosed / noAllowlistedHost / hostNotAllowlisted / allowlisted
+ */
+export function decidePrivateAccess(hostname, policy) {
+  const p = policy && typeof policy === 'object' ? policy : {};
+  // 规则 1：总闸未开一律拒绝，白名单不单独生效
+  if (p.allowPrivateNetwork !== true) return { allowed: false, reason: 'gateClosed' };
+  const allowlist = (Array.isArray(p.allowedPrivateHosts) ? p.allowedPrivateHosts : [])
+    .filter((entry) => String(entry || '').trim() !== '');
+  // 规则 2：开关开着但没配任何条目 → 仍拒绝，避免存在"整个内网全开"的状态
+  if (allowlist.length === 0) return { allowed: false, reason: 'noAllowlistedHost' };
+  // 规则 3：仅放行命中条目
+  if (matchesHostAllowlist(hostname, allowlist)) return { allowed: true, reason: 'allowlisted' };
+  return { allowed: false, reason: 'hostNotAllowlisted' };
+}
+
+/**
+ * 私网目标是否放行（decidePrivateAccess 的布尔视图，保持既有调用方与用例形状）
  */
 export function isPrivateTargetAllowed(hostname, policy) {
-  const p = policy && typeof policy === 'object' ? policy : {};
-  const allowlist = Array.isArray(p.allowedPrivateHosts) ? p.allowedPrivateHosts : [];
-  const hasAllowlist = allowlist.some((entry) => String(entry || '').trim() !== '');
-  if (hasAllowlist) return matchesHostAllowlist(hostname, allowlist);
-  return p.allowPrivateNetwork === true;
+  return decidePrivateAccess(hostname, policy).allowed;
 }
 
 /**
@@ -104,8 +118,9 @@ export async function assertUrlAllowed(urlStr, policy) {
     ? [hostname]
     : (await lookup(hostname, { all: true })).map((r) => r.address);
   if (!ips.some(isPrivateAddress)) return; // 公网目标直接放行
-  if (!isPrivateTargetAllowed(hostname, policy)) {
-    throw new RagError('urlPrivateBlocked', { host: hostname });
+  const decision = decidePrivateAccess(hostname, policy);
+  if (!decision.allowed) {
+    throw new RagError('urlPrivateBlocked', { host: hostname, reason: decision.reason });
   }
 }
 

@@ -799,7 +799,7 @@ export class RagManager {
 
   /**
    * 导入 URL 内容（HTML 提取正文 / 文本直取 / PDF 下载解析）
-   * 安全：逐跳重定向校验 + 私网拦截（白名单优先/总开关，见 url-guard.js）+ 响应体大小上限
+   * 安全：逐跳重定向校验 + 私网拦截（B2 AND 闸：开关开且白名单命中才放行，见 url-guard.js）+ 响应体大小上限
    * @param {string} collectionId
    * @param {{url: string, metadata?: object, chunkConfig?: object}} input
    */

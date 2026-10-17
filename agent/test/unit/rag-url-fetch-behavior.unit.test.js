@@ -25,13 +25,13 @@ function startLocalServer(handler) {
   });
 }
 
-// ingestUrl 桩：跳过互斥与分块，捕获进入 _ingestText 的入参；策略放行本地网络
+// ingestUrl 桩：跳过互斥与分块，捕获进入 _ingestText 的入参；策略按 B2 AND 闸放行本机（开关开 + 白名单命中）
 function makeIngestStub() {
   const seen = [];
   const mgr = Object.create(RagManager.prototype);
   mgr._runIngest = async (_collectionId, fn) => fn();
   mgr._reportProgress = () => {};
-  mgr._urlIngestPolicy = () => ({ allowPrivateNetwork: true });
+  mgr._urlIngestPolicy = () => ({ allowPrivateNetwork: true, allowedPrivateHosts: ['127.0.0.1'] });
   mgr._ingestText = async (_collectionId, input) => {
     seen.push(input);
     return { documentId: 'doc_test', name: input.name, chunkCount: 1 };
@@ -48,7 +48,7 @@ describe('fetchUrlGuarded - 请求头浏览器化', () => {
       res.end('ok');
     });
     try {
-      await fetchUrlGuarded(`${srv.origin}/probe`, { allowPrivateNetwork: true });
+      await fetchUrlGuarded(`${srv.origin}/probe`, { allowPrivateNetwork: true, allowedPrivateHosts: ['127.0.0.1'] });
       assert.ok(headers, '应收到请求');
       assert.match(headers['user-agent'], /Mozilla\/5\.0 .*AppleWebKit.*Chrome\//, `期望浏览器 UA，实际: ${headers['user-agent']}`);
       assert.ok(!/AI-Helper/i.test(headers['user-agent']), 'UA 不应再暴露工具标识');

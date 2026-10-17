@@ -107,7 +107,7 @@
     "err_pathNotAllowed": "File path not allowed: {reason}",
     "err_invalidUrl": "Invalid URL (http/https required)",
     "err_urlFetchFailed": "URL fetch failed: HTTP {status}",
-    "err_urlPrivateBlocked": "Access to private network address blocked: {host} (configure the allowlist or enable the private-network switch on the agent)",
+    "err_urlPrivateBlocked": "Access to private network address blocked: {host} (requires the private-network switch enabled AND the host in the allowlist; either alone is not sufficient)",
     "err_urlTooLarge": "URL response exceeds the size limit ({limit})",
     "err_urlTooManyRedirects": "Too many URL redirects (limit: {max})",
     "err_contentTooLarge": "Import content exceeds the size limit ({limit})",
