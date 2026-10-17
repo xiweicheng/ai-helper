@@ -173,6 +173,10 @@ registerTranslations('zh', {
     commandKilledWarning: '⚠️ 命令因超时被强制终止',
     commandNoExitCodeWarning: '⚠️ 代理未返回 exitCode',
     commandExecComplete: '命令执行完毕 {exitInfo}',
+    execTotalTimeout: '命令执行总超时（{seconds}s），已由扩展端保险层终止',
+    execHardTimeout: '命令执行超时（保险上限 {seconds}s）',
+    execTimedByAgent: '命令执行超时（代理端预算 {seconds}s 耗尽，持续静默或超出延长上限）',
+    collectedOutput: '已收集输出:\n',
     commandExitCodeError: '命令执行失败，exitCode: {code}',
     commandNoExitCodeErrorMsg: '命令执行失败，代理未返回 exitCode',
     stdoutOutput: '输出:\n```\n{stdout}\n```',
@@ -372,6 +376,10 @@ registerTranslations('en', {
     commandKilledWarning: 'Command was terminated due to timeout',
     commandNoExitCodeWarning: 'Agent did not return exitCode',
     commandExecComplete: 'Command execution complete {exitInfo}',
+    execTotalTimeout: 'Command total timeout ({seconds}s), terminated by extension-side guard',
+    execHardTimeout: 'Command execution timeout (guard limit {seconds}s)',
+    execTimedByAgent: 'Command timed out (agent budget {seconds}s exhausted: silent past grace or extension limit reached)',
+    collectedOutput: 'Collected output:\n',
     commandExitCodeError: 'Command execution failed, exitCode: {code}',
     commandNoExitCodeErrorMsg: 'Command execution failed, agent did not return exitCode',
     stdoutOutput: 'stdout:\n```\n{stdout}\n```',
@@ -4336,6 +4344,20 @@ function commandDeniedResult(command, cwd, toolCallId) {
   };
 }
 
+// ===== 插件端超时保险参数（决策权威在 Agent 端，此处只做外层兜底） =====
+export const EXEC_MAX_EXTENSIONS = 5;           // 与 agent 端 MAX_TIMEOUT_EXTENSIONS 对齐
+export const EXEC_TOTAL_BUDGET_CAP_MS = 600000; // 与 agent 端 TOTAL_BUDGET_CAP_MS 对齐
+export const EXEC_GUARD_MARGIN_MS = 30000;
+
+/** Agent 端理论最大预算（含全部延长并封顶） */
+export function computeExecMaxTotalMs(effectiveTimeout) {
+  return Math.min(effectiveTimeout * (1 + EXEC_MAX_EXTENSIONS), EXEC_TOTAL_BUDGET_CAP_MS);
+}
+/** 插件端硬保险：Agent 裁决失效/不可达时到点终止并杀进程 */
+export function computeExecGuardMs(effectiveTimeout) {
+  return computeExecMaxTotalMs(effectiveTimeout) + EXEC_GUARD_MARGIN_MS;
+}
+
 /**
  * Agent 命令执行
  * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
@@ -4361,7 +4383,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 
   if (useAgentStream) {
-    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce);
+    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce, effectiveTimeout);
     
     if (initResult.level === 'deny') {
       return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
@@ -4377,7 +4399,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
       // 用户已在弹窗确认 → 以 force 重新初始化（跳过灰名单，黑名单仍生效）
       effectiveForce = true;
-      initResult = await AgentClient.execCommand(command, cwd, true);
+      initResult = await AgentClient.execCommand(command, cwd, true, effectiveTimeout);
       if (initResult.level === 'deny') {
         return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
       }
@@ -4393,8 +4415,8 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
     let killed = false;
     let ws = null;
     let normalExit = false; // 标记是否正常收到 exit 消息
-    let stopped = false; // 标记后台进程是否已被终止
     let idleTimeout = false; // 标记是否因空闲超时结束（挂起型命令，进程仍存活）
+    let timedOutByAgent = false; // Agent 上报 exit.timedOut → 预算耗尽被杀（区别于正常退出）
     // 注：cancelledSessions Set 替代了原来的 cancelled 局部变量，用于跨 handler 共享取消状态
 
     const cleanupAndStop = async (reason) => {
@@ -4404,7 +4426,6 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
       // 非正常退出时，终止后台进程，防止孤儿进程持续运行
       if (!normalExit && execId) {
-        stopped = true;
         try {
           await AgentClient.stopCommand(execId);
           console.log('[AgentExec] terminated commandprocess:', execId, reason ? `(origin reason : ${reason})` : '');
@@ -4425,6 +4446,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
         } else if (data.type === 'exit') {
           exitCode = data.exitCode;
           killed = data.killed;
+          timedOutByAgent = data.timedOut === true;
           normalExit = true; // 竞态修复：回放消息可能在 wrapper 设置前到达
           sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
         }
@@ -4461,10 +4483,12 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
         const commandStartTime = Date.now();
         let totalTimeoutId = null;
         let lastOutputTime = Date.now();
-        let timeoutExtensions = 0;
-        const MAX_EXTENSIONS = 5; // 最多自动延长 5 次总超时
         let resolved = false; // 防止 resolve/reject 被调用多次
-        
+
+        // 决策权威在 Agent 端：插件端不再自行延长，只派生“理论最大预算 + 保险余量”的外层兜底。
+        const maxTotalMs = computeExecMaxTotalMs(effectiveTimeout);
+        const guardMs = computeExecGuardMs(effectiveTimeout);
+
         // 取消兜底超时：当会话被标记为已取消后，如果3秒内没有正常 resolve/reject，强制 resolve
         // 防止 WebSocket 异常导致前端任务卡住
         const checkCancelledAndResolve = () => {
@@ -4480,19 +4504,20 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           return false;
         };
         const cancelTimeoutId = setInterval(checkCancelledAndResolve, 500);
-        
-        // 全局硬超时：120秒后强制结束，防止命令永久挂起
+
+        // 硬保险：Agent 端超时裁决失效/不可达时，到点终止并杀进程，防止命令永久挂起
         const hardTimeoutId = setTimeout(() => {
-          console.error('[AgentExec] globalhard timeouttrigger (120s ),force killcommand:', sessionId);
+          const guardMsg = t('toolExec.execHardTimeout', { seconds: Math.round(guardMs / 1000) });
+          console.error('[AgentExec] guard hard-timeout triggered:', guardMsg);
           clearInterval(cancelTimeoutId);
           clearTimeout(totalTimeoutId);
           exitCode = -1;
           sendAgentStreamDone(sessionId, execId, toolCallId, -1);
-          cleanupAndStop('命令执行超时').then(() => {
-            reject(new Error('命令执行超时'));
+          cleanupAndStop(guardMsg).then(() => {
+            reject(new Error(guardMsg));
           });
-        }, 120000);
-        
+        }, guardMs);
+
         const finish = (result) => {
           if (resolved) return;
           resolved = true;
@@ -4507,10 +4532,9 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
         };
 
         /**
-         * 调度下一次超时检查
-         * 双超时机制：
-         * 1. 空闲超时：无输出超过 idleTimeoutMs → 命令可能挂起，终止
-         * 2. 总超时：总执行时间超过 effectiveTimeout → 如有输出则自动延长，否则终止
+         * 调度下一次超时检查（插件端只做观察/兜底，进程生命周期权威在 Agent 端）
+         * 1. 空闲：无输出超过 idleTimeoutMs → 判定挂起型 daemon，显式 detach 交还 Agent 管理，关 WS 返回部分结果
+         * 2. 总预算：elapsed >= maxTotalMs（Agent 理论上限 + 全部延长并封顶）仍无 exit → Agent 裁决失效，插件端保险终止
          */
         const scheduleTimeoutCheck = () => {
           if (totalTimeoutId) clearTimeout(totalTimeoutId);
@@ -4518,41 +4542,31 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           const now = Date.now();
           const elapsed = now - commandStartTime;
           const idleTime = now - lastOutputTime;
-          const totalAllowed = effectiveTimeout * (1 + timeoutExtensions);
 
-          // 空闲超时：长时间无输出
+          // 空闲：长时间无输出 → 显式 daemon 豁免（先 detach 通知 Agent 保留进程，再关 WS）
+          // 替代“WS 断连即清定时器”的隐式推断，通讯故障不再意外保活
           if (idleTime >= idleTimeoutMs) {
-            // 挂起型命令（如服务启动）：进程可能仍在运行，不杀进程
-            // 关闭 WebSocket 但保留后台进程，返回已收集的输出
             idleTimeout = true;
-            console.warn('[AgentExec] command idletimeout (', Math.round(idleTime / 1000), 's  no output), possibly issuspended service,keep backgroundprocess');
+            console.warn('[AgentExec] idle no output for', Math.round(idleTime / 1000), 's, detach to agent-managed daemon');
+            AgentClient.detachCommand(execId).catch(() => {});
             if (ws) { try { ws.close(); } catch {} }
             if (totalTimeoutId) clearTimeout(totalTimeoutId);
             finish('resolve');
             return;
           }
 
-          // 总超时检查
-          if (elapsed >= totalAllowed) {
-            if (timeoutExtensions < MAX_EXTENSIONS) {
-              // 命令仍在执行（最近有输出），自动延长总超时
-              timeoutExtensions++;
-              const newTotal = effectiveTimeout * (1 + timeoutExtensions);
-              console.log(`[AgentExec] command stillexec ,auto extendtimeout (${timeoutExtensions} times,total count${Math.round(newTotal / 1000)}s)`);
-              scheduleTimeoutCheck();
-              return;
-            } else {
-              const errMsg = `命令执行总超时（${Math.round(totalAllowed / 1000)}s，已延长${MAX_EXTENSIONS}次）`;
-              console.warn('[AgentExec]', errMsg);
-              cleanupAndStop(errMsg).then(() => {
-                finish(new Error(errMsg));
-              });
-              return;
-            }
+          // 总预算耗尽：Agent 端应已裁决 kill，若此处仍未收到 exit → 视为 Agent 裁决失效，插件端兜底终止
+          if (elapsed >= maxTotalMs) {
+            const errMsg = t('toolExec.execTotalTimeout', { seconds: Math.round(maxTotalMs / 1000) });
+            console.warn('[AgentExec] execTotalTimeout reached (agent 裁决失效兜底):', errMsg);
+            cleanupAndStop(errMsg).then(() => {
+              finish(new Error(errMsg));
+            });
+            return;
           }
 
-          // 正常调度：取空闲超时和剩余总超时中较小的值
-          const remainingTotal = totalAllowed - elapsed;
+          // 正常调度：取空闲超时和剩余总预算中较小的值
+          const remainingTotal = maxTotalMs - elapsed;
           const nextCheck = Math.min(idleTimeoutMs, remainingTotal);
           totalTimeoutId = setTimeout(scheduleTimeoutCheck, nextCheck);
         };
@@ -4570,6 +4584,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
               scheduleTimeoutCheck();
             } else if (data.type === 'exit') {
               normalExit = true;
+              timedOutByAgent = data.timedOut === true;
               if (totalTimeoutId) clearTimeout(totalTimeoutId);
               try { ws.close(); } catch {}
               finish('resolve');
@@ -4657,7 +4672,10 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           error: t('toolExec.userCancelled')
         };
       }
-      if (errorMessage.includes('超时') || errorMessage.includes('中断') || stopped) {
+      // 进程已在 Agent 端启动（拿到过 execId）→ 绝不同步重跑，防止副作用双重执行；
+      // 仅 init 本身失败（无 execId，进程未启动）才允许回退到同步模式
+      const processStarted = !!execId;
+      if (processStarted) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
         appendAuditLog('command_exec', `Command failed: ${command}`, { command, cwd, exitCode: -1, error: errorMessage });
         return {
@@ -4675,7 +4693,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           error: errorMessage
         };
       }
-      console.warn('[AgentExec] fallback to syncmode:', errorMessage);
+      console.warn('[AgentExec] exec init failed before process start, fallback to sync mode:', errorMessage);
       // 为同步回退路径也注册取消机制
       let result = await executeWithCancel(sessionId, toolCallId, 
         AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
@@ -4720,6 +4738,27 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       };
     }
     
+    // Agent 端超时权威裁决后上报 timedOut → 返回本地化的超时失败结果（预算耗尽/静默被杀）
+    if (timedOutByAgent) {
+      const errMsg = t('toolExec.execTimedByAgent', { seconds: Math.round(computeExecMaxTotalMs(effectiveTimeout) / 1000) });
+      appendAuditLog('command_exec', `Command timed out by agent: ${command}`, { command, cwd, exitCode });
+      sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
+      return {
+        success: false,
+        level: 'allow',
+        execId,
+        exitCode,
+        stdout: stdoutCollected,
+        stderr: stderrCollected,
+        killed: true,
+        timedOut: true,
+        content: `${errMsg}\n${t('toolExec.collectedOutput')}${stdoutCollected ? 'stdout:\n```\n' + stdoutCollected + '\n```' : ''}${stderrCollected ? '\nstderr:\n```\n' + stderrCollected + '\n```' : ''}`,
+        message: errMsg,
+        error: errMsg,
+        tool_call_id: toolCallId
+      };
+    }
+
     const hasExitCode = exitCode !== null && exitCode !== undefined;
     const isSuccess = hasExitCode && exitCode >= 0 && exitCode <= 127;
     const exitInfo = hasExitCode

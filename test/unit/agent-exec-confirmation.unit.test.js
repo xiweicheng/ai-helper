@@ -143,7 +143,7 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     await vi.advanceTimersByTimeAsync(0);
 
     // 模型 force 被忽略：首次初始化以 force=false 走安全分级
-    expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, false);
+    expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, false, 600000);
 
     // 弹了真实确认框（定向 port 不可用 → 广播兜底），且面向用户而非模型
     const dialog = sentMessages.find((m) => m.type === 'SHOW_CONFIRM_DIALOG');
@@ -172,7 +172,7 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     const result = await p;
 
     // 第二次初始化由扩展端授予 force=true（用户已确认）
-    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(2, 'sudo apt install x', undefined, true);
+    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(2, 'sudo apt install x', undefined, true, 600000);
     expect(result.success).toBe(false);
     expect(result.error).toBe('boom');
   });
@@ -196,8 +196,8 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     await toolExecutor.executeAgentExecCommand({ command: 'sudo rm -rf ./build' }, 'tcL2', 's-loop');
 
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG')).toBe(false);
-    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(3, 'sudo rm -rf ./build', undefined, false);
-    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(4, 'sudo rm -rf ./build', undefined, true);
+    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(3, 'sudo rm -rf ./build', undefined, false, 600000);
+    expect(AgentClient.execCommand).toHaveBeenNthCalledWith(4, 'sudo rm -rf ./build', undefined, true, 600000);
   });
 
   test('弹框无法送达（侧边栏已关闭）：视为未授权拒用，绝不 force 执行', async () => {
@@ -215,7 +215,7 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
       expect(result.success).toBe(false);
       // 只发生了一次安全分级调用：没有任何 force 执行发生
       expect(AgentClient.execCommand).toHaveBeenCalledTimes(1);
-      expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, false);
+      expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, false, 600000);
     } finally {
       globalThis.chrome.runtime.sendMessage = originalSendMessage;
     }
@@ -301,7 +301,7 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
       { command: 'sudo apt install x' }, 'tc3', 's1');
 
     // force 直通（开关关闭语义），且全程无确认弹窗
-    expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, true);
+    expect(AgentClient.execCommand).toHaveBeenCalledWith('sudo apt install x', undefined, true, 600000);
     expect(sentMessages.some((m) => m.type === 'SHOW_CONFIRM_DIALOG')).toBe(false);
     expect(result.error).toBe('spawn failed');
   });
