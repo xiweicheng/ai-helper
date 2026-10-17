@@ -4,6 +4,24 @@
 
 ## 2026-10-17
 
+### 可靠性（agent_exec 两端超时一致性：进程生命周期权威移交代理端）
+> 收口上一条「待办（另案处理）」：`timeoutMs` 配置、`tool-executor.js` 写死 120s 强杀、有输出自动延长 5 倍三者互不匹配，导致配置名存实亡；且两端 6 个定时器各自为政，WS 一断就解除代理端超时——MV3 Service Worker 被 Chrome 杀掉后进程裸奔。用户「两端要匹配、分析到位」后重做。
+
+- **代理端成为进程超时唯一权威**：`/api/exec` 新增 `timeoutMs` 透传，显式传即进入「受管模式」——定时器与 WS 连接数**解耦**（`disconnectWsClient` 不再因全断开而 `clearTimeout`），到期由纯函数 `decideTimeoutAction` 裁决：**本预算期内有输出才延长**（输出流即心跳），静默命令到点即杀，总预算封顶 600s（`TOTAL_BUDGET_CAP_MS`，替代原「6 倍无上限」）。未传 `timeoutMs` 一律保持旧语义，新 agent × 旧插件行为不变。
+- **显式 daemon 豁免替代断连反推**：新增 `POST /api/exec/detach { execId }` 与 `detachProcess`；插件端空闲分支改为「先 detach 再关 WS」，挂起型服务凭显式声明保活，通讯故障不再意外永久保活。
+- **超时不再丢输出**：`executeCommandSync` 兜底回收 `stdoutBuf/stderrBuf`（原返回空串）；`exit` 帧与回放新增 `timedOut` 字段，插件端据此返回本地化超时结果（`toolExec.execTimedByAgent`）并保留已收集输出。
+- **WS 半开连接收敛**：`/ws/exec` upgrade 后加 30s `ping/pong` 心跳，两拍未回 `terminate` 走 disconnect 路径（受管模式定时器仍在，不会被误解除）。
+- **杜绝双重执行**：流式失败的 catch 分支以 `processStarted = !!execId` 为界——进程已在代理端启动过就**绝不** `execCommandWait` 同步重跑，仅 init 前失败（无 execId）才回退，消除副作用命令被跑两遍的事故。
+- **插件端只做外层保险**：删除自管延长逻辑；硬超时从写死 120s 改为按预算派生 `computeExecGuardMs = min(effectiveTimeout×6, 600000) + 30000`。
+- **schema 契约显式化**：`agent_exec.timeoutMs` 补 `minimum: 5000` + 描述钳制与延长上限（此前只有 `type: integer`，模型传 3000 被静默抬到 5000 引发「参数被忽略」误判）。
+- **顺带修复**：`agent/test/integration/api.integration.test.js` 的 `resolveToken` 之前直接返回 `enc:` 混淆密文（从不解码）导致整套鉴权 403、`before` 钩子失败——补 `decodeSecret`，与新建的 `exec-timeout.integration.test.js` 一致。
+- **测试**：agent `decideTimeoutAction` 单测 5 例 + `exec-timeout.integration.test.js` 5 例（timeoutMs 透传被杀/有输出延长跑完/超时回收输出/detach 存活/断开不解除超时）；插件端 `agent-exec-timeout-model.unit.test.js` 7 例（派生保险/钳制透传/预算耗尽不延长/空闲 detach/timedOut 映射/防重跑/schema 契约）；既有 `agent-exec-confirmation` 断言补 `execCommand` 第 4 参。
+- **验证**：agent 全量单测 **490/490**、exec 集成用例全绿；根目录全量 **105 文件 / 1607 测试全绿**，`eslint src agent/src` 0 error，`npm run build:silent` 成功。**生效需重启 agent daemon**。
+- **发布顺序**：先发 agent（版本 +1）再发插件；任意新旧组合都不出现「无人杀进程」窗口。
+
+
+## 2026-10-17
+
 ### 安全（P1-3：长期记忆来源分级 + Tier1 常驻注入门控 + 写入侧防御）
 > 底账二第四节 P1 条。根因：`injection.js` 的 Tier1 只要 `importance>=8` 就无条件常驻注入 system prompt，而 `importance` 由模型经 `agent_memory` 工具自传——模型此刻可能正在消化不可信网页内容，把投毒记忆顶到高值即可绕过 `<untrusted>` 包裹形成“记忆投毒 → 永久常驻注入”后门。用户三项拍板后开工。
 

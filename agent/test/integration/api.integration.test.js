@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { join } from 'path';
 import { homedir } from 'os';
 import { readFileSync } from 'fs';
+import { decodeSecret } from '../../src/crypto-lite.js';
 
 // token 绝不写进仓库：历史上这里硬编码过某台机器的真实配对 token，
 // 一旦仓库推送该 token 就进入公开历史，而它是本地管理接口的唯一鉴权凭据。
@@ -23,7 +24,8 @@ function resolveToken() {
   try {
     const pairings = JSON.parse(readFileSync(join(homedir(), '.ai-helper-agent', 'pairings.json'), 'utf-8'));
     const paired = Object.values(pairings).find((item) => item && typeof item.token === 'string' && item.token);
-    if (paired) return paired.token;
+    // 磁盘存的是 enc: 混淆密文，agent 加载时解码；鉴权头必须用明文 token
+    if (paired) return decodeSecret(paired.token);
   } catch {
     // 配对记录不存在或格式异常，走下面的统一报错
   }
