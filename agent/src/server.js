@@ -14,7 +14,7 @@ import { loadConfig, saveConfig, setConfigLang } from './config.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest, setAuthLang } from './auth.js';
 import { checkPath, checkCommand, normalizePathFormat, setSecurityLang } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup, setTrashLang } from './trash.js';
-import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, setExecutorLang } from './executor.js';
+import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, detachProcess, getRunningProcesses, setExecutorLang } from './executor.js';
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
@@ -1603,7 +1603,7 @@ export function startServer() {
       // === 命令执行 ===
 
       if (pathname === '/api/exec') {
-        const { command, cwd, wait, force } = body;
+        const { command, cwd, wait, force, timeoutMs } = body;
         if (!command || typeof command !== 'string') return jsonResponse(res, 400, { success: false, error: t('error.missingCommand') });
 
         // 校验 cwd
@@ -1628,7 +1628,7 @@ export function startServer() {
         // 同步等待模式
         if (wait) {
           try {
-            const result = await executeCommandSync(command, resolvedCwd);
+            const result = await executeCommandSync(command, resolvedCwd, timeoutMs);
             logExec('completed', {
               command,
               cwd: resolvedCwd,
@@ -1654,7 +1654,7 @@ export function startServer() {
           }
         }
 
-        // 异步模式
+        // 异步模式（透传 timeoutMs → 受管模式；未传则维持旧语义）
         const execId = executeCommand(command, resolvedCwd, null, (result) => {
           logExec('completed', {
             command,
@@ -1663,7 +1663,7 @@ export function startServer() {
             exitCode: result.exitCode,
             killed: result.killed
           });
-        });
+        }, false, { timeoutMs });
         logExec('started', { command, cwd: resolvedCwd, execId });
         return jsonResponse(res, 200, {
           success: true,
@@ -1678,6 +1678,14 @@ export function startServer() {
         const stopped = killProcess(body.execId);
         logExec('stopped', { execId: body.execId, success: stopped });
         return jsonResponse(res, 200, { success: stopped, execId: body.execId });
+      }
+
+      // 显式 daemon 化：豁免超时（插件端空闲挂起分支调用；
+      // 替代"WS 全断开即清定时器"的隐式推断，通讯故障不再意外保活）
+      if (pathname === '/api/exec/detach') {
+        const detached = detachProcess(body.execId);
+        logExec('detached', { execId: body.execId, success: detached });
+        return jsonResponse(res, 200, { success: detached, execId: body.execId });
       }
 
       // === Skill 操作（需要 body） ===

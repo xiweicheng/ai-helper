@@ -192,13 +192,18 @@ export function decideTimeoutAction(state, capMs = TOTAL_BUDGET_CAP_MS, maxExten
  * @param {Object} wsClient - 单个 WebSocket 客户端（用于流式输出）
  * @param {Function} onComplete - 完成回调 ({ execId, exitCode, killed, stdout?, stderr? })
  * @param {boolean} [collectOutput=false] - 是否收集完整 stdout/stderr 到内存
+ * @param {{ timeoutMs?: number }} [execOpts] - 受管模式协商：调用方显式传 timeoutMs 即接管超时权威
  * @returns {string} execId
  */
-function executeCommand(command, cwd, wsClient, onComplete, collectOutput = false) {
+function executeCommand(command, cwd, wsClient, onComplete, collectOutput = false, execOpts = {}) {
   const config = loadConfig();
   const workdir = cwd || config.workdir;
   const execId = generateExecId();
-  const timeout = config.commandTimeout || 300000;
+  // 协议协商：显式 timeoutMs → 受管模式（定时器与 WS 连接数解耦，延长由策略函数裁决）；
+  // 未传 → 旧语义（commandTimeout + 断连清定时器），保证新 agent × 旧插件行为不变
+  const requestedTimeout = Number(execOpts.timeoutMs) > 0 ? Math.round(Number(execOpts.timeoutMs)) : null;
+  const timeout = requestedTimeout || config.commandTimeout || 300000;
+  const managed = requestedTimeout != null;
 
   const { shell, args } = getShellForExec();
   // detached 的取舍（按平台 + shell 类型）：
@@ -232,14 +237,42 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   // 存储到 entry 中供 clearTimers 读取
   // stdoutBuf/stderrBuf 始终收集，用于回放给延迟连接的 WS 客户端
   // command/startTime 用于状态详情面板展示运行中进程
-  const entry = { process: proc, wsClients, stdoutBuf: '', stderrBuf: '', truncStdout: false, truncStderr: false, command, startTime: Date.now() };
+  const entry = {
+    process: proc, wsClients, stdoutBuf: '', stderrBuf: '',
+    truncStdout: false, truncStderr: false, command, startTime: Date.now(),
+    baseTimeout: timeout, managed, extensions: 0, outputInPeriod: false,
+    detached: false, timedOut: false,
+  };
   runningProcesses.set(execId, entry);
 
-  // 超时控制
-  entry.timeoutId = setTimeout(() => {
-    killed = true;
-    killProcess(execId);
-  }, timeout);
+  // 超时控制：受管模式到期先由策略函数裁决（期内有输出才延长，静默即杀）；旧模式到期直接杀
+  function armTimeout(ms) {
+    entry.timeoutId = setTimeout(() => {
+      entry.timeoutId = null;
+      if (!entry.managed) {
+        killed = true;
+        entry.timedOut = true;
+        killProcess(execId);
+        return;
+      }
+      const d = decideTimeoutAction({
+        outputInPeriod: entry.outputInPeriod,
+        extensions: entry.extensions,
+        elapsedMs: Date.now() - entry.startTime,
+        baseTimeout: entry.baseTimeout,
+      });
+      if (d.action === 'extend') {
+        entry.extensions = d.extensions;
+        entry.outputInPeriod = false;
+        armTimeout(d.nextTimeoutMs);
+      } else {
+        killed = true;
+        entry.timedOut = true;
+        killProcess(execId);
+      }
+    }, ms);
+  }
+  armTimeout(timeout);
 
   // 广播消息给所有连接的 WS 客户端
   function broadcast(data) {
@@ -264,6 +297,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   // stdout 流式输出
   proc.stdout.on('data', (chunk) => {
     const str = chunk.toString();
+    entry.outputInPeriod = true;
     if (collectOutput) stdoutCollected += str;
     const truncState = { truncated: entry.truncStdout };
     entry.stdoutBuf = appendWithLimit(entry.stdoutBuf, str, truncState);
@@ -277,6 +311,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
   // stderr 流式输出
   proc.stderr.on('data', (chunk) => {
     const str = chunk.toString();
+    entry.outputInPeriod = true;
     if (collectOutput) stderrCollected += str;
     const truncState = { truncated: entry.truncStderr };
     entry.stderrBuf = appendWithLimit(entry.stderrBuf, str, truncState);
@@ -293,7 +328,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
     finished = true;
     clearTimers();
     const finalExitCode = typeof exitCode === 'number' ? exitCode : -1;
-    broadcast({ type: 'exit', exitCode: finalExitCode, execId, killed });
+    broadcast({ type: 'exit', exitCode: finalExitCode, execId, killed, timedOut: entry.timedOut });
     // 移入已完成缓存，解决竞态条件：延迟连接的 WS 客户端可回放输出
     const cleanupTimeout = setTimeout(() => {
       completedProcesses.delete(execId);
@@ -303,6 +338,7 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
       stderrBuf: entry.stderrBuf,
       exitCode: finalExitCode,
       killed,
+      timedOut: entry.timedOut,
       cleanupTimeout
     });
     runningProcesses.delete(execId);
@@ -353,10 +389,11 @@ function executeCommand(command, cwd, wsClient, onComplete, collectOutput = fals
  * 同步执行命令（阻塞等待完成，返回完整输出）
  * @returns {Promise<{execId, exitCode, stdout, stderr, killed, error?}>}
  */
-function executeCommandSync(command, cwd) {
+function executeCommandSync(command, cwd, timeoutMs) {
   return new Promise((resolve) => {
     const config = loadConfig();
-    const timeout = config.commandTimeout || 300000;
+    const requestedTimeout = Number(timeoutMs) > 0 ? Math.round(Number(timeoutMs)) : null;
+    const timeout = requestedTimeout || config.commandTimeout || 300000;
 
     let resolved = false;
     let syncTimeoutId = null;
@@ -367,14 +404,19 @@ function executeCommandSync(command, cwd) {
         resolved = true;
         resolve(result);
       }
-    }, true);
+    }, true, { timeoutMs });
 
-    // 超时兜底（超时后额外 5s 用于 kill 完成）
+    // 兜底（超时后额外 5s 用于 kill 完成）：内层策略失效时到点杀进程并回收已收集输出，不再返回空串
     syncTimeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true;
         killProcess(execId);
-        resolve({ execId, exitCode: -1, killed: true, stdout: '', stderr: '', error: translate(currentLang, 'error.commandTimeout') });
+        const e = runningProcesses.get(execId);
+        resolve({
+          execId, exitCode: -1, killed: true,
+          stdout: e ? e.stdoutBuf : '', stderr: e ? e.stderrBuf : '',
+          error: translate(currentLang, 'error.commandTimeout'),
+        });
       }
     }, timeout + 5000);
   });
@@ -402,7 +444,7 @@ function addWsClient(execId, wsClient) {
     if (completed.error) {
       wsClient.send(JSON.stringify({ type: 'error', error: completed.error, execId }));
     }
-    wsClient.send(JSON.stringify({ type: 'exit', exitCode: completed.exitCode, execId, killed: completed.killed }));
+    wsClient.send(JSON.stringify({ type: 'exit', exitCode: completed.exitCode, execId, killed: completed.killed, timedOut: completed.timedOut === true }));
     clearTimeout(completed.cleanupTimeout);
     completedProcesses.delete(execId);
     return true;
@@ -420,8 +462,10 @@ function disconnectWsClient(execId, wsClient) {
 
   entry.wsClients.delete(wsClient);
 
-  // 所有客户端都断开了 → 取消超时，进程继续运行
-  if (entry.wsClients.size === 0) {
+  // 旧语义：所有客户端断开 → 取消超时，进程自由运行（挂起型服务依赖此行为）。
+  // 受管模式：断开可能只是插件端 SW 被 Chrome 杀掉/网络闪断，绝不可解除超时权威，
+  // 仅显式 detach（entry.detached）才豁免——连接状态不再反推用户意图。
+  if (entry.wsClients.size === 0 && (!entry.managed || entry.detached)) {
     if (entry.timeoutId) {
       clearTimeout(entry.timeoutId);
       entry.timeoutId = null;
@@ -430,6 +474,20 @@ function disconnectWsClient(execId, wsClient) {
       clearTimeout(entry.forceKillId);
       entry.forceKillId = null;
     }
+  }
+  return true;
+}
+
+/**
+ * 显式声明 daemon 化：取消超时定时器，进程继续运行（插件端空闲挂起分支调用）
+ */
+function detachProcess(execId) {
+  const entry = runningProcesses.get(execId);
+  if (!entry) return false;
+  entry.detached = true;
+  if (entry.timeoutId) {
+    clearTimeout(entry.timeoutId);
+    entry.timeoutId = null;
   }
   return true;
 }
@@ -509,4 +567,4 @@ function getRunningProcesses() {
   return list;
 }
 
-export { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, getRunningProcesses, pickShell };
+export { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, detachProcess, getRunningProcesses, pickShell };
