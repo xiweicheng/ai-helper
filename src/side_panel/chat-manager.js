@@ -2652,13 +2652,8 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
     });
   });
 
-  // 清除按钮的 data-bound 标记（HTML 恢复后按钮上已有旧标记，需重置才能重新绑定事件）
-  messageEl.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn, .export-table-img-btn').forEach(btn => {
-    delete btn.dataset.bound;
-    delete btn.dataset.boundMd;
-    delete btn.dataset.boundExcel;
-    delete btn.dataset.boundImg;
-  });
+  // PERF-10：代码块/表格按钮改走 document 捕获委托，恢复出的按钮（其 data-bound 旧标记
+  // 随 HTML 一并带回但无人再读）点击即时生效，不再需要"清标志 + 重扫重绑"。
   
   chatContainer.appendChild(messageEl);
   // 渲染压缩分隔条（恢复渲染后）
@@ -2952,13 +2947,8 @@ export function rebindAllMessages(container) {
   // 移除旧的 mermaid 工具栏（缓存恢复后需重建以绑定事件）
   container.querySelectorAll('.mermaid-controls').forEach(c => c.remove());
 
-  // 清除代码块和表格工具栏按钮的 data-bound 标记，并重新绑定表格工具栏事件
-  container.querySelectorAll('.code-copy-btn, .copy-md-btn, .download-excel-btn, .export-table-img-btn').forEach(btn => {
-    delete btn.dataset.bound;
-    delete btn.dataset.boundMd;
-    delete btn.dataset.boundExcel;
-    delete btn.dataset.boundImg;
-  });
+  // PERF-10：按钮走 document 捕获委托，无需再"清 bound 标志 + 重扫重绑"；
+  // addTableToolbarEvents() 现仅为幂等地确保委托已绑（新加入 DOM 的按钮点击即时生效）。
   addTableToolbarEvents();
 
   // 重新绑定事件委托

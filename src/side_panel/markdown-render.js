@@ -1270,41 +1270,11 @@ function setupCodeCtrlClick() {
  * 添加代码块复制按钮事件
  */
 export function addCodeCopyButtons() {
-  const copyButtons = document.querySelectorAll('.code-copy-btn');
-  logger.debug('[SidePanel] found codecopybutton count:', copyButtons.length);
-  
-  copyButtons.forEach((btn, index) => {
-    // 避免重复绑定
-    if (btn.dataset.bound) {
-      // logger.debug('[SidePanel] button', index, 'bound,skip');
-      return;
-    }
-    btn.dataset.bound = 'true';
-    
-    btn.addEventListener('click', (e) => {
-      logger.debug('[SidePanel] codecopybutton clicked');
-      e.stopPropagation();
-      // 从父容器获取代码，而不是全局查询
-      const container = btn.closest('.code-block-container');
-      logger.debug('[SidePanel] found container:', !!container);
-      if (container) {
-        const codeElement = container.querySelector('pre code');
-        logger.debug('[SidePanel] found codeelement:', !!codeElement);
-        if (codeElement) {
-          const codeText = codeElement.textContent;
-          logger.debug('[SidePanel] code length:', codeText.length);
-          copyToClipboard(codeText, btn);
-        }
-      }
-    });
-    // logger.debug('[SidePanel] boundbutton', index);
-  });
-  
-  // 设置 Ctrl+单击复制（只绑定一次）
+  // PERF-10：由“每次渲染 document 全表扫描 + 逐钮 addEventListener + dataset.bound 防重复”
+  // 改为 document 捕获阶段一次性事件委托（见 ensureToolbarDelegate）。这里只负责“确保委托已绑”。
+  ensureToolbarDelegate();
+  // Ctrl+单击复制（本就是 #chatContainer 委托，只绑一次）
   setupCodeCtrlClick();
-
-  // 添加表格工具栏按钮事件
-  addTableToolbarEvents();
 }
 
 /**
@@ -1357,163 +1327,177 @@ function extractTableFromDOM(btn) {
 /**
  * 添加表格工具栏按钮事件
  */
-export function addTableToolbarEvents() {
-  // 复制 Markdown 表格按钮
-  document.querySelectorAll('.copy-md-btn').forEach((btn, index) => {
-    if (btn.dataset.boundMd) return;
-    btn.dataset.boundMd = 'true';
-    
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
+// PERF-10：代码复制 / 表格工具栏按钮改为 document 捕获阶段一次性事件委托。
+// 以下四个处理器逐字沿用旧逐钮 handler 的逻辑，仅把闭包里的 btn 改为入参、
+// 把开头的 e.stopPropagation() 上移到委托里（统一由委托阻断冒泡）。
+function handleCodeCopy(btn) {
+  // 从父容器获取代码，而不是全局查询
+  const container = btn.closest('.code-block-container');
+  if (container) {
+    const codeElement = container.querySelector('pre code');
+    if (codeElement) {
+      copyToClipboard(codeElement.textContent, btn);
+    }
+  }
+}
 
-      // 获取表格 DOM 数据
-      const getDomData = () => {
-        const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
-        if (full) {
-          const tableIndex = btn.dataset.tableIndex;
-          const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
-          return { full, tableBlock };
-        }
-        return null;
-      };
-
-      // Ctrl/Command + 点击：复制富文本表格
-      if (e.ctrlKey || e.metaKey) {
-        const tableEl = btn.closest('.table-container-wrapper')?.querySelector('table');
-        if (tableEl) {
-          try {
-            const cleanTable = cleanTableForClipboard(tableEl);
-            const richHTML = cleanTable.outerHTML;
-
-            // 确保文档有焦点
-            btn.focus();
-
-            const blob = new Blob([richHTML], { type: 'text/html' });
-            const item = new ClipboardItem({ 'text/html': blob });
-            navigator.clipboard.write([item]).then(() => {
-              showToast(t('markdown.copiedRichTable'));
-            }).catch(() => {
-              // Fallback: 通过临时 DOM 选中 + execCommand
-              const tempDiv = document.createElement('div');
-              tempDiv.style.cssText = 'position:fixed;left:-999999px;top:-999999px;';
-              tempDiv.innerHTML = richHTML;
-              document.body.appendChild(tempDiv);
-
-              const range = document.createRange();
-              range.selectNodeContents(tempDiv);
-              const sel = window.getSelection();
-              sel.removeAllRanges();
-              sel.addRange(range);
-
-              try {
-                btn.focus();
-                document.execCommand('copy');
-                showToast(t('markdown.copiedRichTable'));
-              } catch (e2) {
-                showToast(t('markdown.copyRichTableFailed'), 'error');
-              } finally {
-                sel.removeAllRanges();
-                document.body.removeChild(tempDiv);
-              }
-            });
-          } catch (err) {
-            showToast(t('markdown.copyFailedShort'), 'error');
-          }
-        }
-        return;
-      }
-
-      // 普通点击：复制 Markdown 表格
-      // 1. 新格式：从 data 属性读取
-      const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
-      if (full) {
-        copyToClipboard(full, btn);
-        showToast(t('markdown.copiedMdTable'));
-        return;
-      }
-      // 2. 旧格式：从 window.__tableBlocks 读取
-      const tableIndex = btn.dataset.tableIndex;
-      const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
-      if (tableBlock) {
-        copyToClipboard(tableBlock.full, btn);
-        showToast(t('markdown.copiedMdTable'));
-        return;
-      }
-      // 3. 最终 fallback：从 DOM 提取表格数据
-      const domData = extractTableFromDOM(btn);
-      if (domData) {
-        copyToClipboard(domData.full, btn);
-        showToast(t('markdown.copiedMdTable'));
-      }
-    });
-  });
-  
-  // 下载 Excel 按钮
-  document.querySelectorAll('.download-excel-btn').forEach((btn, index) => {
-    if (btn.dataset.boundExcel) return;
-    btn.dataset.boundExcel = 'true';
-    
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // 1. 新格式：从 data 属性读取
-      const header = btn.dataset.tableHeader ? decodeURIComponent(btn.dataset.tableHeader) : null;
-      const body = btn.dataset.tableBody ? decodeURIComponent(btn.dataset.tableBody) : null;
-      if (header && body) {
-        downloadTableAsExcel({ header, body });
-        return;
-      }
-      // 2. 旧格式：从 window.__tableBlocks 读取
-      const tableIndex = btn.dataset.tableIndex;
-      const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
-      if (tableBlock) {
-        downloadTableAsExcel(tableBlock);
-        return;
-      }
-      // 3. 最终 fallback：从 DOM 提取
-      const domData = extractTableFromDOM(btn);
-      if (domData) {
-        downloadTableAsExcel(domData);
-      }
-    });
-  });
-
-  // 导出表格为图片按钮
-  document.querySelectorAll('.export-table-img-btn').forEach((btn) => {
-    if (btn.dataset.boundImg) return;
-    btn.dataset.boundImg = 'true';
-
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const tableWrapper = btn.closest('.table-container-wrapper');
-      if (!tableWrapper) return;
-
+function handleCopyMd(btn, e) {
+  // Ctrl/Command + 点击：复制富文本表格
+  if (e.ctrlKey || e.metaKey) {
+    const tableEl = btn.closest('.table-container-wrapper')?.querySelector('table');
+    if (tableEl) {
       try {
-        const html2canvasFunc = await loadHtml2Canvas();
-        if (!html2canvasFunc) {
-          showToast(t('markdown.imageExportLibMissing'), 'error');
-          return;
-        }
+        const cleanTable = cleanTableForClipboard(tableEl);
+        const richHTML = cleanTable.outerHTML;
 
-        const canvas = await html2canvasFunc(tableWrapper, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
+        // 确保文档有焦点
+        btn.focus();
+
+        const blob = new Blob([richHTML], { type: 'text/html' });
+        const item = new ClipboardItem({ 'text/html': blob });
+        navigator.clipboard.write([item]).then(() => {
+          showToast(t('markdown.copiedRichTable'));
+        }).catch(() => {
+          // Fallback: 通过临时 DOM 选中 + execCommand
+          const tempDiv = document.createElement('div');
+          tempDiv.style.cssText = 'position:fixed;left:-999999px;top:-999999px;';
+          tempDiv.innerHTML = richHTML;
+          document.body.appendChild(tempDiv);
+
+          const range = document.createRange();
+          range.selectNodeContents(tempDiv);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+
+          try {
+            btn.focus();
+            document.execCommand('copy');
+            showToast(t('markdown.copiedRichTable'));
+          } catch (e2) {
+            showToast(t('markdown.copyRichTableFailed'), 'error');
+          } finally {
+            sel.removeAllRanges();
+            document.body.removeChild(tempDiv);
+          }
         });
-
-        const link = document.createElement('a');
-        link.download = `table-${Date.now()}.jpg`;
-        link.href = canvas.toDataURL('image/jpeg', 0.95);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast(t('markdown.tableImageExported'));
       } catch (err) {
-        logger.error('[SidePanel] export tableimage failed:', err);
-        showToast(t('markdown.exportImageFailed'), 'error');
+        showToast(t('markdown.copyFailedShort'), 'error');
       }
+    }
+    return;
+  }
+
+  // 普通点击：复制 Markdown 表格
+  // 1. 新格式：从 data 属性读取
+  const full = btn.dataset.tableFull ? decodeURIComponent(btn.dataset.tableFull) : null;
+  if (full) {
+    copyToClipboard(full, btn);
+    showToast(t('markdown.copiedMdTable'));
+    return;
+  }
+  // 2. 旧格式：从 window.__tableBlocks 读取
+  const tableIndex = btn.dataset.tableIndex;
+  const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
+  if (tableBlock) {
+    copyToClipboard(tableBlock.full, btn);
+    showToast(t('markdown.copiedMdTable'));
+    return;
+  }
+  // 3. 最终 fallback：从 DOM 提取表格数据
+  const domData = extractTableFromDOM(btn);
+  if (domData) {
+    copyToClipboard(domData.full, btn);
+    showToast(t('markdown.copiedMdTable'));
+  }
+}
+
+function handleDownloadExcel(btn) {
+  // 1. 新格式：从 data 属性读取
+  const header = btn.dataset.tableHeader ? decodeURIComponent(btn.dataset.tableHeader) : null;
+  const body = btn.dataset.tableBody ? decodeURIComponent(btn.dataset.tableBody) : null;
+  if (header && body) {
+    downloadTableAsExcel({ header, body });
+    return;
+  }
+  // 2. 旧格式：从 window.__tableBlocks 读取
+  const tableIndex = btn.dataset.tableIndex;
+  const tableBlock = window.__tableBlocks?.[parseInt(tableIndex)];
+  if (tableBlock) {
+    downloadTableAsExcel(tableBlock);
+    return;
+  }
+  // 3. 最终 fallback：从 DOM 提取
+  const domData = extractTableFromDOM(btn);
+  if (domData) {
+    downloadTableAsExcel(domData);
+  }
+}
+
+async function handleExportTableImg(btn) {
+  const tableWrapper = btn.closest('.table-container-wrapper');
+  if (!tableWrapper) return;
+
+  try {
+    const html2canvasFunc = await loadHtml2Canvas();
+    if (!html2canvasFunc) {
+      showToast(t('markdown.imageExportLibMissing'), 'error');
+      return;
+    }
+
+    const canvas = await html2canvasFunc(tableWrapper, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff'
     });
-  });
+
+    const link = document.createElement('a');
+    link.download = `table-${Date.now()}.jpg`;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(t('markdown.tableImageExported'));
+  } catch (err) {
+    logger.error('[SidePanel] export tableimage failed:', err);
+    showToast(t('markdown.exportImageFailed'), 'error');
+  }
+}
+
+let toolbarDelegateBound = false;
+
+/**
+ * PERF-10：在 document 上以【捕获阶段】绑定一次性委托，统一处理代码/表格工具栏按钮。
+ * - 绑 document而非 #chatContainer：与旧实现“document 全表扫描”覆盖面逐字节一致，
+ *   能同时盖住消息区与 body 下的摘要弹层（context-indicator）。
+ * - 捕获阶段 + stopPropagation：必须。否则委托会晚于“点击即展开”的祖先 handler
+ *   （如 .tool-call-result），导致点复制同时把折叠也 toggle（旧逐钮绑定靠钮上的 stopPropagation 阻止）。
+ */
+function ensureToolbarDelegate() {
+  if (toolbarDelegateBound) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  toolbarDelegateBound = true;
+
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!target || typeof target.closest !== 'function') return;
+
+    const codeBtn = target.closest('.code-copy-btn');
+    if (codeBtn) { e.stopPropagation(); handleCodeCopy(codeBtn); return; }
+    const mdBtn = target.closest('.copy-md-btn');
+    if (mdBtn) { e.stopPropagation(); handleCopyMd(mdBtn, e); return; }
+    const excelBtn = target.closest('.download-excel-btn');
+    if (excelBtn) { e.stopPropagation(); handleDownloadExcel(excelBtn); return; }
+    const imgBtn = target.closest('.export-table-img-btn');
+    if (imgBtn) { e.stopPropagation(); handleExportTableImg(imgBtn); return; }
+  }, true);
+}
+
+export function addTableToolbarEvents() {
+  // PERF-10：表格工具栏按钮与代码复制按钮共用同一 document 捕获委托；
+  // 保留导出名以兼容历史调用点（如 chat-manager rebind），函数体只负责“确保委托已绑”。
+  ensureToolbarDelegate();
 }
 
 export function cleanTableForClipboard(element) {
