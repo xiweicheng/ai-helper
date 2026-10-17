@@ -590,13 +590,17 @@ async function searchContent(rootPath, pattern, filePattern = null, caseSensitiv
 }
 
 /**
- * 发起命令执行请求
+ * 异步初始化命令执行（流式模式）
  * @param {string} command
  * @param {string} [cwd]
  * @param {boolean} [force=false] - 强制执行（跳过安全检查）
+ * @param {number} [timeoutMs=null] - 受管模式协商信号：传给 Agent 作为进程超时权威预算；
+ *   不传（null）则老 Agent 保持旧语义
  */
-async function execCommand(command, cwd, force = false) {
-  return agentRequest('/api/exec', { command, cwd, force });
+async function execCommand(command, cwd, force = false, timeoutMs = null) {
+  const body = { command, cwd, force };
+  if (Number(timeoutMs) > 0) body.timeoutMs = Math.round(Number(timeoutMs));
+  return agentRequest('/api/exec', body);
 }
 
 /**
@@ -612,6 +616,13 @@ async function execCommandWait(command, cwd, force = false, timeoutMs = 600000) 
  */
 async function stopCommand(execId) {
   return agentRequest('/api/exec/stop', { execId });
+}
+
+/**
+ * 显式声明 daemon 化：豁免 Agent 端超时（挂起型命令）
+ */
+async function detachCommand(execId) {
+  return agentRequest('/api/exec/detach', { execId });
 }
 
 /**
@@ -1090,6 +1101,7 @@ export {
   execCommand,
   execCommandWait,
   stopCommand,
+  detachCommand,
   getAgentStatus,
   getAgentDetail,
   createExecWebSocket,
