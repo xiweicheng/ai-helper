@@ -2130,8 +2130,20 @@ export function startServer() {
           ws.close();
           return;
         }
-        // 客户端断开时，从监听列表中移除；所有客户端都断开后取消超时
+        // 控制面心跳：检测半开连接（TCP 假死）。浏览器对 ping 自动回 pong，
+        // 两拍未回视为连接已死 → terminate → 走 disconnect 收敛路径（受管模式定时器仍在）
+        ws.isAlive = true;
+        ws.on('pong', () => { ws.isAlive = true; });
+        const heartbeat = setInterval(() => {
+          if (ws.readyState !== 1) { clearInterval(heartbeat); return; }
+          if (!ws.isAlive) { try { ws.terminate(); } catch {} clearInterval(heartbeat); return; }
+          ws.isAlive = false;
+          ws.ping();
+        }, 30000);
+        heartbeat.unref();
+        // 客户端断开时，从监听列表中移除；所有客户端都断开后按受管/旧语义分别处理超时
         ws.on('close', () => {
+          clearInterval(heartbeat);
           disconnectWsClient(execId, ws);
         });
       });
