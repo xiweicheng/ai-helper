@@ -8,6 +8,7 @@ import { decodeSecret } from '../shared/secret.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
+import { appendAuditLog, recordToolStats } from './activity-store.js';
 import { decideNetworkAccess } from '../shared/network-scope.js';
 import { executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
@@ -1027,19 +1028,9 @@ export async function unloadRagTools() {
 }
 
 // ==================== Sensitive Operation Audit Log ====================
-
-const AUDIT_LOG_KEY = 'sensitiveAuditLog';
-const MAX_AUDIT_ENTRIES = 100;
-
-async function appendAuditLog(category, action, details = {}) {
-  try {
-    const result = await chrome.storage.local.get([AUDIT_LOG_KEY]);
-    const entries = result[AUDIT_LOG_KEY] || [];
-    entries.unshift({ timestamp: new Date().toISOString(), category, action, details });
-    if (entries.length > MAX_AUDIT_ENTRIES) entries.length = MAX_AUDIT_ENTRIES;
-    await chrome.storage.local.set({ [AUDIT_LOG_KEY]: entries });
-  } catch (e) { console.warn('[Background] Audit log write failed:', e); }
-}
+// appendAuditLog / recordToolStats 已迁至 activity-store.js（PERF-08）：
+// 旧内联实现每次写入全数组/全对象 get→改→set，且并行工具组下读-改-写跨 await 交错会丢更新；
+// 新实现为内存权威态 + 防抖合并落盘，关键审计（Cookie/清数据/删文件/拒绝命令）即时刷。
 
 // Agent 连通性缓存（按 agentId 隔离，避免切换代理后命中旧缓存）
 const agentConnectivityCacheMap = new Map(); // Map<agentId, { connected: boolean, checkedAt: number }>
@@ -1707,26 +1698,6 @@ function normalizeToolResult(result, toolCallId) {
     return { success: true, content: result, tool_call_id: toolCallId };
   }
   return { success: false, error: t('toolExec.unknownResultFormat'), content: '', tool_call_id: toolCallId };
-}
-
-/**
- * 记录工具使用统计到 chrome.storage.local
- */
-async function recordToolStats(toolName, result, duration) {
-  try {
-    const toolStatsKey = 'toolUsageStats';
-    const stats = await chrome.storage.local.get([toolStatsKey]);
-    const toolStats = stats[toolStatsKey] || {};
-    const entry = toolStats[toolName] || { callCount: 0, successCount: 0, totalDuration: 0, lastUsed: 0 };
-    entry.callCount++;
-    if (result.success) entry.successCount++;
-    entry.totalDuration += duration;
-    entry.lastUsed = Date.now();
-    toolStats[toolName] = entry;
-    chrome.storage.local.set({ [toolStatsKey]: toolStats });
-  } catch (e) {
-    console.warn('[Background] recordtoolstats failed:', e);
-  }
 }
 
 /**
@@ -3210,9 +3181,36 @@ export function executeDownloadFile(args, toolCallId) {
  * 打开新标签页
  * 支持 waitForLoad 参数：等待页面加载完成再返回，避免后续工具因页面未就绪而失败
  */
-export function executeOpenTab(args, toolCallId, sessionId) {
+export async function executeOpenTab(args, toolCallId, sessionId) {
   const { url, active: rawActive = true, waitForLoad = false, loadTimeout = 15000 } = args;
   const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
+
+  // SEC-03 残余闸门：开 tab 带用户 cookie、在用户浏览器里执行 JS，比 fetch_url 更强打击面。
+  // 口径与 executeFetchUrl 完全对齐（判定唯一源 network-scope.js，B2 语义）：
+  // scheme 限 http/https，内网目标必须「总开关开 + 命中白名单」才放行；
+  // 拒绝必须在 tabs.create 之前发生——不能"开了才发现被拦"。公网目标行为逐字节不变。
+  if (!url) {
+    return { success: false, error: t('toolExec.missingUrlParam'), tool_call_id: toolCallId };
+  }
+  const openConfig = await getStoredConfig();
+  const openDecision = decideNetworkAccess(url, {
+    enabled: openConfig.reactConfig.networkAccessEnabled,
+    allowedHosts: openConfig.reactConfig.allowedNetworkHosts,
+  });
+  if (!openDecision.allowed) {
+    const errorKey = {
+      schemeBlocked: 'toolExec.schemeBlocked',
+      gateClosed: 'toolExec.networkGateClosed',
+      noAllowlistedHost: 'toolExec.networkNoAllowlist',
+      hostNotAllowlisted: 'toolExec.networkHostNotAllowed',
+    }[openDecision.reason] || 'toolExec.invalidUrlFormat';
+    console.log('[Background] manage_tab(open) blocked by network scope:', openDecision.reason, 'host=', openDecision.hostname, 'scheme=', openDecision.scheme);
+    return {
+      success: false,
+      error: t(errorKey || 'toolExec.invalidUrlFormat', { url, scheme: openDecision.scheme, hostname: openDecision.hostname }),
+      tool_call_id: toolCallId
+    };
+  }
 
   console.log('[Background] opennewlabelpage:', 'url=', url, 'active=', active, 'waitForLoad=', waitForLoad, 'loadTimeout=', loadTimeout);
 

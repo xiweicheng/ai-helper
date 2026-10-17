@@ -361,26 +361,6 @@ export function normalizeToolResult(result, toolCallId) {
 }
 
 /**
- * 记录工具使用统计到 chrome.storage.local
- */
-export async function recordToolStats(toolName, result, duration) {
-  try {
-    const toolStatsKey = 'toolUsageStats';
-    const stats = await chrome.storage.local.get([toolStatsKey]);
-    const toolStats = stats[toolStatsKey] || {};
-    const entry = toolStats[toolName] || { callCount: 0, successCount: 0, totalDuration: 0, lastUsed: 0 };
-    entry.callCount++;
-    if (result.success) entry.successCount++;
-    entry.totalDuration += duration;
-    entry.lastUsed = Date.now();
-    toolStats[toolName] = entry;
-    chrome.storage.local.set({ [toolStatsKey]: toolStats });
-  } catch (e) {
-    logger.warn('[Background] recordtoolstats failed:', e);
-  }
-}
-
-/**
  * 获取当前活跃标签页 ID
  */
 export function getActiveTabId() {

@@ -703,7 +703,7 @@ export default {
     toolConfirmationDesc1: 'When enabled, the model will show a confirmation dialog for sensitive operations (tool calls, command execution, etc.) and wait for user approval.',
     toolConfirmationDesc2: 'When disabled, all operations will be executed directly without confirmation.',
     networkAccess: 'Private network access',
-    networkAccessHint: '(control whether tools such as fetch_url may reach local and private-network addresses)',
+    networkAccessHint: '(controls whether tools such as fetch_url requests and manage_tab opening private pages may reach local and private-network addresses)',
     networkAccessDesc1: 'Off by default: tools may only reach public addresses; loopback and private addresses such as 127.0.0.1, localhost and 192.168.x.x are refused outright.',
     networkAccessDesc2: 'Even when on, each host must still be added to the allowlist below; while the list is empty every private target stays refused. Turning the switch off only collapses that block - the entries you saved are not cleared.',
     networkAllowlistTitle: 'Private network allowlist',

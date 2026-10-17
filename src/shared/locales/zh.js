@@ -703,7 +703,7 @@ export default {
     toolConfirmationDesc1: '启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。',
     toolConfirmationDesc2: '关闭后，所有操作将直接放行执行，无需确认。',
     networkAccess: '内网地址访问',
-    networkAccessHint: '（控制 fetch_url 等工具能否访问本机与内网地址）',
+    networkAccessHint: '（控制 fetch_url 请求与 manage_tab 打开内网页面等工具行为能否访问本机与内网地址）',
     networkAccessDesc1: '默认关闭：工具只能访问公网地址，127.0.0.1、localhost、192.168.x.x 等本机与内网地址会被直接拒绝。',
     networkAccessDesc2: '开启后仍需在下方的允许列表中逐台添加主机；列表为空时依然拒绝全部内网。关闭开关只是收起该区块，不会清空已录入的列表。',
     networkAllowlistTitle: '内网允许列表',

@@ -11,7 +11,7 @@ export const TAB_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_tab',
-      description: 'Manage browser tabs. open=navigate to URL (requires url), switch=change active tab (requires tabId), close=close tab, reload=refresh page, navigate=history back/forward (requires direction)',
+      description: 'Manage browser tabs. open=navigate to URL (requires url), switch=change active tab (requires tabId), close=close tab, reload=refresh page, navigate=history back/forward (requires direction). Opening a tab is restricted like fetch_url: only http/https targets are allowed, and loopback/private-network targets are refused unless the user enables "Private network access" in extension settings and allowlists that exact host — do not retry a refused private address',
       parameters: {
         type: 'object',
         properties: {

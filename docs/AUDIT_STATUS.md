@@ -13,8 +13,8 @@
 
 | 判定 | 数量 | 条目 |
 |---|---|---|
-| ✅ 已修复 / 已完成 | 22 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17）、**P1-3**（记忆来源分级 + Tier1 常驻门控 + 写侧防御，2026-10-17）、**SEC-08**（页内搜索高亮改 DOM Range，不再重写 `body.innerHTML`，含 `removeHighlights` 类名不匹配的潜伏缺陷，2026-10-17）、**take_note**（Agent 自主 scratchpad 工具，2026-10-17）、**agent 侧 ragUrlIngest 改 B2**（2026-10-17，见第六节勘误 3）、**P2 trim O(n²) + P2 工具定义 token 缓存**（2026-10-17，见第四节）、**NEW-08 兜底权重裁剪 O(n²) 纯化**（2026-10-17，见第五节） |
-| 🔴 成立，值得排期 | 6 | SEC-01、SEC-03（残余：`manage_tab` 免确认打开内网页，带用户 cookie）、SEC-07、SEC-10、SEC-12、PERF-02 |
+| ✅ 已修复 / 已完成 | 24 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**SEC-03 残余**（`manage_tab` open 同口径内网/scheme 闸门，拒绝发生在 `tabs.create` 之前，2026-10-17，见第八节排期 3）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17）、**P1-3**（记忆来源分级 + Tier1 常驻门控 + 写侧防御，2026-10-17）、**SEC-08**（页内搜索高亮改 DOM Range，不再重写 `body.innerHTML`，含 `removeHighlights` 类名不匹配的潜伏缺陷，2026-10-17）、**take_note**（Agent 自主 scratchpad 工具，2026-10-17）、**agent 侧 ragUrlIngest 改 B2**（2026-10-17，见第六节勘误 3）、**P2 trim O(n²) + P2 工具定义 token 缓存**（2026-10-17，见第四节）、**NEW-08 兜底权重裁剪 O(n²) 纯化**（2026-10-17，见第五节）、**PERF-08 审计/统计写放大→内存聚合+防抖落盘**（2026-10-17，见第三节） |
+| 🔴 成立，值得排期 | 5 | SEC-01、SEC-07、SEC-10、SEC-12、PERF-02 |
 | 🟡 成立，但等级应下调 | 5 | SEC-05（高→低）、SEC-06（高→中，见第二节：原降级理由只对"网页发起"成立）、SEC-04（高→策略取舍）、PERF-03（高→中低）、PERF-09（中→低） |
 | 🔵 报告原判即"可接受"，我此前误列为待修 | 2 | PERF-12（报告原文："均有上限/清理，属可接受范围"）、SEC-09（报告原等级即"中·纵深防御"） |
 | ⚪ 需产品/策略决策才能动工 | 2 | P1-2（已搁置）、SEC-04（脱敏，暂缓） |
@@ -23,7 +23,7 @@
 **最高性价比的三件**（都不需要你先做策略决定）：
 
 1. ~~**NEW-01 / PERF-01**~~ ✅ **已于本次修完**：`fix-build.js` 的 `libs/` 目录无脑全量注入已改为以源码 manifest 声明为唯一真相源，注入 libs 从 1.64 MB 降到 61 KB（每页每 iframe 少解析 1.61 MB 死重）。
-2. ~~**SEC-03**~~ ✅ **拦截主体已修**：`fetch_url` 现过内网/scheme 闸门（默认关、需总闸 + 白名单双条件），设置页"推理"Tab 有总开关与允许列表。残余一条门：`manage_tab` 仍可免确认打开内网页面。
+2. ~~**SEC-03**~~ ✅ **已全部关闭**：`fetch_url` 现过内网/scheme 闸门（默认关、需总闸 + 白名单双条件），设置页"推理"Tab 有总开关与允许列表。残余那条门也已堵上——`manage_tab` 的 open 现复用同一份 `decideNetworkAccess`，拒绝在 `tabs.create` 之前发生，不再能靠开标签页带 cookie 绕进内网（2026-10-17，见第八节排期 3）。
 3. ~~**SEC-13 + PERF-05 + PERF-06**~~ ✅ **已于 2026-10-16 连同 PERF-04 一并修完**：关 sourcemap + 两道打包防线、`chat-export.js` 整体改按需、三组预览共 9 个 window 监听改 AbortController 配对作废、滚动保存改防抖 + `pagehide` 兜底。过程中另外发现并修掉 **NEW-06**（入口 chunk 改名后 chunk 间静态引用悬空，不修则所有导出按钮静默全坏）；PERF-05 改动使首屏主 chunk 从 1.377 MB 降到 **962 KB**。真机点验又撞出 **NEW-07**（同一批改动自己的回归：`e.currentTarget` 在 await 后已复位为 null，导致恢复出的消息四类导出全崩），已修，并在真扩展里真跑出一次 Word 导出产物。
 
 ---
@@ -60,7 +60,7 @@
 | PERF-05 | 高 | ✅ **已修复（2026-10-16，含 NEW-03）** | 三个引用方（`chat-manager` 12 处、`chat-streaming` 4 处、`workspace-panel` 3 个函数）删静态 import，改在调用点 `await import('./chat-export.js')`，16 个 click 回调转 async | 产物实测：`dist/assets/side_panel.js` **1,376,516 → 962,742 字节（-404 KB / -29.3%）**；OOXML 特征串在主 chunk **74 → 0** 处；真扩展首屏 0 次请求 chat-export chunk，且该 chunk 可在扩展内成功动态 import、引用方取用的 7 个符号全部可用。本条改动曾引入 **NEW-07**（await 后取 `e.currentTarget` 得 null），已修。**Word 导出已在真扩展跑到产出物**（8,635 B 的 OOXML 文档）；PDF / Markdown / 图片三类仍待点验 |
 | PERF-06 | 高 | ✅ **已修复（2026-10-16，含 NEW-04；审查后补并发修正）** | 报告只列了 PDF 一组，实测为**同形态三组共 9 个** window 监听（`previewPdf`/`previewPptx`/`previewImage` 各 `mousemove`/`mouseup`/`resize` 匿名函数）。改为唯一注册入口 `addPreviewWindowListener(signal, type, handler)`，`previewFile()` 开头 abort 上一轮再新建，并把**本轮 signal 逐轮作参数透传**到三分支与 9 个注册点（原读模块变量的写法在并发交叠时会让旧轮监听挂到新轮 controller 上驻留，审查后修正）；`closePreview` 关闭即作废本轮、`previewImage` 的 `resize` 回调加 `isConnected` 存活守卫、注册入口对已 aborted 的 signal 早退（jsdom 与浏览器语义差异） | jsdom 驱真 `previewArtifactFile`（`workspace-preview-listener-lifecycle.unit.test.js` 6 例）：每轮注册 3 个、上一轮 signal 全部 `aborted`、**旧 handler 调用次数 0**、存活监听恒为 3 个；新增两轮并发交叠与关闭即作废两例（断言对交错次序不敏感）。PDF/PPTX 两分支属同一入口，未单独跑真预览（需 agent 配对与二进制素材） |
 | PERF-07 | 中 | 🟡 成立（半撤销） | `background/index.js:2235` `setInterval(performAgentHealthCheck, 30000)`、`:2282` 心跳 60 s、`:2293` 模块顶层无条件 `startAgentHealthCheck()`、`:2117`/`:2105` `_startAutoReconnect`；心跳注释与实现均为"只对当前活跃代理发"，且有 stop 配对 | 报告"常开保活"成立（`chrome.alarms` 只用于定时任务，见 `:56`，未用于这两个保活）。但"未配对 agent 是否启用"是唯一的实质问题 → 降为轻微。改 `alarms` 需权衡 |
-| PERF-08 | 中 | 🔴 成立 | `tool-executor.js:1017-1023` `appendAuditLog`：`get` 全数组 → `unshift` → 截断 → `set` 整写回；`recordToolStats` 在 `:1698` 同为读-改-写 | 内存聚合 + 防抖落盘，或迁 IndexedDB |
+| PERF-08 | 中 | ✅ **已修复（2026-10-17）** | 旧实现：`tool-executor.js` 内联 `appendAuditLog`（12 个调用点）与 `recordToolStats`（每次 `executeTool` 必调）均为全数组/全对象 get→改一条→整份 set；且 `react-loop.js:2258` 并行工具组（`Promise.all`）下多路 get→set 跨 await 交错会**丢更新**（测试里用同一 fake storage 复现：并发 20 写旧实现只剩 1 条）。另核实：`tool-helpers.js` 存在 0 引用的 `recordToolStats` 死副本；`sensitiveAuditLog` 本地这份全仓无读取方（侧边栏审计面板走 `QUERY_AUDIT_LOGS` 读 agent 端日志），丢了无人发现 | 新模块 `src/background/activity-store.js`：内存权威态（单飞冷加载）+ 防抖 ~2s 合并落盘（N 次改 = 1 次 set，两键同批）；关键审计（cookie_write / page_data_clear / file_delete / 用户拒绝与取消命令）**即时刷不等防抖**；flush 失败保留脏标重试；`onSuspend`（能力守卫）回收前尽力刷。落盘形状逐字段不变，读端（统计面板 :4163）无感，接受最长 2s 陈旧窗口；删掉 tool-helpers 死副本。守卫：`activity-store-write-coalescing.unit.test.js` 14 例（行为 8 + 竞态对照 2（含旧实现确实丢的夹具有效性断言）+ 接线 4）；负向对照两轮已验（还原接线文件→守卫 2 例红；拆掉防抖→合并类 2 例红）。扩展全量 **110 文件 / 1685 例全绿**，eslint 0，`build:silent` 成功；调用点签名不变，纯扩展侧，无需重启 agent |
 | PERF-09 | 中 | 🟡 成立（中→低） | `storage/token-store.js`：会话维度已走 index range（`:58`，`:55` 注释说明动机）；但 `:106`、`:145`、`:177`、`:285`、`:319` 仍 `store.getAll()`；无 TTL/retention（grep 0 命中） | 索引那条已修。剩全局口径与保留策略；数据量到千级才显著 |
 | PERF-10 | 中 | 🔴 成立 | `markdown-render.js:1272` `addCodeCopyButtons` 用 `document.querySelectorAll('.code-copy-btn')`（`:1273`）；`:1360` `addTableToolbarEvents` 在 `:1362`/`:1452`/`:1481` 三处全 document 扫描重绑 | 改事件委托。注意：报告此条指**代码块/表格按钮**，不是 mermaid（mermaid 是 NEW-05） |
 | PERF-11 | 低 | 🔴 成立 | `chat-streaming.js:2072` 与 `:2076` `element.dataset.htmlContent = element.outerHTML`；`:1732` `dataset.executionLog = JSON.stringify(executionLog)` | 整段 HTML/日志复制进 DOM 属性 → 改存 JS Map |
@@ -135,7 +135,7 @@
 
 1. ~~NEW-01 / PERF-01~~ ✅ **已完成**：`scripts/content-libs.js` + `fix-build.js` 接线 + 11 例守卫，注入 libs 1.64 MB → 61 KB；已重跑构建，并用真扩展冒烟（12 项全绿）+ 负向对照验过。
 2. ~~SEC-03 —— `fetch_url` 增加环回/私网/元数据与 scheme 拦截（保持免确认）~~ ✅ **已完成**：`src/shared/network-scope.js`（B2 语义）+ `executeFetchUrl` 接线 + 配置链 + 设置页"推理"Tab 总闸与允许列表（关闸不清空列表）+ 导入不飘移；1543 例单测全绿（本条新增 92 例），真扩展冒烟 26 项全绿。
-3. **SEC-03 残余：`manage_tab` 的 open/navigate 到内网同样免确认，且带用户 cookie** —— 不堵这条，模型换个工具照样能进内网。同属一行级改动（复用同一份 `decideNetworkAccess`）。
+3. ~~**SEC-03 残余：`manage_tab` 的 open/navigate 到内网同样免确认，且带用户 cookie**~~ ✅ **已完成（2026-10-17）**：`executeOpenTab` 顶部接入与 `fetch_url` 同源的 `decideNetworkAccess`（判定唯一源 `network-scope.js`，B2 语义不变），scheme 限 http/https（同时收紧旧"chrome:// 页可直开"行为）、内网目标须"总闸开 + 命中白名单"才放行、**拒绝一律发生在 `chrome.tabs.create` 之前**（不能"开了才发现被拦"）；公网目标行为逐字节不变。工具描述与 zh/en 设置页 `networkAccessHint` 同步点名 `manage_tab`。新增 `manage-tab-network-gate.unit.test.js` 22 例全绿；两轮负向对照：还原 `tool-executor.js`/`tab-tools.js` → 19 例拒绝/接线红；仅在 `tabs.create` 前插入 decoy → 只有顺序守卫红（证明"闸门必须先于 create"确有牙）。全量 **111 文件 / 1707 例全绿**，eslint 0，`build:silent` 成功。纯扩展侧，无需重启 agent。
 4. ~~SEC-13（`sourcemap`）+ PERF-05（NEW-03）+ PERF-06（NEW-04）+ PERF-04~~ ✅ **已完成**：四项全修；过程中发现并修掉 **NEW-06**（否则 PERF-05 会变成导出功能全坏）。新增 `audit-small-fixes.unit.test.js` 21 例 + `workspace-preview-listener-lifecycle.unit.test.js` 6 例 + `export-click-lazy-import.unit.test.js` 15 例（NEW-07，审查后重写为 acorn AST）。审查驱动的第二轮加固：守卫堵 4 个假绿洞（负向对照 M0–M6 七变体全拦）、`audit-small-fixes` 产物级断言修正本机静默绿（`new URL` 在该环境解析成 `/dist` 使 `distReady` 恒 false）、PERF-06 改为逐轮透传 signal 修并发下作废语义。全量 **103 文件 / 1589 测试全绿**，eslint 0，已重跑构建与商店打包（包内 0 个 `.map`），真扩展冒烟 27 项全绿。
 
 **第二批（各需你一句话）**
@@ -148,5 +148,7 @@
 9. **P2 两项性能优化（trim O(n²) + 工具定义 token 缓存）** ✅ **已完成（2026-10-17）**：见第四节 P2 两行。纯计算重构、行为逐项等价（黄金基准两侧同绿），n=4000 裁剪实测 59s → 33ms。
 
 10. **NEW-08 兜底权重裁剪 O(n²) 纯化** ✅ **已完成（2026-10-17，本轮新发现并修）**：见第五节 NEW-08 行。抽出 `trim-fallback.js` + 增量扣减 + 突变单条重算，黄金基准 16 例全绿、两轮负向对照均转红，n=4000 实测 1.47s → 79ms。
+
+11. **PERF-08 审计日志/工具统计写放大** ✅ **已完成（2026-10-17）**：见第三节 PERF-08 行。新模块 `activity-store.js` 内存聚合 + 防抖合并落盘 + 关键审计即时刷 + onSuspend 兜底，同时修掉并行工具组下的丢更新竞态与 tool-helpers 死副本；14 例守卫含"旧实现并发 20 写确实只剩 1 条"的夹具有效性断言。
 
 **搁置**：P1-2（工具级放行粒度）。**已完成的前置动作**：dist 已重建（NEW-02），当前产物含 `279cd74`、内容脚本注入瘦身与 SEC-03 闸门；真机验证时请重点上表 PERF-01 行列出的 5 个功能点，以及新设置项的三态（默认关 / 开闸但列表空 / 开闸且命中条目）。
