@@ -253,7 +253,7 @@ function getAllowedOrigin(req) {
 function jsonResponse(res, status, data) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Memory-Caller',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
   };
   const allowedOrigin = getAllowedOrigin(res.req);
@@ -444,7 +444,7 @@ export function startServer() {
     // CORS 预检（仅放行 Chrome 扩展来源）
     if (req.method === 'OPTIONS') {
       const optHeaders = {
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Memory-Caller',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
       };
       const allowedOrigin = getAllowedOrigin(req);

@@ -160,6 +160,9 @@ export async function memoryDispatch(req, res, pathname, url, t, requestBody = {
   }
 
   const body = requestBody || {};
+  // P1-3：记忆来源以 HTTP header 为权威——模型只能控制 body（经 tool-memory.js 原样透传），
+  // 控制不了 background 发请求时的 header；仅 options 面板的 agentApi 会带 X-Memory-Caller: user。
+  const callerOrigin = String(req?.headers?.['x-memory-caller'] || '').toLowerCase() === 'user' ? 'user' : 'model';
 
   try {
     let data;
@@ -170,6 +173,9 @@ export async function memoryDispatch(req, res, pathname, url, t, requestBody = {
     } else if (method === 'backfillVectors') {
       // 不接受请求体：只做「按当前配置把全部记忆补进向量缓存」，t 用于渲染跳过原因
       data = await service.backfillVectors(t);
+    } else if (method === 'store') {
+      // P1-3：store 传入可信 ctx（源于上面的 header 判定），忽略 body 里模型可伪造的 origin
+      data = await service.store(body, t, { origin: callerOrigin });
     } else {
       data = await service[method](body, t);
     }

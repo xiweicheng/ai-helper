@@ -11,6 +11,7 @@ export const MEMORY_INJECTION_CONFIG = {
   itemOverheadChars: 50,     // 每条渲染开销近似（序号、[重要性: N]、(标签: ...)）
   maxTopicTags: 8,           // 索引提示最多展示的主题标签数
   maxTagLength: 12,          // 单个主题标签最大长度（超出截断）
+  tier1MaxChars: 500,        // Tier1 常驻单条长度上限（P1-3：防大载荷永久驻留 system prompt）
 };
 
 /**
@@ -85,9 +86,18 @@ export function selectMemoriesForInjection(facts, summaries, config = MEMORY_INJ
   const summaryList = Array.isArray(summaries) ? summaries : [];
   const threshold = config.alwaysInjectImportance;
 
-  // Tier1：常驻（不占预算），内部按价值降序
+  // Tier1：常驻（不占预算），内部按价值降序。
+  // P1-3 来源分级：仅 origin==='user'（用户在面板手动新建/编辑）可进永久常驻；
+  // origin 缺失（旧数据）或 'model'（模型经工具/自动压缩写入）一律降入 Tier2/Tier3——
+  // 即便模型把投毒记忆的 importance 顶到 ≥8 也无法常驻，只能按需/预算召回。
+  // 单条长度 > tier1MaxChars 也不进 Tier1（防大载荷永久驻留）；未配置该字段时不限制（自定义 config 兼容）。
+  const tier1MaxChars = config.tier1MaxChars ?? Infinity;
+  const isTier1Eligible = (m) =>
+    m.origin === 'user'
+    && (m.importance || 5) >= threshold
+    && (typeof m.content === 'string' ? m.content.length <= tier1MaxChars : false);
   const tier1 = factList
-    .filter(m => (m.importance || 5) >= threshold)
+    .filter(isTier1Eligible)
     .sort((a, b) => calcMemoryValue(b, now) - calcMemoryValue(a, now));
   const tier1Set = new Set(tier1);
 

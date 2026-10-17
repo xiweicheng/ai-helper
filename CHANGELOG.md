@@ -4,6 +4,17 @@
 
 ## 2026-10-17
 
+### 安全（P1-3：长期记忆来源分级 + Tier1 常驻注入门控 + 写入侧防御）
+> 底账二第四节 P1 条。根因：`injection.js` 的 Tier1 只要 `importance>=8` 就无条件常驻注入 system prompt，而 `importance` 由模型经 `agent_memory` 工具自传——模型此刻可能正在消化不可信网页内容，把投毒记忆顶到高值即可绕过 `<untrusted>` 包裹形成“记忆投毒 → 永久常驻注入”后门。用户三项拍板后开工。
+
+- **来源 `origin` 由运行时按“谁发的请求”判定、模型不能自封**：`memoryDispatch` 从 HTTP header `X-Memory-Caller` 取可信来源——仅 options 面板的 `agentApi` 写记忆时带 `user`；background 的 `agent_memory` 工具（`tool-memory.js`）与自动压缩（`compaction-memory.js`）两条 `agentRequest` 不带 → 默认 `model`。关键：`tool-memory.js` 以 `{ ...args }` 原样透传、模型可往 body 塞任意字段，故 origin 只认 header/ctx、**绝不读 body**；`service.store` 新增可信 `ctx` 形参。
+- **Tier1 常驻门控**：`injection.js` Tier1 改 `origin==='user'` 且单条 ≤500 字符；`model`/旧数据（无 origin）一律降 Tier2/Tier3（仍可预算内/按需召回，不常驻）。默认不可信 → 旧记忆自动降出常驻，无需迁移。
+- **写入侧 fail-closed**：命中提示注入短语（`ignore previous instructions`/`system override`/“忽略以上指令”等中英）直接拒写；同一 sessionId 写入超 20 条限流（无 sessionId 不计，避免误伤）；`agentApi` 与 agent CORS 放行头同步新增 `X-Memory-Caller`。
+- **守卫**：`memory-injection`(+5：model/缺失/超长不进 Tier1、model 高分仍进 Tier2)、`memory-service`(+5：origin 打戳/body 伪造无效/用户编辑提权/注入拒写/限流)、`memory-routes`(+2：header 判源、body 伪造被覆盖)。负向对照：抽掉 origin 门控 → 恰那 2 条负向例转红。
+- **验证**：agent 全量 **484/484**、根目录全量 **104 文件 / 1600 测试全绿**，eslint 0，`npm run build:silent` 成功。**生效需重启 agent daemon**。
+
+## 2026-10-17
+
 ### 安全（命令分级档位纠偏与危险动作覆盖补齐）
 > 用户探针实测：一批零风险写法被硬拒，而 `dd`/`chmod` 这类真破坏动作静默执行。结论：现规则拦「语法形似注入」，不拦「效果具备破坏性」，且档位放反了。
 

@@ -68,6 +68,42 @@ function normalizeImportance(value) {
   return Math.min(IMPORTANCE_MAX, Math.max(IMPORTANCE_MIN, Math.round(n)));
 }
 
+// P1-3 记忆来源分级：origin 记录每条记忆的可信来源，用于注入侧决定能否进 Tier1 常驻。
+// 关键：origin 由「谁发的请求」在运行时判定，模型不能自封——agent_memory 的 body 经扩展
+// tool-memory.js 以 { ...args } 原样透传，模型可往 args 塞任意字段，故 origin 绝不能读 body，
+// 只认调用方透传进来的可信 ctx（源于 HTTP header）。缺失一律按 'model'（默认不可信 → 降出 Tier1）。
+const MEMORY_ORIGIN_USER = 'user';   // 用户在面板（options）手动新建/编辑
+const MEMORY_ORIGIN_MODEL = 'model'; // 模型经 agent_memory 工具或自动压缩写入
+
+// 写入侧 fail-closed 拦截：命中提示注入短语的记忆直接拒写（中英常见越狱载荷形态）。
+// 宁可少存一条，不可把可疑指令放进会回注 system prompt 的记忆库。
+const MEMORY_INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?previous\s+instructions/i,
+  /ignore\s+the\s+(above|system)\s+prompt/i,
+  /disregard\s+(all\s+)?(previous|above)/i,
+  /system\s*(prompt|override)\s*[:：]/i,
+  /you\s+are\s+now\s+(in\s+)?(developer|jailbreak|dan)\s*mode/i,
+  /忽略(以上|之前|上面)(的)?(所有)?指令/,
+  /无视.{0,6}(系统|之前).{0,6}(提示|指令)/,
+];
+
+function detectInjectionPattern(content) {
+  if (typeof content !== 'string' || !content) return null;
+  return MEMORY_INJECTION_PATTERNS.find((re) => re.test(content)) || null;
+}
+
+// 频率上限：同一 (origin:sessionId) 在进程存活期内的写入条数上限（防批量投毒）。
+// 进程内计数、daemon 重启即清零——best-effort 兜底，不是持久配额。
+const MEMORY_STORE_RATE_LIMIT = 20;
+const storeRateCounter = new Map();
+
+function bumpStoreRate(origin, sessionId) {
+  const key = `${origin}:${sessionId || 'unknown'}`;
+  const next = (storeRateCounter.get(key) || 0) + 1;
+  storeRateCounter.set(key, next);
+  return next;
+}
+
 /**
  * 词面命中门槛：整词/整段命中可直接成命中；只碰碎块时需单元素 ≥ 2 才算。
  * 这一条是碎 bigram 噪声的真正出口（旧实现里「写网」「个国」这类随机 2 字块也能凑出分）。
@@ -231,8 +267,10 @@ export function createMemoryService({
    * store：新增/更新/删除记忆（迁移自 executeAgentMemoryStore tool-memory.js:215-347）
    * args.action 为子动作 add/update/delete（扩展转发层已将 subAction 映射到 action）
    */
-  async function store(args, t) {
+  async function store(args, t, ctx = {}) {
     const { action, type, category, content, title, tags, importance, memoryId, sourceSessionId } = args;
+    // P1-3：origin 只认调用方透传的可信 ctx（源于 HTTP header），绝不从 args 取——模型可伪造 body。
+    const origin = ctx && ctx.origin === MEMORY_ORIGIN_USER ? MEMORY_ORIGIN_USER : MEMORY_ORIGIN_MODEL;
 
     if (!action) return { success: false, error: t('memory.missingAction') };
     // delete 不需要 type（memoryId 全局唯一），add/update 需要
@@ -252,6 +290,11 @@ export function createMemoryService({
       return { success: false, error: t('memory.invalidImportance', { value: String(importance) }) };
     }
 
+    // P1-3 写入侧 fail-closed：命中提示注入短语的内容（add/update）直接拒写
+    if ((action === 'add' || action === 'update') && content !== undefined && detectInjectionPattern(content)) {
+      return { success: false, error: t('memory.injectionPatternBlocked'), code: 'injection_blocked' };
+    }
+
     return withMemoryLock(async () => {
       const readResult = await readMemoryFile();
       if (!readResult.success) return { success: false, error: t('memory.readFailed', { error: readResult.error }) };
@@ -261,6 +304,11 @@ export function createMemoryService({
       const targetArray = type === 'fact' ? memoryData.facts : memoryData.summaries;
 
       if (action === 'add') {
+        // P1-3 频率上限：仅对带真实 sessionId 的会话计数限流（贴合“同一会话内”语义）；
+        // 无 sessionId 的写入（如自动压缩）不归入会话桶，避免全局误伤。
+        if (sourceSessionId && bumpStoreRate(origin, sourceSessionId) > MEMORY_STORE_RATE_LIMIT) {
+          return { success: false, error: t('memory.rateLimited'), code: 'rate_limited' };
+        }
         const newMemory = {
           id: generateMemoryId(type),
           type,
@@ -272,7 +320,8 @@ export function createMemoryService({
           lastAccessAt: null,
           createdAt: now,
           updatedAt: now,
-          sourceSessionId: sourceSessionId || null
+          sourceSessionId: sourceSessionId || null,
+          origin
         };
         if (type === 'summary' && title) {
           newMemory.title = title;
@@ -285,6 +334,9 @@ export function createMemoryService({
           duplicate.tags = tags || duplicate.tags;
           duplicate.importance = importanceValue ?? duplicate.importance;
           duplicate.sourceSessionId = sourceSessionId || duplicate.sourceSessionId;
+          // P1-3：用户编辑可把来源升为 user；模型写入永不改判已有来源（缺失才补 model）
+          if (origin === MEMORY_ORIGIN_USER) duplicate.origin = MEMORY_ORIGIN_USER;
+          else if (duplicate.origin === undefined) duplicate.origin = MEMORY_ORIGIN_MODEL;
           const writeResult = await writeMemoryFile(memoryData);
           if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
           queueVectorBackfill(duplicate.id, duplicate);
@@ -342,6 +394,9 @@ export function createMemoryService({
         if (importanceValue !== null) existing.importance = importanceValue;
         if (category !== undefined) existing.category = category;
         if (type === 'summary' && title !== undefined) existing.title = title;
+        // P1-3：用户编辑 → 升为 user；模型更新 → 保留原来源（缺失才补 model），绝不提权
+        if (origin === MEMORY_ORIGIN_USER) existing.origin = MEMORY_ORIGIN_USER;
+        else if (existing.origin === undefined) existing.origin = MEMORY_ORIGIN_MODEL;
         existing.updatedAt = now;
 
         const writeResult = await writeMemoryFile(memoryData);

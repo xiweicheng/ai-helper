@@ -317,6 +317,8 @@
     "readFailed": "读取记忆文件失败: {error}",
     "writeFailed": "写入记忆文件失败: {error}",
     "parseFailed": "记忆文件解析失败: {error}",
+    "injectionPatternBlocked": "记忆内容疑似包含提示注入指令（如忽略既有指令 / 覆盖系统提示），已拒绝写入",
+    "rateLimited": "本会话记忆写入过于频繁，已触发防批量投毒上限，请稍后再试",
     "updatedDuplicate": "已更新已有记忆: {id}（内容相同，已合并）",
     "added": "已添加记忆: {id} ({type}){warning}",
     "nearLimitWarning": "\n⚠️ 记忆数量接近上限（事实: {facts}/{maxFacts}, 摘要: {summaries}/{maxSummaries}），建议调用 agent_memory action=manage 进行审查整理。",

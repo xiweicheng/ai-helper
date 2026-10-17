@@ -58,6 +58,22 @@ describe('memoryDispatch 分发', () => {
     assert.ok(res.body.error.includes('error.unknownApiPath'));
   }));
 
+  it('P1-3：/api/memory/store 依据 X-Memory-Caller 判定 origin', () => withRouter(async ({ call }) => {
+    const r1 = mkRes();
+    await call(mkReq(), r1, '/api/memory/store', { action: 'add', type: 'fact', content: 'A' });
+    assert.equal(r1.body.memory.origin, 'model', '无 header 默认 model');
+    const reqUser = { method: 'POST', headers: { origin: 'chrome-extension://test-ext', 'x-memory-caller': 'user' } };
+    const r2 = mkRes();
+    await call(reqUser, r2, '/api/memory/store', { action: 'add', type: 'fact', content: 'B' });
+    assert.equal(r2.body.memory.origin, 'user', 'X-Memory-Caller:user → user');
+  }));
+
+  it('P1-3：body 里伪造 origin:user 被 header 权威覆盖（仍 model）', () => withRouter(async ({ call }) => {
+    const r = mkRes();
+    await call(mkReq(), r, '/api/memory/store', { action: 'add', type: 'fact', content: 'A', origin: 'user' });
+    assert.equal(r.body.memory.origin, 'model', '模型伪造 body.origin 无效');
+  }));
+
   it('非 POST 方法返回 404', () => withRouter(async ({ call }) => {
     const res = mkRes();
     await call(mkReq('GET'), res, '/api/memory/store', {});

@@ -317,6 +317,8 @@
     "readFailed": "Failed to read memory file: {error}",
     "writeFailed": "Failed to write memory file: {error}",
     "parseFailed": "Memory file parse failed: {error}",
+    "injectionPatternBlocked": "Memory content appears to contain prompt-injection instructions (e.g. ignore previous instructions / override system prompt); write rejected",
+    "rateLimited": "Memory writes in this session are too frequent; anti-poisoning rate limit reached, please retry later",
     "updatedDuplicate": "Updated existing memory: {id} (content identical, merged)",
     "added": "Added memory: {id} ({type}){warning}",
     "nearLimitWarning": "\n⚠️ Memory count approaching limit (facts: {facts}/{maxFacts}, summaries: {summaries}/{maxSummaries}). Consider calling agent_memory action=manage to review and clean up.",

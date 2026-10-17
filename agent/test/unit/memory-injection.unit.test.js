@@ -44,6 +44,7 @@ function makeMemory(overrides = {}) {
     accessCount: 0,
     lastAccessAt: null,
     createdAt: new Date(NOW - DAY).toISOString(), // 1 天前 → decay 1.0
+    origin: 'user', // P1-3：默认代表“用户在面板创建”的记忆（Tier1 资格前提）；具体用例可覆盖为 model/undefined
     ...overrides,
   };
 }
@@ -103,6 +104,38 @@ describe('selectMemoriesForInjection：三级筛选', () => {
     ];
     const { injected } = selectMemoriesForInjection(facts, [], TEST_CONFIG, NOW);
     assert.strictEqual(injected[0].id, 'hot');
+  });
+
+  // P1-3 来源分级：用 budgetCount:0 把 Tier2 排空，使 injected 仅等于 Tier1 集合，从而隔离验证“谁能常驻”。
+  const TIER1_ONLY = { ...MEMORY_INJECTION_CONFIG, budgetChars: 0, budgetCount: 0 };
+
+  it('P1-3：origin=model 的记忆即便 importance≥8 也不进 Tier1 常驻', () => {
+    const facts = [
+      makeMemory({ id: 'u8', importance: 8, origin: 'user', content: '用' }),
+      makeMemory({ id: 'm8', importance: 8, origin: 'model', content: '机' }),
+    ];
+    const ids = selectMemoriesForInjection(facts, [], TIER1_ONLY, NOW).injected.map(m => m.id);
+    assert.ok(ids.includes('u8'), 'user 8 分应进 Tier1');
+    assert.ok(!ids.includes('m8'), 'model 8 分不得进 Tier1');
+  });
+
+  it('P1-3：origin 缺失（旧数据）按不可信处理，不进 Tier1', () => {
+    const facts = [makeMemory({ id: 'legacy', importance: 9, origin: undefined, content: '旧' })];
+    const ids = selectMemoriesForInjection(facts, [], TIER1_ONLY, NOW).injected.map(m => m.id);
+    assert.ok(!ids.includes('legacy'), '无 origin 的记忆不得常驻');
+  });
+
+  it('P1-3：user+importance≥8 但 content 超过 tier1MaxChars 也不常驻', () => {
+    const facts = [makeMemory({ id: 'long', importance: 9, origin: 'user', content: '超'.repeat(600) })];
+    const ids = selectMemoriesForInjection(facts, [], { ...TIER1_ONLY, tier1MaxChars: 500 }, NOW).injected.map(m => m.id);
+    assert.ok(!ids.includes('long'), '超长记忆不得进 Tier1');
+  });
+
+  it('P1-3：model 高分记忆仍可进 Tier2 预算（只是不常驻）', () => {
+    const facts = [makeMemory({ id: 'm8b', importance: 8, origin: 'model', content: '短' })];
+    // 默认预算充足够装一条 → m8b 应出现在 injected（来自 Tier2）
+    const ids = selectMemoriesForInjection(facts, [], { ...MEMORY_INJECTION_CONFIG }, NOW).injected.map(m => m.id);
+    assert.ok(ids.includes('m8b'), 'model 高分仍可预算内注入');
   });
 
   it('Tier2 按价值降序：6 分高访问可排在 7 分零访问之前', () => {

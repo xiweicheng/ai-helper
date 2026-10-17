@@ -158,13 +158,17 @@ export async function getAgentConnection() {
  * 通用 Agent API 请求
  */
 export async function agentApi(method, path, body = null) {
-  const opts = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${state.agentToken}`
-    }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${state.agentToken}`
   };
+  // P1-3：本函数只被 options 面板调用（用户在 UI 里操作）→ 对记忆写入端点声明可信来源。
+  // background 的模型工具/自动压缩路径走 agentRequest，不带此 header → agent 端默认 model。
+  // 用 header 而非 body：模型能伪造透传的 body 字段，伪造不了由固定代码设置的传输头。
+  if (path.startsWith('/api/memory/store')) {
+    headers['X-Memory-Caller'] = 'user';
+  }
+  const opts = { method, headers };
   if (body) {
     opts.body = JSON.stringify(body);
   }
