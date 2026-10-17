@@ -5,6 +5,7 @@
 // 修复约定：
 //   1. 确认开关打开时，模型自带的 force 参数一律忽略（不可信），confirm 级命令必须弹
 //      真实用户确认框（复用 requestToolConfirmation 通道），确认后由扩展端以 force 重发；
+//      且 agent_exec schema 不再向模型暴露 force 字段（避免诱导模型自我批准）；
 //   2. 拒绝/超时/弹窗失败默认拒绝（fail-closed）；
 //   3. 确认开关关闭 = 用户已明确选择灰名单自动放行（force 直通，黑名单仍不可绕过）；
 //   4. 兜底文案（commandNeedConfirm）不得再含"用 force: true 重试"的模型自批准指令。
@@ -353,5 +354,11 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     expect(src).not.toContain('我会用 force: true');
     expect(src).not.toContain('re-execute this command with force: true');
     expect(src).toContain('commandUserDenied');
+  });
+
+  test('schema 契约：agent_exec 不得向模型暴露 force 参数', async () => {
+    const { AGENT_TOOLS } = await import('../../src/background/tools/agent-tools.js');
+    const execTool = AGENT_TOOLS.find(t => t.id === 'agent_exec');
+    expect(Object.keys(execTool.function.parameters.properties)).not.toContain('force');
   });
 });

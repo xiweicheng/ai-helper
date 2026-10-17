@@ -60,7 +60,10 @@ export const AGENT_TOOLS = [
         properties: {
           command: { type: 'string' },
           cwd: { type: 'string' },
-          force: { type: 'boolean', description: 'Force execute confirmed command' },
+          // 注意：不要向模型暴露 force 参数。灰名单命令的强制放行只能由扩展端在
+          // 用户点击确认弹窗后授予（见 tool-executor.js executeAgentExecCommand），
+          // 模型自带 force 一律忽略；暴露该字段等于诱导模型“自我批准”的无效尝试。
+          // 回归守卫：test/unit/agent-exec-confirmation.unit.test.js schema 契约用例。
           timeoutMs: {
             type: 'integer',
             minimum: 5000,
