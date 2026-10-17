@@ -13,11 +13,11 @@
 
 | 判定 | 数量 | 条目 |
 |---|---|---|
-| ✅ 已修复 / 已完成 | 15 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17） |
+| ✅ 已修复 / 已完成 | 16 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17）、**P1-3**（记忆来源分级 + Tier1 常驻门控 + 写侧防御，2026-10-17） |
 | 🔴 成立，值得排期 | 7 | SEC-01、SEC-03（残余：`manage_tab` 免确认打开内网页，带用户 cookie）、SEC-07、SEC-08、SEC-10、SEC-12、PERF-02 |
 | 🟡 成立，但等级应下调 | 5 | SEC-05（高→低）、SEC-06（高→中，见第二节：原降级理由只对"网页发起"成立）、SEC-04（高→策略取舍）、PERF-03（高→中低）、PERF-09（中→低） |
 | 🔵 报告原判即"可接受"，我此前误列为待修 | 2 | PERF-12（报告原文："均有上限/清理，属可接受范围"）、SEC-09（报告原等级即"中·纵深防御"） |
-| ⚪ 需产品/策略决策才能动工 | 3 | P1-2（已搁置）、P1-3、SEC-04 |
+| ⚪ 需产品/策略决策才能动工 | 2 | P1-2（已搁置）、SEC-04（脱敏，暂缓） |
 | 🆔 两份底账都没有的新发现 | 7 | NEW-01 … NEW-07（见第五节）|
 
 **最高性价比的三件**（都不需要你先做策略决定）：
@@ -32,18 +32,18 @@
 
 | 编号 | 原等级 | 现判定 | 现证据（本轮读取） | 处置 |
 |---|---|---|---|---|
-| SEC-01 | 严重 | 🔴 成立（定性修正为中） | 6 个位点全部未消毒：`selection-toolbar.js:784`、`:1022`、`:1033`、`:1582`、`:1991`、`:2027`；`DOMPurify` 全仓仅 `src/side_panel/markdown-render.js`、`workspace-panel.js`；`dist/assets/content.js` 中 `DOMPurify` 出现 **0 次** | **定性修正**：innerHTML 插入的 `<script>` 不执行，内联 handler 在**宿主页面主世界**执行，非扩展上下文 → 不是提权，是页面级 XSS。仍应加消毒，但不属"最危险"档 |
+| SEC-01 | 严重 | 🔴 成立（定性修正为中） | 6 个位点全部未消毒：`selection-toolbar.js:784`、`:1022`、`:1033`、`:1582`、`:1991`、`:2027`；`DOMPurify` 全仓仅 `src/side_panel/markdown-render.js`、`workspace-panel.js`；`dist/assets/content.js` 中 `DOMPurify` 出现 **0 次** | **定性修正**：innerHTML 插入的 `<script>` 不执行，内联 handler 在**宿主页面主世界**执行，非扩展上下文 → 不是提权，是页面级 XSS。仍应加消毒，但不属"最危险"档。**⚪ 暂缓（2026-10-17 用户决定，暂不做）**：修法需在"DOMPurify 进 manifest 注入（每帧 +~20KB，触 PERF-01 瘦身原则）"与"按需懒注入（时序/CSP 复杂）"间取舍，属架构权衡而非低风险即做项 |
 | SEC-02 | 严重 | ✅ 已修复 | `tool-executor.js:4279` `requestCommandUserConfirmation`，三处调用 `:4341`/`:4655`/`:4723`；模型自带 `force` 不采信；开关判定 `:4320` | 提交 `fda111e`；延伸修复 `7613e5e`、`18a6703` |
 | SEC-03 | 严重 | ✅ 拦截主体已修（残余 `manage_tab`） | 新增 `src/shared/network-scope.js`：scheme 限 http/https，内网目标需"总闸开 + 命中白名单"（B2 语义，开关开着但白名单为空仍拒绝）。接入点 `tool-executor.js:2944` `executeFetchUrl` 在 `new URL` 后调 `decideNetworkAccess`，拒绝时返回带开关位置的可执行文案；配置链 `config.js` 读 `networkAccessEnabled`/`allowedNetworkHosts`（默认 false / 空，`constants.js:19-23`），设置页"推理"Tab 新增总闸与白名单（关闸只改开关并把白名单区块收起、绝不清空列表，实测验证），配置导入剔除这两个键（安全闸门不允许被文件飘移）。工具定义 `storage-tools.js:79` 描述已写明限制。报告所指"日志打印请求头"**已不存在**：`:2943` 现只打 method/url/timeout | 已修部分按你的决定保持免确认（不新增弹窗）。**残余**：`tab-tools.js:5-10` `manage_tab` 仍 `requiresConfirmation: false` 且 `confirmationActions: ['close']` → open/navigate 到内网免确认，且带用户 cookie，光封 `fetch_url` 拦不住这条 | 
-| SEC-04 | 高 | 🟡 成立，但属有意取舍 | `debugger/debugger-rules.js:126-131` 注释明写"headers 对调试场景最有价值……故完整暴露"；`serializeNetworkEntry` 返回 `requestHeaders`/`responseHeaders`；全仓 grep `redact`/header 脱敏 **0 命中** | 不是遗漏，是策略。要脱敏或纳入确认需你先定调试能力的边界 |
+| SEC-04 | 高 | 🟡 成立，但属有意取舍 | `debugger/debugger-rules.js:126-131` 注释明写"headers 对调试场景最有价值……故完整暴露"；`serializeNetworkEntry` 返回 `requestHeaders`/`responseHeaders`；全仓 grep `redact`/header 脱敏 **0 命中** | 不是遗漏，是策略。要脱敏或纳入确认需你先定调试能力的边界。**⚪ 暂缓（2026-10-17）**：脱敏会削弱 `debug_page` 看认证头/CORS 排障的核心价值，属产品取舍，待你定调试能力边界 |
 | SEC-05 | 高 | 🟡 成立（高→低） | 真身确为 `selection-toolbar.js:2129-2167`（`window.addEventListener('message')`，无 `event.origin`/`event.source` 校验），报告行号**本来就对**；发送侧 `postMessage` 在 `:1359`、`:1388`、`:1478` | 影响限于"伪造选区文本 + 按坐标弹出工具栏"，不能自行发起 AI 请求、不读数据，仍需用户再点一次 → 降为低。修法：校验 `event.source === window.parent` + 收敛 `targetOrigin` |
 | SEC-06 | 高 | 🟡 成立（高→中） | `agent/src/server.js:502-509`：`isLocal` 为真即跳过认证，名单含 `127.0.0.1`/`::1`/`::ffff:127.0.0.1`/`localhost` | **原降级理由已推翻**：我以 Chrome PNA 预检为依据把本条降到"低"，但实测（真扩展 SW 发起）表明**扩展自身发起的请求不受 PNA 约束** —— 环回 GET/POST 全 200、无 `Access-Control-Request-Private-Network`、无 OPTIONS。PNA 只挡"网页发起"的那一类。因此回评为中：`fetch_url` 这条发起路径本轮已被 SEC-03 闸门封住，残余可达面是同机进程、自家扩展页与 `manage_tab` |
-| SEC-07 | 高 | 🔴 成立（描述修正） | 扩展 `src/shared/secret.js:22-30` `decodeSecret = atob`；agent `src/crypto-lite.js:1` 文件头自称"落盘混淆（Base64 + `enc:` 前缀）"；全 `src/` grep `encrypt\|decrypt` **0 命中**；WS 仍走 query：`local-agent-client.js:681` `?token=` | **描述修正**：两侧同一水平（Base64 混淆，非加密），不存在"agent 已加密 / 扩展明文"的不对称。要不要上真加密取决于威胁模型（能读磁盘者亦能读 `chrome.storage`） |
+| SEC-07 | 高 | 🔴 成立（描述修正） | 扩展 `src/shared/secret.js:22-30` `decodeSecret = atob`；agent `src/crypto-lite.js:1` 文件头自称"落盘混淆（Base64 + `enc:` 前缀）"；全 `src/` grep `encrypt\|decrypt` **0 命中**；WS 仍走 query：`local-agent-client.js:681` `?token=` | **描述修正**：两侧同一水平（Base64 混淆，非加密），不存在"agent 已加密 / 扩展明文"的不对称。要不要上真加密取决于威胁模型（能读磁盘者亦能读 `chrome.storage`）。**2026-10-17 复核**：① 落盘真加密需"存密钥的密钥"，桌面场景多属过度保护 → 暂缓；② WS `?token=` 移出 URL **不可行/不必要**——浏览器 `new WebSocket()` 无法设握手 header，agent 端"优先 header、回退 query"里那个 query 正是浏览器 WS 唯一认证通道，且 WS 归一到回环 `ws://127.0.0.1`、query 不经网络无 Referer 外泄 → 维持现状（真收口需两侧改首帧认证，属协议变更） |
 | SEC-08 | 高 | 🔴 成立 | `content/page-extract.js:747-750` 与 `:801-804`，两处均直接重写**真实** `document.body.innerHTML`（已确认非克隆文档） | 每次"页内搜索+高亮"清掉全站事件监听/选中态，SPA 可能崩 → 属功能型缺陷。改 DOM Range 高亮 |
 | SEC-09 | 中 | 🔵 无可达路径（撤销"外部源"表述） | 主入口 `background/index.js:907`，全 `src/background/` 无 `sender.id`/`sender.url` 校验；但 manifest **未声明 `externally_connectable`** → `chrome.runtime.onMessage` 只收自家扩展页 + 自家内容脚本；且这些 handler 本身在用 `sender.tab?.id` 做路由 | 报告原等级即"中·纵深防御"，我此前"任意外部源可投递"的措辞是加重。作为加固项保留，不作为缺陷 |
 | SEC-10 | 中 | 🔴 成立（半条已缓解） | `content/advanced-tools.js:384-399`：scoped 分支已收敛（`#${wrapperId}` 前缀 + `style.textContent` + `data-ai-helper`），但 `else` 分支 `:396-399` 仍把**整段未过滤 CSS** 以 `data-ai-helper="global"` 注入宿主 head | 全局分支加属性白名单，或取消全局模式 |
 | SEC-11 | 中 | ✅ **已修复（2026-10-17）** | `side_panel/index.js` 的 `renderAuditLogs`（模板行 3734-3741）曾把 `entry.action`、`cat`、`level`、`details` 直插 `innerHTML`；`formatAuditDetails` 仅截断长度不转义。现四处均包已引入的 `escapeHtml` 后再插值 | 因发生在**扩展页面**，注入成功即获得扩展上下文发消息能力（连带激活 SEC-09 那批 handler）→ 真实危害高于其"中"等级。守卫：`audit-log-escape.unit.test.js` 11 例（4 源码接线形状 + 7 行为不变量：真 `escapeHtml` 驱 5 类 payload 注不进真元素、`.textContent` 原样保留 + 一条不转义确会注入的正向对照）；负向对照 `git checkout` 还原 → 3 条源码接线守卫转红 |
-| SEC-12 | 中 | 🔴 成立 | `package.json:39` `pdfjs-dist ^3.11.174`、`:40` `xlsx ^0.18.5`；产物 `dist/assets/xlsx-*.js` 424 KB、`pdf-*.js` 305 KB；且用于解析**用户上传的任意文件**（`side_panel/file-extract.js:112`、`:142`） | 不是版本号难看，是"解析不可信输入的库带已知 CVE"。xlsx 官方停更 → 需换库或限功能面 |
+| SEC-12 | 中 | 🔴 成立 | `package.json:39` `pdfjs-dist ^3.11.174`、`:40` `xlsx ^0.18.5`；产物 `dist/assets/xlsx-*.js` 424 KB、`pdf-*.js` 305 KB；且用于解析**用户上传的任意文件**（`side_panel/file-extract.js:112`、`:142`） | 不是版本号难看，是"解析不可信输入的库带已知 CVE"。xlsx 官方停更 → 需换库或限功能面。**⚪ 暂缓（2026-10-17）**：换 blessed 构建/换库/收缩可解析文件类型三者都改变"支持哪些文件/保真度/体积"这一产品能力，属产品取舍，待你定方向 |
 | SEC-13 | 低 | ✅ 已修复（2026-10-16） | `vite.config.js` 现 `sourcemap: false`（带注释说明为何不得改回）；`release.yml` 与 `scripts/package.js` 两处 zip 均 `-x "*.map"` 并在打包后立即 `unzip -l` 复核，检出即退出码 1。实测：当前源码下把 `sourcemap` 改回 `true` 会构建出 **19 个 `.map` 共 10.3 MB**（最大 `side_panel.js.map` 2.64 MB）；现产物与商店包均为 **0 个**，包体 2.69 MB；真扩展首屏 0 个 `.map` 请求 | 已修。守卫：`audit-small-fixes.unit.test.js` 4 例（配置/yml/package.js/产物），负向对照已验 |
 | SEC-14 | 低 | ✅ 已修复 | 全仓不再有无 `onerror=` 声明的元素 | 无需动作 |
 
@@ -76,7 +76,7 @@
 | P0 | 确认开关与灰名单防护解耦 | 🟡 半（按字面未做） | `tool-executor.js:4320` `!== false`、`react-loop.js:1712` 用 `&&` 一起短路 → 关开关仍等于灰名单自动放行。当时收口动作是"写明后果"（wiki `Built-in-Tools.md:179`"关闭后敏感操作直接放行"），非解耦 |
 | P1 | 确认 fail-open → fail-closed | ✅ 已完成 | 弹窗无法送达即拒 + 写审计；面板上下文轮询兜底；纯空白命令 deny（`agent/src/security.js`） |
 | P1 | loop 放行改**工具级**粒度 | ⚪ **已搁置（2026-10-16 用户决定）** | `react-loop.js:177-180` `hasLoopApproval(sessionId)` 仍只看会话祖先链；授予 `:205-215` `loopApprovedSessions.add(root)` 无工具维度；消费点 `:1715` 与 `tool-executor.js:4281`；`grantTaskLoopApproval` 遍历 `pendingConfirmations` 跨工具 `settle(true)`。搁置理由：收窄后并行子任务弹框次数显著上升，且需重做按钮文案 |
-| P1 | 记忆写入来源标记 + Tier1 投毒防护 | 🔴 未做，卡策略 | `agent/src/memory/injection.js:89-91` Tier1 仍仅按 `importance >= threshold` 筛；记忆条目**无** `origin` 字段（`routes.js:33` 那个 origin 是 HTTP 请求头）；`agent/src/memory/*.js` 无 `sanitizeFakeTags`/`untrusted` 接线；当时设想的守卫测试 `test/unit/memory-injection.unit.test.js` **文件不存在** |
+| P1 | 记忆写入来源标记 + Tier1 投毒防护 | ✅ **已修复（2026-10-17）** | 记忆条目新增 `origin`，**由运行时按"谁发的请求"判定、模型不能自封**：`routes.js` 取 HTTP header `X-Memory-Caller` 作可信来源（仅 options 面板 `agentApi` 写记忆时带 `user`，background 的 `agent_memory` 工具与自动压缩两条 `agentRequest` 不带 → 默认 `model`；`tool-memory.js` 以 `{ ...args }` 透传、模型可伪造 body，故 origin 绝不读 body）；`service.js` store 只认可信 ctx。`injection.js` Tier1 门控改 `origin==='user'` + 单条 ≤500 字符，`model`/缺失一律降 Tier2/Tier3（仍可召回、不常驻），**旧数据无 origin 自动降出常驻**（默认不可信、无需迁移）。写入侧 fail-closed：命中提示注入短语拒写、同一 sessionId 超 20 条限流（无 sessionId 不计）。用户三拍板：来源运行时判（user 仅面板创建/编辑）、Tier1 仅 user、写侧含长度上限+关键词过滤+频率上限（未选面板晋升）。守卫：`memory-injection`(+5)/`memory-service`(+5)/`memory-routes`(+2)，负向对照已验（抽掉 origin 门控→2 条负向例转红）。agent 全量 484/484、扩展 104/1600 全绿，eslint 0，已重跑 `npm run build:silent`；**生效需重启 agent daemon** |
 | P2 | trim O(n²) 优化 | 🔴 未做 | `src/shared/token-counter.js:460-486` `trimMessagesByBudget`：`while` 内每丢一条即 `estimateMessagesTokens([...systemMsg, ...rest])` 全量重估 + 整份复制数组 |
 | P2 | 工具定义 token 缓存 | 🔴 未做 | `react-loop.js:1321-1324` 每次 API 调用前重新 `JSON.stringify(apiTools…)` + 估算 |
 | P2 | dispatch 竞态 | ❓ 指代不明 | 代码中无法定位该结论对应实现点；`executeDispatchSubAgent` 在 `tool-executor.js:2065`（别名映射 `:1119`）。今日修复的 `pendingConfirmations`/放行子树清理覆盖了确认通道那一块 |
@@ -139,8 +139,8 @@
 **第二批（各需你一句话）**
 
 5. ~~SEC-11 转义 + SEC-05 origin 校验 + NEW-05 mermaid 守卫~~ → **拆分处理**（核实后三条不同性）：✅ **SEC-11 已修**（纯追加式转义，风险低）；⚪ **NEW-05 实为误报**（已被现有 SVG 守卫与作用域渲染消解，不修）；🔴 **SEC-05 确认为真问题但修法不低风险**（origin/source 校验对同源 iframe 无效、跨域下易打断选区上报，需真扩展 iframe 探针才能取证）——待用户定夺是否配探针单做。
-6. SEC-01 内容脚本消毒（DOMPurify 进内容脚本或复用 `libs-loader` 懒加载）。
-7. SEC-07 凭据保护策略 / SEC-04 抓包头脱敏策略 / SEC-12 xlsx 替换 / P1-3 记忆来源分级 —— 这四条都在"要不要改变产品行为"这一层，不在代码难度层。
+6. **SEC-01 内容脚本消毒**：⚪ **暂缓（2026-10-17 用户决定，暂不做）**。修法在"DOMPurify 进 manifest 注入（每帧 +~20KB，触 PERF-01 原则）"与"按需懒注入（时序/CSP 复杂）"间取舍，属架构权衡。
+7. ~~SEC-07 凭据保护策略 / SEC-04 抓包头脱敏策略 / SEC-12 xlsx 替换 / P1-3 记忆来源分级~~ → **2026-10-17 拆分**：✅ **P1-3 已修**（见第四节 P1 行）；SEC-07 落盘加密**暂缓**（过度保护）、WS token 移出 URL **不可行/不必要**（见第二节 SEC-07）；SEC-04 脱敏、SEC-12 xlsx 替换均 **⚪ 暂缓待定**（改变产品能力，需你先定方向）。这四条确在"要不要改变产品行为"这一层，不在代码难度层。
 8. agent 侧 `ragUrlIngest` 改 B2（AND 闸语义）+ 补"关 + 白名单非空"用例 —— 语义已定（你选了 B2），本轮按你的指示暂未动代理端。
 
 **搁置**：P1-2（工具级放行粒度）。**已完成的前置动作**：dist 已重建（NEW-02），当前产物含 `279cd74`、内容脚本注入瘦身与 SEC-03 闸门；真机验证时请重点上表 PERF-01 行列出的 5 个功能点，以及新设置项的三态（默认关 / 开闸但列表空 / 开闸且命中条目）。
