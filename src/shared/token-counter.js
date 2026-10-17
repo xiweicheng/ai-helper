@@ -461,26 +461,35 @@ export function trimMessagesByBudget(messages, budget, options = {}) {
   const { preserveSystem = true, generateSummary = true } = options;
   const originalLen = messages.length;
 
-  if (estimateMessagesTokens(messages) <= budget) {
-    return { messages: [...messages], trimmedCount: 0, summary: null };
-  }
-
   const systemMsg = preserveSystem && messages[0]?.role === 'system' ? [messages[0]] : [];
   const rest = systemMsg.length ? [...messages.slice(1)] : [...messages];
 
+  // 逐条贡献只预估算一次（单次估算 + 固定 MESSAGE_OVERHEAD，与原全量估算严格等价：
+  // estimateMessagesTokens 纯按消息可加，无跨消息耦合项），后续用累计值增量扣减，
+  // 替代原"每丢一条即全量重估 + 整份复制数组"的 O(n²) 行为。
+  const contributions = rest.map((m) => estimateMessagesTokens([m]));
+  let runningTotal = systemMsg.reduce((sum, m) => sum + estimateMessagesTokens([m]), 0);
+  for (const c of contributions) runningTotal += c;
+
+  if (runningTotal <= budget) {
+    return { messages: [...messages], trimmedCount: 0, summary: null };
+  }
+
   const trimmedMessages = [];
+  let head = 0; // 与 rest.shift() 同步前进的贡献下标
 
   while (rest.length > 0) {
-    const currentTokens = estimateMessagesTokens([...systemMsg, ...rest]);
-    if (currentTokens <= budget) break;
+    if (runningTotal <= budget) break;
 
     const removed = rest.shift();
     trimmedMessages.push(removed);
+    runningTotal -= contributions[head++];
 
-    // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
+    // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除（无条件连丢）
     if (removed?.role === 'assistant' && removed.tool_calls) {
       while (rest.length > 0 && rest[0]?.role === 'tool') {
         trimmedMessages.push(rest.shift());
+        runningTotal -= contributions[head++];
       }
     }
   }

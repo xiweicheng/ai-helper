@@ -16,6 +16,7 @@ import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
+import { weightTrimFallback } from './trim-fallback.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -973,52 +974,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     if (totalTokens > budget) {
       logger.debug(`[Background] still exceeding budget after compaction (${totalTokens} > ${budget}),enablefallbacktrimming`);
 
-      // 消息权重：反思消息 > 工具结果 > 普通消息（权重越高，越优先被裁剪）
-      const getWeight = (msg) => {
-        if (msg._reflection) return 3;
-        if (msg.role === 'tool') return 2;
-        return 1;
-      };
-
-      // 从前往后逐条移除高权重消息，直到 token 量在预算内
-      while (rest.length > 0) {
-        const currentTokens = est([...systemMsg, ...rest]);
-        if (currentTokens <= budget) break;
-
-        // 从开头找到第一条可裁剪的消息（优先高权重）
-        let removeIdx = -1;
-        let bestWeight = 0;
-        for (let i = 0; i < rest.length; i++) {
-          const w = getWeight(rest[i]);
-          if (w > bestWeight) {
-            bestWeight = w;
-            removeIdx = i;
-          }
-          if (bestWeight >= 3) break;
-        }
-        if (removeIdx < 0 || bestWeight === 0) removeIdx = 0;
-
-        const removed = rest.splice(removeIdx, 1)[0];
-
-        // 如果移除的是 assistant(tool_calls)，则后续的 tool 消息也要一并移除
-        if (removed?.role === 'assistant' && removed.tool_calls) {
-          while (rest.length > 0 && rest[removeIdx]?.role === 'tool') {
-            rest.splice(removeIdx, 1);
-          }
-        } else if (removed?.role === 'tool') {
-          // 如果移除了 tool 消息，检查前面的 assistant 是否因此孤立
-          for (let j = removeIdx - 1; j >= 0; j--) {
-            if (rest[j]?.role === 'assistant' && rest[j]?.tool_calls) {
-              const nextMsg = rest[j + 1];
-              if (!nextMsg || nextMsg.role !== 'tool') {
-                delete rest[j].tool_calls;
-              }
-            } else {
-              break;
-            }
-          }
-        }
-      }
+      // 纯逻辑已抽出为 trim-fallback.js 以便单测锁行为（NEW-08）：
+      // 逐条贡献预估算一次 + 增量扣减（旧实现每丢一条即全量 est 重建，O(n²)）；
+      // 权重选择/assistant(tool_calls) 连坐删除/孤立 assistant 原地 delete tool_calls
+      // 的特殊语义均在其中保持不变（原地变更 rest 与共享消息对象）
+      weightTrimFallback({ systemMsg, rest, budget });
     }
 
     // 原地改写而非重新绑定：currentMessages 被 executeSingleToolCall 以同名形参捕获，
@@ -1298,6 +1258,14 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   // 逐档更激进；防止重试风暴，同时避免一次性自愈复发即猝死
   let contextHealAttempts = 0;
 
+  // 工具定义 token 估算：tools 为 reactLoopImpl 形参，循环内无任何重赋值/变更，
+  // 清理版 JSON（剔 id）的序列化估算结果任务级恒定 → 提到循环外只算一次，
+  // 避免长任务每轮 API 调用前重复 map+stringify+估算；校准（getCalibratedTokens）
+  // 随实际用量演进，仍在每轮应用原始值时逐轮进行。
+  const rawToolTokens = estimateTokens(
+    JSON.stringify(tools.map(t => { const { id, ...clean } = t; return clean; }))
+  );
+
   try {
     while (iteration < maxIterations) {
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
@@ -1353,10 +1321,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       const filteredTokens = getCalibratedTokens(rawFilteredTokens);
       const contextWindow = getContextWindow(model || config.modelName, 0, chatConfig.customModelMap);
       
-      // 计算实际工具定义 token 数（而非估算值）
-      const rawToolTokens = estimateTokens(
-        JSON.stringify(apiTools.map(t => { const { id, ...clean } = t; return clean; }))
-      );
+      // 工具定义 token：序列化估算已在循环外缓存（rawToolTokens），此处仅逐轮应用校准
       const actualToolTokens = getCalibratedTokens(rawToolTokens);
       const totalEstimate = filteredTokens + actualToolTokens + 4096; // +输出预留
       // 保存不含输出预留的原始估算值，用于后续与 API 实际 prompt_tokens 对比校准
