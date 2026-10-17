@@ -2,7 +2,7 @@
 // 从 page-tools.js 拆分，包含元数据/链接/表单/图片/Markdown/JSON/iframe/搜索等提取工具
 
 import { deepQuerySelector, deepGetText, deepGetHtml } from './shadow-dom-utils.js';
-import { getElementSelector, generateUniqueSelector, removeHighlights } from './page-utils.js';
+import { getElementSelector, generateUniqueSelector, removeHighlights, highlightTextMatches } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -744,10 +744,9 @@ export function searchInPage(options = {}) {
 
         const flags2 = caseSensitive ? 'g' : 'gi';
         const escaped2 = searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        document.body.innerHTML = document.body.innerHTML.replace(
-          new RegExp(escaped2, flags2),
-          '<span class="ai-helper-search-highlight">$&</span>'
-        );
+        // SEC-08：按文本节点用 Range 包裹命中，绝不重写整段 body.innerHTML。
+        // 旧写法把匹配替换进 HTML 串，命中落在标签/属性内部即损坏标记，且会清空全站事件监听与选中态。
+        highlightTextMatches(document.body, new RegExp(escaped2, flags2), maxResults);
       }
 
       return {
@@ -798,10 +797,9 @@ export function searchInPage(options = {}) {
       `;
       document.head.appendChild(highlightStyle);
 
-      document.body.innerHTML = document.body.innerHTML.replace(
-        new RegExp(searchPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags),
-        '<span class="ai-helper-search-highlight">$&</span>'
-      );
+      // SEC-08：同上，Range 高亮。复用与查找匹配一致的正则（不再额外转义为字面量，
+      // 顺带修正旧写法里“查找用原始模式、高亮却转义模式”导致 regex 模式下高亮与命中对不上）。
+      highlightTextMatches(document.body, new RegExp(searchPattern, flags), maxResults);
     }
 
     return {

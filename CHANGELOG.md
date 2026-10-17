@@ -4,6 +4,31 @@
 
 ## 2026-10-17
 
+### 安全（命令分级防绕过补漏：特权前缀 / 重定向 / 路径变形 / 过度拦截）
+> 防绕过 / 防误杀 / 档位语义 / 一致性 四维静态矩阵（43 例）实测 29/43，暴露 11 个绕过 + 3 个过度拦截。逐条先在 `command-security-check.unit.test.js` 以正确期望落为回归（先红后绿），再修复转正。
+
+- **GAP-1 特权前缀不再给绝对禁止项发降级通行证（P0，9 条）**：`collectCommandScopes` 的 `COMMAND_WRAPPERS` 原本只含 `nohup/time/env/…`，不含 `sudo/doas`——于是 `sudo rm -rf /usr`、`sudo mkfs`、`sudo dd of=/dev/sda`、`sudo sh -c "rm -rf /usr"` 因段首黑名单正则看不见被 `sudo` 挡住的破坏命令，降级为 `confirm`（点一下确认或关确认开关即执行）。修：把 `sudo/doas` 纳入剥壳，且 `stripCommandWrappers` 改为 `peelCommandWrappers` **逐层**剥壳并递归送检——既保留 `sudo …` 中间形态（灰名单 sudo 仍可见，避免 `nohup sudo apt install foo` 被一步剥到底反而丢确认），又让最内层 `rm -rf /usr` 暴露到黑名单。
+- **GAP-4 管道喂给带特权前缀的解释器（P0）**：`curl … | sudo sh` 因管道右侧多了 `sudo` 从 `deny` 降为 `confirm`（管道黑名单整串匹配 `\|\s*(ba)?sh` 不容前缀）。修：管道正则容忍可选 `sudo/doas/runas` 及选项 token 前缀。
+- **GAP-3 重定向覆盖系统文件不再只锚行首（P0）**：`> /etc/passwd` 类黑名单 `^\s*>` 只匹配以 `>` 开头的串，`echo x > /etc/passwd` 判 `allow`。修：重定向正则改为 `>` 出现在任意位置（前行首或分隔符），兼容 `2>`/`>>`，并要求目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
+- **GAP-2 路径变形归一化（P0）**：`rm -rf //usr`、`rm -rf /.//usr` 在 POSIX 下等价 `/usr` 却只判 `confirm`（黑名单目标未折叠冗余分隔符）。修：新增 `normalizeShellPathTargets` 折叠 `//+` 与 `/.` 段，把归一化后的串作为额外送检范围（只加不减），普通绝对路径不受影响。
+- **OVERBLOCK 普通绝对路径的 chmod/chown 不再被当根目录硬拒（3 条）**：黑名单「修改根目录权限/属主」的正则 `\s+\/` 把 `chmod 777 /tmp/x`、`chown -R user /tmp/x` 这类普通绝对路径也当成根 `/`，判 `deny` 且 force 不可越。修：收紧为 `\s+\/(\s|$)` 只匹配目标本身就是根 `/`；非根目标回落灰名单 `confirm`。
+- **测试**：`command-security-check.unit.test.js` 新增 2 组 5 例（特权前缀绝对禁止项 deny / 普通路径不过度拦截 / 重定向任意位置 / 双斜杠与 `/.` 归一化 / 带特权前缀的管道）；矩阵用例与单测双向对齐。既有 `collectCommandScopes` 结构性断言改为 `includes` 以适配逐层剥壳新增的中间范围。
+- **验证**：静态矩阵 **43/43**、agent 单测 **495 例全绿**、根目录全量 **106 文件 / 1618 测试全绿**、eslint 0、`npm run build:silent` 成功。
+- **已知边界**：`runas /user:… cmd`（Windows 提权）只列入灰名单、未做剥壳暴露内层，本批未覆盖；变量间接执行与脚本正文内容仍静态不可判。
+
+## 2026-10-17
+
+### 安全（SEC-08：页内搜索高亮改用 DOM Range，停止重写整段 body.innerHTML）
+> 底账一第二节 SEC-08。用户问“A 里 SEC-08/10/02 值不值得修”后，判定 SEC-08 属“确定该修且改动自包含”（Q1 象限），先行处理。根因：`page-extract.js` 的 plain/regex 两个高亮分支都执行 `document.body.innerHTML = document.body.innerHTML.replace(...)`，把命中片段替换进整段 HTML 串再回写——① 整段 body 从字符串重建，宿主页面全部事件监听、框架虚拟 DOM 关联、选中态随之丢失，SPA 上做一次“搜索+高亮”就可能把页面点坏；② 命中若落在标签/属性内部（如 `alt="cat"`），插入 `<span>` 直接损坏标记。
+
+- **高亮改按文本节点用 Range 包裹**：新增 `page-utils.js:highlightTextMatches(root, regex, maxResults)`——TreeWalker 只遍历文本节点、先快照命中区间再从后往前 `Range.surroundContents` 包进 `<span class="ai-helper-search-highlight">`；绝不触碰元素标签/属性、不重写任何 innerHTML，故监听与结构全保留；跳过 `script/style/title/textarea` 容器。两个分支的 `innerHTML.replace` 均替换为该函数调用。
+- **顺带修掉潜伏的第二处缺陷**：`removeHighlights` 旧只清 `.ai-helper-highlight`，而搜索高亮打的是 `.ai-helper-search-highlight`——类名不匹配导致搜索高亮永不复位、反复搜索会累积；已把该类名并入清理名单（解包 + `normalize` 还原原文）。
+- **修正 regex 模式下高亮与命中对不上**：旧写法查找用原始模式、高亮却把模式转义成字面量，两者不一致；改为复用与查找同一个正则。
+- **守卫**：`test/unit/page-search-highlight.unit.test.js` 11 例——3 条源码接线（旧自赋值模式不得复现、两分支均走 `highlightTextMatches`、`removeHighlights` 名单含新类名）+ 7 条行为不变量（监听存活且节点身份不变、属性不被污染、单文本节点多处命中反向拆分校验、`maxResults` 上限、解包复位、script 内容跳过、可见文本原样保留）+ 1 条负向对照（复刻旧 `innerHTML.replace` 确会重建节点、丢监听、打断属性）。
+- **验证**：根目录全量 **106 文件 / 1618 测试全绿**，eslint 0，`npm run build:silent` 成功；已复核 `dist/assets/content.js` 中该自赋值模式消失。纯内容脚本改动，无需重启 agent。
+
+## 2026-10-17
+
 ### 可靠性（agent_exec 两端超时一致性：进程生命周期权威移交代理端）
 > 收口上一条「待办（另案处理）」：`timeoutMs` 配置、`tool-executor.js` 写死 120s 强杀、有输出自动延长 5 倍三者互不匹配，导致配置名存实亡；且两端 6 个定时器各自为政，WS 一断就解除代理端超时——MV3 Service Worker 被 Chrome 杀掉后进程裸奔。用户「两端要匹配、分析到位」后重做。
 

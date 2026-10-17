@@ -90,10 +90,80 @@ export function getElementSelector(element) {
 }
 
 /**
+ * 在指定根节点的文本节点上高亮正则命中（SEC-08）
+ *
+ * 通过 TreeWalker 只遍历文本节点、用 Range.surroundContents 把命中片段包进
+ * <span class="ai-helper-search-highlight"> 实现，绝不触碰元素标签/属性，也
+ * 不重写任何 innerHTML —— 因此宿主机事件监听、框架虚拟 DOM 关联、选中态全部保留。
+ * 与 removeHighlights 的解包逻辑配对（该类名已纳入其清理范围）。
+ *
+ * @param {Node} root - 高亮范围根（通常 document.body）
+ * @param {RegExp} regex - 匹配模式；内部强制补 g 标志
+ * @param {number} maxResults - 最多高亮条数（防止整页大量包裹）
+ * @returns {number} 实际高亮的匹配数
+ */
+export function highlightTextMatches(root, regex, maxResults = 20) {
+  if (!root || !regex) return 0;
+  const re = regex.global ? regex : new RegExp(regex.source, regex.flags + 'g');
+
+  // 1) 先快照所有命中文本节点及其内部命中区间，避免边遍历边改 DOM 干扰 TreeWalker
+  const targets = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+  let total = 0;
+  let node;
+  while ((node = walker.nextNode()) && total < maxResults) {
+    const parentEl = node.parentNode;
+    if (!parentEl || parentEl.nodeType !== 1) continue;
+    // 跳过不应注入高亮结构的容器（脚本/样式/标题/表单控件的原始值不参与可见文本高亮）
+    const tag = parentEl.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TITLE' || tag === 'TEXTAREA') continue;
+    const text = node.nodeValue;
+    if (!text) continue;
+    const spans = [];
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null && total + spans.length < maxResults) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      spans.push({ start: m.index, end: m.index + m[0].length });
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    if (spans.length > 0) {
+      targets.push({ node, spans });
+      total += spans.length;
+    }
+  }
+
+  // 2) 逐节点从后往前包裹：反向保证前面的命中偏移不被文本节点拆分影响
+  //    （surroundContents 会把命中段移入新 span，原节点仅保留命中段之前的文本）
+  let applied = 0;
+  for (const { node: textNode, spans } of targets) {
+    for (let i = spans.length - 1; i >= 0; i--) {
+      const { start, end } = spans[i];
+      try {
+        const range = document.createRange();
+        range.setStart(textNode, start);
+        range.setEnd(textNode, end);
+        const span = document.createElement('span');
+        span.className = 'ai-helper-search-highlight';
+        range.surroundContents(span);
+        applied++;
+      } catch {
+        // 节点已在上一轮包裹中被拆分/失效，跳过该命中，不影响其余
+      }
+    }
+  }
+  return applied;
+}
+
+/**
  * 移除高亮（辅助函数）
+ *
+ * 同时清理元素高亮（.ai-helper-highlight）与页内搜索高亮（.ai-helper-search-highlight）。
+ * 后者此前不在清理名单里：searchInPage 打的类名是 ai-helper-search-highlight，
+ * 而旧 removeHighlights 只找 ai-helper-highlight → 搜索高亮永不复位、反复搜索会累积。
  */
 export function removeHighlights() {
-  const highlights = document.querySelectorAll('.ai-helper-highlight');
+  const highlights = document.querySelectorAll('.ai-helper-highlight, .ai-helper-search-highlight');
   highlights.forEach(h => {
     const parent = h.parentNode;
     if (parent && parent.insertBefore && parent.removeChild) {

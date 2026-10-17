@@ -296,20 +296,24 @@ const BLACKLIST_PATTERNS = [
   /^\s*mkfs\./,
   /^\s*dd\s+if=.*of=\/dev\//,
   /^\s*>\s*\/dev\/sd/,
-  // 覆盖系统文件
-  /^\s*>\s*\/etc\/passwd/,
-  /^\s*>\s*\/etc\/shadow/,
-  /^\s*>\s*\/etc\/sudoers/,
+  // 覆盖系统文件：重定向可以出现在命令任意位置（`echo x > /etc/passwd`），只锁定行首 `^>` 会漏掉。
+  // 要求 `>` 是个独立重定向符（前行首或分隔符），兼容 `2>` 与 `>>`，
+  // 目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
+  /(?:^|[\s;&|])\d*>>?\s*\/etc\/passwd(\s|$)/,
+  /(?:^|[\s;&|])\d*>>?\s*\/etc\/shadow(\s|$)/,
+  /(?:^|[\s;&|])\d*>>?\s*\/etc\/sudoers(\s|$)/,
   // fork bomb
   /:\(\)\s*{\s*:\s*\|\s*:\s*&\s*};\s*:/,
   // shebang 直接执行（出现在命令开头）
   /^\s*#!/,
-  // 恶意管道执行
-  /(curl|wget|lynx|links)\s+.*\|\s*(ba)?sh/,
-  /git\s+clone\s+.*\|\s*(ba)?sh/,
-  // 修改根目录权限
-  /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\//,
-  /^\s*chown\s+-R\s+\S+\s+\//,
+  // 恶意管道执行（管道右侧解释器允许带 sudo/doas 提权前缀，否则 `curl … | sudo sh` 只降级为 confirm）
+  /(curl|wget|lynx|links)\s+.*\|\s*(?:(?:sudo|doas|runas)\s+)*(?:[^|\s]+\s+)*(ba)?sh\b/,
+  /git\s+clone\s+.*\|\s*(?:(?:sudo|doas|runas)\s+)*(?:[^|\s]+\s+)*(ba)?sh\b/,
+  // 修改根目录权限/属主：只留给「目标本身就是根 /」的绝对禁止动作。
+  // `\/` 必须紧跟空白或结尾才命中，否则 `\s+\/` 会把 `chmod 777 /tmp/x` 这类普通绝对路径
+  // 也当根目录硬拒（force 不可越）；非根目标改权限回落灰名单 confirm。
+  /^\s*chmod\s+(-R\s+)?(0?777|a\+rwx)\s+\/(\s|$)/,
+  /^\s*chown\s+-R\s+\S+\s+\/(\s|$)/,
   // 注：命令替换（$( … ) / 反引号）属「语法可疑」而非「效果危险」，已下调到灰名单，
   //     否则 `a=$(echo hi)`、`ts=$(date +%s)` 这类零风险写法连确认机会都没有就被硬拒
   // Windows 高危破坏性命令（大小写不敏感）
@@ -395,8 +399,10 @@ const CMD_SLASH_FLAG = /\s\/([ck])\s+(.+)$/is;
 const PS_INLINE_FLAG = /\s-(?:command|encodedcommand|enc)\s+(.+)$/i;
 const PS_ENCODED_FLAG = /-(?:encodedcommand|enc)\b/i;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-// 前缀包装器：仅当整段以它们开头时才剥离（否则会把普通命令的参数误当成命令）
-const COMMAND_WRAPPERS = /^(?:nohup|time|timeout|nice|stdbuf|env|exec|command|xargs)\b/i;
+// 前缀包装器：仅当整段以它们开头时才剥离（否则会把普通命令的参数误当成命令）。
+// sudo/doas 是提权包装器：剥掉它们不是免检，而是让后面的 `rm -rf /usr`、`mkfs`、`dd of=/dev/`
+// 这类「绝对禁止项」暴露到段首黑名单正则下——`sudo` 绝不能成为硬拒项的降级通行证。
+const COMMAND_WRAPPERS = /^(?:nohup|time|timeout|nice|stdbuf|env|exec|command|xargs|sudo|doas)\b/i;
 const OPTION_OR_SIZE_TOKEN = /^(?:[-+]|\d+(?:\.\d+)?[a-z%]*$)/i;
 
 /** 去掉包裹引号 */
@@ -417,25 +423,51 @@ function stripEnvAssignments(segment) {
 }
 
 /**
- * 剥离前缀包装器及其环变量/选项/数值参数：
- * `nohup sudo …`、`time sudo …`、`env FOO=1 sudo …`、`timeout 10 -k 5 sudo …`、
- * `nice -n 5 sudo …`、`command sudo …` 都得让后面的 sudo 暴露在段首。
+ * 逐层剥前缀包装器及其环变量/选项/数值参数，返回每一层剥壳后的中间形态：
+ * `nohup sudo …`、`env FOO=1 sudo …`、`timeout 10 -k 5 sudo …` 都得让后面的命令逐层暴露在段首。
+ * 保留中间形态而非一步剥到底，是因为 sudo/doas 同时是灰名单条目：
+ * `nohup sudo apt install foo` 必须既产出 `sudo apt install foo`（灰名单 sudo 仍可见），
+ * 又产出 `apt install foo`；而 `sudo rm -rf /usr` 要产出 `rm -rf /usr`（黑名单绝对禁止项）。
  * @param {string} segment
- * @returns {string|null} 剥不出新形式时返回 null
+ * @returns {string[]} 每剥一层得到的中间形态（可能多个），段首不是包装器时为空数组
  */
-function stripCommandWrappers(segment) {
+function peelCommandWrappers(segment) {
   const tokens = segment.trim().split(/\s+/);
+  const out = [];
   // 段首不是包装器就不动：否则 `ls -la` 之类会被剥成光杆参数
-  if (tokens.length < 2 || !COMMAND_WRAPPERS.test(tokens[0])) return null;
-  let i = 1;
-  while (
-    i < tokens.length &&
-    (COMMAND_WRAPPERS.test(tokens[i]) || ENV_ASSIGNMENT.test(tokens[i]) || OPTION_OR_SIZE_TOKEN.test(tokens[i]))
-  ) {
-    i++;
+  while (tokens.length >= 2 && COMMAND_WRAPPERS.test(tokens[0])) {
+    tokens.shift(); // 去掉当前这一层包装器
+    // 连同它自己的环变量/选项/数值参数一起跳过（env FOO=1、timeout 10 -k 5、sudo -S）
+    while (tokens.length && (ENV_ASSIGNMENT.test(tokens[0]) || OPTION_OR_SIZE_TOKEN.test(tokens[0]))) {
+      tokens.shift();
+    }
+    const rest = tokens.join(' ');
+    if (rest) out.push(rest);
   }
-  const rest = tokens.slice(i).join(' ');
-  return rest && rest !== segment ? rest : null;
+  return out;
+}
+
+/**
+ * 折叠 shell 绝对路径里的冗余分隔符与 `/.` 段：`//usr`、`///usr`、`/.//usr`
+ * 在 POSIX 下与 `/usr` 指向同一目录，不能靠换个写法绕过系统目录黑名单。
+ * 只处理 `/` 开头的路径 token，引号内容本就不进这一层，不会误伤 URL 里的 `://`。
+ * @param {string} segment
+ * @returns {string} 归一化后的串（与入参相同表示无可折叠）
+ */
+function normalizeShellPathTargets(segment) {
+  return segment
+    .split(/\s+/)
+    .map((tok) => {
+      if (!tok.startsWith('/')) return tok;
+      let p = tok;
+      let prev;
+      do {
+        prev = p;
+        p = p.replace(/\/\/+/g, '/').replace(/\/\.(?=\/|$)/g, '');
+      } while (p !== prev);
+      return p;
+    })
+    .join(' ');
 }
 
 /**
@@ -620,13 +652,15 @@ function collectCommandScopes(command, depth = 3, out = []) {
     const normalized = stripEnvAssignments(seg);
     if (normalized && !out.includes(normalized)) out.push(normalized);
 
-    // `nohup sudo …`、`env FOO=1 sudo …`、`timeout 10 sudo …`：
-    // 包装器只是前缀，不能把敏感命令藏到段首正则看不见的后面
-    const unwrapped = stripCommandWrappers(normalized);
-    if (unwrapped) {
-      const inner = stripEnvAssignments(unwrapped);
-      if (inner && !out.includes(inner)) out.push(inner);
+    // `nohup sudo …`、`env FOO=1 sudo …`、`timeout 10 sudo …`、`sudo rm -rf /usr`：
+    // 包装器/提权前缀只是外层，逐层剥壳后递归送检，不得把敏感命令藏到段首正则看不见的后面
+    for (const peeled of peelCommandWrappers(normalized)) {
+      collectCommandScopes(peeled, depth - 1, out);
     }
+
+    // 路径变形归一化：`rm -rf //usr`、`rm -rf /.//usr` 等价的系统目录不能因写法不同而降级为 confirm
+    const pathScope = normalizeShellPathTargets(normalized);
+    if (pathScope && !out.includes(pathScope)) out.push(pathScope);
 
     // 解释器内联载荷：POSIX `-c/-e`、cmd `/c /k`、PowerShell `-Command/-EncodedCommand`
     for (const payload of extractInlinePayloads(seg)) {

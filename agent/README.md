@@ -135,6 +135,8 @@ All file operations are restricted to directories listed in the `allowedPaths` w
 
 > Command substitution (`$(…)`, backticks) is treated as *suspicious syntax*, not a *dangerous effect*: it sits in the greylist (confirm), not the blacklist, and read-only heads such as `echo`/`pwd`/`cd` are exempted so `pwd; echo $(date)` runs directly. Commands **inside** a substitution — including one nested in quotes, e.g. `bash -c "echo \`rm -rf /\`"` — are still checked against the black/grey lists.
 
+> Anti-bypass: privilege prefixes (`sudo` / `doas`) are peeled before matching, so a hard-forbidden action stays `deny` even when wrapped — `sudo rm -rf /usr`, `sudo dd of=/dev/sda`, `sudo sh -c "rm -rf /usr"`, `curl … | sudo sh`. Redirects that overwrite system files match anywhere in the line (`echo x > /etc/passwd`), path spellings are normalized (`rm -rf //usr` ≡ `/usr`), and the root-permission blacklist targets only `/` itself (plain absolute paths like `chmod 777 /tmp/x` fall back to greylist confirm, not a hard block).
+
 ### Authentication
 
 Pairing is completed by entering the 6-digit pairing code displayed in the terminal into the extension. The pairing code rotates every 30 seconds. After successful pairing, an HMAC token is used for subsequent request authentication, stored in `~/.ai-helper-agent/pairings.json`.
