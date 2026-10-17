@@ -47,7 +47,7 @@ export const KNOWN_SAFE_TOOLS = new Set([
   // 媒体/系统信息（本地生成）
   'notify', 'qrcode', 'download_file', 'browser_info',
   // 协作（用户输入/模型自产）
-  'plan_task', 'clarify_question', 'preview_ui', 'dispatch_task',
+  'plan_task', 'clarify_question', 'preview_ui', 'dispatch_task', 'take_note',
   // Agent 管理（操作状态）
   'agent_trash', 'agent_skill', 'manage_agent',
   // RAG 管理（操作状态/用户域元数据）

@@ -4,6 +4,19 @@
 
 ## 2026-10-17
 
+### Agent 能力（新增 `take_note` scratchpad 工具：让模型主动落中间推理便签并在上下文压缩中存活）
+> 底账二长线项。此前分析指出：Agent 缺“记笔记”的显式通道（对标 Claude Code 的 `TodoWrite`、Manus 的 `todo.md`），`buildPlanAnchorMessage` 只覆盖了“有 `plan_task` 时的进度锚点”，普通长任务中间推理状态仍靠“历史摘要 + 卸载文件”。本次新增一个极轻量的 `take_note` 工具，让模型在无 `plan_task` 的普通长任务中也能主动落便签。
+
+- **独立顶层工具**：`tools/agent-tools.js` 的 `AGENT_TOOLS` 新增 `take_note`（`content` 必填 + 可选 `label`），经 `constants.js` 单一数据源自动流入 `RAW_TOOLS`/`BUILTIN_TOOLS`/UI；`tool-executor.js` 新增 `executeTakeNote`（只做入参校验 + trim + 单条 500 字符截断，不持有 loop 状态）并登记进 `TOOL_HANDLERS`。因 `take_note` 经拦截改写 loop 作用域状态，设 `parallelizable: false`（对齐 `plan_task`）：否则同内容在 TTL 内命中结果缓存被早返回、先于拦截而静默丢便签。
+- **安全分类**：`take_note` 结果是模型自产文本，显式归入 `untrusted-content.js` 的 `KNOWN_SAFE_TOOLS`（与 `plan_task`/`dispatch_task` 同组）；穷举分类守卫（新增工具必须显式二选一）把关。
+- **存活机制（照抄计划锚点同构）**：`react-loop.js` 新增作用域级 `let notesState`；便签不写入消息历史正文，而是由 `buildNotesAnchorMessage` 在上下文压力裁剪块之后**瞬态回注**（压缩裁不掉）；take_note 结果被拦截并入 `notesState`（FIFO ≤50、锚点从最新往旧逐条累加至 800 token 预算（上限 20 条、保尾弃头））；checkpoint 落盘与恢复回灌白名单同步加 `notesState`。
+- **子任务语义（隔离 + 只读继承）**：`notesState` 是每个 `reactLoopImpl` 作用域的独立变量（含子任务递归），父/子/并行子任务各持一份 → **结构性隔离、并行零竞态**；子任务经 `Inherited Context` **只读**拿到父笔记（最近 10 条），自己的新笔记**不上并**回父（notes=作用域内草稿、result=跨作用域契约）；子任务不落 checkpoint（沿用现成 subtask-gate）。
+- **默认启用边界**：新装/从未保存过配置的用户自动启用；已有自定义 `enabledTools` 的用户不自动 backfill（尊重显式禁用），可在工具 UI 手动勾选。
+- **守卫**：`test/unit/take-note-scratchpad.unit.test.js` 20 例（注册接线/安全分类/handler 行为/锚点与回灌源不变量/子任务隔离）+ 负向对照（未分类假工具被同一守卫判红、笔记锚点块不含 `!isSubtask` 且与计划锚点门控形成对照）。
+- **验证**：根目录全量 **107 文件 / 1638 测试全绿**，eslint 0，`npm run build:silent` 成功；已复核 `dist/assets/background.js` 含 `take_note`。纯扩展侧逻辑改动，无需重启 agent。
+
+## 2026-10-17
+
 ### 安全（命令分级防绕过补漏：特权前缀 / 重定向 / 路径变形 / 过度拦截）
 > 防绕过 / 防误杀 / 档位语义 / 一致性 四维静态矩阵（43 例）实测 29/43，暴露 11 个绕过 + 3 个过度拦截。逐条先在 `command-security-check.unit.test.js` 以正确期望落为回归（先红后绿），再修复转正。
 

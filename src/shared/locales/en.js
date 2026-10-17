@@ -639,6 +639,7 @@ export default {
     search_chats: 'Search past conversation history',
     preview_ui: 'Preview or retrieve a UI prototype',
     dispatch_task: 'Dispatch task to a sub-agent',
+    take_note: 'Record a working note, survives context compaction',
     interact_element: 'Interact with page element (locate via ref/text/selector; click/hover/type)',
     scroll_to: 'Scroll page to target (element/coordinates/text)',
     wait_element: 'Wait for element to appear/disappear/change visibility',

@@ -141,6 +141,12 @@ function buildConfirmKey(correlationId, toolName) {
 // 子任务派生会话后缀：`${parent}_subtask_${index}`（见 executeSubtasks）
 const SUBTASK_SESSION_SUFFIX = /_subtask_\d+$/;
 
+// take_note scratchpad 上限：单条 500 字符在 handler 侧截断；此处管存储/锚点/继承的规模与越界处理
+const NOTES_MAX_STORED = 50;      // notesState 最多保留条数，超出 FIFO 丢最旧
+const NOTES_MAX_ANCHOR = 20;      // 锚点每轮最多回注最近多少条
+const NOTES_ANCHOR_TOKENS = 800;  // 锚点整体 token 兜底预算
+const NOTES_INHERIT_MAX = 10;     // 只读下发给子任务的父笔记最近条数
+
 /**
  * 逐层剥离派生后缀，得到从自身到根任务的会话祖先链。
  * @param {string|null} sessionId
@@ -723,7 +729,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
     checkpoint.executionLog || [],
     resumeCallId || checkpoint.callId || null,  // 优先使用新的 resumeCallId
-    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null }  // 回灌计划锚点与子任务完成进度，恢复后防重放
+    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null, notesState: Array.isArray(checkpoint.notesState) ? checkpoint.notesState : [] }  // 回灌计划锚点、子任务完成进度与 scratchpad 便签，恢复后防重放/便签存活
   );
 
   // 恢复成功后清理 checkpoint
@@ -1035,6 +1041,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   // 中断恢复后 executeSubtasks 据此跳过已完成子任务，防止写操作子任务被二次执行（防重放）。
   // 恢复时从 checkpoint 回灌；键经 JSON 序列化恒为字符串，查询处用 String(subtask.id) 归一化
   const subtaskProgress = new Map(Object.entries(resumeState?.subtaskProgress || {}));
+  // 模型自主 scratchpad：take_note 落入的中间推理便签，瞬态锚点每轮回注（压缩存活），随主任务 checkpoint 持久化。
+  // 每个 reactLoopImpl 作用域（含子任务递归）各持一份 → 天然隔离；子任务经 Inherited Context 只读见父笔记。
+  // 恢复时从 resumeState 回灌 checkpoint 中的便签
+  let notesState = Array.isArray(resumeState?.notesState) ? resumeState.notesState : [];
 
   /**
    * 构建任务进度锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
@@ -1049,6 +1059,31 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     return {
       role: 'user',
       content: `[System Notice] Current task plan progress (system-maintained state; if earlier context was compacted, trust this as the source of truth. Strategy: ${taskState.strategy}, ${doneCount}/${taskState.subtasks.length} completed):\nOverall task: ${desc}\n${lines}\nDo not repeat steps already completed; continue with the pending ones.`
+    };
+  };
+
+  /**
+   * 构建工作便签锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
+   * 与计划锚点同构，但每个作用域（含子任务）都回注自己那份 notesState，故不受 !isSubtask 门控。
+   */
+  const buildNotesAnchorMessage = () => {
+    if (!Array.isArray(notesState) || notesState.length === 0) return null;
+    const header = '[System Notice] Your working notes (scratchpad, system-maintained; if earlier context was compacted, trust these as recorded findings — do NOT re-derive or re-note what is already here, and do not repeat steps they cover):';
+    // 从最新往旧逐条累加，直到超出 token 预算为止（保尾弃头，贴合 scratchpad“最新洞见必可见”语义，
+    // 避免整体截断把刚记的新便签腰斩）；条数上限 NOTES_MAX_ANCHOR 兜底，且恒至少保留最新 1 条
+    const picked = [];
+    for (let i = notesState.length - 1; i >= 0 && picked.length < NOTES_MAX_ANCHOR; i--) {
+      const n = notesState[i];
+      const line = `${n.index != null ? n.index + '. ' : ''}${n.label ? `[${n.label}] ` : ''}${String(n.content || '')}`;
+      const candidate = [line, ...picked].join('\n');
+      if (picked.length > 0 && estimateTokens(header + '\n' + candidate) > NOTES_ANCHOR_TOKENS) break;
+      picked.unshift(line);
+    }
+    const omitted = notesState.length - picked.length;
+    const hint = omitted > 0 ? `\n(${omitted} older note(s) omitted to stay within budget.)` : '';
+    return {
+      role: 'user',
+      content: header + '\n' + picked.join('\n') + hint
     };
   };
 
@@ -1096,6 +1131,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       globalIteration: { value: globalIteration?.value || iteration },
       subtaskPlan,
       taskState,
+      notesState,
       subtaskProgress: Object.fromEntries(subtaskProgress),
       currentSubtaskIndex,
       totalReflectionRounds,
@@ -1354,6 +1390,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       if (taskState && !isSubtask) {
         const anchorMsg = buildPlanAnchorMessage();
         if (anchorMsg) filteredMessages = [...filteredMessages, anchorMsg];
+      }
+      // scratchpad 便签锚点：同样在裁剪块之后瞬态回注（压缩存活）；不加 !isSubtask 门控——
+      // 每个作用域（父/子/并行子任务）都回注自己那份 notesState
+      if (notesState.length > 0) {
+        const noteAnchor = buildNotesAnchorMessage();
+        if (noteAnchor) filteredMessages = [...filteredMessages, noteAnchor];
       }
       const convergeAt = Math.ceil(maxIterations * 0.8);
       if (iteration >= convergeAt && (iteration - convergeAt) % 10 === 0) {
@@ -1921,6 +1963,17 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
               resultStr: toolResultStr
             });
             
+            // scratchpad 便签回灌 loop 状态：不新增独立 currentMessages 推送（走下方通用 role:'tool' 流程），
+            // 只把笔记并入本作用域 notesState，并把回给模型的 toolResultStr 改写为带序号与总数的确认。
+            // 便签不进入消息历史正文，靠 buildNotesAnchorMessage 每轮瞬态回注存活（压缩裁剪不掉）。
+            if (toolName === 'take_note' && toolResult && toolResult.success && toolResult.data) {
+              const lastIdx = notesState.length > 0 ? (notesState[notesState.length - 1].index ?? notesState.length - 1) : -1;
+              const noteIndex = lastIdx + 1;
+              notesState.push({ index: noteIndex, content: toolResult.data.content, label: toolResult.data.label || '', at: new Date().toISOString() });
+              if (notesState.length > NOTES_MAX_STORED) notesState.splice(0, notesState.length - NOTES_MAX_STORED); // FIFO 丢最旧
+              toolResultStr = JSON.stringify({ success: true, message: `Note #${noteIndex} saved. Scratchpad now holds ${notesState.length} note(s).` });
+            }
+
             // 处理任务规划工具的结果，提取子任务列表
             if (toolName === 'plan_task' && toolResult && toolResult.success && toolResult.data) {
               subtaskPlan = toolResult.data;
@@ -2011,7 +2064,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,
-                { remainingIterations: Math.max(1, maxIterations - iteration), getRemainingTimeMs: () => getRemainingTime(), historySummary: summarizedAccumulator || '' },
+                { remainingIterations: Math.max(1, maxIterations - iteration), getRemainingTimeMs: () => getRemainingTime(), historySummary: summarizedAccumulator || '', notes: notesState },
                 {
                   progress: subtaskProgress,
                   onDone: async (r) => {
@@ -2684,6 +2737,13 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         const inheritedParts = [];
         if (parentBudget?.historySummary) {
           inheritedParts.push(`### Parent conversation history summary\n${truncateByTokens(parentBudget.historySummary, 1000)}`);
+        }
+        // 只读继承父 scratchpad 笔记：让子任务站在父已记录的发现/决策上工作；
+        // 子任务自己的新笔记不回并父（notes=作用域内草稿，result=跨作用域契约）
+        if (Array.isArray(parentBudget?.notes) && parentBudget.notes.length > 0) {
+          const noteLines = parentBudget.notes.slice(-NOTES_INHERIT_MAX)
+            .map(n => `- ${n.label ? `[${n.label}] ` : ''}${truncateByTokens(String(n.content || ''), 200)}`);
+          inheritedParts.push(`### Parent working notes (read-only context)\n${noteLines.join('\n')}`);
         }
         if (strategy !== 'parallel') {
           const priorDone = results.filter(r => r && r.success);

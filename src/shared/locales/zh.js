@@ -639,6 +639,7 @@ export default {
     search_chats: '搜索历史对话记录',
     preview_ui: '预览或获取 UI 原型',
     dispatch_task: '向子代理派发任务',
+    take_note: '记录工作便签，跨上下文压缩保留',
     interact_element: '交互页面元素（ref/文本/选择器定位；支持 click/hover/type 输入）',
     scroll_to: '滚动页面到目标位置（元素/坐标/文本）',
     wait_element: '等待元素出现/消失/可见性变化',

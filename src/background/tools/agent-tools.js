@@ -160,4 +160,24 @@ export const AGENT_TOOLS = [
       }
     }
   },
+  {
+    id: 'take_note',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'take_note',
+      description: 'Record a short working note to your own scratchpad (decision, finding, constraint, blocker) so it survives context compaction. Use proactively during long multi-step tasks that have NOT been decomposed with plan_task. Notes are private to this task scope; put durable conclusions meant for other steps into the final answer instead.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'The note text (concise, one idea).' },
+          label: { type: 'string', description: 'Optional short tag, e.g. decision / finding / constraint / blocker.' }
+        },
+        required: ['content']
+      }
+    }
+  },
 ];

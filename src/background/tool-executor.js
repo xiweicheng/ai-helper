@@ -2070,6 +2070,7 @@ const TOOL_HANDLERS = {
   download_file: executeDownloadFile,
   manage_cookies: executeManageCookies,
   plan_task: executePlanTask,
+  take_note: executeTakeNote,
   clear_data: executeClearPageData,
   search_chats: executeSearchConversationMemory,
   preview_ui: executePreviewUiPrototype,
@@ -3596,6 +3597,34 @@ export function executePlanTask(args, toolCallId) {
     success: true,
     data: planSummary,
     message: formatResult(),
+    tool_call_id: toolCallId
+  });
+}
+
+// take_note 便签单条字符上限（对齐长期记忆 Tier1 单条 500 字符先例）
+const TAKE_NOTE_MAX_CHARS = 500;
+
+/**
+ * 记录一条工作便签（scratchpad）。handler 只做入参校验与规整（trim + 长度截断），
+ * 不持有 loop 级 notesState——笔记的实际存储/锚点回注/checkpoint 持久化均由 react-loop 拦截本结果完成。
+ * 空内容返回 success:false，不入便签。
+ */
+export function executeTakeNote(args, toolCallId) {
+  const rawContent = typeof args?.content === 'string' ? args.content.trim() : '';
+  if (!rawContent) {
+    return Promise.resolve({
+      success: false,
+      error: 'note content is empty',
+      tool_call_id: toolCallId
+    });
+  }
+  const truncated = rawContent.length > TAKE_NOTE_MAX_CHARS;
+  const content = truncated ? rawContent.slice(0, TAKE_NOTE_MAX_CHARS) : rawContent;
+  const label = typeof args?.label === 'string' ? args.label.trim().slice(0, 40) : '';
+  return Promise.resolve({
+    success: true,
+    data: { content, label },
+    message: truncated ? 'note saved (truncated)' : 'note saved',
     tool_call_id: toolCallId
   });
 }
