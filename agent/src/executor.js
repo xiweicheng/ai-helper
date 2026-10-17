@@ -162,6 +162,29 @@ function generateExecId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
+// ===== 超时策略（决策权威在 Agent 端：不受插件端 SW 生命周期影响） =====
+export const MAX_TIMEOUT_EXTENSIONS = 5;
+export const TOTAL_BUDGET_CAP_MS = 600000; // 与插件端 toolTimeout 上限对齐
+
+/**
+ * 命令总超时到期时的裁决纯函数（无副作用，便于单测）
+ * @param {{ outputInPeriod: boolean, extensions: number, elapsedMs: number, baseTimeout: number }} state
+ *   outputInPeriod: 本预算期内是否收到过 stdout/stderr 输出（输出流 = 心跳）
+ * @param {number} [capMs] 总预算封顶
+ * @param {number} [maxExtensions] 最大延长次数
+ * @returns {{ action: 'extend'|'kill', extensions: number, nextTimeoutMs?: number }}
+ */
+export function decideTimeoutAction(state, capMs = TOTAL_BUDGET_CAP_MS, maxExtensions = MAX_TIMEOUT_EXTENSIONS) {
+  const { outputInPeriod, extensions, elapsedMs, baseTimeout } = state;
+  if (extensions >= maxExtensions) return { action: 'kill', extensions };
+  // 本预算期完全无输出 → 视为挂起/静默失败，到点即杀，不再放大等待窗口
+  if (!outputInPeriod) return { action: 'kill', extensions };
+  const currentBudget = Math.min(baseTimeout * (1 + extensions), capMs);
+  const nextBudget = Math.min(baseTimeout * (2 + extensions), capMs);
+  if (nextBudget <= currentBudget) return { action: 'kill', extensions }; // 已触及总封顶
+  return { action: 'extend', extensions: extensions + 1, nextTimeoutMs: nextBudget - elapsedMs };
+}
+
 /**
  * 执行命令并通过 WebSocket 流式输出
  * @param {string} command - 完整命令字符串
