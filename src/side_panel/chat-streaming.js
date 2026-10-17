@@ -2066,13 +2066,11 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   
   // 添加代码复制按钮、Mermaid 渲染等后处理
   addCodeCopyButtons();
-  // Mermaid 渲染为异步操作，渲染完成后自动更新 htmlContent
-  renderMessageMermaid(element).then(() => {
-    element.dataset.htmlContent = element.outerHTML;
-  });
-  
-  // 先保存当前 HTML 到 dataset（Mermaid 渲染完成后会更新）
-  element.dataset.htmlContent = element.outerHTML;
+  // Mermaid 异步渲染。持久化 HTML 由消费端（chat-manager 的
+  // `dataset.htmlContent || outerHTML`）在捕获时直接读活 DOM 的 outerHTML，
+  // 无需在此把整段 outerHTML 回写 dataset —— 旧写法既会让活 DOM 自我嵌套膨胀，
+  // 且 renderMessageMermaid().then() 里那次异步写对同步捕获从不生效。详见 PERF-11。
+  renderMessageMermaid(element);
 
   // AI 回答完成后：若用户未在流式过程中主动上滚，将该消息顶部滚入视图，方便从顶部阅读
   requestAnimationFrame(() => {
