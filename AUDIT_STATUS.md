@@ -13,7 +13,7 @@
 
 | 判定 | 数量 | 条目 |
 |---|---|---|
-| ✅ 已修复 / 已完成 | 17 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17）、**P1-3**（记忆来源分级 + Tier1 常驻门控 + 写侧防御，2026-10-17）、**SEC-08**（页内搜索高亮改 DOM Range，不再重写 `body.innerHTML`，含 `removeHighlights` 类名不匹配的潜伏缺陷，2026-10-17） |
+| ✅ 已修复 / 已完成 | 18 | SEC-02（命令确认接真实弹窗，含延伸的 4 类名单绕过）、SEC-14、底账二的 P0-1 与 P1-1（同 SEC-02，计两项）、SEC-03 的"日志打印请求头"半条、**SEC-03 的拦截主体**（`fetch_url` 内网/scheme 闸门 + 设置页总闸与白名单）、**PERF-01 / NEW-01**（内容脚本注入清单，1.64 MB → 61 KB）、**NEW-02**（dist 已重建）、**SEC-13**（sourcemap）、**PERF-04**（滚动防抖）、**PERF-05 / NEW-03**（docx 移出首屏）、**PERF-06 / NEW-04**（预览监听配对作废）、**NEW-06**（入口改名后 chunk 间引用悬空，本轮新发现并修）、**NEW-07**（导出回调转 async 后 `currentTarget` 复位，真机点验撞出并修）、**SEC-11**（审计日志渲染转义，2026-10-17）、**P1-3**（记忆来源分级 + Tier1 常驻门控 + 写侧防御，2026-10-17）、**SEC-08**（页内搜索高亮改 DOM Range，不再重写 `body.innerHTML`，含 `removeHighlights` 类名不匹配的潜伏缺陷，2026-10-17）、**take_note**（Agent 自主 scratchpad 工具，2026-10-17） |
 | 🔴 成立，值得排期 | 6 | SEC-01、SEC-03（残余：`manage_tab` 免确认打开内网页，带用户 cookie）、SEC-07、SEC-10、SEC-12、PERF-02 |
 | 🟡 成立，但等级应下调 | 5 | SEC-05（高→低）、SEC-06（高→中，见第二节：原降级理由只对"网页发起"成立）、SEC-04（高→策略取舍）、PERF-03（高→中低）、PERF-09（中→低） |
 | 🔵 报告原判即"可接受"，我此前误列为待修 | 2 | PERF-12（报告原文："均有上限/清理，属可接受范围"）、SEC-09（报告原等级即"中·纵深防御"） |
@@ -81,7 +81,8 @@
 | P2 | 工具定义 token 缓存 | 🔴 未做 | `react-loop.js:1321-1324` 每次 API 调用前重新 `JSON.stringify(apiTools…)` + 估算 |
 | P2 | dispatch 竞态 | ❓ 指代不明 | 代码中无法定位该结论对应实现点；`executeDispatchSubAgent` 在 `tool-executor.js:2065`（别名映射 `:1119`）。今日修复的 `pendingConfirmations`/放行子树清理覆盖了确认通道那一块 |
 | P2 | `timingSafeEqual` | 🔴 未做 | `agent/src/auth.js:117-125` `verifyToken` 仍 `pairing.token === token` 普通比较（收益在本场景极低——威胁是局域网时序探测） |
-| 长线 | 完成度校验器 / `take_note` scratchpad / 子任务 token 预算 | 🔴 全未开始 | `verifyCompletion`、`completionVerifier`、`take_note`、`scratchpad` 在 `src/background/` + `src/shared/` 全部 0 命中；`tool-executor.js` 无 subtask budget 实现 |
+| 长线 | `take_note` scratchpad | ✅ **已落地（2026-10-17）** | 独立顶层工具：`tools/agent-tools.js` `AGENT_TOOLS` 新增 `take_note`（`content` 必填 + 可选 `label`），经 `constants.js` 自动流入 `RAW_TOOLS`/`BUILTIN_TOOLS`/UI；显式分类进 `untrusted-content.js:50` `KNOWN_SAFE_TOOLS`（模型自产文本、穷举守卫把关）；`parallelizable: false`（改写 loop 状态，不得进结果缓存——否则同 args 在 TTL 内命中缓存被早返回、先于拦截而静默丢便签，对齐 `plan_task`）；`tool-executor.js` `executeTakeNote`（仅校验+trim+单条 500 字符截断，不持状态）+ `TOOL_HANDLERS`。存活机制照抄计划锚点同构：`react-loop.js` 新增作用域级 `let notesState`（每 `reactLoopImpl` 含子任务递归各持一份 → 天然隔离、并行无竞态）+ `buildNotesAnchorMessage` 在裁剪块之后瞬态回注（压缩存活，**不加 `!isSubtask` 门控**）+ take_note 结果拦截并入 `notesState`（FIFO ≤50、锚点从最新往旧逐条累加至 800 token 预算、上限 20 条、保尾弃头）+ checkpoint 落盘/回灌白名单同步加 `notesState`。子任务语义：`parentBudget` 携带 `notes`，`executeSingleSubtask` 的 `Inherited Context` **只读**拼接父笔记（最近 10 条），子任务新笔记不上并（notes=作用域内草稿、result=跨作用域契约）。守卫：`test/unit/take-note-scratchpad.unit.test.js` 20 例（注册/分类/handler 行为/锚点与回灌源不变量/子任务隔离）+ 负向对照（未分类假工具判红、锚点块不含 `!isSubtask`）；全量 vitest 107/1638 全绿、eslint 0、`build:silent` 成功。纯扩展侧改动，无需重启 agent |
+| 长线 | 完成度校验器 / 子任务 token 预算 | 🔴 未做 | `verifyCompletion`、`completionVerifier` 在 `src/background/` + `src/shared/` 全部 0 命中；`tool-executor.js` 无 subtask budget 实现 |
 
 ---
 
