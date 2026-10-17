@@ -137,7 +137,7 @@ describe('PERF-11 接线：嵌套写已移除、消费端兜底仍在、承重 d
   });
 
   test('chat-manager.js 持久化捕获仍保留 `|| outerHTML` 兜底（否则删写会丢历史恢复）', () => {
-    expect(CHAT_MANAGER_SRC).toMatch(/dataset\.htmlContent \|\| streamingEl\.outerHTML/);
+    expect(CHAT_MANAGER_SRC).toMatch(/dataset\.htmlContent\s*\|\|\s*\w+\.outerHTML/);
   });
 
   test('chat-streaming.js 仍保留 rawContent / textContent_ / executionLog 的 dataset 写（承重，不得删）', () => {
