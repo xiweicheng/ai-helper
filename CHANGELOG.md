@@ -9,12 +9,13 @@
 
 - **GAP-1 特权前缀不再给绝对禁止项发降级通行证（P0，9 条）**：`collectCommandScopes` 的 `COMMAND_WRAPPERS` 原本只含 `nohup/time/env/…`，不含 `sudo/doas`——于是 `sudo rm -rf /usr`、`sudo mkfs`、`sudo dd of=/dev/sda`、`sudo sh -c "rm -rf /usr"` 因段首黑名单正则看不见被 `sudo` 挡住的破坏命令，降级为 `confirm`（点一下确认或关确认开关即执行）。修：把 `sudo/doas` 纳入剥壳，且 `stripCommandWrappers` 改为 `peelCommandWrappers` **逐层**剥壳并递归送检——既保留 `sudo …` 中间形态（灰名单 sudo 仍可见，避免 `nohup sudo apt install foo` 被一步剥到底反而丢确认），又让最内层 `rm -rf /usr` 暴露到黑名单。
 - **GAP-4 管道喂给带特权前缀的解释器（P0）**：`curl … | sudo sh` 因管道右侧多了 `sudo` 从 `deny` 降为 `confirm`（管道黑名单整串匹配 `\|\s*(ba)?sh` 不容前缀）。修：管道正则容忍可选 `sudo/doas/runas` 及选项 token 前缀。
-- **GAP-3 重定向覆盖系统文件不再只锚行首（P0）**：`> /etc/passwd` 类黑名单 `^\s*>` 只匹配以 `>` 开头的串，`echo x > /etc/passwd` 判 `allow`。修：重定向正则改为 `>` 出现在任意位置（前行首或分隔符），兼容 `2>`/`>>`，并要求目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
-- **GAP-2 路径变形归一化（P0）**：`rm -rf //usr`、`rm -rf /.//usr` 在 POSIX 下等价 `/usr` 却只判 `confirm`（黑名单目标未折叠冗余分隔符）。修：新增 `normalizeShellPathTargets` 折叠 `//+` 与 `/.` 段，把归一化后的串作为额外送检范围（只加不减），普通绝对路径不受影响。
+- **GAP-3 重定向覆盖系统文件不再只锚行首（P0）**：`> /etc/passwd` 类黑名单 `^\s*>` 只匹配以 `>` 开头的串，`echo x > /etc/passwd` 判 `allow`。修：重定向正则改为 `>` 出现在任意位置（前行首或分隔符），兼容 `2>`/`>>`/`>&`/`&>` 多种形式，并要求目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
+- **GAP-2 路径变形归一化（P0）**：`rm -rf //usr`、`rm -rf /.//usr` 在 POSIX 下等价 `/usr` 却只判 `confirm`（黑名单目标未折叠冗余分隔符）。修：新增 `normalizeShellPathTargets` 折叠 `//+`、`/.` 段、解析 `/X/..` 穿越（`rm -rf /tmp/../usr`、`/../x` 等价 `/x`），并对 `key=value` 形态（`dd of=//dev/sda`）只归一化以 `/` 开头的值；归一化后的串作为额外送检范围（只加不减），普通绝对路径不受影响。
 - **OVERBLOCK 普通绝对路径的 chmod/chown 不再被当根目录硬拒（3 条）**：黑名单「修改根目录权限/属主」的正则 `\s+\/` 把 `chmod 777 /tmp/x`、`chown -R user /tmp/x` 这类普通绝对路径也当成根 `/`，判 `deny` 且 force 不可越。修：收紧为 `\s+\/(\s|$)` 只匹配目标本身就是根 `/`；非根目标回落灰名单 `confirm`。
-- **测试**：`command-security-check.unit.test.js` 新增 2 组 5 例（特权前缀绝对禁止项 deny / 普通路径不过度拦截 / 重定向任意位置 / 双斜杠与 `/.` 归一化 / 带特权前缀的管道）；矩阵用例与单测双向对齐。既有 `collectCommandScopes` 结构性断言改为 `includes` 以适配逐层剥壳新增的中间范围。
-- **验证**：静态矩阵 **43/43**、agent 单测 **495 例全绿**、根目录全量 **106 文件 / 1618 测试全绿**、eslint 0、`npm run build:silent` 成功。
+- **测试**：`command-security-check.unit.test.js` 新增 2 组 8 例（特权前缀绝对禁止项 deny / 普通路径不过度拦截 / 重定向任意位置与 `>&`/`&>` 变体 / 双斜杠、`/.`、`..` 穿越与 `dd of=//dev` 归一化 / 带特权前缀的管道）；矩阵用例与单测双向对齐。既有 `collectCommandScopes` 结构性断言改为 `includes` 以适配逐层剥壳新增的中间范围。
+- **验证**：静态矩阵 **43/43**、agent 单测 **498 例全绿**、根目录全量 **106 文件 / 1618 测试全绿**、eslint 0、`npm run build:silent` 成功。
 - **已知边界**：`runas /user:… cmd`（Windows 提权）只列入灰名单、未做剥壳暴露内层，本批未覆盖；变量间接执行与脚本正文内容仍静态不可判。
+- **待决风险（未改，需拍板档位与摩擦权衡）**：`echo x | tee /etc/passwd`（`tee` 写系统文件，属“拦语法不拦效果”）、`echo … | base64 -d | sh`（非 curl/wget 的通用解码器管道喂解释器）仍为 allow。要收口需新增类别（`tee` 目标或管道右侧泛化解释器），会引入新确认摩擦，留待确认。
 
 ## 2026-10-17
 

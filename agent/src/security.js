@@ -297,11 +297,10 @@ const BLACKLIST_PATTERNS = [
   /^\s*dd\s+if=.*of=\/dev\//,
   /^\s*>\s*\/dev\/sd/,
   // 覆盖系统文件：重定向可以出现在命令任意位置（`echo x > /etc/passwd`），只锁定行首 `^>` 会漏掉。
-  // 要求 `>` 是个独立重定向符（前行首或分隔符），兼容 `2>` 与 `>>`，
-  // 目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
-  /(?:^|[\s;&|])\d*>>?\s*\/etc\/passwd(\s|$)/,
-  /(?:^|[\s;&|])\d*>>?\s*\/etc\/shadow(\s|$)/,
-  /(?:^|[\s;&|])\d*>>?\s*\/etc\/sudoers(\s|$)/,
+  // 兼容 `>`/`>>`/`>&`/`&>` 与 `2>` 等 fd 形式，目标路径紧跟空白/结尾以免误伤 `/etc/passwd_xxx`。
+  /(?:^|[\s;|])\d*&?>>?&?\s*\/etc\/passwd(\s|$)/,
+  /(?:^|[\s;|])\d*&?>>?&?\s*\/etc\/shadow(\s|$)/,
+  /(?:^|[\s;|])\d*&?>>?&?\s*\/etc\/sudoers(\s|$)/,
   // fork bomb
   /:\(\)\s*{\s*:\s*\|\s*:\s*&\s*};\s*:/,
   // shebang 直接执行（出现在命令开头）
@@ -448,9 +447,10 @@ function peelCommandWrappers(segment) {
 }
 
 /**
- * 折叠 shell 绝对路径里的冗余分隔符与 `/.` 段：`//usr`、`///usr`、`/.//usr`
- * 在 POSIX 下与 `/usr` 指向同一目录，不能靠换个写法绕过系统目录黑名单。
- * 只处理 `/` 开头的路径 token，引号内容本就不进这一层，不会误伤 URL 里的 `://`。
+ * 折叠 shell 绝对路径里的冗余分隔符与 `/.`、`/X/..` 段：`//usr`、`/.//usr`、`/tmp/../usr`
+ * 在 POSIX 下与 `/usr` 指向同一目录，不能靠换个写法绕过系统目录 / 设备黑名单。
+ * 同时覆盖 `of=//dev/sda`、`--path=/./usr` 这类 `key=/value` 形态（只归一化以 `/` 开头的值部分）。
+ * 只处理以 `/` 开头的路径（或其值），引号内容本就不进这一层，不会误伤 URL 里的 `://`。
  * @param {string} segment
  * @returns {string} 归一化后的串（与入参相同表示无可折叠）
  */
@@ -458,14 +458,22 @@ function normalizeShellPathTargets(segment) {
   return segment
     .split(/\s+/)
     .map((tok) => {
-      if (!tok.startsWith('/')) return tok;
-      let p = tok;
+      // 拆开 `key=` 前缀（dd 的 if=/of=、长选项 --path= 等），只对以 / 开头的值做归一
+      const eq = tok.indexOf('=');
+      const prefix = eq > -1 ? tok.slice(0, eq + 1) : '';
+      const pathPart = eq > -1 ? tok.slice(eq + 1) : tok;
+      if (!pathPart.startsWith('/')) return tok;
+      let p = pathPart;
       let prev;
       do {
         prev = p;
-        p = p.replace(/\/\/+/g, '/').replace(/\/\.(?=\/|$)/g, '');
+        p = p
+          .replace(/\/\/+/g, '/')
+          .replace(/\/\.(?=\/|$)/g, '')
+          .replace(/\/[^/.][^/]*\/\.\.(?=\/|$)/g, '')
+          .replace(/^\/\.\.(?=\/|$)/, ''); // 根之上的 .. 等价根：/../x → /x
       } while (p !== prev);
-      return p;
+      return prefix + p;
     })
     .join(' ');
 }

