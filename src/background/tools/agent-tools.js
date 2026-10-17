@@ -61,7 +61,11 @@ export const AGENT_TOOLS = [
           command: { type: 'string' },
           cwd: { type: 'string' },
           force: { type: 'boolean', description: 'Force execute confirmed command' },
-          timeoutMs: { type: 'integer' }
+          timeoutMs: {
+            type: 'integer',
+            minimum: 5000,
+            description: 'Execution time limit in ms (minimum 5000, values below are clamped). Commands that stop producing output are killed near this limit; actively-outputting commands may extend up to a 10-minute total cap'
+          }
         },
         required: ['command']
       }

@@ -7,6 +7,8 @@
 //   5. WS 建连失败但进程已启动 → 禁止同步重跑（防副作用双重执行）。
 // 头部 chrome 全局 mock 复用 agent-exec-confirmation.unit.test.js L13-L60 的完整设置（原样拷贝）。
 import { describe, test, expect, beforeEach, afterEach, beforeAll, vi } from 'vitest';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 const noop = () => {};
 
@@ -166,5 +168,13 @@ describe('agent_exec 两端超时模型', () => {
     expect(r.success).toBe(false);
     expect(r.execId).toBe('e1');
     expect(AgentClient.execCommandWait).not.toHaveBeenCalled();
+  });
+});
+
+describe('agent_exec schema 超时契约', () => {
+  test('timeoutMs 声明 minimum=5000 与延长语义描述', () => {
+    const src = readFileSync(fileURLToPath(new URL('../../src/background/tools/agent-tools.js', import.meta.url)), 'utf8');
+    expect(src).toMatch(/timeoutMs:\s*\{[^}]*minimum:\s*5000/);
+    expect(src).toMatch(/timeoutMs:\s*\{[^}]*description:/);
   });
 });
