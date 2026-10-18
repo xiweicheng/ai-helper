@@ -166,6 +166,34 @@ async function safeClick(page, selector, timeout = 2500) {
   await setDark(page);
   await audit(page, 'side:默认');
 
+  // 合成巡检：Toast 各类型 + 弹窗表单控件（这些是瞬态/需交互才出现，真实链路扫不到，
+  // 但样式规则固定，注入即可稳定回归防护：暗色下白字压亮底 / 输入框落白底都会被抓出）
+  await page.evaluate(() => {
+    const tc = document.getElementById('toastContainer') || document.body;
+    window.__syn = { toasts: [], holder: null };
+    for (const t of ['success', 'error', 'info', 'warning', '']) {
+      const el = document.createElement('div');
+      el.className = ('toast ' + t).trim() + ' toast-show';
+      el.style.opacity = '1';
+      el.style.transition = 'none';
+      el.textContent = '已复制';
+      tc.appendChild(el);
+      window.__syn.toasts.push(el);
+    }
+    const holder = document.createElement('div');
+    holder.className = 'sched-modal';
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:320px;padding:8px;display:block';
+    holder.innerHTML = '<input placeholder="名"><textarea rows="2"></textarea><select><option>x</option></select><input class="modal-input" value="m">';
+    document.body.appendChild(holder);
+    window.__syn.holder = holder;
+  });
+  await audit(page, 'side:Toast/弹窗控件');
+  await page.evaluate(() => {
+    (window.__syn?.toasts || []).forEach((e) => e.remove());
+    window.__syn?.holder?.remove();
+    delete window.__syn;
+  });
+
   // 更多下拉 + 主题二级菜单
   if (await safeClick(page, '#headerMoreBtn')) {
     await audit(page, 'side:更多');

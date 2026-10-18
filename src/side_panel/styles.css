@@ -6437,6 +6437,7 @@ body {
   border: 1px solid var(--border-default);
   border-radius: 8px;
   font-size: 14px;
+  background-color: var(--bg-surface);
   color: var(--text-primary);
   outline: none;
   transition: border-color 0.2s;
@@ -6449,13 +6450,28 @@ body {
   box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.15);
 }
 
+/* 弹窗内表单控件：部分为内联样式 / .sched-modal 规则，未声明 background，会落到 UA 默认灰底；
+   统一取主题表面色，与配置页输入框（--bg-surface）对齐 */
+.sched-modal input,
+.sched-modal textarea,
+.sched-modal select,
+#agentEditModal input:not([type="checkbox"]),
+#agentEditModal select,
+#agentEditModal textarea,
+#auditLogOverlay input:not([type="checkbox"]),
+#auditLogOverlay select {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .modal-btn.primary {
-  background: var(--brand-500);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
 }
 
 .modal-btn.primary:hover {
-  background: var(--brand-600);
+  background: var(--brand-gradient);
+  filter: brightness(1.08);
 }
 
 /* 快捷键弹窗样式：宽度跟随侧边栏伸缩（两侧至多 20px 边距，封顶 640px）；
@@ -8568,7 +8584,7 @@ body {
 }
 
 .toast {
-  background: var(--text-primary);
+  background: var(--toast-neutral);
   color: var(--text-on-brand);
   padding: 12px 24px;
   border-radius: 8px;
@@ -8591,20 +8607,20 @@ body {
 }
 
 .toast.success {
-  background: var(--success-strong);
+  background: var(--toast-success);
 }
 
 .toast.error {
-  background: var(--danger-500);
+  background: var(--toast-error);
 }
 
 .toast.warning {
-  background: var(--warning-500);
+  background: var(--toast-warning);
   color: var(--text-primary);
 }
 
 .toast.info {
-  background: var(--info-500);
+  background: var(--toast-info);
 }
 
 @keyframes toastFadeIn {
