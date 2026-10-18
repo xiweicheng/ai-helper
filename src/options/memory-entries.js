@@ -261,7 +261,7 @@ function openEditModal(m) {
       <div class="modal-body">
         <div class="form-group">
           <label>${escapeHtml(t('memoryEntries.typeLabel'))}</label>
-          <input type="text" value="${escapeHtml(typeLabel(m.type))}${m.category ? ` · ${escapeHtml(m.category)}` : ''}" readonly style="background:#f5f5f5;color:#666;">
+          <input type="text" value="${escapeHtml(typeLabel(m.type))}${m.category ? ` · ${escapeHtml(m.category)}` : ''}" readonly style="background:var(--bg-subtle);color:var(--text-secondary);">
         </div>
         <div class="form-group">
           <label>${escapeHtml(t('memoryEntries.contentLabel'))}</label>

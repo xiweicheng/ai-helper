@@ -92,19 +92,19 @@ export function showAgentSkillViewer(skillName, data) {
     <div class="modal-body">
       <div class="form-group">
         <label>${t('toolbox.skillNameLabel')}</label>
-        <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:#f5f5f5;color:#666;">
+        <input type="text" value="${escapeHtml(data.frontmatter?.name || data.name || '')}" readonly style="background:var(--bg-subtle);color:var(--text-secondary);">
       </div>
       <div class="form-group">
         <label>${t('toolbox.skillDescLabel')}</label>
-        <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:#f5f5f5;color:#666;">
+        <input type="text" value="${escapeHtml(data.frontmatter?.description || '')}" readonly style="background:var(--bg-subtle);color:var(--text-secondary);">
       </div>
       <div class="form-group">
         <label>${t('toolbox.skillVersionLabel')}</label>
-        <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:#f5f5f5;color:#666;">
+        <input type="text" value="${escapeHtml(data.frontmatter?.version || '1.0')}" readonly style="background:var(--bg-subtle);color:var(--text-secondary);">
       </div>
       <div class="form-group">
         <label>${t('toolbox.skillMarkdownLabel')}</label>
-        <textarea readonly style="min-height: 350px; font-family: monospace; background:#f5f5f5; color:#666; resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
+        <textarea readonly style="min-height: 350px; font-family: monospace; background:var(--bg-subtle); color:var(--text-secondary); resize: vertical;">${escapeHtml(data.markdown || '')}</textarea>
       </div>
       ${data.resources && data.resources.length > 0 ? `
       <div class="form-group">

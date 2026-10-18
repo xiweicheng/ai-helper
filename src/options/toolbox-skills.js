@@ -270,9 +270,9 @@ export function showSkillParamsDialog(skillName, paramsDef) {
           <button class="modal-close-btn" id="skillParamsCancel">×</button>
         </div>
         <div class="modal-body">
-          <p style="margin:0 0 16px;color:#666;font-size:13px;">${t('toolbox.fillParamsHint')}</p>
+          <p style="margin:0 0 16px;color:var(--text-secondary);font-size:13px;">${t('toolbox.fillParamsHint')}</p>
           ${requiredFields}
-          ${paramsDef.required.length > 0 && paramsDef.optional.length > 0 ? '<div style="border-top:1px dashed #e0e0e0;margin:12px 0;"></div>' : ''}
+          ${paramsDef.required.length > 0 && paramsDef.optional.length > 0 ? '<div style="border-top:1px dashed var(--border-default);margin:12px 0;"></div>' : ''}
           ${optionalFields}
         </div>
         <div class="modal-actions">
@@ -301,7 +301,7 @@ export function showSkillParamsDialog(skillName, paramsDef) {
         const val = input?.value?.trim();
         if (!val) {
           allRequiredFilled = false;
-          if (input) input.style.borderColor = '#e53e3e';
+          if (input) input.style.borderColor = 'var(--danger-500)';
         } else {
           values[key] = val;
           if (input) input.style.borderColor = '';
@@ -348,7 +348,7 @@ export function showSkillRunResult(name, skillInfo, result) {
   let skipCount = 0;
 
   if (stepIds.length === 0) {
-    stepsHtml = `<div style="padding:16px;text-align:center;color:#999;">${result.error || t('toolbox.noExecutionResult')}</div>`;
+    stepsHtml = `<div style="padding:16px;text-align:center;color:var(--text-tertiary);">${result.error || t('toolbox.noExecutionResult')}</div>`;
   } else {
     stepsHtml = stepIds.map((stepId, idx) => {
       const stepRes = results[stepId];
@@ -651,12 +651,12 @@ export function showImportDialog() {
     if (!zone || !input) return;
 
     zone.addEventListener('click', () => input.click());
-    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = '#667eea'; zone.style.background = '#f5f7ff'; });
-    zone.addEventListener('dragleave', () => { zone.style.borderColor = '#d0d5dd'; zone.style.background = '#fafbfc'; });
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--brand-500)'; zone.style.background = 'var(--brand-soft-bg)'; });
+    zone.addEventListener('dragleave', () => { zone.style.borderColor = 'var(--border-default)'; zone.style.background = 'var(--bg-subtle)'; });
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
-      zone.style.borderColor = '#d0d5dd';
-      zone.style.background = '#fafbfc';
+      zone.style.borderColor = 'var(--border-default)';
+      zone.style.background = 'var(--bg-subtle)';
       const files = e.dataTransfer.files;
       if (files.length > 0) {
         input.files = files;

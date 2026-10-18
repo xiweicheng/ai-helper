@@ -125,32 +125,32 @@ function renderInstallGuide(install) {
   const logTail = failed && Array.isArray(install.logTail) && install.logTail.length > 0
     ? escapeHtml(install.logTail.join('\n')) : '';
   const failHtml = failed ? `
-      <div style="margin-top:12px; padding:10px 12px; background:#fdf1f0; border:1px solid #f2c9c4; border-radius:6px;">
-        <div style="color:#c0392b; font-weight:600; font-size:12px; margin-bottom:6px;">⚠️ ${escapeHtml(install.error || t('toolbox.ragInstallFailedToast'))}</div>
-        ${logTail ? `<div style="font-size:11px; color:#888; margin-bottom:4px;">${t('toolbox.ragInstallLogLabel')}</div>
-        <pre style="margin:0; max-height:130px; overflow:auto; font-size:11px; color:#666; white-space:pre-wrap; word-break:break-all;">${logTail}</pre>` : ''}
-        <div style="margin-top:8px; font-size:11px; color:#b06a2b; line-height:1.6;">💡 ${t('toolbox.ragInstallFailedAdvice')}</div>
+      <div style="margin-top:12px; padding:10px 12px; background:var(--danger-soft-bg); border:1px solid var(--danger-soft-border); border-radius:6px;">
+        <div style="color:var(--danger-strong); font-weight:600; font-size:12px; margin-bottom:6px;">⚠️ ${escapeHtml(install.error || t('toolbox.ragInstallFailedToast'))}</div>
+        ${logTail ? `<div style="font-size:11px; color:var(--text-tertiary); margin-bottom:4px;">${t('toolbox.ragInstallLogLabel')}</div>
+        <pre style="margin:0; max-height:130px; overflow:auto; font-size:11px; color:var(--text-secondary); white-space:pre-wrap; word-break:break-all;">${logTail}</pre>` : ''}
+        <div style="margin-top:8px; font-size:11px; color:var(--warning-strong); line-height:1.6;">💡 ${t('toolbox.ragInstallFailedAdvice')}</div>
       </div>` : '';
 
   const pkgHtml = packages
-    .map(p => `<code style="background:#f2f3f5; padding:1px 6px; border-radius:4px; margin:0 6px 4px 0; font-size:12px; display:inline-block;">${escapeHtml(p)}</code>`)
+    .map(p => `<code style="background:var(--border-subtle); padding:1px 6px; border-radius:4px; margin:0 6px 4px 0; font-size:12px; display:inline-block;">${escapeHtml(p)}</code>`)
     .join('');
 
   const extraHtml = `
       <div style="margin-top:12px; font-size:13px;">
-        <div style="color:#555; margin-bottom:6px;"><strong>${t('toolbox.ragInstallPackagesLabel')}</strong></div>
+        <div style="color:var(--text-secondary); margin-bottom:6px;"><strong>${t('toolbox.ragInstallPackagesLabel')}</strong></div>
         <div style="margin-bottom:8px;">${pkgHtml}</div>
-        <div style="color:#999; font-size:12px; line-height:1.6; margin-bottom:4px;">${t('toolbox.ragInstallRequirements')}</div>
-        <div style="color:#8a8f99; font-size:12px; line-height:1.6; margin-bottom:10px;">💡 ${t('toolbox.ragInstallNoRestartNeeded')}</div>
-        <div style="color:#555; margin-bottom:6px;"><strong>${t('toolbox.ragInstallCommandLabel')}</strong></div>
+        <div style="color:var(--text-tertiary); font-size:12px; line-height:1.6; margin-bottom:4px;">${t('toolbox.ragInstallRequirements')}</div>
+        <div style="color:var(--text-secondary); font-size:12px; line-height:1.6; margin-bottom:10px;">💡 ${t('toolbox.ragInstallNoRestartNeeded')}</div>
+        <div style="color:var(--text-secondary); margin-bottom:6px;"><strong>${t('toolbox.ragInstallCommandLabel')}</strong></div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <code id="ragInstallCmd" style="flex:1; min-width:0; background:#2d2d2d; color:#e8e8e8; padding:8px 10px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:nowrap; display:block;">${escapeHtml(cmd)}</code>
+          <code id="ragInstallCmd" style="flex:1; min-width:0; background:var(--code-bg); color:var(--code-fg); padding:8px 10px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:nowrap; display:block;">${escapeHtml(cmd)}</code>
           <button class="toolbox-add-btn" id="ragCopyCmdBtn" style="width:auto; flex:none; margin:0; padding:6px 12px; font-size:12px;">${t('toolbox.ragCopyCmd')}</button>
         </div>
         ${failHtml}
       </div>
       <div style="margin-top:16px; display:flex; gap:10px;">
-        <button class="toolbox-add-btn" id="ragInstallBtn" style="width:auto; flex:none; margin:0; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${t('toolbox.ragInstallBtn')}</button>
+        <button class="toolbox-add-btn" id="ragInstallBtn" style="width:auto; flex:none; margin:0; padding:8px 18px; border-style:solid; color:var(--brand-500); border-color:var(--brand-500);">${t('toolbox.ragInstallBtn')}</button>
         <button class="toolbox-add-btn" id="ragRedetectBtn" style="width:auto; flex:none; margin:0; padding:8px 18px;">${t('toolbox.ragRedetectBtn')}</button>
       </div>`;
 
@@ -169,7 +169,7 @@ function renderInstalling(install) {
   const logTail = install && Array.isArray(install.logTail) && install.logTail.length > 0
     ? escapeHtml(install.logTail.join('\n')) : '';
   const extraHtml = logTail
-    ? `<pre style="margin-top:12px; max-height:160px; overflow:auto; background:#2d2d2d; color:#c8c8c8; padding:10px; border-radius:6px; font-size:11px; white-space:pre-wrap; word-break:break-all;">${logTail}</pre>`
+    ? `<pre style="margin-top:12px; max-height:160px; overflow:auto; background:var(--code-bg); color:var(--code-fg); padding:10px; border-radius:6px; font-size:11px; white-space:pre-wrap; word-break:break-all;">${logTail}</pre>`
     : '';
   return renderStatusBlock('⏳', phaseText, t('toolbox.ragInstallTip'), extraHtml);
 }

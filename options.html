@@ -91,7 +91,7 @@
     </div>
 
     <div class="form-group">
-      <label>API Key <span class="hint" style="color: #e53e3e;" data-i18n="settings.requiredHint">（必填）</span><span class="info-icon" data-i18n-title="settings.apiKeyHint" title="请从您使用的大模型平台获取对应的 API Key，并在此配置中填写。请妥善保管您的 API Key，避免泄露。">ⓘ</span></label>
+      <label>API Key <span class="hint" style="color: var(--danger-500);" data-i18n="settings.requiredHint">（必填）</span><span class="info-icon" data-i18n-title="settings.apiKeyHint" title="请从您使用的大模型平台获取对应的 API Key，并在此配置中填写。请妥善保管您的 API Key，避免泄露。">ⓘ</span></label>
       <div class="token-input-wrapper">
         <input type="password" id="apiKey" class="token-input" data-i18n-placeholder="settings.apiKeyPlaceholder" placeholder="请输入您的 API Key">
         <button type="button" id="toggleToken" class="toggle-token-btn" data-i18n-title="settings.toggleApiKey" title="显示/隐藏 API Key">
@@ -123,7 +123,7 @@
         <div class="add-model-form" id="addModelForm" style="display:none;">
           <input type="text" id="addModelName" data-i18n-placeholder="settings.modelNameInputPlaceholder" placeholder="模型名称（如 gpt-4o）">
           <input type="number" id="addModelContextWindow" data-i18n-placeholder="settings.contextWindowPlaceholder" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
-          <span class="hint-text" style="font-size:11px;color:#888;margin-top:-4px;" data-i18n="settings.contextWindowHint">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
+          <span class="hint-text" style="font-size:11px;color:var(--text-tertiary);margin-top:-4px;" data-i18n="settings.contextWindowHint">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
           <div class="add-model-form-actions">
             <button type="button" class="btn-primary" id="confirmAddModelBtn" data-i18n="settings.confirmAdd">确认添加</button>
             <button type="button" class="btn-cancel" id="cancelAddModelBtn" data-i18n="common.cancel">取消</button>
@@ -193,7 +193,7 @@
         <div class="add-model-form" id="addImageModelForm" style="display:none;">
           <input type="text" id="addImageModelName" data-i18n-placeholder="settings.modelNameInputPlaceholder" placeholder="模型名称（如 gpt-4o）">
           <input type="number" id="addImageModelContextWindow" data-i18n-placeholder="settings.contextWindowPlaceholder" placeholder="上下文窗口大小（tokens）" min="0" max="2000000" step="1000">
-          <span class="hint-text" style="font-size:11px;color:#888;margin-top:-4px;" data-i18n="settings.contextWindowHint">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
+          <span class="hint-text" style="font-size:11px;color:var(--text-tertiary);margin-top:-4px;" data-i18n="settings.contextWindowHint">128K=128000, 200K=200000, 1M=1000000, 留空则自动推断</span>
           <div class="add-model-form-actions">
             <button type="button" class="btn-primary" id="confirmAddImageModelBtn" data-i18n="settings.confirmAdd">确认添加</button>
             <button type="button" class="btn-cancel" id="cancelAddImageModelBtn" data-i18n="common.cancel">取消</button>
@@ -213,33 +213,33 @@
         </button>
         <textarea id="systemPrompt" rows="15" style="padding-right: 40px;"></textarea>
       </div>
-      <p style="font-size: 12px; color: #999; margin-top: 5px;" data-i18n="settings.systemPromptTip">
+      <p style="font-size: 12px; color: var(--text-tertiary); margin-top: 5px;" data-i18n="settings.systemPromptTip">
         💡 提示：系统提示词用于定义 AI 助手的行为和角色。
       </p>
     </div>
 
     <div class="form-group">
-      <label data-i18n="settings.completionFeedbackTitle" style="font-weight:600;color:#333;margin-bottom:10px;">完成反馈</label>
+      <label data-i18n="settings.completionFeedbackTitle" style="font-weight:600;color:var(--text-primary);margin-bottom:10px;">完成反馈</label>
       <label class="toggle-label">
         <input type="checkbox" id="completionSoundEnabled">
         <span class="toggle-text" data-i18n="settings.completionSound">播放提示音（成功与失败音效不同）</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.completionSoundHint">成功时“叮-咚”升调，失败时“咚-叮”降调；用户主动取消不播放</span>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:var(--text-secondary);line-height:1.5;" data-i18n="settings.completionSoundHint">成功时“叮-咚”升调，失败时“咚-叮”降调；用户主动取消不播放</span>
       <label class="toggle-label" style="margin-top:10px;">
         <input type="checkbox" id="completionConfettiEnabled">
         <span class="toggle-text" data-i18n="settings.completionConfetti">播放彩带动画</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.completionConfettiHint">仅在回答成功完成时播放；失败和取消不播放</span>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:var(--text-secondary);line-height:1.5;" data-i18n="settings.completionConfettiHint">仅在回答成功完成时播放；失败和取消不播放</span>
       <label class="toggle-label" style="margin-top:10px;">
         <input type="checkbox" id="completionNotificationEnabled">
         <span class="toggle-text" data-i18n="settings.completionNotification">任务完成或失败时弹出桌面通知</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.completionNotificationHint">仅在看不到侧边栏时弹出；成功自动消失，失败停留至手动关闭；点击通知打开侧边栏</span>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:var(--text-secondary);line-height:1.5;" data-i18n="settings.completionNotificationHint">仅在看不到侧边栏时弹出；成功自动消失，失败停留至手动关闭；点击通知打开侧边栏</span>
       <label class="toggle-label" style="margin-top:10px;">
         <input type="checkbox" id="scheduledNotificationEnabled">
         <span class="toggle-text" data-i18n="settings.scheduledNotification">定时任务完成或失败时弹出桌面通知</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.scheduledNotificationHint">定时任务在后台执行、无声音等其他提醒渠道，开关开启时总是弹出；默认开启，可手动关闭</span>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:var(--text-secondary);line-height:1.5;" data-i18n="settings.scheduledNotificationHint">定时任务在后台执行、无声音等其他提醒渠道，开关开启时总是弹出；默认开启，可手动关闭</span>
     </div>
 
     <div class="form-group">
@@ -247,7 +247,7 @@
         <input type="checkbox" id="interactionNotificationEnabled">
         <span class="toggle-text" data-i18n="settings.interactionNotification">AI 需要你确认或澄清时提醒我</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:#666;line-height:1.5;" data-i18n="settings.interactionNotificationHint">推理循环等待你操作时弹桌面提醒；仅在看得到侧边栏时不打扰，点击通知打开侧边栏</span>
+      <span class="hint" style="display:block;margin:4px 0 0 50px;font-size:12px;color:var(--text-secondary);line-height:1.5;" data-i18n="settings.interactionNotificationHint">推理循环等待你操作时弹桌面提醒；仅在看得到侧边栏时不打扰，点击通知打开侧边栏</span>
     </div>
 
     <div class="form-group">
@@ -259,17 +259,17 @@
     </div>
 
     <div class="form-group">
-      <label data-i18n="settings.sidePanelScopeTitle" style="font-weight:600;color:#333;margin-bottom:10px;">侧边栏作用域</label>
+      <label data-i18n="settings.sidePanelScopeTitle" style="font-weight:600;color:var(--text-primary);margin-bottom:10px;">侧边栏作用域</label>
       <label class="toggle-label" style="cursor:pointer;">
         <input type="radio" name="sidePanelScope" value="global">
         <span class="toggle-text" data-i18n="settings.sidePanelScopeGlobal">全局模式</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:#666;" data-i18n="settings.sidePanelScopeGlobalHint">同一窗口内所有标签页共享同一份侧边栏实例，切换标签页时始终可见</span>
+      <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.sidePanelScopeGlobalHint">同一窗口内所有标签页共享同一份侧边栏实例，切换标签页时始终可见</span>
       <label class="toggle-label" style="cursor:pointer;margin-top:10px;">
         <input type="radio" name="sidePanelScope" value="tab-specific">
         <span class="toggle-text" data-i18n="settings.sidePanelScopeTab">标签页绑定模式</span>
       </label>
-      <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:#666;" data-i18n="settings.sidePanelScopeTabHint">侧边栏仅在打开它的标签页可见，切换到其他标签页时自动隐藏</span>
+      <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.sidePanelScopeTabHint">侧边栏仅在打开它的标签页可见，切换到其他标签页时自动隐藏</span>
     </div>
 
     <div class="form-group">
@@ -349,7 +349,7 @@
           <span class="toggle-switch"></span>
           <span id="toolConfirmationEnabledLabel" data-i18n="react.enabled">已启用</span>
         </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
           <span data-i18n="react.toolConfirmationDesc1">启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。</span><br>
           <span data-i18n="react.toolConfirmationDesc2">关闭后，所有操作将直接放行执行，无需确认。</span>
         </div>
@@ -365,7 +365,7 @@
           <span class="toggle-switch"></span>
           <span id="networkAccessEnabledLabel" data-i18n="react.disabled">已停用</span>
         </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
           <span data-i18n="react.networkAccessDesc1">默认关闭：工具只能访问公网地址，127.0.0.1、localhost、192.168.x.x 等本机与内网地址会被直接拒绝。</span><br>
           <span data-i18n="react.networkAccessDesc2">开启后仍需在下方的允许列表中逐台添加主机；列表为空时依然拒绝全部内网。关闭开关只是收起该区块，不会清空已录入的列表。</span>
         </div>
@@ -390,7 +390,7 @@
           <span class="toggle-switch"></span>
           <span id="enableExecutionLogLabel" data-i18n="react.enabled">已启用</span>
         </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
           <span data-i18n="react.enableExecutionLogDesc1">启用后，消息底部会显示"执行日志"按钮，点击可查看 API 调用和工具执行的详细过程。</span><br>
           <span data-i18n="react.enableExecutionLogDesc2">关闭后，消息底部不再显示该按钮。</span>
         </div>
@@ -406,7 +406,7 @@
           <span class="toggle-switch"></span>
           <span id="streamEnabledLabel" data-i18n="react.enabled">已启用</span>
         </label>
-        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
           <span data-i18n="react.streamingDesc1">开启后 AI 回复会实时逐字显示，代理端命令执行时也会实时输出，提供更快的反馈感知。</span><br>
           <span data-i18n="react.streamingDesc2">如果遇到兼容性问题，可关闭此开关回退到一次性输出模式。</span>
         </div>
@@ -917,12 +917,12 @@
         <button class="modal-close-btn" id="exportConfigCloseBtn" data-i18n-title="common.close" title="关闭">✕</button>
       </div>
       <div style="padding: 8px 0;">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: var(--text-secondary);">
           <input type="checkbox" id="exportIncludeSecrets" style="width: 16px; height: 16px;">
           <span data-i18n="configDialog.includeSecrets">包含 API 密钥</span>
-          <span style="font-size: 12px; color: #e67e22; font-weight: normal;" data-i18n="configDialog.secretWarn">⚠ 敏感信息，请确保文件安全</span>
+          <span style="font-size: 12px; color: var(--warning-500); font-weight: normal;" data-i18n="configDialog.secretWarn">⚠ 敏感信息，请确保文件安全</span>
         </label>
-        <p style="margin-top: 12px; font-size: 13px; color: #888;" data-i18n="configDialog.exportDesc">
+        <p style="margin-top: 12px; font-size: 13px; color: var(--text-tertiary);" data-i18n="configDialog.exportDesc">
           导出文件将包含除 Agent 连接信息外的所有配置，可选择是否包含 API 密钥。
         </p>
       </div>
@@ -941,12 +941,12 @@
         <button class="modal-close-btn" id="importConfigCloseBtn" data-i18n-title="common.close" title="关闭">✕</button>
       </div>
       <div style="padding: 8px 0;">
-        <p id="importSummary" style="font-size: 13px; color: #888; margin-bottom: 16px;"></p>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555; margin-bottom: 12px;">
+        <p id="importSummary" style="font-size: 13px; color: var(--text-tertiary); margin-bottom: 16px;"></p>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: var(--text-secondary); margin-bottom: 12px;">
           <input type="radio" name="importStrategy" id="importStrategyMerge" value="merge" checked style="width: auto;">
           <span data-i18n="configDialog.mergeImport">合并导入 — 仅覆盖文件中存在的配置项，保留其他</span>
         </label>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #555;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: var(--text-secondary);">
           <input type="radio" name="importStrategy" id="importStrategyReplace" value="replace" style="width: auto;">
           <span data-i18n="configDialog.replaceImport">完全替换 — 清空当前配置，使用文件中的配置</span>
         </label>
@@ -966,8 +966,8 @@
         <button class="modal-close-btn" id="profileModalCloseBtn" data-i18n-title="common.close" title="关闭">✕</button>
       </div>
       <div style="padding: 8px 0;">
-        <p id="profileModalMessage" style="display:none; font-size: 13px; color: #888; margin-bottom: 12px;"></p>
-        <input type="text" id="profileNameInput" data-i18n-placeholder="settings.profileNamePlaceholder" placeholder="配置名称（如 DeepSeek 官方、我的中转）" style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+        <p id="profileModalMessage" style="display:none; font-size: 13px; color: var(--text-tertiary); margin-bottom: 12px;"></p>
+        <input type="text" id="profileNameInput" data-i18n-placeholder="settings.profileNamePlaceholder" placeholder="配置名称（如 DeepSeek 官方、我的中转）" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 14px; box-sizing: border-box;">
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="profileModalCancelBtn" data-i18n="common.cancel">取消</button>

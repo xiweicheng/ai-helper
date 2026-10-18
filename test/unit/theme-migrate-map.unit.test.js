@@ -69,3 +69,17 @@ it('js 模式：style=""/.style 联动 token，SVG 表现属性保留字面量',
   expect(out).toContain('stroke="#667eea"');
   expect(out).toContain('fill="#667eea"');
 });
+
+it('contextDispatch：#e8e8e8 作 color → code-fg（深色代码块文字不翻转），作 border → border-subtle', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'theme-ctx-'));
+  const file = join(dir, 'fixture.js');
+  const src = '<code style="background:#2d2d2d;color:#e8e8e8;"></code>\n'
+    + '<div style="border:1px solid #e8e8e8;"></div>\n';
+  writeFileSync(file, src, 'utf-8');
+  execFileSync('python3', [SCRIPT, file, '--mode', 'js'], { encoding: 'utf-8' });
+  const out = readFileSync(file, 'utf-8');
+  expect(out).toContain('background:var(--code-bg)');
+  expect(out).toContain('color:var(--code-fg)');
+  expect(out).toContain('border:1px solid var(--border-subtle)');
+});
+

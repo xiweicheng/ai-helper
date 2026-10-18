@@ -1587,7 +1587,7 @@ function initAgentConfig() {
         input.type = 'text';
         input.value = original;
         input.className = 'paired-agent-name-input';
-        input.style.cssText = 'flex:1;font-size:14px;font-weight:500;border:1px solid #667eea;border-radius:4px;padding:2px 6px;outline:none;color:#2d3748;';
+        input.style.cssText = 'flex:1;font-size:14px;font-weight:500;border:1px solid var(--brand-500);border-radius:4px;padding:2px 6px;outline:none;color:var(--text-primary);';
         nameEl.innerHTML = '';
         nameEl.appendChild(input);
         input.focus();

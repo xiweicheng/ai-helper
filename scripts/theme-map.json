@@ -53,7 +53,6 @@
     "#c1c1c1": "border-strong",
     "#f0f0f0": "border-subtle",
     "#eeeeee": "border-subtle",
-    "#e8e8e8": "border-subtle",
     "#eef1f6": "border-subtle",
     "#eef0f4": "border-subtle",
     "#f0f1f3": "border-subtle",
@@ -276,7 +275,13 @@
     "#feebc8": "warning-soft-border",
     "#fefcbf": "warning-soft-bg",
     "#fffaf0": "warning-soft-bg",
-    "#fffdf5": "warning-soft-bg"
+    "#fffdf5": "warning-soft-bg",
+    "#2ecc71": "success-500",
+    "#2980b9": "info-strong",
+    "#2d2d2d": "code-bg",
+    "#c8c8c8": "code-fg",
+    "#f2c9c4": "danger-soft-border",
+    "#b06a2b": "warning-strong"
   },
   "contextDispatch": {
     "#ffffff": {
@@ -290,6 +295,10 @@
     },
     "#000000": {
       "default": "review"
+    },
+    "#e8e8e8": {
+      "color": "code-fg",
+      "default": "border-subtle"
     }
   },
   "rgbaFamilies": {

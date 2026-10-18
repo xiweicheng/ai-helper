@@ -248,7 +248,7 @@ function updateGlobalToggleUI(type, enabled) {
   const section = document.getElementById(sectionId);
   if (label) {
     label.textContent = enabled ? t('common.enabled') : t('common.disabled');
-    label.style.color = enabled ? '#666' : '#999';
+    label.style.color = enabled ? 'var(--text-secondary)' : 'var(--text-tertiary)';
   }
   if (section) {
     if (enabled) {

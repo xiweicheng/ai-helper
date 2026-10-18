@@ -90,9 +90,11 @@
   --scrollbar-thumb: #c1c1c1;
   --selection-bg: rgba(102, 126, 234, 0.25);
 
-  /* 固定不翻转（纸面语义） */
+  /* 固定不翻转（纸面语义 / 终端代码块：两主题恒为深色） */
   --mark-bg: #fff3a0;
   --paper: #ffffff;
+  --code-bg: #2d2d2d;
+  --code-fg: #e8e8e8;
 }
 
 html[data-theme="dark"] {

@@ -224,77 +224,77 @@
   <div class="modal-overlay" id="toolsPopupOverlay">
     <div class="modal-container" style="max-width: 520px; width: 90%; height: 520px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolsPopupClose" data-i18n-title="common.close" title="关闭">×</button>
-      <button id="toolStatsBtn" data-i18n-title="toolStats.btnTitle" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
+      <button id="toolStatsBtn" data-i18n-title="toolStats.btnTitle" title="工具使用统计" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-tertiary); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">📊</button>
       <div class="modal-title" data-i18n="toolPanel.title">工具配置</div>
       <div style="margin-bottom: 12px; position: relative;">
-        <input type="text" id="toolsSearchInput" data-i18n-placeholder="toolPanel.searchPlaceholder" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 36px 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
-        <button type="button" id="toolsSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 16px; cursor: pointer; display: none; padding: 4px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="toolPanel.clearSearch" title="清除搜索">✕</button>
+        <input type="text" id="toolsSearchInput" data-i18n-placeholder="toolPanel.searchPlaceholder" placeholder="搜索工具名称或描述..." style="width: 100%; padding: 10px 36px 10px 14px; border: 1px solid var(--border-default); border-radius: 8px; font-size: 14px; outline: none; box-sizing: border-box;">
+        <button type="button" id="toolsSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: var(--text-tertiary); font-size: 16px; cursor: pointer; display: none; padding: 4px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="toolPanel.clearSearch" title="清除搜索">✕</button>
       </div>
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-        <button type="button" class="category-btn category-all" data-category="all" style="padding: 6px 12px; border: none; border-radius: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+        <button type="button" class="category-btn category-all" data-category="all" style="padding: 6px 12px; border: none; border-radius: 16px; background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%); color: var(--text-on-brand); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
           <span data-i18n="toolPanel.categoryAll">全部</span>
           <span class="category-badge" id="badge-all" style="margin-left: 4px; padding: 1px 5px; background: rgba(255,255,255,0.25); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center;">0</span>
         </button>
         <div id="toolsCategories" style="flex: 1; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: thin;">
           <div style="display: inline-flex; gap: 8px; padding: 4px 0; width: max-content;">
-          <button type="button" class="category-btn" data-category="page_interaction" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="page_interaction" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.page_interaction">🖱️ 页面交互</span>
-            <span class="category-badge" id="badge-page_interaction" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-page_interaction" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="form_operation" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="form_operation" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.form_operation">📝 表单操作</span>
-            <span class="category-badge" id="badge-form_operation" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-form_operation" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="content_extraction" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="content_extraction" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.content_extraction">📄 内容提取</span>
-            <span class="category-badge" id="badge-content_extraction" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-content_extraction" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="tab_management" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="tab_management" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.tab_management">📑 标签页管理</span>
-            <span class="category-badge" id="badge-tab_management" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-tab_management" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="bookmark_history" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="bookmark_history" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.bookmark_history">🔖 书签历史</span>
-            <span class="category-badge" id="badge-bookmark_history" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-bookmark_history" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="storage_management" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="storage_management" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.storage_management">💾 存储管理</span>
-            <span class="category-badge" id="badge-storage_management" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-storage_management" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="network_request" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="network_request" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.network_request">🌐 网络请求</span>
-            <span class="category-badge" id="badge-network_request" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-network_request" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="media_output" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="media_output" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.media_output">📷 媒体与输出</span>
-            <span class="category-badge" id="badge-media_output" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-media_output" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="debug_dev" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="debug_dev" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.debug_dev">🔧 调试开发</span>
-            <span class="category-badge" id="badge-debug_dev" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-debug_dev" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="ai_collaboration" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="ai_collaboration" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.ai_collaboration">🤖 AI协作</span>
-            <span class="category-badge" id="badge-ai_collaboration" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-ai_collaboration" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="local_agent" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="local_agent" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.local_agent">🖥️ 代理</span>
-            <span class="category-badge" id="badge-local_agent" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-local_agent" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="mcp" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="mcp" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.mcp">🔌 MCP</span>
-            <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-mcp" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
-          <button type="button" class="category-btn" data-category="knowledge" style="padding: 6px 12px; border: 1px solid #ececec; border-radius: 16px; background: white; color: #555; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
+          <button type="button" class="category-btn" data-category="knowledge" style="padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 16px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;">
             <span data-i18n="toolCategory.knowledge">📚 知识库</span>
-            <span class="category-badge" id="badge-knowledge" style="margin-left: 4px; padding: 1px 5px; background: #fafafa; border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: #999;">0</span>
+            <span class="category-badge" id="badge-knowledge" style="margin-left: 4px; padding: 1px 5px; background: var(--bg-subtle); border-radius: 10px; font-size: 11px; min-width: 18px; text-align: center; color: var(--text-tertiary);">0</span>
           </button>
           </div>
         </div>
       </div>
       <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-        <button type="button" id="toolsSelectAll" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.selectAll">全选</span></button>
-        <button type="button" id="toolsSelectNone" style="flex: 1; padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.deselectAll">取消全选</span></button>
+        <button type="button" id="toolsSelectAll" style="flex: 1; padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.selectAll">全选</span></button>
+        <button type="button" id="toolsSelectNone" style="flex: 1; padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: all 0.2s ease;"><span data-i18n="common.deselectAll">取消全选</span></button>
       </div>
       <div style="flex: 1; overflow-y: auto; margin-bottom: 16px;" id="toolsPopupList">
         <!-- 工具列表由 JS 动态生成 -->
@@ -304,17 +304,17 @@
           <label class="tool-preselect-toggle" id="toolsPreselectToggleLabel" data-i18n-title="toolPanel.preselectHint" title="开启：AI 先判断哪些工具可能用得上，只传相关工具。好处是 Token 省了，但万一判断不准，漏掉了关键工具，任务可能做不好&#10;关闭：全部启用的工具一次性给模型。没有判断开销，启动更快，但工具太多会浪费 Token">
             <input type="checkbox" id="toolsPreselectToggle" checked style="display: none;">
             <span class="toggle-switch"></span>
-            <span id="toolsPreselectToggleText" style="font-size: 12px; color: #666;" data-i18n="toolPanel.preselect">工具预筛选</span>
+            <span id="toolsPreselectToggleText" style="font-size: 12px; color: var(--text-secondary);" data-i18n="toolPanel.preselect">工具预筛选</span>
           </label>
           <label class="tool-preselect-toggle" id="toolConfirmToggleLabel" data-i18n-title="toolPanel.confirmHint" title="启用后，当模型执行敏感操作（工具调用、命令执行等）时，会弹出确认框等待用户确认。&#10;关闭后，所有操作将直接放行执行，无需确认。">
             <input type="checkbox" id="toolConfirmToggle" checked style="display: none;">
             <span class="toggle-switch"></span>
-            <span id="toolConfirmToggleText" style="font-size: 12px; color: #666;" data-i18n="react.toolConfirmation">敏感操作确认</span>
+            <span id="toolConfirmToggleText" style="font-size: 12px; color: var(--text-secondary);" data-i18n="react.toolConfirmation">敏感操作确认</span>
           </label>
         </div>
         <div class="modal-btns">
           <button class="modal-btn cancel" id="toolsPopupCancel" data-i18n="common.cancel">取消</button>
-          <button class="modal-btn confirm" id="toolsPopupSave" style="background: #667eea;" data-i18n="common.save">保存</button>
+          <button class="modal-btn confirm" id="toolsPopupSave" style="background: var(--brand-500);" data-i18n="common.save">保存</button>
         </div>
       </div>
     </div>
@@ -324,34 +324,34 @@
   <div class="modal-overlay" id="toolStatsOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 560px; width: 90%; height: 480px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="toolStatsClose" data-i18n-title="common.close" title="关闭">×</button>
-      <button id="toolStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <button id="toolStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-tertiary); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
       <div class="modal-title" data-i18n="toolStats.title">📊 工具使用统计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 12px; color: #999;" data-i18n="toolStats.subtitle">各工具调用频率、成功率、平均耗时</span>
+        <span style="font-size: 12px; color: var(--text-tertiary);" data-i18n="toolStats.subtitle">各工具调用频率、成功率、平均耗时</span>
         <div>
-          <span id="toolStatsSummary" style="font-size: 12px; color: #888; margin-right: 12px;"></span>
-          <button id="toolStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+          <span id="toolStatsSummary" style="font-size: 12px; color: var(--text-tertiary); margin-right: 12px;"></span>
+          <button id="toolStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-surface); color: var(--danger-500); font-size: 12px; cursor: pointer;">清空</button>
         </div>
       </div>
       <div style="flex: 1; overflow-y: auto;">
-        <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
+        <div id="toolStatsLoading" style="text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="common.loading">加载中...</div>
         <table id="toolStatsTable" style="display: none; width: 100%; border-collapse: collapse; font-size: 13px;">
           <thead>
-            <tr style="position: sticky; top: 0; background: #f5f7fa; z-index: 1;">
-              <th id="sortByName" data-sort="name" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.usedTools">已使用工具</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortByCallCount" data-sort="callCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.calls">调用</span> <span class="sort-indicator" style="font-size: 10px;">▼</span></th>
-              <th id="sortBySuccessCount" data-sort="successCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.success">成功</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortBySuccessRate" data-sort="successRate" style="padding: 8px 10px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.successRate">成功率</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
-              <th id="sortByDuration" data-sort="duration" style="padding: 8px 10px; text-align: right; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.avgDuration">平均耗时</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+            <tr style="position: sticky; top: 0; background: var(--bg-subtle); z-index: 1;">
+              <th id="sortByName" data-sort="name" style="padding: 8px 10px; text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border-default); cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.usedTools">已使用工具</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByCallCount" data-sort="callCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border-default); cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.calls">调用</span> <span class="sort-indicator" style="font-size: 10px;">▼</span></th>
+              <th id="sortBySuccessCount" data-sort="successCount" style="padding: 8px 10px; text-align: right; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border-default); cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.success">成功</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortBySuccessRate" data-sort="successRate" style="padding: 8px 10px; text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border-default); cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.successRate">成功率</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
+              <th id="sortByDuration" data-sort="duration" style="padding: 8px 10px; text-align: right; font-weight: 600; color: var(--text-secondary); border-bottom: 2px solid var(--border-default); cursor: pointer; user-select: none; white-space: nowrap;"><span data-i18n="toolStats.avgDuration">平均耗时</span> <span class="sort-indicator" style="font-size: 10px;"></span></th>
             </tr>
           </thead>
           <tbody id="toolStatsTableBody"></tbody>
         </table>
         <div id="toolStatsUnusedSection" style="display: none; margin-top: 16px;">
-          <div style="font-size: 12px; font-weight: 600; color: #999; margin-bottom: 6px;" data-i18n="toolStats.unusedTools">未使用工具</div>
+          <div style="font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 6px;" data-i18n="toolStats.unusedTools">未使用工具</div>
           <div id="toolStatsUnusedList" style="display: flex; flex-wrap: wrap; gap: 6px 4px;"></div>
         </div>
-        <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="toolStats.noData">暂无统计数据</div>
+        <div id="toolStatsEmpty" style="display: none; text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="toolStats.noData">暂无统计数据</div>
       </div>
     </div>
   </div>
@@ -360,63 +360,63 @@
   <div class="modal-overlay" id="tokenStatsOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 520px; width: 90%; height: 540px; max-height: 90vh; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="tokenStatsClose" data-i18n-title="common.close" title="关闭">×</button>
-      <button id="tokenStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <button id="tokenStatsRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-tertiary); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
       <div class="modal-title" data-i18n="tokenStatsPanel.title">🪙 Token 使用统计</div>
       <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 12px; color: #999;" data-i18n="tokenStatsPanel.subtitle">单次问答 ReAct 会话维度 & 总体维度</span>
-        <button id="tokenStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #e53e3e; font-size: 12px; cursor: pointer;">清空</button>
+        <span style="font-size: 12px; color: var(--text-tertiary);" data-i18n="tokenStatsPanel.subtitle">单次问答 ReAct 会话维度 & 总体维度</span>
+        <button id="tokenStatsClearBtn" data-i18n-title="toolStats.clearTitle" data-i18n="common.clear" title="清空统计" style="padding: 2px 10px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-surface); color: var(--danger-500); font-size: 12px; cursor: pointer;">清空</button>
       </div>
       
       <!-- 顶部固定卡片：3 个核心数字（所有 Tab 都显示） -->
       <div id="tokenStatsTopCards" style="display: none; margin-bottom: 12px;"></div>
       
       <!-- Tab 导航 -->
-      <div id="tokenStatsTabNav" style="display: none; margin-bottom: 12px; border-bottom: 1px solid #e5e7eb; gap: 4px;">
-        <button class="token-tab-btn active" data-tab="trend" data-i18n="tokenStatsPanel.tabTrend" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">趋势</button>
-        <button class="token-tab-btn" data-tab="distribution" data-i18n="tokenStatsPanel.tabDistribution" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">分布</button>
-        <button class="token-tab-btn" data-tab="global" data-i18n="tokenStatsPanel.tabGlobal" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #666; font-size: 12px; cursor: pointer; transition: all 0.2s;">全局</button>
+      <div id="tokenStatsTabNav" style="display: none; margin-bottom: 12px; border-bottom: 1px solid var(--border-default); gap: 4px;">
+        <button class="token-tab-btn active" data-tab="trend" data-i18n="tokenStatsPanel.tabTrend" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all 0.2s;">趋势</button>
+        <button class="token-tab-btn" data-tab="distribution" data-i18n="tokenStatsPanel.tabDistribution" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all 0.2s;">分布</button>
+        <button class="token-tab-btn" data-tab="global" data-i18n="tokenStatsPanel.tabGlobal" style="padding: 6px 12px; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font-size: 12px; cursor: pointer; transition: all 0.2s;">全局</button>
       </div>
       
       <div style="flex: 1; overflow-y: auto; padding-right: 12px;">
-        <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
-        <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="tokenStatsPanel.noData">暂无统计数据</div>
+        <div id="tokenStatsLoading" style="text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="common.loading">加载中...</div>
+        <div id="tokenStatsEmpty" style="display: none; text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="tokenStatsPanel.noData">暂无统计数据</div>
         <div id="tokenStatsContent" style="display: none; height: 100%;">
           <!-- Tab 1: 趋势 -->
           <div id="tokenTabTrend" class="token-tab-content">
             <div style="margin-bottom: 14px;">
-              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.currentSession">当前会话</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;" data-i18n="tokenStatsPanel.currentSession">当前会话</div>
               <div id="tokenSessionStats"></div>
             </div>
             <div>
-              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px;" data-i18n="tokenStatsPanel.recentCalls">近期调用</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;" data-i18n="tokenStatsPanel.recentCalls">近期调用</div>
               <div id="tokenRecentCalls"></div>
             </div>
           </div>
           
           <!-- Tab 2: 分布（阶段二实施） -->
           <div id="tokenTabDistribution" class="token-tab-content" style="display: none;">
-            <div id="tokenDistributionStats" style="text-align: center; padding: 40px; color: #999; font-size: 12px;">阶段二实施中...</div>
+            <div id="tokenDistributionStats" style="text-align: center; padding: 40px; color: var(--text-tertiary); font-size: 12px;">阶段二实施中...</div>
           </div>
           
           <!-- Tab 3: 全局 -->
           <div id="tokenTabGlobal" class="token-tab-content" style="display: none; flex-direction: column; height: 100%;">
             <!-- 时间范围切换 -->
             <div style="margin-bottom: 12px; display: flex; gap: 6px;">
-              <button class="token-time-range-btn" data-range="today" data-i18n="tokenStatsPanel.timeRangeToday" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">今日</button>
-              <button class="token-time-range-btn" data-range="week" data-i18n="tokenStatsPanel.timeRangeWeek" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">本周</button>
-              <button class="token-time-range-btn active" data-range="month" data-i18n="tokenStatsPanel.timeRangeMonth" style="padding: 4px 10px; border: 1px solid #667eea; border-radius: 4px; background: #667eea; color: white; font-size: 11px; cursor: pointer;">本月</button>
-              <button class="token-time-range-btn" data-range="all" data-i18n="tokenStatsPanel.timeRangeAll" style="padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; cursor: pointer;">全部</button>
+              <button class="token-time-range-btn" data-range="today" data-i18n="tokenStatsPanel.timeRangeToday" style="padding: 4px 10px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-surface); color: var(--text-secondary); font-size: 11px; cursor: pointer;">今日</button>
+              <button class="token-time-range-btn" data-range="week" data-i18n="tokenStatsPanel.timeRangeWeek" style="padding: 4px 10px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-surface); color: var(--text-secondary); font-size: 11px; cursor: pointer;">本周</button>
+              <button class="token-time-range-btn active" data-range="month" data-i18n="tokenStatsPanel.timeRangeMonth" style="padding: 4px 10px; border: 1px solid var(--brand-500); border-radius: 4px; background: var(--brand-500); color: var(--text-on-brand); font-size: 11px; cursor: pointer;">本月</button>
+              <button class="token-time-range-btn" data-range="all" data-i18n="tokenStatsPanel.timeRangeAll" style="padding: 4px 10px; border: 1px solid var(--border-default); border-radius: 4px; background: var(--bg-surface); color: var(--text-secondary); font-size: 11px; cursor: pointer;">全部</button>
             </div>
             
             <!-- 全局 sparkline（flex:1 自适应填满剩余高度） -->
             <div style="margin-bottom: 14px; flex: 1; min-height: 0; display: flex; flex-direction: column;">
-              <div style="font-size: 11px; color: #888; margin-bottom: 6px;" data-i18n="tokenStatsPanel.globalSparklineTitle">最近 30 天趋势</div>
+              <div style="font-size: 11px; color: var(--text-tertiary); margin-bottom: 6px;" data-i18n="tokenStatsPanel.globalSparklineTitle">最近 30 天趋势</div>
               <div id="tokenGlobalSparkline" style="flex: 1; min-height: 0;"></div>
             </div>
             
             <!-- 全局统计卡片 -->
             <div style="margin-bottom: 14px;">
-              <div style="font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px;" data-i18n="tokenStatsPanel.globalStats">全局统计</div>
+              <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;" data-i18n="tokenStatsPanel.globalStats">全局统计</div>
               <div id="tokenOverallStats"></div>
             </div>
           </div>
@@ -429,10 +429,10 @@
   <div class="modal-overlay" id="customConfirmOverlay" style="display: none;">
     <div class="modal-container" style="max-width: 380px; width: 90%;">
       <div class="modal-title" id="customConfirmTitle" data-i18n="customConfirm.defaultTitle">确认操作</div>
-      <div class="modal-message" id="customConfirmMessage" style="color: #555; font-size: 14px; margin-bottom: 20px; line-height: 1.6;"></div>
+      <div class="modal-message" id="customConfirmMessage" style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; line-height: 1.6;"></div>
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
-        <button id="customConfirmCancelBtn" style="padding: 8px 20px; border: 1px solid #ddd; border-radius: 6px; background: white; color: #666; font-size: 14px; cursor: pointer;" data-i18n="common.cancel">取消</button>
-        <button id="customConfirmOkBtn" style="padding: 8px 20px; border: none; border-radius: 6px; background: #e53e3e; color: white; font-size: 14px; cursor: pointer;" data-i18n="common.confirm">确认</button>
+        <button id="customConfirmCancelBtn" style="padding: 8px 20px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); color: var(--text-secondary); font-size: 14px; cursor: pointer;" data-i18n="common.cancel">取消</button>
+        <button id="customConfirmOkBtn" style="padding: 8px 20px; border: none; border-radius: 6px; background: var(--danger-500); color: var(--text-on-brand); font-size: 14px; cursor: pointer;" data-i18n="common.confirm">确认</button>
       </div>
     </div>
   </div>
@@ -771,7 +771,7 @@
       <div class="modal-title" data-i18n="promptDialog.title">提示</div>
       <div class="modal-message" id="promptErrorMessage"></div>
       <div class="modal-actions">
-        <button class="modal-btn confirm" id="promptErrorConfirmBtn" style="background: #667eea;" data-i18n="common.ok">确定</button>
+        <button class="modal-btn confirm" id="promptErrorConfirmBtn" style="background: var(--brand-500);" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>
@@ -786,12 +786,12 @@
       </div>
       <div style="margin-bottom: 16px;">
         <input type="text" id="editPromptIndex" placeholder="" style="display: none;">
-        <input type="text" id="newPromptCode" data-i18n-placeholder="promptManager.codePlaceholder" placeholder="编码（如: code）" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
-        <textarea id="newPromptContent" data-i18n-placeholder="promptManager.contentPlaceholder" placeholder="提示词内容" rows="3" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
+        <input type="text" id="newPromptCode" data-i18n-placeholder="promptManager.codePlaceholder" placeholder="编码（如: code）" style="width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px;">
+        <textarea id="newPromptContent" data-i18n-placeholder="promptManager.contentPlaceholder" placeholder="提示词内容" rows="3" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
       </div>
       <div class="modal-actions">
         <button class="modal-btn cancel" id="promptManageCancelBtn" data-i18n="common.cancel">取消</button>
-        <button class="modal-btn confirm" id="promptManageAddBtn" style="background: #667eea;" data-i18n="promptManager.addPrompt">添加提示词</button>
+        <button class="modal-btn confirm" id="promptManageAddBtn" style="background: var(--brand-500);" data-i18n="promptManager.addPrompt">添加提示词</button>
       </div>
     </div>
   </div>
@@ -805,9 +805,9 @@
           <div class="clarify-header-content">
             <div class="clarify-title" data-i18n="dialog.operationConfirm">操作确认</div>
             <div class="clarify-question" id="confirmMessage" data-i18n="dialog.confirmDefaultMessage">模型请求执行敏感操作，是否允许？</div>
-            <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: #e67e22; margin-top: 4px;"></div>
-            <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: #666; margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px;"></div>
-            <div class="confirm-countdown" id="confirmCountdown" style="margin-top: 12px; font-size: 13px; color: #e67e22; display: flex; align-items: center; gap: 6px;">
+            <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: var(--warning-500); margin-top: 4px;"></div>
+            <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: var(--text-secondary); margin-top: 8px; padding: 8px; background: var(--bg-subtle); border-radius: 4px;"></div>
+            <div class="confirm-countdown" id="confirmCountdown" style="margin-top: 12px; font-size: 13px; color: var(--warning-500); display: flex; align-items: center; gap: 6px;">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span id="confirmCountdownText">剩余时间: 3:00</span>
             </div>
@@ -817,8 +817,8 @@
       
       <div class="clarify-footer">
         <button class="clarify-btn cancel" id="confirmDenyBtn" data-i18n="dialog.deny">拒绝</button>
-        <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" data-i18n="dialog.approveOnce" style="background: linear-gradient(135deg, #27ae60, #2ecc71);">本次放行</button>
-        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" data-i18n="dialog.approveLoop" style="background: linear-gradient(135deg, #2980b9, #3498db);">当前任务放行</button>
+        <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" data-i18n="dialog.approveOnce" style="background: linear-gradient(135deg, var(--success-strong), var(--success-500));">本次放行</button>
+        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" data-i18n="dialog.approveLoop" style="background: linear-gradient(135deg, var(--info-strong), var(--info-500));">当前任务放行</button>
       </div>
     </div>
   </div>
@@ -1006,9 +1006,9 @@
   <!-- 图片预览弹窗 -->
   <div class="modal-overlay" id="imagePreviewOverlay" style="z-index: 5000;">
     <div class="modal-container image-preview-container" style="max-width:90vw;max-height:90vh;padding:12px;background:transparent;box-shadow:none;">
-      <button class="image-preview-close" data-i18n-title="common.close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:20px;cursor:pointer;z-index:3;">×</button>
-      <button class="image-preview-download" id="imagePreviewDownload" data-i18n-title="imageEditor.downloadImage" title="下载图片" style="position:absolute;top:8px;right:48px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">↓</button>
-      <button class="image-preview-edit" id="imagePreviewEdit" data-i18n-title="imageEditor.editImage" title="编辑图片" style="position:absolute;top:8px;right:88px;width:32px;height:32px;border:none;border-radius:50%;background:rgba(0,0,0,0.5);color:white;font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">✏️</button>
+      <button class="image-preview-close" data-i18n-title="common.close" title="关闭" style="position:absolute;top:8px;right:8px;width:32px;height:32px;border:none;border-radius:50%;background:var(--scrim);color:var(--text-on-brand);font-size:20px;cursor:pointer;z-index:3;">×</button>
+      <button class="image-preview-download" id="imagePreviewDownload" data-i18n-title="imageEditor.downloadImage" title="下载图片" style="position:absolute;top:8px;right:48px;width:32px;height:32px;border:none;border-radius:50%;background:var(--scrim);color:var(--text-on-brand);font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">↓</button>
+      <button class="image-preview-edit" id="imagePreviewEdit" data-i18n-title="imageEditor.editImage" title="编辑图片" style="position:absolute;top:8px;right:88px;width:32px;height:32px;border:none;border-radius:50%;background:var(--scrim);color:var(--text-on-brand);font-size:16px;cursor:pointer;z-index:3;display:flex;align-items:center;justify-content:center;">✏️</button>
       <button class="image-preview-nav prev" id="imagePreviewPrev" data-i18n-title="imageEditor.prevImage" title="上一张" style="display:none;">◀</button>
       <button class="image-preview-nav next" id="imagePreviewNext" data-i18n-title="imageEditor.nextImage" title="下一张" style="display:none;">▶</button>
       <div id="imagePreviewViewport" style="overflow:hidden;display:flex;align-items:center;justify-content:center;max-width:calc(90vw - 24px);max-height:calc(90vh - 24px);border-radius:8px;position:relative;">
@@ -1115,12 +1115,12 @@
       <div style="flex: 1; overflow-y: auto; padding-right: 4px;">
       <div style="display: flex; gap: 12px; margin-bottom: 12px;">
         <div style="flex: 1;">
-          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.nameLabel">名称</label>
-          <input type="text" id="agentEditName" data-i18n-placeholder="agentEditor.namePlaceholder" placeholder="助手名称" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+          <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.nameLabel">名称</label>
+          <input type="text" id="agentEditName" data-i18n-placeholder="agentEditor.namePlaceholder" placeholder="助手名称" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px;">
         </div>
         <div style="width: 70px; position: relative;">
-          <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.icon">图标</label>
-          <button type="button" id="agentEditIconBtn" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 18px; text-align: center; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">🤖</button>
+          <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.icon">图标</label>
+          <button type="button" id="agentEditIconBtn" style="width: 100%; height: 34px; box-sizing: border-box; padding: 0; border: 1px solid var(--border-default); border-radius: 6px; font-size: 18px; text-align: center; background: var(--bg-surface); cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1;">🤖</button>
           <input type="hidden" id="agentEditIcon" value="🤖">
           <div class="emoji-picker" id="emojiPicker" style="display:none;">
             <div class="emoji-search-bar">
@@ -1135,49 +1135,49 @@
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.descLabel">简短描述</label>
-          <input type="text" id="agentEditDesc" data-i18n-placeholder="agentEditor.descPlaceholder" placeholder="这个助手擅长什么？" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.descLabel">简短描述</label>
+          <input type="text" id="agentEditDesc" data-i18n-placeholder="agentEditor.descPlaceholder" placeholder="这个助手擅长什么？" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px;">
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.templateQuickCreate">模板快速创建</label>
-          <select id="agentTemplateSelect" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.templateQuickCreate">模板快速创建</label>
+          <select id="agentTemplateSelect" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px;">
             <option value="" data-i18n="agentEditor.selectTemplate">-- 选择模板（可选） --</option>
           </select>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.systemPrompt">系统提示词（定义助手的角色和能力）</label>
-          <textarea id="agentEditPrompt" data-i18n-placeholder="agentEditor.promptPlaceholder" placeholder="你是一个专业的..." rows="6" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.systemPrompt">系统提示词（定义助手的角色和能力）</label>
+          <textarea id="agentEditPrompt" data-i18n-placeholder="agentEditor.promptPlaceholder" placeholder="你是一个专业的..." rows="6" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px; resize: vertical; font-family: inherit;"></textarea>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableTools">可用工具</span> <span id="agentToolCount" style="color: #999;"></span><span data-i18n="agentEditor.toolsInheritGlobal">（不勾选则继承全局工具设置）</span></label>
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableTools">可用工具</span> <span id="agentToolCount" style="color: var(--text-tertiary);"></span><span data-i18n="agentEditor.toolsInheritGlobal">（不勾选则继承全局工具设置）</span></label>
         <div id="agentToolActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
           <button type="button" class="agent-tool-action-btn" data-action="selectAll" data-i18n="common.selectAll">全选</button>
           <button type="button" class="agent-tool-action-btn" data-action="deselectAll" data-i18n="common.deselectAll">取消全选</button>
         </div>
-        <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
+        <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: 6px; padding: 8px;"></div>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableSkills">可用技能</span> <span id="agentSkillCount" style="color: #999;"></span><span data-i18n="agentEditor.skillsInheritAll">（不勾选则使用全部启用技能）</span></label>
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableSkills">可用技能</span> <span id="agentSkillCount" style="color: var(--text-tertiary);"></span><span data-i18n="agentEditor.skillsInheritAll">（不勾选则使用全部启用技能）</span></label>
         <div id="agentSkillActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
           <button type="button" class="agent-tool-action-btn" data-action="selectAllSkills" data-i18n="common.selectAll">全选</button>
           <button type="button" class="agent-tool-action-btn" data-action="deselectAllSkills" data-i18n="common.deselectAll">取消全选</button>
         </div>
-        <div id="agentSkillList" style="max-height: 200px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px;"></div>
+        <div id="agentSkillList" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: 6px; padding: 8px;"></div>
       </div>
 
       <div style="margin-bottom: 12px;">
-        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 4px;" data-i18n="agentEditor.modelSettings">模型设置（留空则使用全局设置）</label>
+        <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;" data-i18n="agentEditor.modelSettings">模型设置（留空则使用全局设置）</label>
         <div style="display: flex; gap: 12px;">
           <div style="flex: 1;">
-            <input type="text" id="agentEditModel" data-i18n-placeholder="agentEditor.modelPlaceholder" placeholder="选择或输入模型名称" list="agentModelList" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px;">
+            <input type="text" id="agentEditModel" data-i18n-placeholder="agentEditor.modelPlaceholder" placeholder="选择或输入模型名称" list="agentModelList" autocomplete="off" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px;">
             <datalist id="agentModelList"></datalist>
           </div>
           <div style="width: 160px;">
-            <select id="agentEditTempPreset" style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 13px; color: #333;">
+            <select id="agentEditTempPreset" style="width: 100%; padding: 8px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 13px; color: var(--text-primary);">
               <option value="" data-i18n="agentEditor.noPreset">不设置（使用全局）</option>
             </select>
           </div>
@@ -1185,7 +1185,7 @@
       </div>
 
       <div style="margin-bottom: 16px; display: flex; gap: 16px;">
-        <label class="check-toggle" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: #555;">
+        <label class="check-toggle" style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text-secondary);">
           <input type="checkbox" id="agentEditAllowSub" style="display:none;">
           <span class="checkmark"></span>
           <span data-i18n="agentEditor.allowSubAgent">允许作为子助手被调度</span>
@@ -1194,8 +1194,8 @@
       </div>
 
       <div class="modal-actions" style="flex-shrink: 0; padding-top: 12px; margin-top: 0;">
-        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: #e74c3c; color: white; border: none; margin-right: auto;" data-i18n-title="agentEditor.deleteAgentTitle" title="删除此助手" data-i18n="common.delete">删除</button>
-        <button class="modal-btn confirm" id="agentSaveBtn" style="background: #667eea;" data-i18n="common.save">保存</button>
+        <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: var(--danger-500); color: var(--text-on-brand); border: none; margin-right: auto;" data-i18n-title="agentEditor.deleteAgentTitle" title="删除此助手" data-i18n="common.delete">删除</button>
+        <button class="modal-btn confirm" id="agentSaveBtn" style="background: var(--brand-500);" data-i18n="common.save">保存</button>
       </div>
     </div>
   </div>
@@ -1204,11 +1204,11 @@
   <div class="modal-overlay" id="auditLogOverlay" style="display: none; z-index: 4000;">
     <div class="modal-container" style="max-width: 640px; width: 90%; height: 520px; display: flex; flex-direction: column;">
       <button class="prompt-modal-close" id="auditLogClose" data-i18n-title="common.close" title="关闭">×</button>
-      <button id="auditLogRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #888; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
+      <button id="auditLogRefreshBtn" data-i18n-title="common.refresh" title="刷新" style="position: absolute; top: 12px; right: 45px; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-tertiary); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;">🔄</button>
       <div class="modal-title" data-i18n="auditLog.title">📋 命令执行审计</div>
       <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <span style="font-size: 12px; color: #999;" data-i18n="auditLog.categoryFilter">分类筛选:</span>
-        <select id="auditLogCategoryFilter" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+        <span style="font-size: 12px; color: var(--text-tertiary);" data-i18n="auditLog.categoryFilter">分类筛选:</span>
+        <select id="auditLogCategoryFilter" style="padding: 4px 8px; border: 1px solid var(--border-default); border-radius: 4px; font-size: 12px;">
           <option value="" data-i18n="auditLog.filterAll">全部</option>
           <option value="exec" data-i18n="auditLog.filterCommand">命令执行</option>
           <option value="fs" data-i18n="auditLog.filterFile">文件操作</option>
@@ -1216,8 +1216,8 @@
           <option value="security" data-i18n="auditLog.filterSecurity">安全</option>
           <option value="system" data-i18n="auditLog.filterSystem">系统</option>
         </select>
-        <span style="font-size: 12px; color: #999; margin-left: 8px;" data-i18n="auditLog.countLabel">条数:</span>
-        <select id="auditLogLimit" style="padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
+        <span style="font-size: 12px; color: var(--text-tertiary); margin-left: 8px;" data-i18n="auditLog.countLabel">条数:</span>
+        <select id="auditLogLimit" style="padding: 4px 8px; border: 1px solid var(--border-default); border-radius: 4px; font-size: 12px;">
           <option value="50" data-i18n="auditLog.recent50">最近50条</option>
           <option value="100" data-i18n="auditLog.recent100">最近100条</option>
           <option value="200" selected data-i18n="auditLog.recent200">最近200条</option>
@@ -1225,15 +1225,15 @@
         </select>
       </div>
       <div style="margin-bottom: 10px; position: relative;">
-        <input type="text" id="auditLogSearch" data-i18n-placeholder="auditLog.searchPlaceholder" placeholder="搜索操作名、命令或路径..." style="width: 100%; padding: 8px 32px 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
-        <button type="button" id="auditLogSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: #999; font-size: 14px; cursor: pointer; display: none; padding: 2px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="common.clear" title="清除">✕</button>
+        <input type="text" id="auditLogSearch" data-i18n-placeholder="auditLog.searchPlaceholder" placeholder="搜索操作名、命令或路径..." style="width: 100%; padding: 8px 32px 8px 10px; border: 1px solid var(--border-default); border-radius: 6px; font-size: 12px; outline: none; box-sizing: border-box;">
+        <button type="button" id="auditLogSearchClear" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: none; background: transparent; color: var(--text-tertiary); font-size: 14px; cursor: pointer; display: none; padding: 2px 6px; line-height: 1; border-radius: 50%;" data-i18n-title="common.clear" title="清除">✕</button>
       </div>
       <div style="flex: 1; overflow-y: auto;" id="auditLogContent">
-        <div id="auditLogLoading" style="text-align: center; padding: 60px; color: #999;" data-i18n="common.loading">加载中...</div>
-        <div id="auditLogEmpty" style="display: none; text-align: center; padding: 60px; color: #999;" data-i18n="auditLog.noLogs">暂无审计日志</div>
+        <div id="auditLogLoading" style="text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="common.loading">加载中...</div>
+        <div id="auditLogEmpty" style="display: none; text-align: center; padding: 60px; color: var(--text-tertiary);" data-i18n="auditLog.noLogs">暂无审计日志</div>
         <div id="auditLogList" style="display: none;"></div>
       </div>
-      <div style="padding-top: 8px; border-top: 1px solid #eee; font-size: 11px; color: #999; text-align: center;" data-i18n="auditLog.defaultRange">
+      <div style="padding-top: 8px; border-top: 1px solid var(--border-subtle); font-size: 11px; color: var(--text-tertiary); text-align: center;" data-i18n="auditLog.defaultRange">
         默认查询最近7天的审计日志
       </div>
     </div>
@@ -1246,7 +1246,7 @@
       <div class="modal-message" id="agentConfirmMessage"></div>
       <div class="modal-actions">
         <button class="modal-btn cancel" id="agentConfirmCancel" data-i18n="common.cancel">取消</button>
-        <button class="modal-btn confirm" id="agentConfirmOk" style="background: #667eea;" data-i18n="common.ok">确定</button>
+        <button class="modal-btn confirm" id="agentConfirmOk" style="background: var(--brand-500);" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>

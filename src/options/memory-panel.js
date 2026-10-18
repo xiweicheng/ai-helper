@@ -330,11 +330,11 @@ function renderGate(status) {
   const gotoTab = agentOff ? 'agent' : 'toolbox';
   gate.innerHTML = `
     <div class="toolbox-empty" style="text-align:left; padding:24px 20px;">
-      <div style="display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:#555;">
+      <div style="display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:var(--text-secondary);">
         <span style="font-size:22px;">${icon}</span><span>${escapeHtml(title)}</span>
       </div>
-      <div style="margin-top:8px; line-height:1.7; color:#888; font-size:13px;">${escapeHtml(desc)}</div>
-      <button class="toolbox-add-btn" data-goto-tab="${gotoTab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(btnLabel)}</button>
+      <div style="margin-top:8px; line-height:1.7; color:var(--text-tertiary); font-size:13px;">${escapeHtml(desc)}</div>
+      <button class="toolbox-add-btn" data-goto-tab="${gotoTab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:var(--brand-500); border-color:var(--brand-500);">${escapeHtml(btnLabel)}</button>
     </div>`;
 }
 

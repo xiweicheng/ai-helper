@@ -163,7 +163,7 @@ function updateRagToggleLabel(enabled) {
   const label = document.getElementById('ragToggleLabel');
   if (label) {
     label.textContent = enabled ? t('common.enabled') : t('common.disabled');
-    label.style.color = enabled ? '#666' : '#999';
+    label.style.color = enabled ? 'var(--text-secondary)' : 'var(--text-tertiary)';
   }
 }
 
@@ -214,15 +214,15 @@ function renderGate(kind) {
   }[kind];
 
   const btnHtml = cfg.tab
-    ? `<button class="toolbox-add-btn" data-goto-tab="${cfg.tab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(cfg.btn)}</button>`
-    : `<button class="toolbox-add-btn" data-action="${cfg.action}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:#667eea; border-color:#667eea;">${escapeHtml(cfg.btn)}</button>`;
+    ? `<button class="toolbox-add-btn" data-goto-tab="${cfg.tab}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:var(--brand-500); border-color:var(--brand-500);">${escapeHtml(cfg.btn)}</button>`
+    : `<button class="toolbox-add-btn" data-action="${cfg.action}" style="width:auto; margin-top:14px; padding:8px 18px; border-style:solid; color:var(--brand-500); border-color:var(--brand-500);">${escapeHtml(cfg.btn)}</button>`;
 
   gateEl.innerHTML = `
     <div class="toolbox-empty" style="text-align:left; padding:24px 20px;">
-      <div style="display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:#555;">
+      <div style="display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; color:var(--text-secondary);">
         <span style="font-size:22px;">${cfg.icon}</span><span>${escapeHtml(cfg.title)}</span>
       </div>
-      <div style="margin-top:8px; line-height:1.7; color:#888; font-size:13px;">${escapeHtml(cfg.desc)}</div>
+      <div style="margin-top:8px; line-height:1.7; color:var(--text-tertiary); font-size:13px;">${escapeHtml(cfg.desc)}</div>
       ${btnHtml}
     </div>`;
 }
@@ -514,7 +514,7 @@ function bindVectorFormEvents(overlay, collectionId = null) {
       if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
       if (resultEl) {
         resultEl.textContent = `✓ ${t('knowledge.vectorTestOk', { model: res.model, dims: res.dimensions })}`;
-        resultEl.style.color = '#38a169';
+        resultEl.style.color = 'var(--success-strong)';
       }
       // 自动填充/修正维度
       if (dimsInput && res.dimensions) {
@@ -527,7 +527,7 @@ function bindVectorFormEvents(overlay, collectionId = null) {
     } catch (err) {
       if (resultEl) {
         resultEl.textContent = `✕ ${t('knowledge.vectorTestFailed', { error: err.message })}`;
-        resultEl.style.color = '#c0392b';
+        resultEl.style.color = 'var(--danger-strong)';
       }
     } finally {
       testBtn.disabled = false;
@@ -767,9 +767,9 @@ function showIngestDialog(c) {
     <div class="import-panel active" data-panel="file">
       <div class="upload-drop-zone" id="kbDropzone">
         <div class="upload-icon">📄</div>
-        <div style="margin-top:8px; color:#666; font-size:13px;">${escapeHtml(t('knowledge.dropHint'))}</div>
-        <div style="margin-top:6px; font-size:12px; color:#999;">${escapeHtml(t('knowledge.dropSupported'))}</div>
-        <div id="kbSelectedFile" style="display:none; margin-top:8px; color:#38a169; font-weight:500; font-size:13px;"></div>
+        <div style="margin-top:8px; color:var(--text-secondary); font-size:13px;">${escapeHtml(t('knowledge.dropHint'))}</div>
+        <div style="margin-top:6px; font-size:12px; color:var(--text-tertiary);">${escapeHtml(t('knowledge.dropSupported'))}</div>
+        <div id="kbSelectedFile" style="display:none; margin-top:8px; color:var(--success-strong); font-weight:500; font-size:13px;"></div>
       </div>
       <input type="file" id="kbFileInput" style="display:none" accept="${ACCEPT_EXTS}">
     </div>
@@ -980,7 +980,7 @@ async function refreshDocsList(body, c) {
     const docs = res.documents || [];
 
     if (docs.length === 0) {
-      body.innerHTML = `<div class="kb-status" style="color:#999;">${escapeHtml(t('knowledge.docsEmpty'))}</div>`;
+      body.innerHTML = `<div class="kb-status" style="color:var(--text-tertiary);">${escapeHtml(t('knowledge.docsEmpty'))}</div>`;
       return;
     }
 
@@ -993,7 +993,7 @@ async function refreshDocsList(body, c) {
         <button class="kb-doc-del" type="button" data-doc-delete title="${escapeHtml(t('knowledge.actionDelete'))}">✕</button>
       </div>`).join('')}</div>`;
   } catch (err) {
-    body.innerHTML = `<div class="kb-status" style="color:#c0392b;">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
+    body.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
   }
 }
 
@@ -1052,7 +1052,7 @@ function showSearchDialog(c) {
       if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
       renderSearchResults(resultsEl, res);
     } catch (err) {
-      resultsEl.innerHTML = `<div class="kb-status" style="color:#c0392b;">${escapeHtml(t('knowledge.searchFailed', { error: err.message }))}</div>`;
+      resultsEl.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.searchFailed', { error: err.message }))}</div>`;
     } finally {
       searchBtn.disabled = false;
       searchBtn.textContent = t('knowledge.searchBtn');
@@ -1070,7 +1070,7 @@ function renderSearchResults(container, result) {
   const results = result.results || [];
 
   if (results.length === 0) {
-    container.innerHTML = `<div class="kb-status" style="color:#999;">${escapeHtml(t('knowledge.searchNoHits'))}</div>`;
+    container.innerHTML = `<div class="kb-status" style="color:var(--text-tertiary);">${escapeHtml(t('knowledge.searchNoHits'))}</div>`;
     return;
   }
 
