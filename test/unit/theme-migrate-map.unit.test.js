@@ -25,13 +25,16 @@ it('rgba 三元组全部有族/黑白灰归属', () => {
 it('就地替换 hex/rgba 为 token 引用，且幂等', () => {
   const dir = mkdtempSync(join(tmpdir(), 'theme-mig-'));
   const file = join(dir, 'fixture.css');
-  const src = '.a { color: #667eea; }\n.b { background: rgba(0, 0, 0, 0.08); }\n.c { color: #ffffff; }\n';
+  const src = '.a { color: #667eea; }\n.b { background: rgba(0, 0, 0, 0.08); }\n.c { color: #ffffff; }\n.g { background: rgba(255, 255, 255, 0.85); }\n.h { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2); }\n';
   writeFileSync(file, src, 'utf-8');
   execFileSync('python3', [SCRIPT, file], { encoding: 'utf-8' });
   const once = readFileSync(file, 'utf-8');
   expect(once).toContain('var(--brand-500)');
   expect(once).toContain('rgba(var(--overlay-rgb), 0.12)');
   expect(once).toContain('var(--text-inverse)');
+  // 白族 α>0.45 background → surface 通道；α≤0.45 on-color 高光保持字面量
+  expect(once).toContain('rgba(var(--surface-rgb), 0.85)');
+  expect(once).toContain('rgba(255, 255, 255, 0.2)');
   expect(once).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   // 幂等：重跑无变化
   execFileSync('python3', [SCRIPT, file], { encoding: 'utf-8' });

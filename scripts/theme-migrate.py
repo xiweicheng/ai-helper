@@ -80,10 +80,9 @@ def map_hex_in_context(h, line):
         return f'var(--{val})'
     return None  # 未覆盖
 
-def map_rgba(m):
+def map_rgba(m, line=''):
     triplet = f'{m.group(1)},{m.group(2)},{m.group(3)}'
     alpha = float(m.group(4))
-    raw = m.group(0)
     if triplet in WHITE:
         return None  # on-color 保持字面量
     if triplet == '30,30,30':
@@ -100,14 +99,37 @@ def map_rgba(m):
             tok = 'shadow-sm' if alpha < sp['sm'] else ('shadow-md' if alpha < sp['md'] else 'shadow-lg')
             return f'var(--{tok})'
         return 'var(--scrim)'
-    if is_gray(triplet):
-        return f'rgba(var(--overlay-rgb), {m.group(4)})'
     if triplet == '255,255,255':
         w = BANDS['white']
         if alpha > w['onColorMaxAlpha']:
-            return f'rgba(var(--surface-rgb), {m.group(4)})'
-        return None  # on-color 保持
+            attr = pick_attr(line)
+            # 白玻璃面板底 → surface 通道（暗面转深灰）；渐变内/彩底白字 → 保持字面量（两主题等效）
+            if 'gradient(' in line:
+                return None
+            if attr in ('background', 'background-color'):
+                return f'rgba(var(--surface-rgb), {m.group(4)})'
+            return None  # color/border/box-shadow 上的白 → on-color 保持
+        return None  # α≤0.45 半透白字/高光：保持字面量
+    if is_gray(triplet):
+        return f'rgba(var(--overlay-rgb), {m.group(4)})'
     return None  # 未归属族
+
+def map_keyword(val, line):
+    v = val.lower()
+    attr = pick_attr(line)
+    if v == 'white':
+        if attr == 'color':
+            return 'var(--text-on-brand)'      # 彩底白字（两主题恒白）
+        if attr in ('background', 'background-color'):
+            return 'var(--bg-surface)'          # 白卡片/面板底 → 暗面翻转
+        return None                               # border/shadow 上白高光 → 保持
+    if v == 'black':
+        if attr == 'color':
+            return 'var(--text-primary)'
+        return None
+    return None
+
+KW_RE = re.compile(r'(:\s*)(white|black)(?=[\s;}!])', re.I)
 
 def target_files(args):
     return args if args else [DEFAULT_SCAN]
@@ -172,7 +194,11 @@ def main(argv):
                     return m.group(0)
                 return r
             line = HEX_RE.sub(hex_sub, line)
-            line = RGBA_RE.sub(lambda m: (map_rgba(m) or (review.append((ln, m.group(0))) or m.group(0))), line)
+            line = RGBA_RE.sub(lambda m: (map_rgba(m, line) or (review.append((ln, m.group(0))) or m.group(0))), line)
+            def kw_sub(m):
+                r = map_keyword(m.group(2), line)
+                return (m.group(1) + r) if r else m.group(0)
+            line = KW_RE.sub(kw_sub, line)
             changed.append(line)
         open(f, 'w', encoding='utf-8').write(''.join(changed))
         if review:
