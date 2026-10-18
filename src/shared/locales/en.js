@@ -73,7 +73,6 @@ export default {
     exportConfigTitle: 'Export Settings',
     tabBasic: 'Basic',
     tabReact: 'Reasoning',
-    tabReflection: 'Reflection',
     tabToolbar: 'Selection',
     tabAgent: 'Agent',
     tabToolbox: 'Extension',
@@ -743,11 +742,14 @@ export default {
     guideTip: '• Adjust these parameters based on network conditions and task complexity',
   },
 
-  // options.html - Reflection tab
+  // options.html - AI self-reflection group (inside Reasoning tab)
   reflection: {
-    title: '🎯 AI Self-Reflection Settings',
+    title: 'AI Self-Reflection',
     enabled: 'Enabled',
     subtitle: 'Control the AI self-evaluation and revision behavior for task results',
+    subtitleHint: '(control the AI self-evaluation and revision behavior for task results)',
+    desc1: 'When enabled, the AI self-evaluates the result after the reasoning loop and auto-revises or re-executes when the score falls below the threshold.',
+    desc2: 'Turning this off collapses the sub-switches below; enabling reflection adds API calls, so weigh it against your needs.',
     postReflection: 'Post-reflection',
     postReflectionHint: '(evaluate result quality after completion)',
     subtaskReflection: 'Subtask reflection',

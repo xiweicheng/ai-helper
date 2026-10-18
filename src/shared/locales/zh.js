@@ -73,7 +73,6 @@ export default {
     exportConfigTitle: '导出配置',
     tabBasic: '基础',
     tabReact: '推理',
-    tabReflection: '反思',
     tabToolbar: '划词',
     tabAgent: '代理',
     tabToolbox: '扩展',
@@ -743,11 +742,14 @@ export default {
     guideTip: '• 建议根据网络状况和任务复杂度调整这些参数',
   },
 
-  // options.html - 反思 tab
+  // options.html - AI 自我反思分组（位于推理 Tab 内）
   reflection: {
-    title: '🎯 AI 自我反思配置',
+    title: 'AI 自我反思',
     enabled: '已启用',
     subtitle: '控制 AI 对任务执行结果的自我评估和修订行为',
+    subtitleHint: '（控制 AI 对任务执行结果的自我评估和修订行为）',
+    desc1: '启用后，AI 会在推理循环结束后对结果自我评估，评分低于阈值时自动修订或重新执行。',
+    desc2: '关闭后收起下方二级开关；启用反思会增加 API 调用次数，建议按需权衡。',
     postReflection: '后置反思',
     postReflectionHint: '（完成后评估结果质量）',
     subtaskReflection: '子任务反思',

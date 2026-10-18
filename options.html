@@ -33,7 +33,6 @@
     <div class="tab-nav">
       <button class="tab-nav-btn active" data-tab="basic" data-i18n="settings.tabBasic">基础</button>
       <button class="tab-nav-btn" data-tab="react" data-i18n="settings.tabReact">推理</button>
-      <button class="tab-nav-btn" data-tab="reflection" data-i18n="settings.tabReflection">反思</button>
       <button class="tab-nav-btn" data-tab="toolbar" data-i18n="settings.tabToolbar">划词</button>
       <button class="tab-nav-btn" data-tab="agent" data-i18n="settings.tabAgent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox" data-i18n="settings.tabToolbox">扩展</button>
@@ -415,6 +414,47 @@
         </div>
       </div>
 
+      <!-- AI 自我反思（合并进推理配置：总开关 + 二级开关，样式与相邻项对齐） -->
+      <div class="react-config-item">
+        <label>
+          <span data-i18n="reflection.title">AI 自我反思</span>
+          <span class="hint-text" data-i18n="reflection.subtitleHint">（控制 AI 对任务执行结果的自我评估和修订行为）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="reflectionEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="reflectionToggleLabel" data-i18n="react.disabled">已停用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="reflection.desc1">启用后，AI 会在推理循环结束后对结果自我评估，评分低于阈值时自动修订或重新执行。</span><br>
+          <span data-i18n="reflection.desc2">关闭后收起下方二级开关；启用反思会增加 API 调用次数，建议按需权衡。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item reflection-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="reflection.postReflection">后置反思</span>
+          <span class="hint-text" data-i18n="reflection.postReflectionHint">（完成后评估结果质量）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="postReflectionEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="postReflectionLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+      </div>
+
+      <div class="react-config-item reflection-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="reflection.subtaskReflection">子任务反思</span>
+          <span class="hint-text" data-i18n="reflection.subtaskReflectionHint">（高级功能，默认关闭）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="subtaskReflectionEnabled">
+          <span class="toggle-switch"></span>
+          <span id="subtaskReflectionLabel" data-i18n="react.disabled">已停用</span>
+        </label>
+      </div>
+
       <div class="react-config-item">
         <label>
           <span data-i18n="react.enableExecutionLog">启用执行日志</span>
@@ -473,49 +513,6 @@
     </div>
 
     </div><!-- /tab-react -->
-
-    <!-- 反思配置区域 -->
-    <div class="tab-panel" data-tab="reflection">
-    <div class="reflection-config" id="reflectionConfig">
-      <div class="reflection-title-row">
-        <h2 data-i18n="reflection.title">🎯 AI 自我反思配置</h2>
-        <label class="global-toggle">
-          <input type="checkbox" id="reflectionEnabled" checked>
-          <span class="global-toggle-slider"></span>
-          <span class="global-toggle-label" id="reflectionToggleLabel" data-i18n="reflection.enabled">已启用</span>
-        </label>
-      </div>
-      <p class="subtitle" data-i18n="reflection.subtitle">控制 AI 对任务执行结果的自我评估和修订行为</p>
-
-      <div class="reflection-toggles">
-        <div class="reflection-toggle-row" id="postReflectionSection">
-          <span class="reflection-row-icon">📝</span>
-          <span class="reflection-row-text"><span data-i18n="reflection.postReflection">后置反思</span><span class="reflection-row-hint" data-i18n="reflection.postReflectionHint">（完成后评估结果质量）</span></span>
-          <label class="reflection-toggle-switch">
-            <input type="checkbox" id="postReflectionEnabled" checked>
-            <span class="reflection-toggle-slider"></span>
-          </label>
-        </div>
-        <div class="reflection-toggle-row" id="subtaskReflectionSection">
-          <span class="reflection-row-icon">📋</span>
-          <span class="reflection-row-text"><span data-i18n="reflection.subtaskReflection">子任务反思</span><span class="reflection-row-hint" data-i18n="reflection.subtaskReflectionHint">（高级功能，默认关闭）</span></span>
-          <label class="reflection-toggle-switch">
-            <input type="checkbox" id="subtaskReflectionEnabled">
-            <span class="reflection-toggle-slider"></span>
-          </label>
-        </div>
-      </div>
-
-      <div class="info-box" style="margin-top: 15px;">
-        <h3 data-i18n="reflection.configGuide">💡 反思配置说明</h3>
-        <p>
-          <strong data-i18n="reflection.guidePostReflection">后置反思</strong><span data-i18n="reflection.guidePostReflectionDesc">：在推理循环结束后，AI 会对最终结果进行自我评估。如果评分低于阈值，会自动修订或重新执行。</span><br>
-          <strong data-i18n="reflection.guideSubtaskReflection">子任务反思</strong><span data-i18n="reflection.guideSubtaskReflectionDesc">：对于复杂任务拆解后的子任务进行单独评估，默认关闭（高级功能）。</span><br>
-          <span data-i18n="reflection.guideTip">• 启用反思会增加 API 调用次数，建议根据需求权衡</span>
-        </p>
-      </div>
-    </div>
-    </div><!-- /tab-reflection -->
 
     <!-- 工具栏配置区域 -->
     <div class="tab-panel" data-tab="toolbar">

@@ -93,7 +93,7 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'reflection', 'chat', 'agent', 'toolbox', 'knowledge', 'memory'];
+  const validTabs = ['basic', 'toolbar', 'react', 'chat', 'agent', 'toolbox', 'knowledge', 'memory'];
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
@@ -1125,86 +1125,65 @@ document.addEventListener('DOMContentLoaded', async function() {
     persistAndRender();
   });
   
-  // 反思总开关控制
+  // AI 自我反思（已合并进推理 Tab：总开关 + 二级开关，联动收起方式与「流式工具卡片默认展开」一致）
   const reflectionEnabled = document.getElementById('reflectionEnabled');
-  const reflectionConfig = document.getElementById('reflectionConfig');
   const reflectionToggleLabel = document.getElementById('reflectionToggleLabel');
-  
-  function updateReflectionSectionVisibility() {
-    if (!reflectionConfig) return;
-    
-    const enabled = reflectionEnabled && reflectionEnabled.checked;
-    if (!enabled) {
-      reflectionConfig.classList.add('disabled');
-    } else {
-      reflectionConfig.classList.remove('disabled');
-    }
-    
+  const reflectionSubItems = document.querySelectorAll('.reflection-sub');
+  const postReflectionEnabled = document.getElementById('postReflectionEnabled');
+  const postReflectionLabel = document.getElementById('postReflectionLabel');
+  const subtaskReflectionEnabled = document.getElementById('subtaskReflectionEnabled');
+  const subtaskReflectionLabel = document.getElementById('subtaskReflectionLabel');
+
+  // 总开关收起时隐藏两个二级开关（仅控制显隐与自身标签，不改二级开关的存储值）
+  function updateReflectionSubVisibility() {
+    const show = !!(reflectionEnabled && reflectionEnabled.checked);
+    reflectionSubItems.forEach((el) => { el.style.display = show ? 'block' : 'none'; });
     if (reflectionToggleLabel) {
-      reflectionToggleLabel.textContent = enabled ? t('common.enabled') : t('common.disabled');
+      reflectionToggleLabel.textContent = show ? t('common.enabled') : t('common.disabled');
     }
   }
-  
-  function updateReflectionModuleVisibility(moduleId, toggleId) {
-    const module = document.getElementById(moduleId);
-    const toggle = document.getElementById(toggleId);
-    
-    if (!module || !toggle) return;
-    
-    if (!toggle.checked) {
-      module.classList.add('disabled');
-    } else {
-      module.classList.remove('disabled');
-    }
-  }
-  
-  if (reflectionEnabled) {
-    reflectionEnabled.addEventListener('change', function() {
-      updateReflectionSectionVisibility();
-      // 立即持久化反思总开关状态，无需点保存
-      const enabled = this.checked;
-      chrome.storage.local.get(['reflectionConfig'], (result) => {
-        const config = result.reflectionConfig || { postReflection: {}, subtaskReflection: {} };
-        config.enabled = enabled;
-        chrome.storage.local.set({ reflectionConfig: config });
-      });
-    });
-    // 初始化反思总开关状态
-    updateReflectionSectionVisibility();
-  }
-  
-  // 立即持久化反思子开关状态
-  function persistReflectionSubToggle(subKey, enabled) {
+
+  // 立即持久化反思配置（仅翻传入字段，保留其余字段，无需点保存）
+  function persistReflectionField(applyTo) {
     chrome.storage.local.get(['reflectionConfig'], (result) => {
       const config = result.reflectionConfig || { postReflection: {}, subtaskReflection: {} };
-      if (!config[subKey]) config[subKey] = {};
-      config[subKey].enabled = enabled;
+      applyTo(config);
       chrome.storage.local.set({ reflectionConfig: config });
     });
   }
 
-  // 后置反思开关控制
-  const postReflectionEnabled = document.getElementById('postReflectionEnabled');
+  if (reflectionEnabled) {
+    reflectionEnabled.addEventListener('change', function() {
+      updateReflectionSubVisibility();
+      const enabled = this.checked;
+      persistReflectionField((config) => { config.enabled = enabled; });
+    });
+    updateReflectionSubVisibility();
+  }
+
   if (postReflectionEnabled) {
     postReflectionEnabled.addEventListener('change', function() {
-      updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
-      persistReflectionSubToggle('postReflection', this.checked);
+      if (postReflectionLabel) postReflectionLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
+      const enabled = this.checked;
+      persistReflectionField((config) => {
+        if (!config.postReflection) config.postReflection = {};
+        config.postReflection.enabled = enabled;
+      });
     });
+    if (postReflectionLabel) postReflectionLabel.textContent = postReflectionEnabled.checked ? t('common.enabled') : t('common.disabled');
   }
-  
-  // 子任务反思开关控制
-  const subtaskReflectionEnabled = document.getElementById('subtaskReflectionEnabled');
+
   if (subtaskReflectionEnabled) {
     subtaskReflectionEnabled.addEventListener('change', function() {
-      updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
-      persistReflectionSubToggle('subtaskReflection', this.checked);
+      if (subtaskReflectionLabel) subtaskReflectionLabel.textContent = this.checked ? t('common.enabled') : t('common.disabled');
+      const enabled = this.checked;
+      persistReflectionField((config) => {
+        if (!config.subtaskReflection) config.subtaskReflection = {};
+        config.subtaskReflection.enabled = enabled;
+      });
     });
+    if (subtaskReflectionLabel) subtaskReflectionLabel.textContent = subtaskReflectionEnabled.checked ? t('common.enabled') : t('common.disabled');
   }
-  
-  // 初始化时更新可见性
-  updateReflectionSectionVisibility();
-  updateReflectionModuleVisibility('postReflectionSection', 'postReflectionEnabled');
-  updateReflectionModuleVisibility('subtaskReflectionSection', 'subtaskReflectionEnabled');
 
   // ==================== 流式输出配置 ====================
   const streamEnabledEl = document.getElementById('streamEnabled');

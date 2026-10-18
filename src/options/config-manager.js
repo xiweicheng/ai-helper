@@ -1054,33 +1054,19 @@ export function loadConfig() {
       streamExpandToolsWrap.style.display = (result.streamEnabled !== undefined ? result.streamEnabled : true) ? 'block' : 'none';
     }
     
-    // 更新反思配置区域可见性
+    // 同步反思区域：总开关收起时隐藏二级开关，并刷新各开关文字标签（与「流式工具卡片默认展开」一致，不回写 storage）
     function updateReflectionVisibility() {
-      const reflectionConfig = document.getElementById('reflectionConfig');
-      const reflectionEnabled = document.getElementById('reflectionEnabled');
-      
-      if (reflectionConfig) {
-        if (!reflectionEnabled || !reflectionEnabled.checked) {
-          reflectionConfig.classList.add('disabled');
-        } else {
-          reflectionConfig.classList.remove('disabled');
-        }
-      }
-      
-      function updateModule(moduleId, toggleId) {
-        const module = document.getElementById(moduleId);
-        const toggle = document.getElementById(toggleId);
-        if (module && toggle) {
-          if (!toggle.checked) {
-            module.classList.add('disabled');
-          } else {
-            module.classList.remove('disabled');
-          }
-        }
-      }
-      
-      updateModule('postReflectionSection', 'postReflectionEnabled');
-      updateModule('subtaskReflectionSection', 'subtaskReflectionEnabled');
+      const master = document.getElementById('reflectionEnabled');
+      const show = !!(master && master.checked);
+      document.querySelectorAll('.reflection-sub').forEach((el) => { el.style.display = show ? 'block' : 'none'; });
+      const masterLabel = document.getElementById('reflectionToggleLabel');
+      if (masterLabel) masterLabel.textContent = show ? t('common.enabled') : t('common.disabled');
+      const postEl = document.getElementById('postReflectionEnabled');
+      const postLabel = document.getElementById('postReflectionLabel');
+      if (postLabel) postLabel.textContent = postEl && postEl.checked ? t('common.enabled') : t('common.disabled');
+      const subtaskEl = document.getElementById('subtaskReflectionEnabled');
+      const subtaskLabel = document.getElementById('subtaskReflectionLabel');
+      if (subtaskLabel) subtaskLabel.textContent = subtaskEl && subtaskEl.checked ? t('common.enabled') : t('common.disabled');
     }
 
     // 加载完成反馈开关（默认开启，undefined 视为 true）

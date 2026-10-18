@@ -89,7 +89,9 @@ test('真实 tab 全部在 hash 白名单里（否则刷新后掉回「基础」
   expect(block, '找不到 validTabs 白名单').toBeTruthy();
   const listed = [...block[1].matchAll(/'(\w+)'/g)].map((m) => m[1]);
   const realTabs = [...html.matchAll(/class="tab-nav-btn[^"]*" data-tab="(\w+)"/g)].map((m) => m[1]);
-  expect(realTabs.length).toBeGreaterThanOrEqual(8);
+  // 反思已合并进推理 Tab，导航为 7 个；下限只防「意外丢 tab」
+  expect(realTabs.length).toBeGreaterThanOrEqual(7);
+  expect(realTabs).not.toContain('reflection');
   // 单向子集：白名单里可以有历史死项，但页面上存在的 tab 不能被漏
   expect(realTabs.filter((t) => !listed.includes(t)), `validTabs 漏了：${realTabs.filter((t) => !listed.includes(t))}`).toEqual([]);
 });
