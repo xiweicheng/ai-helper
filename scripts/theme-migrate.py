@@ -208,6 +208,19 @@ def apply_line_js(line, ln, review, css_rules=False):
 
 
 
+def apply_line_css(line, ln, review):
+    # CSS 逐声明定属性：提取每个 { } 声明区或裸声明行走 map_decls，修复单行多声明时
+    # 整行取首个属性导致 background:#fff 被前面的 border-radius 带偏而漏映射
+    ob = line.find('{'); cb = line.rfind('}')
+    if ob != -1:
+        rs = ob + 1
+        rend = cb if (cb != -1 and cb > ob) else len(line)
+        return line[:rs] + map_decls(line[rs:rend], ln, review) + line[rend:]
+    if re.match(r'\s*[a-zA-Z-]+\s*:', line):
+        return map_decls(line, ln, review)
+    return line
+
+
 def target_files(args):
     return args if args else [DEFAULT_SCAN]
 
@@ -271,20 +284,7 @@ def main(argv):
             if lang == 'js':
                 changed.append(apply_line_js(line, ln, review, css_rules))
                 continue
-            def hex_sub(m):
-                r = map_hex_in_context(m.group(0), line)
-                if r is None:
-                    if norm_hex(m.group(0)) not in WHITE:
-                        review.append((ln, m.group(0)))
-                    return m.group(0)
-                return r
-            line = HEX_RE.sub(hex_sub, line)
-            line = RGBA_RE.sub(lambda m: (map_rgba(m, line) or (review.append((ln, m.group(0))) or m.group(0))), line)
-            def kw_sub(m):
-                r = map_keyword(m.group(2), line)
-                return (m.group(1) + r) if r else m.group(0)
-            line = KW_RE.sub(kw_sub, line)
-            changed.append(line)
+            changed.append(apply_line_css(line, ln, review))
         open(f, 'w', encoding='utf-8').write(''.join(changed))
         if review:
             print(f'[REVIEW] {f} 需人工复核 {len(review)} 处：')
