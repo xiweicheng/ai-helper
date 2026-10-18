@@ -736,6 +736,10 @@ body {
 .agent-item.active .agent-item-name {
   color: var(--brand-500);
 }
+/* active 项为品牌色淡底，11px 描述文本用 tertiary 对比不足 AA，随名称一并升为 secondary */
+.agent-item.active .agent-item-desc {
+  color: var(--text-secondary);
+}
 .agent-item-actions {
   display: flex;
   align-items: center;
