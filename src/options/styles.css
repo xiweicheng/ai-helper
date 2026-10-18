@@ -87,7 +87,7 @@ label .info-icon {
   height: 16px;
   line-height: 16px;
   text-align: center;
-  background: var(--brand-500);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   border-radius: 50%;
   font-size: 11px;
@@ -164,7 +164,7 @@ textarea {
   transition: all 0.2s;
 }
 .btn-primary {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   width: 100%;
 }
@@ -1355,7 +1355,7 @@ textarea {
 
 .tool-item .tool-drag-handle {
   cursor: grab;
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   padding: 2px 4px;
@@ -1553,7 +1553,7 @@ textarea {
 .domain-blocklist-empty {
   padding: 16px;
   text-align: center;
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
@@ -1681,7 +1681,7 @@ textarea {
 .modal-actions .btn-primary {
   width: auto;
   padding: 8px 24px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
 }
 
@@ -2988,7 +2988,7 @@ textarea {
 }
 .toolbox-empty-desc {
   font-size: 12px;
-  color: var(--text-disabled);
+  color: var(--text-tertiary);
 }
 
 /* MCP 服务器卡片 */

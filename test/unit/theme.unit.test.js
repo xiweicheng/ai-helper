@@ -101,4 +101,36 @@ describe('theme.js', () => {
     await setTheme('sepia');
     expect(getTheme()).toBe('light');
   });
+
+  it('apply 仅在生效值变化时通知订阅者（吞同值回声）', async () => {
+    mockStorage({});
+    const { initTheme, subscribeTheme, setTheme } = await import('../../src/shared/theme.js');
+    await initTheme();
+    let calls = 0;
+    subscribeTheme(() => { calls += 1; });
+    await setTheme('dark');   // light→dark 变化，通知 1 次
+    expect(calls).toBe(1);
+    await setTheme('dark');   // 同值再设，不重复通知
+    expect(calls).toBe(1);
+    await setTheme('light');  // 回到 light，变化再通知
+    expect(calls).toBe(2);
+  });
+
+  it('storage.get 报 lastError 时保留镜像主题，不回落 light', async () => {
+    localStorage.setItem('appThemeResolved', 'dark'); // 顶层镜像已应用 dark
+    globalThis.chrome = {
+      storage: {
+        local: {
+          get: (keys, cb) => { globalThis.chrome.runtime.lastError = { message: 'boom' }; cb({}); },
+          set: (obj, cb) => { if (cb) cb(); }
+        },
+        onChanged: { addListener: () => {} }
+      },
+      runtime: {}
+    };
+    const { initTheme, getResolvedTheme } = await import('../../src/shared/theme.js');
+    await initTheme();
+    expect(getResolvedTheme()).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
 });

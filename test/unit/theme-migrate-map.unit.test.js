@@ -8,13 +8,26 @@ import { it, expect } from 'vitest';
 
 const SCRIPT = 'scripts/theme-migrate.py';
 
-it('theme-map.json 覆盖 styles.css 全部去重 hex（除白名单）', () => {
-  const css = readFileSync('src/side_panel/styles.css', 'utf-8');
-  const hex = new Set((css.match(/#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g) || []).map((h) =>
-    h.length === 4 ? '#' + [...h.slice(1)].map((c) => c + c).join('') : h.toLowerCase()));
-  const out = execFileSync('python3', [SCRIPT, '--missing'], { encoding: 'utf-8' });
-  const missing = out.trim() ? JSON.parse(out).filter((v) => !hex.has(v)) : [];
-  expect(missing).toEqual([]);
+it('theme-map.json 覆盖消费级 CSS 全部去重 hex（除白名单，含文件作用域）', () => {
+  const out = execFileSync('python3', [SCRIPT, '--missing',
+    'src/side_panel/styles.css', 'src/options/styles.css'], { encoding: 'utf-8' });
+  expect(JSON.parse(out || '[]')).toEqual([]);
+});
+
+it('whitelist 文件作用域：纸面值出现在非豁免文件时被 --check 拦下（防 B-2 复发）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'theme-scope-'));
+  const file = join(dir, 'panel.css');
+  // #fff3cd 仅豁免于 markdown-render.js；#1f2328 仅豁免于 styles.css
+  // → 写进另一个临时面板文件应视为未覆盖（旧的全局豁免会掩盖这类漏网）
+  writeFileSync(file, '.x { background: #fff3cd; color: #1f2328; }\n', 'utf-8');
+  let err;
+  try {
+    execFileSync('python3', [SCRIPT, '--check', file], { encoding: 'utf-8' });
+  } catch (e) { err = e; }
+  expect(err).toBeTruthy();
+  const reported = JSON.parse(err.stdout);
+  expect(reported.uncovered).toContain('#fff3cd');
+  expect(reported.uncovered).toContain('#1f2328');
 });
 
 it('rgba 三元组全部有族/黑白灰归属', () => {

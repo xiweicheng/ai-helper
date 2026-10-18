@@ -6,6 +6,8 @@
  */
 
 :root {
+  color-scheme: light;
+
   /* 表面 */
   --bg-page: #ffffff;
   --bg-surface: #ffffff;
@@ -98,6 +100,8 @@
 }
 
 html[data-theme="dark"] {
+  color-scheme: dark;
+
   /* 表面 */
   --bg-page: #16181d;
   --bg-surface: #1e2128;
@@ -190,6 +194,15 @@ html[data-theme="dark"] {
 /* 通用基底：划选高亮跟随主题 */
 ::selection {
   background: var(--selection-bg);
+}
+
+/* 原生控件：随主题翻转 UA 默认（避免暗色下复选/单选/滑块仍白底），品牌强调色统一 */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+input[type="color"],
+progress {
+  accent-color: var(--brand-500);
 }
 
 /* 暗色下 markdown 覆盖段：github-markdown-light.min.css 写死亮色，这里用语义 token 逐类覆盖

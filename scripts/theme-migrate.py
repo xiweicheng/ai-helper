@@ -10,7 +10,7 @@ theme-migrate.py —— 主题色值批量映射执行器 + 零残留检查
   python3 scripts/theme-migrate.py --missing-rgba       输出未归属族的 rgba 三元组（JSON）
   可选：--ranges "120-340,500-780" 限定行段；--mode js 处理字符串内色值
 """
-import re, sys, json, os
+import re, sys, json, os, fnmatch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAP = json.load(open(os.path.join(HERE, 'theme-map.json'), encoding='utf-8'))
@@ -18,7 +18,28 @@ DIRECT = MAP['direct']
 CTX = MAP['contextDispatch']
 FAM = MAP['rgbaFamilies']
 BANDS = MAP['bands']
-WHITE = set(MAP['whitelist'])
+
+# whitelist 支持两种条目：纯字符串=全局豁免（任意文件）；对象 {"value","files":[glob,..]}=文件作用域豁免。
+# 文件作用域避免导出模板/内联 SVG 的字面值豁免顺带掩盖面板 CSS 里同值的真实漏网（B-2 根因）。
+WL_GLOBAL = set()
+WL_SCOPED = []  # [(value, [glob, ...])]
+for _e in MAP['whitelist']:
+    if isinstance(_e, str):
+        WL_GLOBAL.add(_e)
+    else:
+        WL_SCOPED.append((_e['value'], _e.get('files', [])))
+# apply 路径用的宽松并集（不因作用域而把合法字面值当需人工复核）
+WHITE = WL_GLOBAL | {v for v, _ in WL_SCOPED}
+
+def _wl_covers(val, file):
+    if val in WL_GLOBAL:
+        return True
+    if file is None:
+        return False
+    for (wv, pats) in WL_SCOPED:
+        if wv == val and any(fnmatch.fnmatch(file, p) for p in pats):
+            return True
+    return False
 DEFAULT_SCAN = 'src/side_panel/styles.css'
 
 HEX_RE = re.compile(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b')
@@ -34,13 +55,14 @@ def is_gray(t):
     r, g, b = (int(x) for x in t.split(','))
     return r == g == b
 
-def covered_hex(h):
+def covered_hex(h, file=None):
     hn = norm_hex(h)
-    return hn in DIRECT or hn in CTX or hn in WHITE
+    return hn in DIRECT or hn in CTX or _wl_covers(hn, file)
 
-def covered_rgba(triplet):
-    return (triplet in FAM or triplet in WHITE or triplet == '0,0,0'
-            or triplet == '255,255,255' or is_gray(triplet))
+def covered_rgba(triplet, file=None):
+    return (triplet in FAM or triplet == '0,0,0'
+            or triplet == '255,255,255' or is_gray(triplet)
+            or _wl_covers(triplet, file))
 
 def scan_hex(text):
     return {norm_hex(m.group(0)) for m in re.finditer(r'#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b', text)}
@@ -253,14 +275,22 @@ def main(argv):
 
     scan = files or [DEFAULT_SCAN]
     if mode == 'missing':
-        text = ''.join(open(f, encoding='utf-8').read() for f in scan)
-        miss = sorted(h for h in scan_hex(text) if h not in DIRECT and h not in CTX and h not in WHITE)
-        print(json.dumps(miss, ensure_ascii=False))
+        miss = set()
+        for f in scan:
+            text = open(f, encoding='utf-8').read()
+            for h in scan_hex(text):
+                if h not in DIRECT and h not in CTX and not _wl_covers(h, f):
+                    miss.add(h)
+        print(json.dumps(sorted(miss), ensure_ascii=False))
         return 0
     if mode == 'missing-rgba':
-        text = ''.join(open(f, encoding='utf-8').read() for f in scan)
-        miss = sorted(t for t in scan_rgba_triplets(text) if not covered_rgba(t))
-        print(json.dumps(miss, ensure_ascii=False))
+        miss = set()
+        for f in scan:
+            text = open(f, encoding='utf-8').read()
+            for t in scan_rgba_triplets(text):
+                if not covered_rgba(t, f):
+                    miss.add(t)
+        print(json.dumps(sorted(miss), ensure_ascii=False))
         return 0
 
     exit_code = 0
@@ -268,8 +298,8 @@ def main(argv):
         src_lines = open(f, encoding='utf-8').read().splitlines(keepends=True)
         if mode == 'check':
             text = ''.join(src_lines)
-            bad = [h for h in scan_hex(text) if not covered_hex(h)]
-            bad += [t for t in scan_rgba_triplets(text) if not covered_rgba(t)]
+            bad = [h for h in scan_hex(text) if not covered_hex(h, f)]
+            bad += [t for t in scan_rgba_triplets(text) if not covered_rgba(t, f)]
             if bad:
                 print(json.dumps({'file': f, 'uncovered': bad}, ensure_ascii=False))
                 exit_code = 1

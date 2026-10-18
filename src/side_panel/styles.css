@@ -743,11 +743,11 @@ body {
   background: transparent;
 }
 .agent-list-scroll::-webkit-scrollbar-thumb {
-  background: var(--shadow-sm);
+  background: var(--border-default);
   border-radius: 3px;
 }
 .agent-list-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--shadow-lg);
+  background: var(--border-strong);
 }
 .agent-dropdown-footer {
   flex-shrink: 0;
@@ -1382,13 +1382,13 @@ body {
   width: 8px;
 }
 .input-add-panel-list::-webkit-scrollbar-thumb {
-  background: var(--shadow-sm);
+  background: var(--border-default);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 .input-add-panel-list::-webkit-scrollbar-thumb:hover {
-  background-color: var(--shadow-md);
+  background-color: var(--border-strong);
 }
 /* 面板内列表项：圆角 hover + 收紧内边距（作用域覆盖弹窗样式） */
 .input-add-panel-list .input-add-panel-item {
@@ -2497,7 +2497,7 @@ body {
 
 /* 选中状态的标签样式 */
 .category-btn.active {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%) !important;
+  background: var(--brand-gradient) !important;
   color: var(--text-on-brand) !important;
   border-color: transparent !important;
 }
@@ -5685,7 +5685,7 @@ body {
   flex-shrink: 0;
 }
 .send-inner-btn {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   box-shadow: 0 2px 8px rgba(var(--brand-rgb), 0.3);
 }
@@ -5949,7 +5949,7 @@ body {
 .welcome-message .icon-wrapper {
   width: 100px;
   height: 100px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   border-radius: 32px;
   display: flex;
   align-items: center;
@@ -5967,7 +5967,7 @@ body {
   content: '';
   position: absolute;
   inset: -4px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   border-radius: 36px;
   z-index: -1;
   opacity: 0.3;
@@ -6166,7 +6166,7 @@ body {
 }
 
 .editor-tool-btn.active {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.4);
 }
@@ -6248,7 +6248,7 @@ body {
   appearance: none;
   width: 14px;
   height: 14px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 2px 6px var(--shadow-lg);
@@ -6262,7 +6262,7 @@ body {
 #editorBrushSize::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   border-radius: 50%;
   cursor: pointer;
   border: none;
@@ -6623,7 +6623,7 @@ body {
 /* 工具调用状态样式 */
 .tool-call-status {
   align-self: flex-start;
-  background: #fff3cd;
+  background: var(--warning-soft-bg);
   padding: 8px 12px;
   border-radius: 8px;
   font-size: 12px;
@@ -7160,7 +7160,7 @@ body {
 /* 选中内容提示条样式 */
 .selection-indicator {
   display: none;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   padding: 8px 12px;
   border-radius: 8px;
@@ -7260,11 +7260,11 @@ body {
   background: transparent;
 }
 .prompt-dropdown::-webkit-scrollbar-thumb {
-  background: var(--shadow-sm);
+  background: var(--border-default);
   border-radius: 3px;
 }
 .prompt-dropdown::-webkit-scrollbar-thumb:hover {
-  background: var(--shadow-lg);
+  background: var(--border-strong);
 }
 .prompt-dropdown.show {
   display: block;
@@ -8360,17 +8360,17 @@ body {
 }
 
 .prompt-sort-btn.menu-toggle-btn {
-  color: var(--border-strong);
+  color: var(--text-secondary);
 }
 
 .prompt-sort-btn.menu-toggle-btn.active {
-  color: #552222;
+  color: var(--brand-500);
 }
 
 .prompt-sort-btn.menu-toggle-btn:hover {
   background: var(--brand-soft-bg);
   border-color: var(--brand-500);
-  color: #552222;
+  color: var(--brand-500);
 }
 
 .prompt-sort-btn.menu-toggle-btn.active:hover {
@@ -8810,7 +8810,7 @@ body {
 .clarify-icon {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -9116,7 +9116,7 @@ body {
 }
 
 .clarify-btn.confirm {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.35);
 }
@@ -9208,7 +9208,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   flex-shrink: 0;
 }
 
@@ -9381,7 +9381,7 @@ body {
 }
 
 .prototype-zoom-btn:active {
-  background: var(--shadow-sm);
+  background: rgba(var(--overlay-rgb), 0.18);
 }
 
 .prototype-zoom-level {
@@ -10568,7 +10568,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   border-radius: 16px 16px 0 0;
 }
@@ -11180,7 +11180,7 @@ body {
   display: flex;
   align-items: center;
   padding: 10px 12px;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   cursor: pointer;
   user-select: none;
@@ -13152,8 +13152,8 @@ body {
 
 /* 搜索结果高亮 */
 .workspace-file-name .search-highlight {
-  background: #fff3a0;
-  color: var(--text-primary);
+  background: var(--mark-bg);
+  color: #1f2328;
   border-radius: 2px;
   padding: 0 1px;
 }

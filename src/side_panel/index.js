@@ -3533,12 +3533,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
       headerMoreDropdown.classList.toggle('show');
     });
-    // 点击外部关闭下拉菜单
+    // 点击外部关闭下拉菜单（连同主题子菜单与 aria-expanded 一并收）
     document.addEventListener('click', (e) => {
       if (!headerMoreDropdown.contains(e.target) && e.target !== headerMoreBtn) {
-        headerMoreDropdown.classList.remove('show');
-        const sm = document.getElementById('themeSubmenu');
-        if (sm) sm.classList.remove('show');
+        closeAllMenus();
       }
     });
   }
@@ -3558,7 +3556,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', String(!!(themeSubmenu && themeSubmenu.classList.contains('show'))));
   };
-  const closeThemeSubmenu = () => { if (themeSubmenu) themeSubmenu.classList.remove('show'); };
+  // 统一收起：子菜单 + 更多下拉 + aria-expanded 同步（三条关闭路径共用，防状态残留/箭头卡死）
+  function closeAllMenus() {
+    if (themeSubmenu) themeSubmenu.classList.remove('show');
+    if (headerMoreDropdown) headerMoreDropdown.classList.remove('show');
+    if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'false');
+  }
   if (themeToggleBtn && themeSubmenu) {
     themeToggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3569,8 +3572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       it.addEventListener('click', (e) => {
         e.stopPropagation();
         setTheme(it.dataset.themeValue);
-        closeThemeSubmenu();
-        if (headerMoreDropdown) headerMoreDropdown.classList.remove('show');
+        closeAllMenus();
       });
     });
   }
@@ -3581,7 +3583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 清除对话历史按钮
   clearChatBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    headerMoreDropdown.classList.remove('show');
+    closeAllMenus();
     showModal();
   });
 
@@ -3589,7 +3591,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (exportChatBtn) {
     exportChatBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
+      closeAllMenus();
       showExportDialog();
     });
   }
@@ -3599,7 +3601,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (importChatBtn) {
     importChatBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
+      closeAllMenus();
       triggerImportDialog();
     });
   }
@@ -3642,7 +3644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (prototypeLibraryBtn) {
     prototypeLibraryBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
+      closeAllMenus();
       showPrototypeLibrary();
     });
   }
@@ -3652,7 +3654,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (tokenStatsHeaderBtn) {
     tokenStatsHeaderBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
+      closeAllMenus();
       if (window.openTokenStats) window.openTokenStats();
     });
   }
@@ -3799,7 +3801,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (auditLogBtn) {
     auditLogBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      headerMoreDropdown.classList.remove('show');
+      closeAllMenus();
       showAuditLog();
     });
   }

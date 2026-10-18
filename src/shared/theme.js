@@ -16,11 +16,14 @@ const subscribers = [];
 let listenerBound = false;
 
 function apply(next) {
+  const changed = next !== resolved;
   resolved = next;
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', next);
   }
   try { localStorage.setItem('appThemeResolved', next); } catch (e) { /* 隐私模式兜底 */ }
+  // 仅在生效值真正变化时通知订阅者：吞掉本页 setTheme→onChanged 回声与 system 未变的重复触发
+  if (!changed) return;
   subscribers.slice().forEach((cb) => {
     try { cb(next); } catch (e) { console.warn('[theme] subscriber error', e); }
   });
@@ -64,7 +67,16 @@ export async function initTheme() {
     });
     listenerBound = true;
   }
-  const stored = await new Promise((r) => chrome.storage.local.get([KEY], (o) => r(o || {})));
+  const stored = await new Promise((r) => {
+    try {
+      chrome.storage.local.get([KEY], (o) => {
+        if (chrome.runtime && chrome.runtime.lastError) { r(null); return; }
+        r(o || {});
+      });
+    } catch (e) { r(null); }
+  });
+  // storage 读取失败时保留顶层镜像已应用的生效主题，不强行回落 light（避免暗色用户偶发变亮）
+  if (stored === null) return;
   preference = VALID.includes(stored[KEY]) ? stored[KEY] : 'light';
   apply(resolve(preference));
 }
