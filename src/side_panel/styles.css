@@ -4600,6 +4600,26 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* 工具调用/流式输出 pre 的滚动条：未主题化时落到浏览器默认粗条（~15px），
+   与全站细滚动条不一致；统一 8px、轨道透明、滑块 --border-default、hover 加深 */
+.tool-call-body pre::-webkit-scrollbar,
+.tool-result-content pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tool-call-body pre::-webkit-scrollbar-track,
+.tool-result-content pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tool-call-body pre::-webkit-scrollbar-thumb,
+.tool-result-content pre::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+}
+.tool-call-body pre::-webkit-scrollbar-thumb:hover,
+.tool-result-content pre::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
 /* 流式过程中：工具卡片自动展开并强化样式 */
 .message-wrapper.streaming .tool-call-item {
   border: 1px solid rgba(var(--brand-violet-rgb), 0.45);
