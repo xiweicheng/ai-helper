@@ -106,7 +106,16 @@ textarea {
   border-radius: 8px;
   font-size: 14px;
   font-family: 'Consolas', 'Monaco', monospace;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+input[type="text"]::placeholder,
+input[type="url"]::placeholder,
+input[type="password"]::placeholder,
+input[type="number"]::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
 }
 input[type="text"]:focus,
 input[type="url"]:focus,
