@@ -1,10 +1,21 @@
 // libs-loader.js - 第三方库按需懒加载器
 // 将 mermaid (3.2MB)、jspdf (357KB)、html2canvas (194KB) 从同步加载改为按需加载
 // 首次调用时动态插入 <script>，后续调用直接返回缓存的 Promise
+import { getResolvedTheme } from '../shared/theme.js';
 
 let mermaidPromise = null;
 let jspdfPromise = null;
 let html2canvasPromise = null;
+
+/** mermaid 初始化配置：主题随生效主题切换（dark→'dark'，否则→'default'） */
+export function mermaidThemeConfig(resolved) {
+  return {
+    startOnLoad: false,
+    theme: (resolved || getResolvedTheme()) === 'dark' ? 'dark' : 'default',
+    securityLevel: 'loose',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  };
+}
 
 /**
  * 动态加载脚本（返回 Promise）
@@ -38,12 +49,7 @@ export function loadMermaid() {
   if (!mermaidPromise) {
     mermaidPromise = loadScript('libs/mermaid.min.js').then(() => {
       if (typeof window.mermaid !== 'undefined') {
-        window.mermaid.initialize({
-          startOnLoad: false,
-          theme: 'default',
-          securityLevel: 'loose',
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-        });
+        window.mermaid.initialize(mermaidThemeConfig());
       }
       return window.mermaid;
     }).catch(err => {

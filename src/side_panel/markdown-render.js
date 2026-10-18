@@ -1,8 +1,11 @@
 // markdown-render.js - Markdown rendering utility functions
+// 主题说明：live 渲染走 theme.css 的 [data-theme="dark"] .markdown-body 覆盖段（纯 CSS 变量，无需 JS）；
+// 本文件的导出相关字面色（SVG sanitize fill / canvas 白底 / html2canvas 白底）恒为亮色纸张语义，
+// 刻意不接主题——导出物（PNG/PDF/复制富文本）需在任意宿主环境保持白底可读，故保持字面量。
 
 import DOMPurify from 'dompurify';
 import { escapeHtml, showToast, copyToClipboard } from './utils.js';
-import { loadMermaid, loadHtml2Canvas } from './libs-loader.js';
+import { loadMermaid, loadHtml2Canvas, mermaidThemeConfig } from './libs-loader.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -187,6 +190,7 @@ function sanitizeSvgForExport(svgElement) {
       text.setAttribute('y', String(foY + foH / 2));
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('dominant-baseline', 'central');
+      // 导出 SVG 文本回退填充色（纸张语义，恒亮，不接主题）
       text.setAttribute('fill', elStyle.color || '#333');
       text.setAttribute('font-family', elStyle.fontFamily || 'sans-serif');
       text.setAttribute('font-size', elStyle.fontSize || '14px');
@@ -315,6 +319,7 @@ export function svgToPngDataUrl(svgElement) {
 
           const ctx = canvas.getContext('2d');
 
+          // 导出画布白底（纸张语义，恒亮，不接主题）
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -719,6 +724,37 @@ export async function renderMermaidCharts() {
   }
   
   logger.debug('[SidePanel] ===== renderMermaidCharts complete =====');
+}
+
+/**
+ * 主题切换时重渲染已渲染的 mermaid 图表（读取 data-raw-code 原始代码，
+ * 清空 SVG/data-processed 后按新主题重跑）。mermaid 未加载时直接返回，
+ * 因为后续首次渲染会按当前生效主题初始化，无需在此处理。
+ */
+export async function rerenderMermaidForTheme() {
+  if (typeof window === 'undefined' || typeof window.mermaid === 'undefined') return;
+  const containers = document.querySelectorAll('.mermaid');
+  if (containers.length === 0) return;
+  const mermaid = window.mermaid;
+  mermaid.initialize(mermaidThemeConfig());
+  for (const container of containers) {
+    const svg = container.querySelector('svg');
+    if (!svg) continue; // 未渲染/错误态跳过，下次渲染自然用新主题
+    const raw = container.getAttribute('data-raw-code');
+    if (!raw) continue;
+    svg.remove();
+    const controls = container.querySelector('.mermaid-controls');
+    if (controls) controls.remove();
+    container.removeAttribute('data-processed');
+    container.innerHTML = '';
+    container.textContent = decodeURIComponent(raw);
+    const result = await renderSingleMermaid(container);
+    if (result.success) {
+      addMermaidControls(container);
+    } else if (!container.querySelector('svg') && !container.querySelector('.mermaid-controls')) {
+      container.innerHTML = `<div style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0;">${t('markdown.chartRenderFailed', { detail: result.detail })}</div>`;
+    }
+  }
 }
 
 /**
@@ -1449,6 +1485,7 @@ async function handleExportTableImg(btn) {
       scale: 2,
       useCORS: true,
       logging: false,
+      // 导出图片白底（纸张语义，恒亮，不接主题）
       backgroundColor: '#ffffff'
     });
 

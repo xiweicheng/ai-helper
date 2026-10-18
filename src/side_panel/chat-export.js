@@ -1,5 +1,7 @@
 // chat-export.js - 聊天消息导出功能（Word/PDF/Markdown/图片）
 // 从 chat-manager.js 拆分，负责将助手消息导出为多种格式
+// 主题说明：本文件所有字面色（docx TextRun、html2canvas/PDF 白底、导出 HTML 模板）恒为亮色纸张语义，
+// 刻意不接扩展主题——导出物需在任意宿主环境保持白底可读，且多为 var() 无效上下文（对象字面量/canvas）。
 
 import { showToast } from './utils.js';
 import { formatMarkdown, splitTableCells } from './markdown-render.js';

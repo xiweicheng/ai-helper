@@ -192,8 +192,48 @@ html[data-theme="dark"] {
   background: var(--selection-bg);
 }
 
-/* 暗色下 markdown 容器底透明（覆盖 github-markdown-light 写死的 #fff），
-   完整覆盖段见 Task 11（markdown 暗色规则） */
+/* 暗色下 markdown 覆盖段：github-markdown-light.min.css 写死亮色，这里用语义 token 逐类覆盖
+   （亮色块保持与库一致，不改；mark 高亮走 --mark-bg 纸面语义，两主题不翻转） */
 html[data-theme="dark"] .markdown-body {
   background-color: transparent;
+  color: var(--text-primary);
 }
+html[data-theme="dark"] .markdown-body h1,
+html[data-theme="dark"] .markdown-body h2,
+html[data-theme="dark"] .markdown-body h3,
+html[data-theme="dark"] .markdown-body h4,
+html[data-theme="dark"] .markdown-body h5,
+html[data-theme="dark"] .markdown-body h6,
+html[data-theme="dark"] .markdown-body strong,
+html[data-theme="dark"] .markdown-body b { color: var(--text-primary); }
+html[data-theme="dark"] .markdown-body h1,
+html[data-theme="dark"] .markdown-body h2 { border-bottom-color: var(--border-default); }
+html[data-theme="dark"] .markdown-body a { color: var(--text-link); }
+html[data-theme="dark"] .markdown-body code {
+  background-color: rgba(var(--overlay-rgb), 0.22);
+  color: var(--text-primary);
+}
+html[data-theme="dark"] .markdown-body pre {
+  background-color: var(--bg-sunken);
+  color: var(--text-primary);
+}
+html[data-theme="dark"] .markdown-body pre code { background-color: transparent; color: inherit; }
+html[data-theme="dark"] .markdown-body kbd {
+  background-color: var(--bg-subtle);
+  border-color: var(--border-default);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+html[data-theme="dark"] .markdown-body table th,
+html[data-theme="dark"] .markdown-body table td { border-color: var(--border-default); }
+html[data-theme="dark"] .markdown-body table tr { background-color: transparent; border-top-color: var(--border-default); }
+html[data-theme="dark"] .markdown-body table tr:nth-child(2n) { background-color: var(--bg-subtle); }
+html[data-theme="dark"] .markdown-body blockquote {
+  color: var(--text-secondary);
+  border-left-color: var(--border-default);
+}
+html[data-theme="dark"] .markdown-body hr {
+  background-color: var(--border-default);
+  border-bottom-color: transparent;
+}
+html[data-theme="dark"] .markdown-body del { color: var(--text-tertiary); }
