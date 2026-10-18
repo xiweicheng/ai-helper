@@ -2,6 +2,20 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-18
+
+### 主题切换（亮 / 暗 / 跟随系统）：全站语义 token 化与三态即时同步
+> 重做上次失败的主题尝试（当时“很多组件颜色调得不协调”）。本次以语义 token + 脚本批量映射 + 暗色客观验收重建，避免靠肉眼难以发现的不协调残留。
+
+- **双主题 token 层**：`src/shared/theme.css` 定义 `:root` / `html[data-theme="dark"]` 两套语义 token（约 62 个：text-*/bg-*/border-*/brand-*/状态色 *-soft 变体/overlay-rgb 通道等）；侧边栏、选项页、内联样式、Markdown/Mermaid 全量迁至 `var()` 引用，硬编码字面量清零。
+- **三态读写与同步**：`src/shared/theme.js` 提供 `getTheme/setTheme/getResolvedTheme/subscribeTheme/initTheme`；storage 键 `appTheme`，`system` 态跟随 OS `prefers-color-scheme`；`onChanged` 跨页同步，任一处切换其余页面无需刷新；localStorage 镜像已解析态消除暗色首帧白闪。
+- **批量迁移工具链**：`scripts/theme-migrate.py`（direct/contextDispatch/rgbaFamilies/bands/whitelist 映射，apply + `--check` 零残留门禁）与 `scripts/theme-contrast-check.py`（token 对比度门禁）保障一致性与可回归。
+- **两个入口**：选项页「基础」→「外观」三分段控件；侧边栏顶部「更多」菜单「主题：当前态」按 亮→暗→跟随系统 循环；文案随语言/主题动态刷新（i18n `settings.theme*` / `header.themeToggle`）。
+- **划词浮层主题化**：`selection-toolbar-styles.js` 重写为自带 token 子集（注入宿主页面读不到扩展 `:root`），本地解析生效主题不污染宿主 `<html>`；由独立开关 `selectionToolbarFollowTheme` 控制是否跟随（关闭恒亮）。
+- **导出锁定亮纸张**：PDF / Word / HTML 导出与富文本复制（SVG `fill` 属性 / canvas `fillStyle` / jsPDF / html2canvas 等 `var()` 无效上下文）恒为白底黑字不随暗色，保证离线可读；均加头注释与行内注释说明。
+- **验收**：`test/unit/mermaid-theme.unit.test.js` 等新增单测；真扩展暗色探针验证跨页同步、Markdown/Mermaid 联动、逐浮层对比度扫描（34 浮层 + 骨架）与白斑检测均 0 违规（WCAG AA）。
+- **当日收口（全部实测）**：根目录全量 **119 文件 / 1765 测试全绿**，agent 单测 **503 例全绿**（本次不动 agent 进程），eslint 0，`npm run build:silent` 成功；`theme-migrate.py --check`（白名单外源码 CSS + `src/**/*.js`）exit 0，对比度门禁 0 项未达标。
+
 ## 2026-10-17
 
 ### Agent 能力（新增 `take_note` scratchpad 工具：让模型主动落中间推理便签并在上下文压缩中存活）
