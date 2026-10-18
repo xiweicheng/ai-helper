@@ -3984,18 +3984,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       categoryBtns.forEach(b => {
         b.classList.remove('active');
         if (b.classList.contains('category-all')) {
-          b.style.background = '#f5f3ff';
-          b.style.color = '#667eea';
-          b.style.borderColor = '#d4cfff';
+          b.style.background = 'var(--brand-violet-soft-bg)';
+          b.style.color = 'var(--brand-500)';
+          b.style.borderColor = 'var(--brand-violet-soft-border)';
         } else {
-          b.style.background = 'white';
-          b.style.color = '#555';
-          b.style.borderColor = '#ececec';
+          b.style.background = 'var(--bg-surface)';
+          b.style.color = 'var(--text-secondary)';
+          b.style.borderColor = 'var(--border-subtle)';
         }
       });
       btn.classList.add('active');
-      btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-      btn.style.color = 'white';
+      btn.style.background = 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%)';
+      btn.style.color = 'var(--text-on-brand)';
       btn.style.borderColor = 'transparent';
       state.currentCategory = btn.dataset.category;
       renderToolsPopupList();
@@ -4198,7 +4198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (unusedSection && unusedList && unusedCount > 0) {
         unusedList.innerHTML = unusedToolIds.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())).map(id => {
           const desc = toolDescMap[id] || id;
-          return `<code title="${escapeHtml(desc)}" style="padding: 3px 10px; background: #f5f5f5; color: #aaa; border: 1px solid #eee; border-radius: 4px; font-size: 11px;">${id}</code>`;
+          return `<code title="${escapeHtml(desc)}" style="padding: 3px 10px; background: var(--bg-subtle); color: var(--text-disabled); border: 1px solid var(--border-subtle); border-radius: 4px; font-size: 11px;">${id}</code>`;
         }).join('');
         unusedSection.style.display = '';
       }
@@ -4250,16 +4250,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const avgTimeStr = formatDuration(avgDuration);
 
       return `<tr>
-        <td style="padding: 6px 10px; border-bottom: 1px solid #eee; color: #333;"><code title="${escapeHtml(tooltip)}">${name}</code></td>
-        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.callCount}</td>
-        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #666;">${stat.successCount}</td>
-        <td style="padding: 6px 10px; border-bottom: 1px solid #eee;">
-          <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: #e0e0e0; vertical-align: middle; margin-right: 6px;">
+        <td style="padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary);"><code title="${escapeHtml(tooltip)}">${name}</code></td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">${stat.callCount}</td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">${stat.successCount}</td>
+        <td style="padding: 6px 10px; border-bottom: 1px solid var(--border-subtle);">
+          <span style="display: inline-block; width: 50px; height: 5px; border-radius: 3px; background: var(--border-default); vertical-align: middle; margin-right: 6px;">
             <span style="display: inline-block; width: ${successRate * 0.5}px; height: 5px; border-radius: 3px; background: ${rateColor}; vertical-align: top;"></span>
           </span>
           <span style="font-size: 12px; color: ${rateColor}; font-weight: 500;">${successRate.toFixed(0)}%</span>
         </td>
-        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid #eee; color: #888; font-size: 12px;">${avgTimeStr}</td>
+        <td style="padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border-subtle); color: var(--text-tertiary); font-size: 12px;">${avgTimeStr}</td>
       </tr>`;
     }).join('');
 
@@ -4278,7 +4278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!indicator) return;
       if (key === column) {
         indicator.textContent = asc ? '▲' : '▼';
-        indicator.style.color = '#667eea';
+        indicator.style.color = 'var(--brand-500)';
       } else {
         indicator.textContent = '';
         indicator.style.color = '';

@@ -1290,8 +1290,8 @@ export function createPreSelectCard(entry) {
     headerInfoHtml = `<div class="tool-call-summary"><span>${escapeHtml(entry.action.params.reason || '')}</span></div>`;
     bodySummaryHtml = `<span class="preselect-summary">${t('chatStream.preselectSkippedCount', { reason: escapeHtml(entry.action.params.reason || ''), count: entry.action.params.toolCount || '?' })}</span>`;
   } else if (entry.error) {
-    headerInfoHtml = `<div class="tool-call-summary"><span style="color:#dc2626;">${escapeHtml(entry.error)}</span></div>`;
-    bodySummaryHtml = `<span class="preselect-summary" style="color:#dc2626;">${escapeHtml(entry.error)}</span>`;
+    headerInfoHtml = `<div class="tool-call-summary"><span style="color:var(--danger-500);">${escapeHtml(entry.error)}</span></div>`;
+    bodySummaryHtml = `<span class="preselect-summary" style="color:var(--danger-500);">${escapeHtml(entry.error)}</span>`;
   } else if (entry.thought) {
     headerInfoHtml = `<div class="tool-call-summary"><span>${t('chatStream.preselectDirectAnswer')}</span></div>`;
     bodySummaryHtml = `<span class="preselect-summary">${t('chatStream.preselectDirectAnswer')}${escapeHtml(entry.thought).substring(0, 200)}</span>`;

@@ -40,3 +40,32 @@ it('就地替换 hex/rgba 为 token 引用，且幂等', () => {
   execFileSync('python3', [SCRIPT, file], { encoding: 'utf-8' });
   expect(readFileSync(file, 'utf-8')).toBe(once);
 });
+
+it('js 模式：逐声明定属性（background:#fff 不被前面的 border 带偏）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'theme-js-'));
+  const file = join(dir, 'fixture.js');
+  const src = "el.style.cssText = 'border:1px solid #cbd5e0;background:#fff;color:#4a5568;';\n";
+  writeFileSync(file, src, 'utf-8');
+  execFileSync('python3', [SCRIPT, file, '--mode', 'js'], { encoding: 'utf-8' });
+  const out = readFileSync(file, 'utf-8');
+  // border 声明 → border token；background 声明 → surface（若整串取首个属性会错判为 border）
+  expect(out).toContain('border:1px solid var(--border-default)');
+  expect(out).toContain('background:var(--bg-surface)');
+  expect(out).toContain('color:var(--text-secondary)');
+});
+
+it('js 模式：style=""/.style 联动 token，SVG 表现属性保留字面量', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'theme-js2-'));
+  const file = join(dir, 'fixture.js');
+  const src = 'b.style.color = \'#667eea\';\n'
+    + '<div style="width:50%;background:#4a6cf7;"></div>\n'
+    + '<svg><polyline stroke="#667eea"></polyline><polygon fill="#667eea"></polygon></svg>\n';
+  writeFileSync(file, src, 'utf-8');
+  execFileSync('python3', [SCRIPT, file, '--mode', 'js'], { encoding: 'utf-8' });
+  const out = readFileSync(file, 'utf-8');
+  expect(out).toContain("b.style.color = 'var(--brand-500)'");
+  expect(out).toContain('background:var(--info-500)');
+  // SVG 属性中 var() 无效，必须保留字面量
+  expect(out).toContain('stroke="#667eea"');
+  expect(out).toContain('fill="#667eea"');
+});

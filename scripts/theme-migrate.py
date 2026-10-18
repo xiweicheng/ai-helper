@@ -131,11 +131,90 @@ def map_keyword(val, line):
 
 KW_RE = re.compile(r'(:\s*)(white|black)(?=[\s;}!])', re.I)
 
+# ---- js 模式：只重写 CSS 值上下文，逐声明定属性；不碰 SVG 表现属性/对象字面量/return 字面量 ----
+DECL_RE = re.compile(r'(\s*)([a-zA-Z][a-zA-Z-]*)(\s*:\s*)(.*)$', re.S)
+
+def map_color_expr(body, ctx, ln, review):
+    # 对单个声明的值体做 hex/rgba 映射；属性上下文用该声明自身的 ctx（如 'background:'）
+    def _hex(m):
+        r = map_hex_in_context(m.group(0), ctx)
+        if r is None:
+            if norm_hex(m.group(0)) not in WHITE:
+                review.append((ln, m.group(0)))
+            return m.group(0)
+        return r
+    body = HEX_RE.sub(_hex, body)
+    body = RGBA_RE.sub(lambda m: (map_rgba(m, ctx) or (review.append((ln, m.group(0))) or m.group(0))), body)
+    return body
+
+def map_decl(decl, ln, review):
+    m = DECL_RE.match(decl)
+    if not m:
+        return decl
+    lead, prop, colon, body = m.group(1), m.group(2), m.group(3), m.group(4)
+    ctx = prop + ':'
+    kw = re.fullmatch(r'\s*(white|black)\s*', body, re.I)
+    if kw:
+        r = map_keyword(kw.group(1), ctx)
+        if r:
+            return lead + prop + colon + body.replace(kw.group(1), r)
+    return lead + prop + colon + map_color_expr(body, ctx, ln, review)
+
+def map_decls(text, ln, review):
+    # 按 ';' 切分逐声明处理，避免整串取首个属性导致 background 被前面的 border 带偏
+    return ';'.join(map_decl(d, ln, review) for d in text.split(';'))
+
+_DOTPROP_ATTR = {
+    'color': 'color:', 'background': 'background:', 'backgroundcolor': 'background:',
+    'fill': 'fill:', 'stroke': 'stroke:',
+}
+def _dotstyle_ctx(prop):
+    p = prop.lower()
+    if p in _DOTPROP_ATTR: return _DOTPROP_ATTR[p]
+    if 'color' in p: return 'color:'
+    if 'background' in p: return 'background:'
+    if 'border' in p: return 'border:'
+    if 'shadow' in p: return 'box-shadow:'
+    return p + ':'
+
+def map_single_value(val, ctx, ln, review):
+    kw = re.fullmatch(r'\s*(white|black)\s*', val, re.I)
+    if kw:
+        r = map_keyword(kw.group(1), ctx)
+        if r: return val.replace(kw.group(1), r)
+    return map_color_expr(val, ctx, ln, review)
+
+_STYLE_ATTR_RE = re.compile(r'(style\s*=\s*)(["\'])(.*?)(\2)', re.I)
+_DOTSTYLE_RE = re.compile(r'(\.style\.)([A-Za-z]+)(\s*=\s*)(["\'])(.*?)(\4)')
+_CSSTEXT_RE = re.compile(r'(\.style\.cssText\s*=\s*)(["\'])(.*?)(\2)')
+_SETPROP_RE = re.compile(r'(\.setProperty\(\s*["\'][^"\']+["\']\s*,\s*)(["\'])(.*?)(\2)')
+_SETATTR_STYLE_RE = re.compile(r"(setAttribute\(\s*['\"]style['\"]\s*,\s*)([\"'])(.*?)(\2)", re.I)
+_RULE_BODY_RE = re.compile(r'(\{)([^{}]*)(\})')
+
+def apply_line_js(line, ln, review, css_rules=False):
+    def _style_sub(m):
+        return m.group(1) + m.group(2) + map_decls(m.group(3), ln, review) + m.group(4)
+    for rx in (_STYLE_ATTR_RE, _CSSTEXT_RE, _SETPROP_RE, _SETATTR_STYLE_RE):
+        line = rx.sub(_style_sub, line)
+    def _ds(m):
+        if m.group(2).lower() == 'csstext':
+            return m.group(0)  # cssText 属多声明体，已由 _CSSTEXT_RE 逐声明处理，此处跳过避免重复
+        ctx = _dotstyle_ctx(m.group(2))
+        return m.group(1) + m.group(2) + m.group(3) + m.group(4) + map_single_value(m.group(5), ctx, ln, review) + m.group(6)
+    line = _DOTSTYLE_RE.sub(_ds, line)
+    if css_rules:
+        line = _RULE_BODY_RE.sub(lambda m: m.group(1) + map_decls(m.group(2), ln, review) + m.group(3), line)
+    return line
+
+
+
 def target_files(args):
     return args if args else [DEFAULT_SCAN]
 
 def main(argv):
     mode = 'apply'
+    lang = 'css'
+    css_rules = False
     ranges = None
     files = []
     i = 0
@@ -151,7 +230,10 @@ def main(argv):
             i += 1
             ranges = line_ranges(argv[i])
         elif a == '--mode':
-            i += 1  # js / css，替换逻辑对两种模式一致处理
+            i += 1
+            lang = argv[i] if i < len(argv) else 'css'
+        elif a == '--css-rules':
+            css_rules = True
         else:
             files.append(a)
         i += 1
@@ -185,6 +267,9 @@ def main(argv):
         for ln, line in enumerate(src_lines, 1):
             if not in_ranges(ln, ranges):
                 changed.append(line)
+                continue
+            if lang == 'js':
+                changed.append(apply_line_js(line, ln, review, css_rules))
                 continue
             def hex_sub(m):
                 r = map_hex_in_context(m.group(0), line)

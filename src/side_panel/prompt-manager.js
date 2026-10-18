@@ -962,7 +962,7 @@ export function hidePromptManageModal() {
   if (contentInput) contentInput.value = '';
   if (addBtn) {
     addBtn.textContent = t('promptManager.addPrompt');
-    addBtn.style.background = '#667eea';
+    addBtn.style.background = 'var(--brand-500)';
   }
 }
 
@@ -1135,7 +1135,7 @@ export function addPrompt() {
   // 更新按钮文字
   const addBtn = document.getElementById('promptManageAddBtn');
   addBtn.textContent = t('promptManager.addPrompt');
-  addBtn.style.background = '#667eea';
+  addBtn.style.background = 'var(--brand-500)';
 
   // 重新渲染列表
   renderPromptManageList();
@@ -1164,7 +1164,7 @@ export function editPrompt(index) {
 
   // 更新按钮文字
   addBtn.textContent = t('promptMgr.saveChanges');
-  addBtn.style.background = '#ffa502';
+  addBtn.style.background = 'var(--warning-500)';
 
   // 滚动到表单区域
   codeInput.scrollIntoView({ behavior: 'smooth' });

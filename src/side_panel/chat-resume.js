@@ -58,24 +58,24 @@ export function showResumeDialog() {
     // 构建弹窗 DOM
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay resume-dialog-overlay';
-    overlay.style.cssText = 'display:flex;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10000;align-items:center;justify-content:center;';
+    overlay.style.cssText = 'display:flex;position:fixed;inset:0;background:var(--scrim);z-index:10000;align-items:center;justify-content:center;';
 
     const container = document.createElement('div');
     container.className = 'modal-container resume-dialog-container';
-    container.style.cssText = 'background:#fff;border-radius:8px;padding:24px;width:90%;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.2);';
+    container.style.cssText = 'background:var(--bg-surface);border-radius:8px;padding:24px;width:90%;max-width:480px;box-shadow:0 8px 32px var(--shadow-md);';
 
     const title = document.createElement('h3');
     title.textContent = t('chatResume.title');
-    title.style.cssText = 'margin:0 0 8px 0;font-size:16px;color:#1a202c;';
+    title.style.cssText = 'margin:0 0 8px 0;font-size:16px;color:var(--text-primary);';
 
     const desc = document.createElement('p');
     desc.textContent = t('chatResume.desc');
-    desc.style.cssText = 'margin:0 0 16px 0;font-size:13px;color:#718096;line-height:1.5;';
+    desc.style.cssText = 'margin:0 0 16px 0;font-size:13px;color:var(--text-secondary);line-height:1.5;';
 
     const textarea = document.createElement('textarea');
     textarea.className = 'resume-dialog-textarea';
     textarea.placeholder = t('chatResume.placeholder');
-    textarea.style.cssText = 'width:100%;min-height:80px;padding:8px 12px;border:1px solid #cbd5e0;border-radius:4px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.5;';
+    textarea.style.cssText = 'width:100%;min-height:80px;padding:8px 12px;border:1px solid var(--border-default);border-radius:4px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.5;';
     textarea.rows = 3;
 
     const btnContainer = document.createElement('div');
@@ -83,11 +83,11 @@ export function showResumeDialog() {
 
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = t('common.cancel');
-    cancelBtn.style.cssText = 'padding:6px 16px;border:1px solid #cbd5e0;background:#fff;color:#4a5568;border-radius:4px;cursor:pointer;font-size:13px;';
+    cancelBtn.style.cssText = 'padding:6px 16px;border:1px solid var(--border-default);background:var(--bg-surface);color:var(--text-secondary);border-radius:4px;cursor:pointer;font-size:13px;';
 
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = t('chatResume.continueBtn');
-    confirmBtn.style.cssText = 'padding:6px 16px;border:none;background:#3182ce;color:#fff;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;';
+    confirmBtn.style.cssText = 'padding:6px 16px;border:none;background:var(--info-500);color:var(--text-inverse);border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;';
 
     btnContainer.appendChild(cancelBtn);
     btnContainer.appendChild(confirmBtn);

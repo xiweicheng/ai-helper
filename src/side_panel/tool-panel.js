@@ -352,14 +352,14 @@ async function openToolsPopup() {
     if (btn.classList.contains('category-all')) {
       // "全部"标签设置为选中状态
       btn.classList.add('active');
-      btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-      btn.style.color = 'white';
+      btn.style.background = 'linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%)';
+      btn.style.color = 'var(--text-on-brand)';
       btn.style.borderColor = 'transparent';
     } else {
       // 其他标签设置为默认样式
-      btn.style.background = 'white';
-      btn.style.color = '#555';
-      btn.style.borderColor = '#ececec';
+      btn.style.background = 'var(--bg-surface)';
+      btn.style.color = 'var(--text-secondary)';
+      btn.style.borderColor = 'var(--border-subtle)';
     }
   });
   

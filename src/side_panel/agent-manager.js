@@ -169,8 +169,8 @@ export async function renderAgentSelector() {
   // 固定底部：创建按钮
   if (footerContainer) {
     footerContainer.innerHTML = `
-      <div class="agent-item" id="agentAddBtn" style="color:#667eea;">
-        <span class="agent-item-icon" style="color:#667eea;">＋</span>
+      <div class="agent-item" id="agentAddBtn" style="color:var(--brand-500);">
+        <span class="agent-item-icon" style="color:var(--brand-500);">＋</span>
         <span class="agent-item-name">${t('agentEditor.createNew')}</span>
       </div>`;
   }
@@ -932,7 +932,7 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
     const catName = t(`toolCategory.${cat}`) !== `toolCategory.${cat}` ? t(`toolCategory.${cat}`) : cat;
     const catTotal = tools.length;
     const catSelected = tools.filter(t => selectedSet.has(t.id)).length;
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span class="agent-tool-cat-count" style="font-weight:400;color:#999;">${catSelected}/${catTotal}</span></div>`;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${catSelected}/${catTotal}</span></div>`;
     for (const tool of tools) {
       const checked = selectedSet.has(tool.id) ? 'checked' : '';
       const desc = getToolDesc(tool);
@@ -949,7 +949,7 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   // MCP 服务级行（固定排在最后；checkbox 勾选 = 开放，取消 = 排除该服务）
   if (mcpServices.length > 0) {
     const mcpCatName = t('toolCategory.mcp') !== 'toolCategory.mcp' ? t('toolCategory.mcp') : 'mcp';
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="mcp" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${mcpCatName} <span class="agent-tool-cat-count" style="font-weight:400;color:#999;">${openMcpServiceCount}/${mcpServices.length}</span></div>`;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="mcp" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${mcpCatName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${openMcpServiceCount}/${mcpServices.length}</span></div>`;
     for (const svc of mcpServices) {
       const checked = excludedSet.has(svc.serverId) ? '' : 'checked';
       const countText = t('toolPanel.mcpServiceToolCount', { count: svc.tools.length });
@@ -1047,7 +1047,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
   const totalCount = skills.length;
 
   if (skills.length === 0) {
-    container.innerHTML = `<div style="color:#999;font-size:12px;padding:8px;text-align:center;">${t('agentMgr.noSkillsHint')}</div>`;
+    container.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px;text-align:center;">${t('agentMgr.noSkillsHint')}</div>`;
     const countEl = document.getElementById('agentSkillCount');
     if (countEl) countEl.textContent = '(0)';
     return;

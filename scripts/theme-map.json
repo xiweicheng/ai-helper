@@ -214,7 +214,23 @@
     "#fff0f0": "danger-soft-bg",
     "#fff1f0": "danger-soft-bg",
     "#fef9f9": "danger-soft-bg",
-    "#fed7d7": "danger-soft-bg"
+    "#fed7d7": "danger-soft-bg",
+    "#1a202c": "text-primary",
+    "#4a5568": "text-secondary",
+    "#8a94a6": "text-tertiary",
+    "#5b6b86": "text-secondary",
+    "#f8f9ff": "brand-soft-bg",
+    "#f0fdf4": "success-soft-bg",
+    "#fff7ed": "warning-soft-bg",
+    "#f0f9ff": "info-soft-bg",
+    "#fdf2f8": "danger-soft-bg",
+    "#4a6cf7": "info-500",
+    "#1a7f37": "success-strong",
+    "#2e9e5b": "success-500",
+    "#e6f7ec": "success-soft-bg",
+    "#c0392b": "danger-strong",
+    "#d94f4f": "danger-500",
+    "#fdecec": "danger-soft-bg"
   },
   "contextDispatch": {
     "#ffffff": {

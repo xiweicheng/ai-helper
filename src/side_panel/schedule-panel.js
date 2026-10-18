@@ -217,69 +217,69 @@ export function initSchedulePanel() {
   container.innerHTML = `
     <style>
       .schedule-panel-container { position: relative; display: flex; justify-content: flex-end; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 100%; background: transparent; }
-      .schedule-panel-toggle { background: linear-gradient(135deg, rgba(39, 174, 96, 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: white; border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
-      .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(39, 174, 96, 0.4); }
+      .schedule-panel-toggle { background: linear-gradient(135deg, rgba(var(--success-rgb), 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: var(--text-on-brand); border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
+      .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(var(--success-rgb), 0.4); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
       .schedule-panel-toggle.running svg { animation: sched-icon-spin 1.4s linear infinite; transform-origin: center; transform-box: fill-box; }
       .schedule-panel-toggle.running { animation: sched-btn-glow 1.4s ease-in-out infinite; }
       @keyframes sched-icon-spin { to { transform: rotate(360deg); } }
-      @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(39, 174, 96, 0.3); } 50% { box-shadow: -2px 2px 18px rgba(39, 174, 96, 0.85); } }
-      .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(255,255,255,1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
+      @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.3); } 50% { box-shadow: -2px 2px 18px rgba(var(--success-rgb), 0.85); } }
+      .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(var(--surface-rgb), 1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
       .schedule-panel.open { display: flex; }
-      .schedule-panel-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0; }
-      .schedule-panel-header .title { font-weight: 600; font-size: 13px; color: #333; flex: 1; }
-      .schedule-panel-count { font-weight: normal; font-size: 11px; color: #999; }
+      .schedule-panel-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+      .schedule-panel-header .title { font-weight: 600; font-size: 13px; color: var(--text-primary); flex: 1; }
+      .schedule-panel-count { font-weight: normal; font-size: 11px; color: var(--text-tertiary); }
       .schedule-panel-header button { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
-      .schedule-panel-header .new-btn { color: #fff; background: #4a6cf7; }
-      .schedule-panel-header .close-btn { color: #8a94a6; }
+      .schedule-panel-header .new-btn { color: var(--text-inverse); background: var(--info-500); }
+      .schedule-panel-header .close-btn { color: var(--text-tertiary); }
       .schedule-panel-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
-      .sched-item { border: 1px solid #eee; border-radius: 10px; padding: 10px 12px; }
+      .sched-item { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
       .sched-item .row1 { display: flex; align-items: center; gap: 8px; }
       .sched-item .name { font-weight: 600; font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .sched-item .desc { font-size: 12px; color: #8a94a6; margin-top: 2px; }
-      .sched-item .meta { font-size: 12px; color: #5b6b86; margin-top: 4px; }
+      .sched-item .desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+      .sched-item .meta { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
       .sched-item .actions { display: flex; gap: 6px; margin-top: 8px; }
-      .sched-item .actions button { border: 1px solid #e0e0e0; background: #fff; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
-      .sched-item .actions button:hover { background: #f5f7fa; }
-      .sched-item .actions button.danger { color: #d94f4f; }
-      .sched-item .actions button.primary { color: #4a6cf7; }
+      .sched-item .actions button { border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+      .sched-item .actions button:hover { background: var(--bg-subtle); }
+      .sched-item .actions button.danger { color: var(--danger-500); }
+      .sched-item .actions button.primary { color: var(--info-500); }
       .sched-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
-      .sched-badge.success { background: #e6f7ec; color: #1a7f37; }
-      .sched-badge.failed { background: #fdecec; color: #c0392b; }
-      .sched-badge.running { background: #eef2ff; color: #4a6cf7; }
-      .sched-badge.muted { background: #f0f1f3; color: #8a94a6; }
-      .sched-empty { text-align: center; color: #8a94a6; font-size: 13px; padding: 24px 0; }
-      .sched-history { margin-top: 8px; border-top: 1px dashed #eee; padding-top: 6px; }
-      .sched-run { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #5b6b86; padding: 3px 0; }
-      .sched-run .time { color: #8a94a6; }
-      .sched-run .dur { color: #8a94a6; }
-      .sched-run .err { display: block; color: #c0392b; margin-left: 4px; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .sched-badge.success { background: var(--success-soft-bg); color: var(--success-strong); }
+      .sched-badge.failed { background: var(--danger-soft-bg); color: var(--danger-strong); }
+      .sched-badge.running { background: var(--brand-soft-bg); color: var(--info-500); }
+      .sched-badge.muted { background: var(--border-subtle); color: var(--text-tertiary); }
+      .sched-empty { text-align: center; color: var(--text-tertiary); font-size: 13px; padding: 24px 0; }
+      .sched-history { margin-top: 8px; border-top: 1px dashed var(--border-subtle); padding-top: 6px; }
+      .sched-run { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); padding: 3px 0; }
+      .sched-run .time { color: var(--text-tertiary); }
+      .sched-run .dur { color: var(--text-tertiary); }
+      .sched-run .err { display: block; color: var(--danger-strong); margin-left: 4px; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sched-run .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-      .sched-run .dot.success { background: #2e9e5b; }
-      .sched-run .dot.failed { background: #c0392b; }
-      .sched-run .dot.running { background: #4a6cf7; }
-      .sched-history-btn { border: none; background: transparent; color: #8a94a6; font-size: 11px; cursor: pointer; padding: 0; }
-      .sched-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 10020; }
+      .sched-run .dot.success { background: var(--success-500); }
+      .sched-run .dot.failed { background: var(--danger-strong); }
+      .sched-run .dot.running { background: var(--info-500); }
+      .sched-history-btn { border: none; background: transparent; color: var(--text-tertiary); font-size: 11px; cursor: pointer; padding: 0; }
+      .sched-modal-overlay { position: fixed; inset: 0; background: var(--shadow-lg); display: none; align-items: center; justify-content: center; z-index: 10020; }
       .sched-modal-overlay.open { display: flex; }
-      .sched-modal { width: 400px; max-width: 90vw; background: #fff; border-radius: 12px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
-      .sched-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px; border-bottom: 1px solid #eee; flex-shrink: 0; }
+      .sched-modal { width: 400px; max-width: 90vw; background: var(--bg-surface); border-radius: 12px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+      .sched-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
       .sched-modal-header h3 { margin: 0; font-size: 15px; }
-      .sched-modal-close { border: none; background: transparent; cursor: pointer; font-size: 14px; color: #8a94a6; padding: 2px 4px; border-radius: 4px; line-height: 1; }
-      .sched-modal-close:hover { background: #f0f1f3; color: #5b6b86; }
+      .sched-modal-close { border: none; background: transparent; cursor: pointer; font-size: 14px; color: var(--text-tertiary); padding: 2px 4px; border-radius: 4px; line-height: 1; }
+      .sched-modal-close:hover { background: var(--border-subtle); color: var(--text-secondary); }
       .sched-modal-body { padding: 12px 16px 4px; overflow-y: auto; flex: 1; min-height: 0; }
       .sched-modal .field { margin-bottom: 10px; }
-      .sched-modal label { display: block; font-size: 12px; color: #5b6b86; margin-bottom: 4px; }
-      .sched-modal input, .sched-modal textarea, .sched-modal select { width: 100%; box-sizing: border-box; border: 1px solid #ddd; border-radius: 6px; padding: 7px 9px; font-size: 13px; }
+      .sched-modal label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+      .sched-modal input, .sched-modal textarea, .sched-modal select { width: 100%; box-sizing: border-box; border: 1px solid var(--border-default); border-radius: 6px; padding: 7px 9px; font-size: 13px; }
       .sched-url-row { display: flex; gap: 6px; align-items: center; }
       .sched-url-row input { flex: 1; }
-      .sched-use-current { white-space: nowrap; border: 1px solid #ddd; background: #f5f7fa; border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; color: #4a6cf7; }
-      .sched-use-current:hover { background: #eef2ff; }
+      .sched-use-current { white-space: nowrap; border: 1px solid var(--border-default); background: var(--bg-subtle); border-radius: 6px; padding: 7px 10px; font-size: 12px; cursor: pointer; color: var(--info-500); }
+      .sched-use-current:hover { background: var(--brand-soft-bg); }
       .sched-modal textarea { resize: vertical; min-height: 64px; }
       .sched-modal .row { display: flex; gap: 8px; }
       .sched-modal .row .field { flex: 1; }
-      .sched-modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid #eee; flex-shrink: 0; }
-      .sched-modal .modal-actions button { border: 1px solid #ddd; background: #fff; border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
-      .sched-modal .modal-actions .primary { background: #4a6cf7; color: #fff; border-color: #4a6cf7; }
+      .sched-modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--border-subtle); flex-shrink: 0; }
+      .sched-modal .modal-actions button { border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: 6px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+      .sched-modal .modal-actions .primary { background: var(--info-500); color: var(--text-inverse); border-color: var(--info-500); }
     </style>
     <button class="schedule-panel-toggle" id="schedulePanelToggle" title="${t('schedPanel.toggleTitle')}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -288,7 +288,7 @@ export function initSchedulePanel() {
     </button>
     <div class="schedule-panel" id="schedulePanel">
       <div class="schedule-panel-header">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#27ae60;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--success-strong);">
           <circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>
         </svg>
         <span class="title">${t('schedPanel.title')}</span>

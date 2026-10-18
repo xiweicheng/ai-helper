@@ -155,11 +155,11 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       tabNav.querySelectorAll('.token-tab-btn').forEach(b => {
         b.classList.remove('active');
         b.style.borderBottomColor = 'transparent';
-        b.style.color = '#666';
+        b.style.color = 'var(--text-secondary)';
       });
       btn.classList.add('active');
-      btn.style.borderBottomColor = '#667eea';
-      btn.style.color = '#667eea';
+      btn.style.borderBottomColor = 'var(--brand-500)';
+      btn.style.color = 'var(--brand-500)';
 
       // 切换内容区
       document.querySelectorAll('.token-tab-content').forEach(content => {
@@ -175,8 +175,8 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     // 初始化 Tab 按钮样式
     const activeBtn = tabNav.querySelector('.token-tab-btn.active');
     if (activeBtn) {
-      activeBtn.style.borderBottomColor = '#667eea';
-      activeBtn.style.color = '#667eea';
+      activeBtn.style.borderBottomColor = 'var(--brand-500)';
+      activeBtn.style.color = 'var(--brand-500)';
     }
   }
 
@@ -189,14 +189,14 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       activeRange = range;
       timeRangeBtns.forEach(b => {
         b.classList.remove('active');
-        b.style.border = '1px solid #ddd';
-        b.style.background = 'white';
-        b.style.color = '#666';
+        b.style.border = '1px solid var(--border-default)';
+        b.style.background = 'var(--bg-surface)';
+        b.style.color = 'var(--text-secondary)';
       });
       btn.classList.add('active');
-      btn.style.border = '1px solid #667eea';
-      btn.style.background = '#667eea';
-      btn.style.color = 'white';
+      btn.style.border = '1px solid var(--brand-500)';
+      btn.style.background = 'var(--brand-500)';
+      btn.style.color = 'var(--text-on-brand)';
       renderGlobal();
     });
   });
@@ -262,16 +262,16 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
 
     topCards.innerHTML = `
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
-        <div style="background: #f8f9ff; border-radius: 8px; padding: 10px; text-align: center;">
-          <div style="font-size: 10px; color: #888; margin-bottom: 4px;">${t('tokenStats.topCardSessionTokens')}</div>
-          <div style="font-size: 18px; font-weight: 700; color: #333;">${formatNumber(s.totalTokens)}</div>
+        <div style="background: var(--brand-soft-bg); border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 10px; color: var(--text-tertiary); margin-bottom: 4px;">${t('tokenStats.topCardSessionTokens')}</div>
+          <div style="font-size: 18px; font-weight: 700; color: var(--text-primary);">${formatNumber(s.totalTokens)}</div>
         </div>
-        <div style="background: #f0fdf4; border-radius: 8px; padding: 10px; text-align: center;">
-          <div style="font-size: 10px; color: #888; margin-bottom: 4px;">${t('tokenStats.topCardSessionCalls')}</div>
-          <div style="font-size: 18px; font-weight: 700; color: #333;">${s.apiCallCount}</div>
+        <div style="background: var(--success-soft-bg); border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 10px; color: var(--text-tertiary); margin-bottom: 4px;">${t('tokenStats.topCardSessionCalls')}</div>
+          <div style="font-size: 18px; font-weight: 700; color: var(--text-primary);">${s.apiCallCount}</div>
         </div>
         <div style="background: ${peakColor}15; border-radius: 8px; padding: 10px; text-align: center;">
-          <div style="font-size: 10px; color: #888; margin-bottom: 4px;">${t('tokenStats.topCardContextPeak')}</div>
+          <div style="font-size: 10px; color: var(--text-tertiary); margin-bottom: 4px;">${t('tokenStats.topCardContextPeak')}</div>
           <div style="font-size: 18px; font-weight: 700; color: ${peakColor};">${(peakRate * 100).toFixed(1)}%</div>
         </div>
       </div>`;
@@ -281,7 +281,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     const el = document.getElementById('tokenSessionStats');
     if (!el) return;
     if (!s || s.apiCallCount === 0) {
-      el.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">${t('tokenStats.currentSessionNoData')}</div>`;
+      el.innerHTML = `<div style="text-align:center;color:var(--text-tertiary);padding:20px;">${t('tokenStats.currentSessionNoData')}</div>`;
       return;
     }
 
@@ -293,14 +293,14 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
 
     el.innerHTML = `
       <div style="margin-bottom: 12px;">
-        <div style="font-size: 11px; color: #888; margin-bottom: 6px;">${t('tokenStats.sparklineTitle')}</div>
+        <div style="font-size: 11px; color: var(--text-tertiary); margin-bottom: 6px;">${t('tokenStats.sparklineTitle')}</div>
         ${sparklineSvg}
       </div>
       <div style="margin-bottom: 10px;">
-        <div style="font-size: 11px; color: #888; margin-bottom: 4px;">${t('tokenStats.contextUsageRate')}</div>
+        <div style="font-size: 11px; color: var(--text-tertiary); margin-bottom: 4px;">${t('tokenStats.contextUsageRate')}</div>
         ${rangeBar}
       </div>
-      <div style="display: flex; gap: 10px; font-size: 11px; color: #666;">
+      <div style="display: flex; gap: 10px; font-size: 11px; color: var(--text-secondary);">
         <span>Prompt: ${formatNumber(s.totalPromptTokens)}</span>
         <span>Completion: ${formatNumber(s.totalCompletionTokens)}</span>
       </div>`;
@@ -309,7 +309,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
   // 渲染 sparkline（纯 SVG 手写，约 200×40px）
   function renderSparkline(records) {
     if (!records || records.length === 0) {
-      return '<div style="height: 40px; background: #f5f5f5; border-radius: 4px;"></div>';
+      return '<div style="height: 40px; background: var(--bg-subtle); border-radius: 4px;"></div>';
     }
 
     // 取最近 20 条记录，按时间正序（旧→新）
@@ -327,7 +327,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     }).join(' ');
 
     return `
-      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width: 100%; height: ${height}px; display: block; background: #fafafa; border-radius: 4px;">
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width: 100%; height: ${height}px; display: block; background: var(--bg-subtle); border-radius: 4px;">
         <polyline points="${points}" fill="none" stroke="#667eea" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         ${data.map((val, i) => {
           const x = padding + (i / (data.length - 1 || 1)) * (width - 2 * padding);
@@ -345,21 +345,21 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     const color = getPressureColor(max || 0);
 
     return `
-      <div style="position: relative; height: 20px; background: #e8e8e8; border-radius: 10px; overflow: visible;">
+      <div style="position: relative; height: 20px; background: var(--border-subtle); border-radius: 10px; overflow: visible;">
         <!-- min 到 max 之间的填充 -->
         <div style="position: absolute; left: ${minPct}%; width: ${maxPct - minPct}%; height: 100%; background: ${color}40; border-radius: 10px;"></div>
         <!-- min 标记点 -->
-        <div style="position: absolute; left: ${minPct}%; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: #10b981; border-radius: 50%; border: 2px solid white;"></div>
+        <div style="position: absolute; left: ${minPct}%; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: var(--success-500); border-radius: 50%; border: 2px solid white;"></div>
         <!-- avg 标记点 -->
-        <div style="position: absolute; left: ${avgPct}%; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: #f59e0b; border-radius: 50%; border: 2px solid white;"></div>
+        <div style="position: absolute; left: ${avgPct}%; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: var(--warning-500); border-radius: 50%; border: 2px solid white;"></div>
         <!-- max 标记点 -->
         <div style="position: absolute; left: ${maxPct}%; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: ${color}; border-radius: 50%; border: 2px solid white;"></div>
         <!-- 标签 -->
-        <div style="position: absolute; left: ${minPct}%; top: -14px; transform: translateX(-50%); font-size: 9px; color: #10b981;">${(min * 100).toFixed(0)}%</div>
-        <div style="position: absolute; left: ${avgPct}%; top: -14px; transform: translateX(-50%); font-size: 9px; color: #f59e0b;">${(avg * 100).toFixed(0)}%</div>
+        <div style="position: absolute; left: ${minPct}%; top: -14px; transform: translateX(-50%); font-size: 9px; color: var(--success-500);">${(min * 100).toFixed(0)}%</div>
+        <div style="position: absolute; left: ${avgPct}%; top: -14px; transform: translateX(-50%); font-size: 9px; color: var(--warning-500);">${(avg * 100).toFixed(0)}%</div>
         <div style="position: absolute; left: ${maxPct}%; top: -14px; transform: translateX(-50%); font-size: 9px; color: ${color};">${(max * 100).toFixed(0)}%</div>
       </div>
-      <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #999;">
+      <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: var(--text-tertiary);">
         <span>${t('tokenStats.min')}</span>
         <span>${t('tokenStats.avg')}</span>
         <span>${t('tokenStats.max')}</span>
@@ -395,26 +395,26 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       const totalCompletion = overallSummary?.totalCompletionTokens || 0;
 
       if (totalPrompt + totalCompletion === 0 && byModel.length === 0) {
-        el.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">${t('tokenStats.distNoData')}</div>`;
+        el.innerHTML = `<div style="text-align:center;color:var(--text-tertiary);padding:20px;">${t('tokenStats.distNoData')}</div>`;
         return;
       }
 
       el.innerHTML = `
         <div style="margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">${t('tokenStats.distPromptVsCompletion')}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">${t('tokenStats.distPromptVsCompletion')}</div>
           ${renderStackedBar(totalPrompt, totalCompletion)}
         </div>
         <div style="margin-bottom:16px;">
-          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">${t('tokenStats.distByModel')}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">${t('tokenStats.distByModel')}</div>
           ${renderHorizontalBars(byModel.map(m => ({ label: m.model, value: m.totalTokens, percentage: m.percentage })), '#667eea')}
         </div>
         <div>
-          <div style="font-size:12px;font-weight:600;color:#555;margin-bottom:8px;">${t('tokenStats.distByCallType')}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">${t('tokenStats.distByCallType')}</div>
           ${renderHorizontalBars(byCallType.map(c => ({ label: getCallTypeLabel(c.callType), value: c.totalTokens, percentage: c.percentage })), '#10b981')}
         </div>`;
     } catch (err) {
       logger.error('[TokenStats] render distribution failed:', err);
-      el.innerHTML = `<div style="text-align:center;color:#999;padding:20px;">${t('tokenStats.loadFailed')}</div>`;
+      el.innerHTML = `<div style="text-align:center;color:var(--text-tertiary);padding:20px;">${t('tokenStats.loadFailed')}</div>`;
     }
   }
 
@@ -422,23 +422,23 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
   function renderStackedBar(prompt, completion) {
     const total = prompt + completion;
     if (total === 0) {
-      return `<div style="text-align:center;color:#999;font-size:11px;padding:8px;">${t('tokenStats.distNoData')}</div>`;
+      return `<div style="text-align:center;color:var(--text-tertiary);font-size:11px;padding:8px;">${t('tokenStats.distNoData')}</div>`;
     }
     const promptPct = (prompt / total) * 100;
     const completionPct = (completion / total) * 100;
 
     return `
-      <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:#f0f0f0;">
-        <div style="width:${promptPct}%;background:#667eea;" title="Prompt: ${formatNumber(prompt)}"></div>
-        <div style="width:${completionPct}%;background:#f59e0b;" title="Completion: ${formatNumber(completion)}"></div>
+      <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--border-subtle);">
+        <div style="width:${promptPct}%;background:var(--brand-500);" title="Prompt: ${formatNumber(prompt)}"></div>
+        <div style="width:${completionPct}%;background:var(--warning-500);" title="Completion: ${formatNumber(completion)}"></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;">
-        <span style="display:flex;align-items:center;gap:4px;color:#666;">
-          <span style="width:8px;height:8px;border-radius:2px;background:#667eea;display:inline-block;"></span>
+        <span style="display:flex;align-items:center;gap:4px;color:var(--text-secondary);">
+          <span style="width:8px;height:8px;border-radius:2px;background:var(--brand-500);display:inline-block;"></span>
           ${t('tokenStats.distPrompt')} ${formatNumber(prompt)} (${promptPct.toFixed(1)}%)
         </span>
-        <span style="display:flex;align-items:center;gap:4px;color:#666;">
-          <span style="width:8px;height:8px;border-radius:2px;background:#f59e0b;display:inline-block;"></span>
+        <span style="display:flex;align-items:center;gap:4px;color:var(--text-secondary);">
+          <span style="width:8px;height:8px;border-radius:2px;background:var(--warning-500);display:inline-block;"></span>
           ${t('tokenStats.distCompletion')} ${formatNumber(completion)} (${completionPct.toFixed(1)}%)
         </span>
       </div>`;
@@ -447,18 +447,18 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
   // 水平条形图（按占比降序）
   function renderHorizontalBars(items, color) {
     if (!items || items.length === 0) {
-      return `<div style="text-align:center;color:#999;font-size:11px;padding:8px;">${t('tokenStats.distNoData')}</div>`;
+      return `<div style="text-align:center;color:var(--text-tertiary);font-size:11px;padding:8px;">${t('tokenStats.distNoData')}</div>`;
     }
     const maxVal = Math.max(...items.map(i => i.value || 0), 1);
 
     return items.map(item => {
       const barWidth = (item.value / maxVal) * 100;
       return `<div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:#555;margin-bottom:3px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-bottom:3px;">
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">${escapeHtml(item.label)}</span>
-          <span style="color:#999;">${formatNumber(item.value)} · ${(item.percentage || 0).toFixed(1)}%</span>
+          <span style="color:var(--text-tertiary);">${formatNumber(item.value)} · ${(item.percentage || 0).toFixed(1)}%</span>
         </div>
-        <div style="height:8px;background:#f0f0f0;border-radius:4px;overflow:hidden;">
+        <div style="height:8px;background:var(--border-subtle);border-radius:4px;overflow:hidden;">
           <div style="height:100%;width:${barWidth}%;background:${color};border-radius:4px;"></div>
         </div>
       </div>`;
@@ -501,34 +501,34 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
 
       // 全局统计卡片
       if (!rangeSummary || rangeSummary.totalApiCalls === 0) {
-        statsEl.innerHTML = `<div style="text-align:center;color:#999;padding:16px;font-size:12px;">${t('tokenStats.globalNoDailyData')}</div>`;
+        statsEl.innerHTML = `<div style="text-align:center;color:var(--text-tertiary);padding:16px;font-size:12px;">${t('tokenStats.globalNoDailyData')}</div>`;
         return;
       }
       statsEl.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
-          <div style="background:#fff7ed;border-radius:8px;padding:10px;text-align:center;">
-            <div style="font-size:10px;color:#888;">${t('tokenStats.globalTotalTokens')}</div>
-            <div style="font-size:16px;font-weight:700;color:#333;">${formatNumber(rangeSummary.totalTokens)}</div>
+          <div style="background:var(--warning-soft-bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--text-tertiary);">${t('tokenStats.globalTotalTokens')}</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);">${formatNumber(rangeSummary.totalTokens)}</div>
           </div>
-          <div style="background:#f0f9ff;border-radius:8px;padding:10px;text-align:center;">
-            <div style="font-size:10px;color:#888;">${t('tokenStats.globalTotalSessions')}</div>
-            <div style="font-size:16px;font-weight:700;color:#333;">${rangeSummary.totalSessions}</div>
+          <div style="background:var(--info-soft-bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--text-tertiary);">${t('tokenStats.globalTotalSessions')}</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);">${rangeSummary.totalSessions}</div>
           </div>
-          <div style="background:#fdf2f8;border-radius:8px;padding:10px;text-align:center;">
-            <div style="font-size:10px;color:#888;">${t('tokenStats.globalTotalApiCalls')}</div>
-            <div style="font-size:16px;font-weight:700;color:#333;">${rangeSummary.totalApiCalls}</div>
+          <div style="background:var(--danger-soft-bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:10px;color:var(--text-tertiary);">${t('tokenStats.globalTotalApiCalls')}</div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary);">${rangeSummary.totalApiCalls}</div>
           </div>
         </div>`;
     } catch (err) {
       logger.error('[TokenStats] render global failed:', err);
-      statsEl.innerHTML = `<div style="text-align:center;color:#999;padding:16px;font-size:12px;">${t('tokenStats.loadFailed')}</div>`;
+      statsEl.innerHTML = `<div style="text-align:center;color:var(--text-tertiary);padding:16px;font-size:12px;">${t('tokenStats.loadFailed')}</div>`;
     }
   }
 
   // 每日趋势 sparkline（面积图）
   function renderDailySparkline(daily) {
     if (!daily || daily.length === 0) {
-      return `<div style="height:100%;min-height:80px;background:#f5f5f5;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#999;font-size:11px;">${t('tokenStats.globalNoDailyData')}</div>`;
+      return `<div style="height:100%;min-height:80px;background:var(--bg-subtle);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:11px;">${t('tokenStats.globalNoDailyData')}</div>`;
     }
 
     const data = daily.map(d => d.totalTokens || 0);
@@ -545,7 +545,7 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
     const areaPoints = `${xAt(0).toFixed(1)},${height - padding} ${linePoints} ${xAt(n - 1).toFixed(1)},${height - padding}`;
 
     return `
-      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;background:#fafafa;border-radius:4px;">
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" style="width:100%;height:100%;display:block;background:var(--bg-subtle);border-radius:4px;">
         <polygon points="${areaPoints}" fill="#667eea20"/>
         <polyline points="${linePoints}" fill="none" stroke="#667eea" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         ${data.map((val, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(val).toFixed(1)}" r="2" fill="#667eea"><title>${daily[i].date}: ${formatNumber(val)} tokens / ${daily[i].apiCalls} calls</title></circle>`).join('')}
@@ -569,14 +569,14 @@ export function initTokenStatsPanel(getActiveSessionId, showCustomConfirm) {
       const barWidth = ((r.totalTokens || 0) / maxTokens) * 100;
       const barColor = getPressureColor(r.contextUsageRate || 0);
 
-      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:11px;">
-        <span style="color:#999;width:20px;">#${i + 1}</span>
-        <div style="width:40px;height:12px;background:#f0f0f0;border-radius:2px;overflow:hidden;flex-shrink:0;">
+      return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--bg-subtle);font-size:11px;">
+        <span style="color:var(--text-tertiary);width:20px;">#${i + 1}</span>
+        <div style="width:40px;height:12px;background:var(--border-subtle);border-radius:2px;overflow:hidden;flex-shrink:0;">
           <div style="height:100%;width:${barWidth}%;background:${barColor};"></div>
         </div>
-        <span style="color:#666;width:55px;">${time}</span>
-        <span style="background:#f0f0f5;padding:1px 5px;border-radius:3px;font-size:9px;color:#666;">${escapeHtml(typeLabel)}</span>
-        <span style="font-weight:500;color:#333;margin-left:auto;">${formatNumber(r.totalTokens)}</span>
+        <span style="color:var(--text-secondary);width:55px;">${time}</span>
+        <span style="background:var(--bg-subtle);padding:1px 5px;border-radius:3px;font-size:9px;color:var(--text-secondary);">${escapeHtml(typeLabel)}</span>
+        <span style="font-weight:500;color:var(--text-primary);margin-left:auto;">${formatNumber(r.totalTokens)}</span>
         <span style="color:${barColor};font-size:9px;font-weight:500;width:35px;text-align:right;">${((r.contextUsageRate || 0) * 100).toFixed(1)}%</span>
       </div>`;
     }).join('');

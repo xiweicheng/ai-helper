@@ -169,7 +169,7 @@ export function showMessageToc(messageDiv, headings) {
       <div class="message-toc-header">
         <span>☰</span>
         <span>${t('messageToc.title')}</span>
-        <span style="margin-left: auto; font-weight: normal; color: #999; font-size: 11px;">${t('messageToc.headingCount', { count: headings.length })}</span>
+        <span style="margin-left: auto; font-weight: normal; color: var(--text-tertiary); font-size: 11px;">${t('messageToc.headingCount', { count: headings.length })}</span>
       </div>
       <div class="message-toc-content">
         <ul class="message-toc-list">

@@ -552,7 +552,7 @@ export function initWorkspacePanel() {
     <div class="workspace-panel" id="workspacePanel">
       <div class="workspace-panel-header">
         <div class="workspace-panel-title-row">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:#4a90d9;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--info-500);">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
           <span>${t('workspace.workDir')}</span>
@@ -3162,7 +3162,7 @@ async function previewMedia(arrayBuffer, fileName, previewType, previewContent, 
   } else {
     previewContent.innerHTML = `
       <div class="media-preview-wrap" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:12px;gap:16px;">
-        <div style="font-size:14px;color:#555;">🎵 ${escapeHtml(fileName)}</div>
+        <div style="font-size:14px;color:var(--text-secondary);">🎵 ${escapeHtml(fileName)}</div>
         <audio controls autoplay style="width:100%;max-width:560px;">
           <source src="${url}" type="${escapeHtml(mimeType)}">
         </audio>
@@ -5906,11 +5906,11 @@ async function showFileInfo(filePath, fileName, type) {
   overlay.className = 'modal-overlay show';
   overlay.innerHTML = `
     <div class="modal-container file-info-modal">
-      <button class="file-info-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:#999;cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
+      <button class="file-info-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;background:none;border:none;font-size:20px;color:var(--text-tertiary);cursor:pointer;padding:4px 8px;line-height:1;transition:color 0.15s ease;">×</button>
       <div class="modal-title">${escapeHtml(fileName)} - ${t('workspace.fileDetailsLabel')}</div>
       <div class="file-info-loading">${t('workspace.loadingLabel')}</div>
       <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-        <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.close')}</button>
+        <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.close')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -5993,10 +5993,10 @@ function showInputDialog(title, defaultValue = '', placeholder = '') {
     overlay.innerHTML = `
       <div class="modal-container input-dialog" style="min-width:320px;">
         <div class="modal-title">${escapeHtml(title)}</div>
-        <input type="text" class="modal-input" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" autofocus style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin:8px 0;box-sizing:border-box;">
+        <input type="text" class="modal-input" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" autofocus style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:14px;margin:8px 0;box-sizing:border-box;">
         <div class="modal-actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-          <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.cancel')}</button>
-          <button class="modal-btn-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">${t('workspace.confirm')}</button>
+          <button class="modal-btn-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.cancel')}</button>
+          <button class="modal-btn-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--info-500);color:var(--text-inverse);cursor:pointer;">${t('workspace.confirm')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -6051,16 +6051,16 @@ async function showSwitchWorkdirDialog() {
     overlay.className = 'modal-overlay show';
     overlay.innerHTML = `
       <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;position:relative;">
-        <button class="switch-workdir-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:#999;border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
+        <button class="switch-workdir-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:var(--text-tertiary);border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
         <div class="modal-title">${t('workspace.switchWorkdirTitle')}</div>
-        <div style="font-size:12px;color:#888;margin-bottom:10px;word-break:break-all;">${t('workspace.currentLabel')}<span style="color:#4a90d9;" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span></div>
-        <div style="font-size:12px;color:#999;margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
-        <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:8px;margin-bottom:10px;"></div>
-        <div style="font-size:12px;color:#999;margin:6px 0;">${t('workspace.orInputPath')}</div>
-        <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px;word-break:break-all;">${t('workspace.currentLabel')}<span style="color:var(--info-500);" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span></div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
+        <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:8px;margin-bottom:10px;"></div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.orInputPath')}</div>
+        <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">${t('workspace.cancel')}</button>
-          <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:#4a90d9;color:#fff;cursor:pointer;">${t('workspace.switchBtn')}</button>
+          <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.cancel')}</button>
+          <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--info-500);color:var(--text-inverse);cursor:pointer;">${t('workspace.switchBtn')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -6081,18 +6081,18 @@ async function showSwitchWorkdirDialog() {
     // 渲染允许目录列表（删除后复用）
     function renderList() {
       if (!allowedPaths.length) {
-        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#aaa;font-size:13px;">' + t('workspace.noAllowedPaths') + '</div>';
+        listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-disabled);font-size:13px;">' + t('workspace.noAllowedPaths') + '</div>';
         return;
       }
       listEl.innerHTML = allowedPaths.map(p => {
         const isCurrent = p === currentWorkdir;
         return `
-            <div class="switch-workdir-item${isCurrent ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${isCurrent ? 'default' : 'pointer'};font-size:13px;color:${isCurrent ? '#888' : '#333'};word-break:break-all;border-bottom:1px solid #f5f5f5;${isCurrent ? 'background:#f6f8fa;' : ''}">
+            <div class="switch-workdir-item${isCurrent ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${isCurrent ? 'default' : 'pointer'};font-size:13px;color:${isCurrent ? 'var(--text-tertiary)' : 'var(--text-primary)'};word-break:break-all;border-bottom:1px solid var(--bg-subtle);${isCurrent ? 'background:var(--bg-subtle);' : ''}">
               <span style="flex-shrink:0;">📁</span>
               <span style="flex:1;">${escapeHtml(p)}</span>
               ${isCurrent
-                ? '<span style="flex-shrink:0;font-size:11px;color:#4a90d9;border:1px solid #4a90d9;border-radius:4px;padding:0 6px;">' + t('workspace.currentTag') + '</span>'
-                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="' + t('workspace.removeFromAllowed') + '" style="flex-shrink:0;background:none;border:none;color:#e53e3e;cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
+                ? '<span style="flex-shrink:0;font-size:11px;color:var(--info-500);border:1px solid var(--info-500);border-radius:4px;padding:0 6px;">' + t('workspace.currentTag') + '</span>'
+                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="' + t('workspace.removeFromAllowed') + '" style="flex-shrink:0;background:none;border:none;color:var(--danger-500);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
               }
             </div>`;
       }).join('');
@@ -6165,8 +6165,8 @@ async function showSwitchWorkdirDialog() {
     confirmBtn.addEventListener('click', () => doSwitch(manualInput.value));
     cancelBtn.addEventListener('click', () => { cleanup(); resolve(false); });
     closeBtn.addEventListener('click', () => { cleanup(); resolve(false); });
-    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = '#333'; closeBtn.style.background = '#e8e8e8'; });
-    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = '#999'; closeBtn.style.background = 'transparent'; });
+    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = 'var(--text-primary)'; closeBtn.style.background = 'var(--border-subtle)'; });
+    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = 'var(--text-tertiary)'; closeBtn.style.background = 'transparent'; });
     manualInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); doSwitch(manualInput.value); }
       if (e.key === 'Escape') { cleanup(); resolve(false); }
