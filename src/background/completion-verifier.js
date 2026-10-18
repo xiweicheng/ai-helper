@@ -14,6 +14,7 @@ import {
   VERDICTS,
 } from '../shared/completion-verdict.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import logger from '../shared/logger.js';
 
 // #9：上报文案进命名空间（而非硬编码中文），与 react-loop 英文模板保持语言一致。
 registerTranslations('zh', {
@@ -134,6 +135,27 @@ export const EVIDENCE_TIMEOUT_MS = 3000;
 export function createContentEvidenceCollector(tabId, sendMessage, timeoutMs = EVIDENCE_TIMEOUT_MS) {
   const send = sendMessage
     || ((id, msg) => chrome.tabs.sendMessage(id, msg));
+  // [probe] 零行为变更诊断（根因确证后可整段移除）：记录命中的 null 出口 + tabId + criterion 原文
+  // + 错误，并尽力补一条目标 tab 的 url/active。只打日志，绝不改变返回值，异常全部自吞。
+  const probe = (branch, criterion, extra) => {
+    try {
+      logger.warn('[completion-verifier][probe] evidence miss', {
+        branch, tabId, timeoutMs,
+        check: criterion && criterion.check,
+        target: criterion && criterion.target,
+        expected: criterion && criterion.expected,
+        ...(extra || {}),
+      });
+    } catch { /* 诊断本身绝不影响取证 */ }
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.get === 'function') {
+        Promise.resolve(chrome.tabs.get(tabId)).then(
+          (tb) => logger.warn('[completion-verifier][probe] target tab', { tabId, url: tb && tb.url, active: tb && tb.active }),
+          (e) => logger.warn('[completion-verifier][probe] tab get failed', { tabId, err: e && e.message }),
+        );
+      }
+    } catch { /* ignore */ }
+  };
   return async (criterion) => {
     let timer;
     try {
@@ -143,11 +165,17 @@ export function createContentEvidenceCollector(tabId, sendMessage, timeoutMs = E
         ? await Promise.race([p, new Promise((_res, rej) => { timer = setTimeout(() => rej(new Error('evidence timeout')), timeoutMs); })])
         : await p;
       const arr = Array.isArray(resp) ? resp : (resp && Array.isArray(resp.results) ? resp.results : null);
-      if (!arr || arr.length === 0) return null; // 无有效结论 → 取证不可用（≠ 未达标）
+      if (!arr || arr.length === 0) { probe('B_no_array', criterion, { respType: typeof resp, respNull: resp === null || resp === undefined }); return null; } // 无有效结论 → 取证不可用（≠ 未达标）
       const r = arr[0];
-      if (r && r.available === false) return null; // M-new-3：求不出值 → 不可用（≠ 未达标）
+      if (r && r.available === false) { probe('C_available_false', criterion, { contentReason: r.reason }); return null; } // M-new-3：求不出值 → 不可用（≠ 未达标）
       return !!r.pass; // 明确 true/false：真实 DOM 结论
-    } catch {
+    } catch (e) {
+      const msg = e && e.message ? String(e.message) : '';
+      const kind = msg === 'evidence timeout' ? 'A_timeout'
+        : /Receiving end|Could not establish connection/i.test(msg) ? 'A_no_receiver'
+        : /Cannot access|chrome-extension|No tab|Invalid value|error page|access chrome/i.test(msg) ? 'A_tab_unreachable'
+        : 'A_other';
+      probe(kind, criterion, { err: msg });
       return null; // 通道不可用/超时 ≠ 未达标；交由 classifyVerdict 归 indeterminate
     } finally {
       if (timer) clearTimeout(timer);
