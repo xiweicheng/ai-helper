@@ -938,7 +938,7 @@ export function loadConfig() {
     'enableImageInput', 'imageModelName', 'imageModels',
     'imageApiBase', 'imageApiKey', 'enableFileInput',
     'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
-    'preselectMinToolCount', 'toolConfirmationEnabled',
+    'toolConfirmationEnabled',
     'networkAccessEnabled',
     'enableExecutionLog',
     'reflectionConfig',
@@ -1002,17 +1002,9 @@ export function loadConfig() {
     if (preselectEl) {
       preselectEl.checked = 
         result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect;
-      // 触发 change 事件，联动显示/隐藏预筛选最小工具数
-      preselectEl.dispatchEvent(new Event('change'));
     }
     
-    // 加载工具预筛选最小触发数量
-    const preselectMinEl = document.getElementById('preselectMinToolCount');
-    if (preselectMinEl) {
-      preselectMinEl.value = 
-        result.preselectMinToolCount !== undefined ? result.preselectMinToolCount : DEFAULT_REACT_CONFIG.preselectMinToolCount;
-    }
-    
+    // 工具预筛选最小触发数量已改为固定常量 PRESELECT_MIN_TOOL_COUNT，不再是可配置项，不读取也不渲染
     // 加载敏感操作确认开关
     document.getElementById('toolConfirmationEnabled').checked =
       result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled;
@@ -1179,7 +1171,7 @@ export function saveConfig() {
   const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 5) * 60000;
   const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
   const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
-  // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
+  // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect 不再配置，使用默认值；预筛选最小工具数已改为常量 PRESELECT_MIN_TOOL_COUNT
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   const networkAccessEnabled = document.getElementById('networkAccessEnabled').checked;
   const enableExecutionLog = document.getElementById('enableExecutionLog').checked;
@@ -1256,7 +1248,7 @@ export function saveConfig() {
     reactApiTimeout: reactApiTimeout,
     reactLoopTimeout: reactLoopTimeout,
     reactToolTimeout: reactToolTimeout,
-    // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect / preselectMinToolCount 不再配置，使用默认值
+    // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect 不再配置，使用默认值；预筛选最小工具数已改为常量 PRESELECT_MIN_TOOL_COUNT
     toolConfirmationEnabled: toolConfirmationEnabled,
     // 内网访问总闸；白名单 allowedNetworkHosts 不在这里写，避免点「保存」时覆盖用户已录入的列表
     networkAccessEnabled: networkAccessEnabled,

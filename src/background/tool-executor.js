@@ -1,5 +1,5 @@
 // background/tool-executor.js - 工具定义与执行
-import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, INTERACTION_PANEL_POLL_MS } from './constants.js';
+import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT } from './constants.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype, getSession } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
@@ -1261,7 +1261,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
 
           // plan_task 工具：工具预筛选开关开启 且 工具数超过阈值时，动态添加 requiredTools 参数
           if (tool.id === 'plan_task') {
-            const preselectMinToolCount = result.preselectMinToolCount || 10;
+            // 预筛选阈值为固定常量（非配置项），统一引用 PRESELECT_MIN_TOOL_COUNT
+            const preselectMinToolCount = PRESELECT_MIN_TOOL_COUNT;
             const shouldAddRequiredTools = enableToolPreselect && filteredTools.length > preselectMinToolCount;
             console.log('[Background] getTools - processing plan_task, enableToolPreselect:', enableToolPreselect, 'toolCount:', filteredTools.length, 'threshold:', preselectMinToolCount, 'shouldAdd:', shouldAddRequiredTools);
             if (shouldAddRequiredTools) {

@@ -2,7 +2,7 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
-import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS } from './constants.js';
+import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT } from './constants.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, truncateContentSmart, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './stream-controller.js';
@@ -3081,7 +3081,7 @@ export async function prepareToolSetsForSubtasks(subtasks, parentTools = null) {
   const allTools = parentTools || await getTools();
   const reactConfig = await getStoredConfig().then(c => c.reactConfig || {});
   const toolFilterEnabled = reactConfig.enableToolPreselect === true;
-  const preselectMinToolCount = reactConfig.preselectMinToolCount || 10;
+  const preselectMinToolCount = PRESELECT_MIN_TOOL_COUNT;
   const toolSets = {};
 
   // 从子任务工具集中移除 plan_task，禁止嵌套拆分子任务
