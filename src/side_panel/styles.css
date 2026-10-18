@@ -7158,18 +7158,24 @@ body {
   overflow-x: auto;
 }
 
-/* Markdown 表格横向滚动条：未主题化时落到浏览器默认亮色粗条，暗色下很突兀；
-   与代码块/工具输出保持一致：轨道透明、滑块 --border-default、hover 加深 */
+/* Markdown 表格横向滚动条：真正滚动的是 <table> 本身（github-markdown 库给
+   .markdown-body table 设了 display:block + overflow:auto），而非 .table-container-wrapper；
+   未主题化时落到浏览器默认亮色粗条。与代码块/工具输出一致：8px、轨道透明、滑块 --border-default、hover 加深 */
+.markdown-body table::-webkit-scrollbar,
 .table-container-wrapper::-webkit-scrollbar {
   height: 8px;
+  width: 8px;
 }
+.markdown-body table::-webkit-scrollbar-track,
 .table-container-wrapper::-webkit-scrollbar-track {
   background: transparent;
 }
+.markdown-body table::-webkit-scrollbar-thumb,
 .table-container-wrapper::-webkit-scrollbar-thumb {
   background: var(--border-default);
   border-radius: 4px;
 }
+.markdown-body table::-webkit-scrollbar-thumb:hover,
 .table-container-wrapper::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
