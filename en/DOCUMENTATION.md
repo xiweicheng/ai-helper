@@ -685,6 +685,18 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 - **Multi-instance Dedup**: Tab-specific scope allows multiple side panel instances; notification creation is centralized in the Background (globally unique) and visibility is judged per "task-originating instance", never showing duplicates
 - **Completion Sound & Confetti**: Distinct success/failure sounds and a success confetti animation, each independently toggleable
 
+### 32. Theme Switching (Light / Dark / System)
+
+The entire UI is built on semantic color tokens and supports three theme modes (light by default); switching takes effect instantly and stays in sync across every surface (storage key `appTheme`):
+
+- **Three modes**: System (flips live with the OS `prefers-color-scheme`) / Light / Dark
+- **Two entry points**: the segmented control in Options → Basic → "Appearance" to pick directly; and the "Theme: <current>" item in the side panel's top "More" menu, which cycles Light → Dark → System
+- **Cross-page sync**: switching in the side panel, options page, or selection toolbar propagates to the others instantly without a reload
+- **No first-paint flash**: the resolved theme is mirrored locally and applied to the root element before scripts run, so dark-mode users never see a white flash on open
+- **Fully tokenized**: body text / Markdown / tables / code blocks / blockquotes / Mermaid diagrams follow the theme (Mermaid re-renders under the new theme on switch); the selection toolbar carries its own token subset when injected into host pages and adopts the extension theme in sync
+- **Exports stay light paper**: PDF / Word / HTML exports and rich-text copy are always a white-background, black-text light paper regardless of dark mode, preserving offline and print readability
+- **Dark-mode quality gate**: dark mode is verified by a per-overlay contrast scan (WCAG AA) and large white-blob detection, eliminating any "mismatched" leftover colors
+
 ---
 
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
@@ -986,7 +998,7 @@ Build output in `dist/`. `scripts/fix-build.js` auto-fixes path issues and renam
 The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, Knowledge Base, and Memory.
 
 1. Right-click extension icon → **Options**
-2. **Basic**: Pick UI language and provider profile, enter API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
+2. **Basic**: Pick UI language and theme (Light / Dark / System), enter provider profile and API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
 3. **ReAct**: Adjust inference loop parameters and streaming output
 4. **Reflection**: Configure post- and sub-task reflection
 5. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
@@ -1007,6 +1019,7 @@ The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, 
 | Parameter | Description |
 |-----------|-------------|
 | UI Language | Switch between Chinese / English instantly |
+| UI Theme | Light / Dark / System via a segmented control, applied instantly and synced across pages (also cycleable from the side panel "More" menu) |
 | Provider Profile | Multiple profiles with independent API Base / API Key / model lists; new, save-as, rename, delete; switching takes effect immediately |
 | API Base URL | API endpoint URL (pick from dropdown or type; custom addresses supported) |
 | API Key | OpenAI-compatible API key (required) |
@@ -1087,7 +1100,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 
 | Data Type | Storage | Description |
 |-----------|---------|-------------|
-| Extension Config | `chrome.storage.local` | API Key, ReAct params, models, image recognition, etc. |
+| Extension Config | `chrome.storage.local` | API Key, ReAct params, models, image recognition, UI theme (`appTheme`), etc. |
 | Chat Sessions | IndexedDB (`ai-helper-db`) | Active sessions + archived sessions |
 | UI Prototypes | IndexedDB | Associated by session |
 | Toolbar Config | `chrome.storage.local` | Tool list, ordering, domain blocklist |
