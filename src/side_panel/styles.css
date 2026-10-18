@@ -7158,6 +7158,22 @@ body {
   overflow-x: auto;
 }
 
+/* Markdown 表格横向滚动条：未主题化时落到浏览器默认亮色粗条，暗色下很突兀；
+   与代码块/工具输出保持一致：轨道透明、滑块 --border-default、hover 加深 */
+.table-container-wrapper::-webkit-scrollbar {
+  height: 8px;
+}
+.table-container-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+.table-container-wrapper::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+}
+.table-container-wrapper::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
 .table-container-wrapper table {
   width: 100%;
   border-collapse: collapse;
