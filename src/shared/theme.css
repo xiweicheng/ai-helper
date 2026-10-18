@@ -134,7 +134,7 @@ html[data-theme="dark"] {
   --brand-violet-rgb: 167, 139, 250;
   --brand-accent-rgb: 111, 75, 153;
   --bg-page-rgb: 22, 24, 29;
-  --brand-gradient: linear-gradient(135deg, #566ad3, #6f4b99);
+  --brand-gradient: linear-gradient(135deg, #474170 0%, #2a2340 100%);
 
   /* 边框与分隔 */
   --border-subtle: #2e343d;

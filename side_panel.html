@@ -109,13 +109,28 @@
             </svg>
             <span data-i18n="header.shortcuts">查看快捷键</span>
           </button>
-          <button class="header-dropdown-item" id="themeToggleBtn" title="切换主题（亮→暗→跟随系统循环）">
+          <button class="header-dropdown-item header-dropdown-parent" id="themeToggleBtn" aria-haspopup="true" aria-expanded="false" title="选择主题">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="9"/>
               <path d="M12 3a9 9 0 000 18z" fill="currentColor" stroke="none"/>
             </svg>
             <span id="themeToggleLabel">主题</span>
+            <svg class="submenu-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
           </button>
+          <div class="theme-submenu" id="themeSubmenu">
+            <button class="theme-submenu-item" data-theme-value="system">
+              <span data-i18n="settings.themeSystem">跟随系统</span>
+              <svg class="theme-submenu-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </button>
+            <button class="theme-submenu-item" data-theme-value="light">
+              <span data-i18n="settings.themeLight">亮色</span>
+              <svg class="theme-submenu-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </button>
+            <button class="theme-submenu-item" data-theme-value="dark">
+              <span data-i18n="settings.themeDark">暗色</span>
+              <svg class="theme-submenu-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            </button>
+          </div>
           <button class="header-dropdown-item" id="versionInfoBtn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/>

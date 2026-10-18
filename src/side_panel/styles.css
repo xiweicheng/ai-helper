@@ -18,7 +18,7 @@ body {
   overflow: hidden;
 }
 .header {
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   padding: 6px 20px;
   display: flex;
@@ -184,6 +184,52 @@ body {
 .header-dropdown-item svg {
   flex-shrink: 0;
   color: var(--text-secondary);
+}
+/* 主题二级菜单：父项 chevron 靠右，展开时旋转 */
+.header-dropdown-parent .submenu-chevron {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+#themeToggleBtn[aria-expanded="true"] .submenu-chevron {
+  transform: rotate(180deg);
+}
+.theme-submenu {
+  display: none;
+  padding: 2px 0;
+}
+.theme-submenu.show {
+  display: block;
+}
+.theme-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px 7px 34px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.theme-submenu-item:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+.theme-submenu-item .theme-submenu-check {
+  margin-left: auto;
+  color: var(--brand-500);
+  opacity: 0;
+}
+.theme-submenu-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.theme-submenu-item.active .theme-submenu-check {
+  opacity: 1;
 }
 /* ============================================
    Header Agent 状态下拉

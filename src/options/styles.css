@@ -186,7 +186,7 @@ textarea {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-accent) 100%);
+  background: var(--brand-gradient);
   color: var(--text-on-brand);
   display: flex;
   align-items: center;

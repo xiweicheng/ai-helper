@@ -3537,29 +3537,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.addEventListener('click', (e) => {
       if (!headerMoreDropdown.contains(e.target) && e.target !== headerMoreBtn) {
         headerMoreDropdown.classList.remove('show');
+        const sm = document.getElementById('themeSubmenu');
+        if (sm) sm.classList.remove('show');
       }
     });
   }
 
-  // 主题快捷切换：点击循环 light→dark→system，项上文案动态显示当前态
+  // 主题二级菜单：点父项展开/收起，点子项直接切到对应主题（当前项打勾）
   const themeToggleBtn = document.getElementById('themeToggleBtn');
   const themeToggleLabel = document.getElementById('themeToggleLabel');
-  const THEME_CYCLE = ['light', 'dark', 'system'];
+  const themeSubmenu = document.getElementById('themeSubmenu');
   const themeStateLabel = (pref) => t(pref === 'dark' ? 'settings.themeDark' : pref === 'system' ? 'settings.themeSystem' : 'settings.themeLight');
-  const renderThemeToggleLabel = () => {
-    if (themeToggleLabel) themeToggleLabel.textContent = t('header.themeToggle', { theme: themeStateLabel(getTheme()) });
+  const renderThemeMenu = () => {
+    const cur = getTheme();
+    if (themeToggleLabel) themeToggleLabel.textContent = t('header.themeToggle', { theme: themeStateLabel(cur) });
+    if (themeSubmenu) {
+      themeSubmenu.querySelectorAll('.theme-submenu-item').forEach((it) => {
+        it.classList.toggle('active', it.dataset.themeValue === cur);
+      });
+    }
+    if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', String(!!(themeSubmenu && themeSubmenu.classList.contains('show'))));
   };
-  if (themeToggleBtn) {
+  const closeThemeSubmenu = () => { if (themeSubmenu) themeSubmenu.classList.remove('show'); };
+  if (themeToggleBtn && themeSubmenu) {
     themeToggleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const next = THEME_CYCLE[(THEME_CYCLE.indexOf(getTheme()) + 1) % THEME_CYCLE.length];
-      setTheme(next);
-      if (headerMoreDropdown) headerMoreDropdown.classList.remove('show');
+      themeSubmenu.classList.toggle('show');
+      renderThemeMenu();
+    });
+    themeSubmenu.querySelectorAll('.theme-submenu-item').forEach((it) => {
+      it.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setTheme(it.dataset.themeValue);
+        closeThemeSubmenu();
+        if (headerMoreDropdown) headerMoreDropdown.classList.remove('show');
+      });
     });
   }
-  renderThemeToggleLabel();
-  subscribeTheme(renderThemeToggleLabel);
-  subscribe(renderThemeToggleLabel);
+  renderThemeMenu();
+  subscribeTheme(renderThemeMenu);
+  subscribe(renderThemeMenu);
 
   // 清除对话历史按钮
   clearChatBtn.addEventListener('click', (e) => {
