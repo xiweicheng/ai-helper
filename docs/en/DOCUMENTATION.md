@@ -699,11 +699,10 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
 
-### Page Interaction (6)
+### Page Interaction (5)
 | Tool | Description |
 |------|-------------|
 | `interact_element` | Page element interaction (click/hover/type input, supports ref/text/selector positioning, ref preferred) |
-| `drag_drop` | Drag-and-drop operation (⚠️ experimental, may not work on most pages, use click instead) |
 | `scroll_to` | Scroll to position/element/text (with alignment options) |
 | `wait_element` | Wait for element appear/disappear (strict visibility check) |
 | `wait_navigation` | Wait for page navigation (load/domcontentloaded/networkidle) |
@@ -728,12 +727,11 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 |------|-------------|
 | `search_browser_data` | Search browser bookmarks and history |
 
-### Storage Management (3)
+### Storage Management (2)
 | Tool | Description |
 |------|-------------|
-| `manage_cookies` | Cookie management (CRUD, requires confirmation) |
-| `manage_storage` | localStorage/sessionStorage management |
-| `clear_data` | One-click clear site data (requires confirmation) |
+| `manage_cookies` | Cookie management (CRUD + bulk clear by domain, requires confirmation) |
+| `manage_storage` | localStorage/sessionStorage management (clear requires confirmation) |
 
 ### Network Request (1)
 | Tool | Description |
@@ -749,12 +747,10 @@ Stay informed even when tasks run in the background (managed in Options → Basi
 | `download_file` | Download files (requires confirmation) |
 | `notify` | Desktop notifications |
 
-### Debug & Dev (4)
+### Debug & Dev (2)
 | Tool | Description |
 |------|-------------|
-| `inject_css` | Inject CSS styles (global/scoped/inline) |
-| `browser_info` | Get browser environment info |
-| `highlight_text` | Highlight text on page |
+| `inject_css` | Modify page appearance (inject stylesheet / inline style / highlight text) |
 | `debug_page` | Advanced page debugging over Chrome DevTools Protocol (attach → operate → detach): native input events, XHR/fetch interception, page-context evaluation, full-page screenshots, device emulation |
 
 ### AI Collaboration (7)
@@ -798,7 +794,7 @@ When connected to third-party MCP servers, tools are automatically registered. Q
 
 The following tool operations show a confirmation dialog before execution (**5-minute timeout auto-reject**, gated by the `reactConfig.toolConfirmationEnabled` master switch; when off, sensitive operations run without asking):
 
-- `manage_tab` (close action), `download_file`, `manage_cookies`, `clear_data`
+- `manage_tab` (close action), `download_file`, `manage_cookies`, `manage_storage` (clear action)
 - `agent_file` (delete action), `agent_exec`
 
 > 💡 **Queuing & when the clock starts**: parallel subtasks can raise several confirmations / clarifications at once. Both dialog kinds share a **single-modal gate** and are displayed **one at a time in FIFO order** (the visible dialog tells you "+N other waiting"), so one dialog can no longer cover another one's buttons. The timeout countdown only starts once an item is **actually displayed** — queued requests burn no time, so you can never be denied without ever seeing the dialog. If the side panel is closed or the dialog cannot be delivered, the operation fails **closed** immediately instead of waiting out the 5 minutes.

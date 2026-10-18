@@ -18,7 +18,7 @@ import {
 
 import {
   clickElement, fillForm, scrollToPosition, waitForElement,
-  keyboardInput, dragAndDrop, fileUpload,
+  keyboardInput, fileUpload,
   manageStorage, selectDropdown, clickByText
 } from './interaction-tools.js';
 
@@ -81,11 +81,10 @@ document.addEventListener('keydown', (e) => {
 //   表单/输入(2):   KEYBOARD_INPUT, FILE_UPLOAD
 //   信息提取(5):   EXTRACT_TABLE, EXTRACT_METADATA, EXTRACT_LINKS, EXTRACT_FORMS, EXTRACT_IMAGES,
 //                  SEARCH_IN_PAGE, IFRAME_CONTENT, SCROLL_COLLECT
-//   高亮/选区(1):   HIGHLIGHT_TEXT
+//   高亮/选区(1):   (选区类；HIGHLIGHT_TEXT 已并入 INJECT_CSS highlight 模式)
 //   媒体/输出(2):   MANAGE_STORAGE, INJECT_CSS
-//   异步工具(7):   COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_ELEMENT, DRAG_DROP,
+//   异步工具(6):   COPY_TO_CLIPBOARD, PASTE_FROM_CLIPBOARD, WAIT_ELEMENT,
 //                  SELECT_DROPDOWN, QRCODE, START_REGION_SELECTION
-//   特殊(1):       CLEAR_DATA（内联逻辑）
 //
 // 异步处理：ASYNC_HANDLERS Set 标记需 return true 保持消息通道开放的工具
 //
@@ -141,18 +140,17 @@ const HANDLERS = {
   IFRAME_CONTENT:            (msg) => getIframeContent(msg.selector, msg.includeNested, msg.maxLength),
   SCROLL_COLLECT:            (msg) => scrollAndCollect(msg),
 
-  // ── 高亮/选区 ──
-  HIGHLIGHT_TEXT:            (msg) => highlightText(msg.text, msg.color),
-
   // ── 媒体/输出 ──
   MANAGE_STORAGE:            (msg) => manageStorage(msg),
-  INJECT_CSS:                (msg) => injectCss(msg.css, msg.targetSelector, msg.injectMode),
+  // inject_css 三模式：style/inline 走 injectCss；highlight 复用 highlightText（原 highlight_text）
+  INJECT_CSS:                (msg) => (msg.injectMode === 'highlight'
+    ? highlightText(msg.text, msg.color)
+    : injectCss(msg.css, msg.targetSelector, msg.injectMode)),
 
   // ── 异步工具（返回 Promise，需保持通道开放）──
   COPY_TO_CLIPBOARD:         (msg) => copyToClipboard(msg.text),
   PASTE_FROM_CLIPBOARD:      ()   => pasteFromClipboard(),
   WAIT_ELEMENT:              (msg) => waitForElement(msg.selector, msg.state, msg.timeout),
-  DRAG_DROP:                 (msg) => dragAndDrop(msg.sourceSelector, msg.targetSelector),
   SELECT_DROPDOWN:           (msg) => {
     let triggerSelector = msg.triggerSelector;
     if (msg.ref != null && !triggerSelector) {
@@ -170,27 +168,6 @@ const HANDLERS = {
   },
   QRCODE:                    (msg) => generateQRCode(msg.content, msg.size, msg.errorCorrection, msg.showImage),
 
-  // ── 特殊：清除站点数据（内联逻辑）──
-  CLEAR_DATA: (msg) => {
-    try {
-      const cleared = [];
-      if (msg.site) {
-        if (window.location.href.includes(new URL(msg.site).hostname)) {
-          localStorage.clear();
-          sessionStorage.clear();
-          cleared.push('localStorage', 'sessionStorage');
-        }
-      } else {
-        localStorage.clear();
-        sessionStorage.clear();
-        cleared.push('localStorage', 'sessionStorage');
-      }
-      return { success: true, cleared };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
-  },
-
   // ── 区域截图选择 ──
   START_REGION_SELECTION: () => startRegionSelection(),
 
@@ -204,7 +181,7 @@ const HANDLERS = {
 /** 异步工具的 message type 集合，用于判断是否需要 return true */
 const ASYNC_HANDLERS = new Set([
   'COPY_TO_CLIPBOARD', 'PASTE_FROM_CLIPBOARD',
-  'WAIT_ELEMENT', 'DRAG_DROP',
+  'WAIT_ELEMENT',
   'SELECT_DROPDOWN', 'QRCODE',
   'START_REGION_SELECTION',
   // INTERACT_ELEMENT: ref/text/click 分支含 auto-wait，均为 async

@@ -25,26 +25,6 @@ export const AI_TOOLS = [
     }
   },
   {
-    id: 'highlight_text',
-    category: 'debug_dev',
-    execution: 'content_script',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'highlight_text',
-      description: 'Highlight text on the page for visual emphasis',
-      parameters: {
-        type: 'object',
-        properties: {
-          text: { type: 'string' },
-          color: { type: 'string' }
-        },
-        required: ['text']
-      }
-    }
-  },
-{
     id: 'plan_task',
     category: 'ai_collaboration',
     execution: 'background',
@@ -82,7 +62,7 @@ export const AI_TOOLS = [
       }
     }
   },
-{
+  {
     id: 'search_chats',
     category: 'ai_collaboration',
     execution: 'background',

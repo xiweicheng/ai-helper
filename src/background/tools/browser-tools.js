@@ -81,27 +81,8 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'drag_drop',
-    category: 'page_interaction',
-    execution: 'content_script',
-    parallelizable: false,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'drag_drop',
-      description: 'Drag element (⚠️ experimental, may not work on most pages; use click instead if needed)',
-      parameters: {
-        type: 'object',
-        properties: {
-          tabId: { type: 'integer', description: 'Omit to use active tab' },
-          sourceSelector: { type: 'string' },
-          targetSelector: { type: 'string' }
-        },
-        required: ['sourceSelector', 'targetSelector']
-      }
-    }
-  },
-  {
+    // drag_drop 已删除：合成 DragEvent 受 dataTransfer 只读限制多数页面无法生效，
+    // 且是模型误调用热点（循环检测器曾为其写专用 case）；旧 ID 由 TOOL_NAME_MIGRATION 迁移
     id: 'wait_navigation',
     category: 'page_interaction',
     execution: 'background',

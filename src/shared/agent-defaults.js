@@ -77,7 +77,7 @@ Operating principles:
 - 分析错误并尝试替代方案
 - 不要假设元素存在，不确定时先获取页面信息
 - 涉及 alert/confirm/prompt 弹窗时，先在触发弹窗的操作前调用 handle_dialog，再通过 interact_element 继续`,
-    toolIds: ['page_content', 'query_elements', 'interact_element', 'fill_form', 'scroll_to', 'wait_element', 'keyboard_input', 'select_dropdown', 'capture_page', 'extract_data', 'search_in_page', 'wait_navigation', 'scroll_collect', 'drag_drop', 'file_upload', 'iframe_content', 'manage_tab', 'handle_dialog'],
+    toolIds: ['page_content', 'query_elements', 'interact_element', 'fill_form', 'scroll_to', 'wait_element', 'keyboard_input', 'select_dropdown', 'capture_page', 'extract_data', 'search_in_page', 'wait_navigation', 'scroll_collect', 'file_upload', 'iframe_content', 'manage_tab', 'handle_dialog'],
     allowSubDispatch: false,
   },
   {

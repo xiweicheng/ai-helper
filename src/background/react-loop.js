@@ -244,7 +244,7 @@ function sendConfirmDialogCommand(type, data, sessionId) {
 // 敏感操作显示名映射（i18n）
 const TOOL_DISPLAY_NAME_KEYS = {
   manage_cookies: 'sensitiveTool.manage_cookies',
-  clear_data: 'sensitiveTool.clear_data',
+  manage_storage: 'sensitiveTool.manage_storage',
   download_file: 'sensitiveTool.download_file',
   manage_tab: 'sensitiveTool.manage_tab',
   agent_file: 'sensitiveTool.agent_file',

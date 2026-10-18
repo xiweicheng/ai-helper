@@ -23,7 +23,7 @@ export const LOOP_DETECTOR_CONFIG = {
 // 失败作用域适用的变更类工具白名单
 const FAILURE_SCOPE_TOOLS = new Set([
   'interact_element', 'fill_form', 'select_dropdown',
-  'keyboard_input', 'file_upload', 'drag_drop',
+  'keyboard_input', 'file_upload',
 ]);
 
 // —— 稳定序列化 + FNV-1a 哈希（约 24K 字符串 <1ms）——
@@ -94,10 +94,6 @@ function failureScopeOf(toolName, args) {
     case 'file_upload':
       if (args.ref != null) return `fu:ref:${args.ref}`;
       if (args.selector) return `fu:sel:${args.selector}`;
-      return null;
-    case 'drag_drop':
-      if (args.sourceSelector && args.targetSelector) return `dd:sel:${args.sourceSelector}->${args.targetSelector}`;
-      if (args.sourceRef != null && args.targetRef != null) return `dd:ref:${args.sourceRef}->${args.targetRef}`;
       return null;
     default:
       return null;

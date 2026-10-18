@@ -112,22 +112,6 @@ export const MEDIA_TOOLS = [
     }
   },
   {
-    id: 'browser_info',
-    category: 'debug_dev',
-    execution: 'background',
-    parallelizable: true,
-    requiresConfirmation: false,
-    type: 'function',
-    function: {
-      name: 'browser_info',
-      description: 'Get browser version, platform, and environment info',
-      parameters: {
-        type: 'object',
-        properties: {}
-      }
-    }
-  },
-  {
     id: 'inject_css',
     category: 'debug_dev',
     execution: 'content_script',
@@ -136,15 +120,17 @@ export const MEDIA_TOOLS = [
     type: 'function',
     function: {
       name: 'inject_css',
-      description: 'Inject custom CSS into the page. style: insert stylesheet; inline: apply inline style to matched elements',
+      description: 'Modify page appearance. injectMode: style=insert stylesheet (requires css); inline=apply css to elements matching targetSelector (requires css+targetSelector); highlight=visually highlight texts matching text on the page (requires text, optional color, default yellow)',
       parameters: {
         type: 'object',
         properties: {
-          css: { type: 'string' },
-          targetSelector: { type: 'string' },
-          injectMode: { type: 'string', enum: ['style', 'inline'], description: 'style: insert <style> tag; inline: apply to elements matching targetSelector' }
+          css: { type: 'string', description: 'Required for style/inline modes' },
+          targetSelector: { type: 'string', description: 'Required for inline mode' },
+          injectMode: { type: 'string', enum: ['style', 'inline', 'highlight'], description: 'style: insert <style> tag; inline: apply to elements matching targetSelector; highlight: mark matched texts visually (does not modify structure)' },
+          text: { type: 'string', description: 'Required for highlight mode: text to highlight' },
+          color: { type: 'string', description: 'highlight only: highlight color, default yellow' }
         },
-        required: ['css']
+        required: ['injectMode']
       }
     }
   },

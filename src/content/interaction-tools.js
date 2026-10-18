@@ -26,9 +26,6 @@ registerTranslations('zh', {
     waitTimeout: '等待超时（{timeout}ms），元素 {selector} 未达到 {state} 状态',
     noFocusedElement: '没有聚焦的元素',
     keyboardInputSuccess: '键盘输入成功{hint}',
-    sourceElementNotFound: '未找到源元素: {selector}',
-    targetElementNotFound: '未找到目标元素: {selector}',
-    dragExperimental: '⚠️拖拽为实验性，可能未生效（{source} → {target}）。受浏览器 dataTransfer 限制，依赖拖拽数据的网页多数无法触发，建议验证结果或改用点击坐标实现',
     fileUploadNotFound: '未找到文件上传控件: {selector}',
     notFileUploadControl: '选择的元素不是文件上传控件',
     fileUploaded: '已上传文件: {fileName}',
@@ -75,9 +72,6 @@ registerTranslations('en', {
     waitTimeout: 'Timed out ({timeout}ms); element {selector} did not reach {state} state',
     noFocusedElement: 'No focused element',
     keyboardInputSuccess: 'Keyboard input successful{hint}',
-    sourceElementNotFound: 'Source element not found: {selector}',
-    targetElementNotFound: 'Target element not found: {selector}',
-    dragExperimental: '⚠️ Drag is experimental and may not have worked ({source} → {target}). Due to browser dataTransfer limitations, most pages relying on drag data cannot be triggered; please verify the result or use click coordinates instead',
     fileUploadNotFound: 'File upload control not found: {selector}',
     notFileUploadControl: 'The selected element is not a file upload control',
     fileUploaded: 'File uploaded: {fileName}',
@@ -479,83 +473,6 @@ export async function keyboardInput({ key, text, ctrlKey = false, shiftKey = fal
   } catch (error) {
     return { success: false, error: error.message };
   }
-}
-
-/**
- * 拖拽操作（实验性 / 部分支持）
- *
- * ⚠️ 局限性：
- * - 手动创建的 DragEvent 在 Chrome 中 dataTransfer 为只读，无法真正传递拖拽数据
- * - elementFromPoint().dispatchEvent() 与浏览器原生拖拽行为存在差异
- * - 依赖 dataTransfer 的网页拖拽功能（如文件拖放、自定义拖拽数据）几乎无法触发
- * - 仅对简单的、仅依赖事件冒泡的拖拽交互可能生效
- */
-export function dragAndDrop(sourceSelector, targetSelector) {
-  return new Promise((resolve, reject) => {
-    try {
-      const source = deepQuerySelector(sourceSelector);
-      const target = deepQuerySelector(targetSelector);
-      
-      if (!source) {
-        resolve({ success: false, error: t('interactionTools.sourceElementNotFound', { selector: sourceSelector }) });
-        return;
-      }
-      
-      if (!target) {
-        resolve({ success: false, error: t('interactionTools.targetElementNotFound', { selector: targetSelector }) });
-        return;
-      }
-      
-      // 获取元素中心坐标
-      const sourceRect = source.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      
-      const sourceX = sourceRect.left + sourceRect.width / 2;
-      const sourceY = sourceRect.top + sourceRect.height / 2;
-      const targetX = targetRect.left + targetRect.width / 2;
-      const targetY = targetRect.top + targetRect.height / 2;
-      
-      // 创建并分发拖拽事件（实验性）
-      const dispatchDragEvent = (type, clientX, clientY) => {
-        const event = new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          clientX: clientX,
-          clientY: clientY,
-          screenX: clientX,
-          screenY: clientY
-        });
-        Object.defineProperty(event, 'dataTransfer', {
-          value: {
-            getData: () => '',
-            setData: () => {},
-            effectAllowed: 'all',
-            dropEffect: 'none'
-          }
-        });
-        document.elementFromPoint(clientX, clientY)?.dispatchEvent(event);
-      };
-      
-      // 开始拖拽
-      dispatchDragEvent('dragstart', sourceX, sourceY);
-      
-      // 拖入目标
-      dispatchDragEvent('dragenter', targetX, targetY);
-      dispatchDragEvent('dragover', targetX, targetY);
-      
-      // 释放
-      dispatchDragEvent('drop', targetX, targetY);
-      dispatchDragEvent('dragend', sourceX, sourceY);
-      
-      resolve({
-        success: true,
-        experimental: true,
-        message: t('interactionTools.dragExperimental', { source: sourceSelector, target: targetSelector })
-      });
-    } catch (error) {
-      resolve({ success: false, error: error.message });
-    }
-  });
 }
 
 /**

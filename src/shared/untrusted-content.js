@@ -39,13 +39,13 @@ export const UNTRUSTED_CONTENT_TOOLS = new Set([
 // 安全白名单：结果是本地操作状态/确认信息/用户输入/模型自产文本
 export const KNOWN_SAFE_TOOLS = new Set([
   // 页面交互（返回操作状态）
-  'interact_element', 'scroll_to', 'wait_element', 'drag_drop',
+  'interact_element', 'scroll_to', 'wait_element',
   'wait_navigation', 'handle_dialog', 'fill_form', 'keyboard_input',
-  'file_upload', 'select_dropdown', 'inject_css', 'highlight_text',
-  // 标签页/存储管理（纯操作）
-  'manage_tab', 'clear_data',
+  'file_upload', 'select_dropdown', 'inject_css',
+  // 标签页管理（纯操作）
+  'manage_tab',
   // 媒体/系统信息（本地生成）
-  'notify', 'qrcode', 'download_file', 'browser_info',
+  'notify', 'qrcode', 'download_file',
   // 协作（用户输入/模型自产）
   'plan_task', 'clarify_question', 'preview_ui', 'dispatch_task', 'take_note',
   // Agent 管理（操作状态）

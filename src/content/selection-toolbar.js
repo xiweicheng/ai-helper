@@ -1336,7 +1336,7 @@ function onDocumentClick(e) {
   }
   
   // 通知所有 frame 关闭工具栏和结果面板
-  chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {});
+  try { chrome.runtime.sendMessage({ type: 'IFRAME_CLICK_DISMISS' }).catch(() => {}); } catch { /* 扩展上下文失效时静默忽略 */ }
 }
 
 function onMouseUp(e) {

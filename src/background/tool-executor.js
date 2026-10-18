@@ -136,6 +136,9 @@ registerTranslations('zh', {
     tabSwitched: '已切换到标签页 tabId={tabId}。后续操作此页的工具请传 tabId={tabId}（不传则默认用此页）',
     cookieSet: '已设置Cookie: {name}',
     cookieDeleted: '已删除Cookie: {name}',
+    cookiesCleared: '已清除 {domain} 的 {count} 条 Cookie',
+    noCookiesForDomain: '{domain} 没有 Cookie 可清除',
+    clearCookiesNeedsDomain: '无法确定目标域名：请提供 domain 参数，或确保当前活动标签页是 http(s) 页面',
     prototypeCodeLoaded: '已获取原型 "{title}" 的代码',
     skillLoadedCached: '已加载 Agent Skill "{name}" 的完整说明：\n\n{prompt}',
     skillLoaded: '已加载 Agent Skill "{name}" 的完整说明：\n\n{prompt}',
@@ -339,6 +342,9 @@ registerTranslations('en', {
     tabSwitched: 'Switched to tab tabId={tabId}. For subsequent tools on this page, pass tabId={tabId} (omit to use this tab by default)',
     cookieSet: 'Cookie set: {name}',
     cookieDeleted: 'Cookie deleted: {name}',
+    cookiesCleared: 'Cleared {count} cookies of {domain}',
+    noCookiesForDomain: 'No cookies to clear for {domain}',
+    clearCookiesNeedsDomain: 'Cannot determine target domain: provide the domain parameter or ensure the active tab is an http(s) page',
     prototypeCodeLoaded: 'Loaded prototype "{title}" code',
     skillLoadedCached: 'Loaded Agent Skill "{name}" full description:\n\n{prompt}',
     skillLoaded: 'Loaded Agent Skill "{name}" full description:\n\n{prompt}',
@@ -1134,12 +1140,12 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         // 方案C工具名简化迁移
         agent_exec_command: 'agent_exec',
         get_page_content: 'page_content', get_iframe_content: 'iframe_content',
-        get_browser_info: 'browser_info', get_tabs: 'list_tabs',
+        get_tabs: 'list_tabs',
         wait_for_element: 'wait_element', wait_for_navigation: 'wait_navigation',
         query_interactive_elements: 'query_elements',
-        scroll_and_collect: 'scroll_collect', drag_and_drop: 'drag_drop',
+        scroll_and_collect: 'scroll_collect', // drag_and_drop/drag_drop 已删除，陈旧 ID 被 BUILTIN_TOOLS 过滤自然丢弃
         show_notification: 'notify', generate_qrcode: 'qrcode',
-        clear_page_data: 'clear_data', search_chat_history: 'search_chats',
+        clear_page_data: 'manage_cookies', clear_data: 'manage_cookies', search_chat_history: 'search_chats',
         ui_prototype: 'preview_ui',
       };
       let migrated = false;
@@ -2037,12 +2043,10 @@ const TOOL_HANDLERS = {
   notify: executeShowNotification,
   fetch_url: executeFetchUrl,
   list_tabs: executeGetTabs,
-  browser_info: executeGetBrowserInfo,
   download_file: executeDownloadFile,
   manage_cookies: executeManageCookies,
   plan_task: executePlanTask,
   take_note: executeTakeNote,
-  clear_data: executeClearPageData,
   search_chats: executeSearchConversationMemory,
   preview_ui: executePreviewUiPrototype,
   agent_file: executeAgentFile,
@@ -3112,35 +3116,6 @@ export async function executeHandleDialog(args, toolCallId, sessionId) {
 }
 
 /**
- * 获取浏览器信息
- */
-export function executeGetBrowserInfo(args, toolCallId) {
-  console.log('[Background] get browserinfo');
-  
-  const info = {
-    success: true,
-    browserName: navigator.appName,
-    browserVersion: navigator.appVersion,
-    platform: navigator.platform,
-    language: navigator.language,
-    userAgent: navigator.userAgent,
-    cookieEnabled: navigator.cookieEnabled,
-    onLine: navigator.onLine,
-    prefersDarkMode: typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
-    screenWidth: typeof screen !== 'undefined' ? screen.width : null,
-    screenHeight: typeof screen !== 'undefined' ? screen.height : null,
-    colorDepth: typeof screen !== 'undefined' ? screen.colorDepth : null
-  };
-  
-  // 通过 chrome API 获取更多信息
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    info.extensionVersion = chrome.runtime.getManifest().version;
-  }
-  
-  return Promise.resolve(info);
-}
-
-/**
  * 下载文件
  */
 export function executeDownloadFile(args, toolCallId) {
@@ -3469,6 +3444,37 @@ export function executeManageCookies(args, toolCallId) {
           });
           break;
           
+        case 'clear': {
+          // 批量清除目标域名的全部 Cookie（承接原 clear_data 的域内批删能力）
+          if (!cookieDomain) {
+            resolve({ success: false, error: t('toolExec.clearCookiesNeedsDomain'), tool_call_id: toolCallId });
+            return;
+          }
+          chrome.cookies.getAll({ domain: cookieDomain }, (cookies) => {
+            if (chrome.runtime.lastError) {
+              resolve({ success: false, error: chrome.runtime.lastError.message, tool_call_id: toolCallId });
+              return;
+            }
+            if (cookies.length === 0) {
+              resolve({ success: true, cleared: 0, domain: cookieDomain, message: t('toolExec.noCookiesForDomain', { domain: cookieDomain }), tool_call_id: toolCallId });
+              return;
+            }
+            let removed = 0;
+            cookies.forEach((cookie) => {
+              const protocol = cookie.secure ? 'https:' : 'http:';
+              const cookieUrl = `${protocol}//${cookie.domain.replace(/^\./, '')}${cookie.path}`;
+              chrome.cookies.remove({ url: cookieUrl, name: cookie.name }, () => {
+                removed++;
+                if (removed === cookies.length) {
+                  appendAuditLog('cookie_write', `Cleared cookies for domain: ${cookieDomain}`, { domain: cookieDomain, count: removed });
+                  resolve({ success: true, cleared: removed, domain: cookieDomain, message: t('toolExec.cookiesCleared', { domain: cookieDomain, count: removed }), tool_call_id: toolCallId });
+                }
+              });
+            });
+          });
+          break;
+        }
+
         case 'list':
           chrome.cookies.getAll({ domain: cookieDomain }, (cookies) => {
             if (chrome.runtime.lastError) {
@@ -3624,130 +3630,6 @@ export function executeTakeNote(args, toolCallId) {
     data: { content, label },
     message: truncated ? 'note saved (truncated)' : 'note saved',
     tool_call_id: toolCallId
-  });
-}
-
-/**
- * 清除页面数据（localStorage, sessionStorage, cookies）
- */
-export function executeClearPageData(args, toolCallId) {
-  const { site } = args;
-
-  return new Promise((resolve) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (chrome.runtime.lastError || !tabs || tabs.length === 0) {
-        resolve({ success: false, error: t('toolExec.cannotGetCurrentTab'), tool_call_id: toolCallId });
-        return;
-      }
-
-      const tab = tabs[0];
-      let origin;
-      try {
-        const url = new URL(tab.url);
-        origin = url.origin;
-      } catch (e) {
-        resolve({ success: false, error: t('toolExec.cannotParseTabUrl'), tool_call_id: toolCallId });
-        return;
-      }
-
-      const targetSite = site || origin;
-      const cleared = [];
-
-      // 定义一个 Promise 链来处理所有清除操作
-      const cleanupTasks = [];
-
-      // 1. 清除 cookies
-      cleanupTasks.push(new Promise((resolveTask) => {
-        chrome.cookies.getAll({}, (cookies) => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] get cookies failed:', chrome.runtime.lastError.message);
-            resolveTask();
-            return;
-          }
-          const matchingCookies = cookies.filter(c => {
-            const cookieDomain = c.domain.startsWith('.') ? c.domain.substring(1) : c.domain;
-            try {
-              const targetHostname = new URL(targetSite).hostname;
-              return targetHostname.endsWith(cookieDomain) || cookieDomain.endsWith(targetHostname);
-            } catch (e) {
-              return false;
-            }
-          });
-
-          if (matchingCookies.length === 0) {
-            resolveTask();
-            return;
-          }
-
-          let removed = 0;
-          matchingCookies.forEach((cookie) => {
-            const protocol = cookie.secure ? 'https:' : 'http:';
-            const cookieUrl = `${protocol}//${cookie.domain.replace(/^\./, '')}${cookie.path}`;
-            chrome.cookies.remove({ url: cookieUrl, name: cookie.name }, () => {
-              removed++;
-              if (removed === matchingCookies.length) {
-                cleared.push('cookies');
-                resolveTask();
-              }
-            });
-          });
-        });
-      }));
-
-      // 2. 通过 content script 清除 localStorage 和 sessionStorage
-      cleanupTasks.push(new Promise((resolveTask) => {
-        chrome.tabs.sendMessage(tab.id, {
-          type: 'CLEAR_PAGE_DATA',
-          storageTypes: ['localStorage', 'sessionStorage']
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.warn('[Background] send CLEAR_PAGE_DATA message failed:', chrome.runtime.lastError.message);
-            // 尝试注入 content script 后再试
-            const manifest = chrome.runtime.getManifest();
-            const contentJsFiles = manifest.content_scripts?.[0]?.js || [];
-            const contentFile = contentJsFiles.find(f => f.includes('content-')) || 'content.js';
-            chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: [contentFile]
-            }).then(() => {
-              setTimeout(() => {
-                chrome.tabs.sendMessage(tab.id, {
-                  type: 'CLEAR_PAGE_DATA',
-                  storageTypes: ['localStorage', 'sessionStorage']
-                }, (retryResponse) => {
-                  if (chrome.runtime.lastError) {
-                    resolveTask();
-                  } else {
-                    if (retryResponse?.cleared) {
-                      cleared.push(...retryResponse.cleared);
-                    }
-                    resolveTask();
-                  }
-                });
-              }, 500);
-            }).catch(() => {
-              resolveTask();
-            });
-          } else {
-            if (response?.cleared) {
-              cleared.push(...response.cleared);
-            }
-            resolveTask();
-          }
-        });
-      }));
-
-      Promise.allSettled(cleanupTasks).then(() => {
-        const uniqueCleared = [...new Set(cleared)];
-        appendAuditLog('page_data_clear', `Clear page data: ${targetSite}`, { site: targetSite, cleared: uniqueCleared });
-        resolve({
-          success: true,
-          cleared: uniqueCleared,
-          site: targetSite,
-          tool_call_id: toolCallId
-        });
-      });
-    });
   });
 }
 
