@@ -62,6 +62,11 @@ export default {
     docTitle: 'AI Helper - Settings',
     language: 'Interface Language',
     languageChanged: 'Language changed. Some pages will update after refresh.',
+    appearance: 'Appearance',
+    themeHint: 'Theme applies instantly and syncs across all pages',
+    themeSystem: 'Follow system',
+    themeLight: 'Light',
+    themeDark: 'Dark',
     pageTitle: 'AI Helper Settings',
     subtitle: 'Web AI Assistant - OpenAI Compatible API',
     importConfigTitle: 'Import Settings',
@@ -191,6 +196,7 @@ export default {
   // Header bar
   header: {
     docTitle: 'AI Helper - Chat',
+    themeToggle: 'Theme: {theme}',
     settingsTitle: 'Extension Settings',
     switchAgent: 'Switch Assistant',
     defaultAssistant: '🤖 Default Assistant',

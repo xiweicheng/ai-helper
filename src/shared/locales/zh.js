@@ -62,6 +62,11 @@ export default {
     docTitle: 'AI Helper - 配置',
     language: '界面语言',
     languageChanged: '语言已切换，部分页面刷新后生效',
+    appearance: '外观',
+    themeHint: '主题即时生效并在所有页面同步',
+    themeSystem: '跟随系统',
+    themeLight: '亮色',
+    themeDark: '暗色',
     pageTitle: 'AI Helper 配置',
     subtitle: '网页智能助手 - OpenAI 兼容接口',
     importConfigTitle: '导入配置',
@@ -191,6 +196,7 @@ export default {
   // 顶部栏
   header: {
     docTitle: 'AI Helper - 模型问答',
+    themeToggle: '主题：{theme}',
     settingsTitle: '插件设置',
     switchAgent: '切换助手',
     defaultAssistant: '🤖 默认助手',

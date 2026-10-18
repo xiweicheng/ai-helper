@@ -40,6 +40,8 @@ const EXPORT_KEYS = [
   // 厂商配置（多配置记忆）与激活项
   'modelProfiles', 'activeProfileId',
   'mcpEnabled', 'skillsEnabled', 'ragEnabled',
+  // 外观主题（三态偏好 + 划词浮层是否跟随扩展主题）
+  'appTheme', 'selectionToolbarFollowTheme',
 ];
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）

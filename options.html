@@ -42,6 +42,25 @@
     </div>
 
     <div class="tab-panel active" data-tab="basic">
+    <div class="form-group" id="appearanceGroup">
+      <label data-i18n="settings.appearance">外观</label>
+      <div class="theme-segment" id="themeSegment" role="radiogroup">
+        <label class="theme-segment-opt">
+          <input type="radio" name="themePref" value="system">
+          <span data-i18n="settings.themeSystem">跟随系统</span>
+        </label>
+        <label class="theme-segment-opt">
+          <input type="radio" name="themePref" value="light">
+          <span data-i18n="settings.themeLight">亮色</span>
+        </label>
+        <label class="theme-segment-opt">
+          <input type="radio" name="themePref" value="dark">
+          <span data-i18n="settings.themeDark">暗色</span>
+        </label>
+      </div>
+      <span class="hint" style="display:block;margin-top:6px;" data-i18n="settings.themeHint">主题即时生效并在所有页面同步</span>
+    </div>
+
     <div class="form-group">
       <label data-i18n="settings.language">界面语言</label>
       <div class="model-selector">

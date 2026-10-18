@@ -1,6 +1,6 @@
 // side_panel/index.js - Side Panel 入口文件
 
-import { initTheme, subscribeTheme } from '../shared/theme.js';
+import { initTheme, subscribeTheme, getTheme, setTheme } from '../shared/theme.js';
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
@@ -3540,6 +3540,26 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  // 主题快捷切换：点击循环 light→dark→system，项上文案动态显示当前态
+  const themeToggleBtn = document.getElementById('themeToggleBtn');
+  const themeToggleLabel = document.getElementById('themeToggleLabel');
+  const THEME_CYCLE = ['light', 'dark', 'system'];
+  const themeStateLabel = (pref) => t(pref === 'dark' ? 'settings.themeDark' : pref === 'system' ? 'settings.themeSystem' : 'settings.themeLight');
+  const renderThemeToggleLabel = () => {
+    if (themeToggleLabel) themeToggleLabel.textContent = t('header.themeToggle', { theme: themeStateLabel(getTheme()) });
+  };
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const next = THEME_CYCLE[(THEME_CYCLE.indexOf(getTheme()) + 1) % THEME_CYCLE.length];
+      setTheme(next);
+      if (headerMoreDropdown) headerMoreDropdown.classList.remove('show');
+    });
+  }
+  renderThemeToggleLabel();
+  subscribeTheme(renderThemeToggleLabel);
+  subscribe(renderThemeToggleLabel);
 
   // 清除对话历史按钮
   clearChatBtn.addEventListener('click', (e) => {

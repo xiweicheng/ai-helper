@@ -2822,6 +2822,39 @@ textarea {
   color: var(--text-secondary);
   min-width: 48px;
 }
+/* 外观主题三分段控件：复用 token 语言，选中段以品牌色高亮 */
+.theme-segment {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+.theme-segment-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s, color 0.15s;
+}
+.theme-segment-opt + .theme-segment-opt {
+  border-left: 1px solid var(--border-default);
+}
+.theme-segment-opt input {
+  display: none;
+}
+.theme-segment-opt:hover {
+  color: var(--text-primary);
+}
+.theme-segment-opt:has(input:checked) {
+  background: var(--brand-500);
+  color: var(--text-inverse);
+  font-weight: 600;
+}
 .toolbox-section-content {
   overflow: hidden;
   max-height: 0;

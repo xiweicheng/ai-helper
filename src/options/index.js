@@ -1,6 +1,6 @@
 // options/index.js - 选项页面入口
 
-import { initTheme } from '../shared/theme.js';
+import { initTheme, getTheme, setTheme, subscribeTheme } from '../shared/theme.js';
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
@@ -158,6 +158,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
   }
+
+  // 外观主题三分段：回显当前偏好 + change 即时持久化（setTheme 写 storage 并本地翻转）
+  // + 订阅跨页面同步（侧边栏改主题时本卡片跟随回显）
+  const syncThemeSegmentUI = () => {
+    const pref = getTheme();
+    document.querySelectorAll('#themeSegment input[name="themePref"]').forEach((r) => { r.checked = (r.value === pref); });
+  };
+  syncThemeSegmentUI();
+  document.querySelectorAll('#themeSegment input[name="themePref"]').forEach((radio) => {
+    radio.addEventListener('change', () => { if (radio.checked) setTheme(radio.value); });
+  });
+  subscribeTheme(syncThemeSegmentUI);
 
   // Tab 切换事件
   document.querySelectorAll('.tab-nav-btn').forEach(btn => {
