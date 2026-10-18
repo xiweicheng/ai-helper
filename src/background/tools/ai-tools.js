@@ -132,7 +132,7 @@ export const AI_TOOLS = [
 // completionVerification.enabled 为真时动态注入到 plan_task 的 subtask items。
 export const PLAN_TASK_DONE_CRITERIA_ITEM = {
   type: 'array',
-  description: 'Optional objective done-criteria to verify this subtask truly achieved its goal. Only verified when the "completion verification" setting is enabled. Unknown check types are ignored (fail-closed). Leave empty for open-ended subtasks.',
+  description: 'Optional objective done-criteria to verify this subtask truly achieved its goal. Only verified when the "completion verification" setting is enabled. Unknown check types are ignored (fail-closed). Leave empty for open-ended subtasks. For a criterion to be EVALUABLE: element_exists/element_absent/attribute_equals need a VALID CSS selector in target; text_contains MUST set expected to the exact substring to find; url_matches set target to a URL substring. A malformed selector or text_contains without expected cannot be evaluated (reported as evidence-unavailable, neither pass nor fail).',
   items: {
     type: 'object',
     properties: {

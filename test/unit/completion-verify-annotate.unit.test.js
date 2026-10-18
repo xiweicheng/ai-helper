@@ -5,7 +5,7 @@
 // 也绝不改 st.status（避开 done/failed 计数器与 failureStrategy 回归面）。
 // 无 doneCriteria 的子任务完全不动。开关由调用方(react-loop)短路，不进本层。
 import { describe, test, expect } from 'vitest';
-import { annotateSubtaskCompletion, annotateOneSubtaskCompletion, buildCompletionNote } from '../../src/background/completion-verifier.js';
+import { annotateSubtaskCompletion, annotateOneSubtaskCompletion, buildCompletionNote, buildMissingCriteriaDirective } from '../../src/background/completion-verifier.js';
 import { VERDICTS } from '../../src/shared/completion-verdict.js';
 
 function collectorPassing(...ids) {
@@ -154,5 +154,48 @@ describe('annotateOneSubtaskCompletion：单子任务即时取证（onDone 内�
       gatherEvidence: async () => true, config: {}, shouldStop: () => { throw new Error('stop boom'); },
     })).resolves.toBe(r);
     expect(r.completionNote).toBeUndefined();
+  });
+});
+
+// 可读性修复 #1/#4：缺项渲染含 expected；unavailable/partial 文案分离且不谎称“通道不可用”。
+describe('可读性修复 #1/#4', () => {
+  test('#1 未达标缺项 text_contains 渲染出 expected，而非 (no target)', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.UNMET_PERMANENT, missing: ['c1'], reason: 'objective_gates_blocked',
+      criteria: [{ id: 'c1', check: 'text_contains', expected: 'Order confirmed' }],
+    });
+    expect(note).toContain('Order confirmed');
+    expect(note).not.toContain('(no target)');
+  });
+
+  test('#1 attribute_equals 缺项渲染 target 与 expected', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.UNMET_PERMANENT, missing: ['c2'], reason: 'objective_gates_blocked',
+      criteria: [{ id: 'c2', check: 'attribute_equals', target: '#btn', expected: 'disabled=false' }],
+    });
+    expect(note).toContain('#btn');
+    expect(note).toContain('disabled=false');
+  });
+
+  test('#1 buildMissingCriteriaDirective 也含 expected 文本', () => {
+    const d = buildMissingCriteriaDirective(
+      [{ id: 'c1', check: 'text_contains', expected: 'Welcome back' }],
+      [{ id: 'c1', check: 'text_contains', pass: false }],
+    );
+    expect(d).toContain('Welcome back');
+  });
+
+  test('#4 evidence_unavailable 不再谎称“取证通道不可用”，改述“未能求值”', () => {
+    const note = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [] });
+    expect(note).toContain('ℹ️');
+    expect(note).not.toContain('取证通道不可用');
+    expect(note).toContain('未能');
+  });
+
+  test('#4 evidence_partial 用独立文案（部分达成/部分未能求值），与 unavailable 不同', () => {
+    const note = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_partial', criteria: [] });
+    const un = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [] });
+    expect(note).toContain('部分');
+    expect(note).not.toBe(un);
   });
 });

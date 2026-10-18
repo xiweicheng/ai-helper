@@ -23,7 +23,8 @@ registerTranslations('zh', {
     unmet: '⚠️ [完成度校验] 以下达标条件经独立取证确认未达成: {missing}。请勿视为已完成，评估是否需要继续处理。',
     judgeUnmet: '⚠️ [完成度校验] 独立评审判定该子任务未达标（{reason}）。请勿视为已完成。',
     noCriteria: 'ℹ️ [完成度校验] 无可机检的达标断言（{reason}），未做完成度判定。',
-    evidenceUnavailable: 'ℹ️ [完成度校验] 未能取得有效取证（取证通道不可用），非判定未达标（{reason}），未做完成度判定。',
+    evidenceUnavailable: 'ℹ️ [完成度校验] 所有达标判据均未能求值/取证（多因判据写法不合法或目标页不可达），非判定未达标（{reason}），未做完成度判定。',
+    evidencePartial: 'ℹ️ [完成度校验] 部分判据已确证达成，但另有判据未能求值，故不盖章“全部达成”（{reason}）。',
   },
 });
 registerTranslations('en', {
@@ -32,7 +33,8 @@ registerTranslations('en', {
     unmet: '⚠️ [Completion check] These done-criteria were independently verified as NOT achieved: {missing}. Do not treat as complete; consider whether further work is needed.',
     judgeUnmet: '⚠️ [Completion check] Independent review judged this subtask NOT achieved ({reason}). Do not treat as complete.',
     noCriteria: 'ℹ️ [Completion check] No machine-checkable criteria ({reason}); no completion verdict made.',
-    evidenceUnavailable: 'ℹ️ [Completion check] Could not gather evidence (channel unavailable) - this is NOT a judgment of failure ({reason}); no completion verdict made.',
+    evidenceUnavailable: 'ℹ️ [Completion check] None of the done-criteria could be evaluated (usually malformed criteria or the target page was unreachable) - this is NOT a judgment of failure ({reason}); no completion verdict made.',
+    evidencePartial: 'ℹ️ [Completion check] Some criteria were confirmed met, but others could not be evaluated, so full completion is not stamped ({reason}).',
   },
 });
 
@@ -47,7 +49,7 @@ export function buildMissingCriteriaDirective(criteria, checkResults) {
   const failedIds = new Set(checkResults.filter((r) => !r.pass).map((r) => r.id));
   const lines = criteria
     .filter((c) => failedIds.has(c.id))
-    .map((c) => `- [${c.check}] ${c.target != null ? String(c.target) : '(no target)'}`);
+    .map((c) => `- ${describeCriterion(c)}`);
   return [
     'The following done-criteria were independently verified as NOT achieved.',
     'Actually satisfy each one and re-verify before finishing. Do not repeat steps already done:',
@@ -135,26 +137,15 @@ export const EVIDENCE_TIMEOUT_MS = 3000;
 export function createContentEvidenceCollector(tabId, sendMessage, timeoutMs = EVIDENCE_TIMEOUT_MS) {
   const send = sendMessage
     || ((id, msg) => chrome.tabs.sendMessage(id, msg));
-  // [probe] 零行为变更诊断（根因确证后可整段移除）：记录命中的 null 出口 + tabId + criterion 原文
-  // + 错误，并尽力补一条目标 tab 的 url/active。只打日志，绝不改变返回值，异常全部自吞。
-  const probe = (branch, criterion, extra) => {
+  // [probe] 已撑探目的达成（根因已定位为判据不可评估），改回精简常驻诊断：null 出口分类
+  // （判据不可评估 vs 通道/页问题）以 debug 级留痕，不进用户文案、不改变返回值、无副作用。
+  const noteMiss = (branch, criterion, extra) => {
     try {
-      logger.warn('[completion-verifier][probe] evidence miss', {
-        branch, tabId, timeoutMs,
-        check: criterion && criterion.check,
-        target: criterion && criterion.target,
-        expected: criterion && criterion.expected,
-        ...(extra || {}),
+      logger.debug('[completion-verifier] evidence unavailable', {
+        branch, tabId, check: criterion && criterion.check,
+        target: criterion && criterion.target, ...(extra || {}),
       });
-    } catch { /* 诊断本身绝不影响取证 */ }
-    try {
-      if (typeof chrome !== 'undefined' && chrome.tabs && typeof chrome.tabs.get === 'function') {
-        Promise.resolve(chrome.tabs.get(tabId)).then(
-          (tb) => logger.warn('[completion-verifier][probe] target tab', { tabId, url: tb && tb.url, active: tb && tb.active }),
-          (e) => logger.warn('[completion-verifier][probe] tab get failed', { tabId, err: e && e.message }),
-        );
-      }
-    } catch { /* ignore */ }
+    } catch { /* 诊断绝不影响取证 */ }
   };
   return async (criterion) => {
     let timer;
@@ -165,22 +156,39 @@ export function createContentEvidenceCollector(tabId, sendMessage, timeoutMs = E
         ? await Promise.race([p, new Promise((_res, rej) => { timer = setTimeout(() => rej(new Error('evidence timeout')), timeoutMs); })])
         : await p;
       const arr = Array.isArray(resp) ? resp : (resp && Array.isArray(resp.results) ? resp.results : null);
-      if (!arr || arr.length === 0) { probe('B_no_array', criterion, { respType: typeof resp, respNull: resp === null || resp === undefined }); return null; } // 无有效结论 → 取证不可用（≠ 未达标）
+      if (!arr || arr.length === 0) { noteMiss('B_no_array', criterion); return null; } // 无有效结论 → 取证不可用（≠ 未达标）
       const r = arr[0];
-      if (r && r.available === false) { probe('C_available_false', criterion, { contentReason: r.reason }); return null; } // M-new-3：求不出值 → 不可用（≠ 未达标）
+      if (r && r.available === false) { noteMiss('C_available_false', criterion); return null; } // M-new-3：求不出值 → 不可用（≠ 未达标）
       return !!r.pass; // 明确 true/false：真实 DOM 结论
     } catch (e) {
       const msg = e && e.message ? String(e.message) : '';
-      const kind = msg === 'evidence timeout' ? 'A_timeout'
+      const branch = msg === 'evidence timeout' ? 'A_timeout'
         : /Receiving end|Could not establish connection/i.test(msg) ? 'A_no_receiver'
         : /Cannot access|chrome-extension|No tab|Invalid value|error page|access chrome/i.test(msg) ? 'A_tab_unreachable'
         : 'A_other';
-      probe(kind, criterion, { err: msg });
+      noteMiss(branch, criterion, { err: msg });
       return null; // 通道不可用/超时 ≠ 未达标；交由 classifyVerdict 归 indeterminate
     } finally {
       if (timer) clearTimeout(timer);
     }
   };
+}
+
+/**
+ * 把一条判据渲染成面向父模型的可读描述：按 check 类型决定展示 target 还是 expected，
+ * 避免 text_contains/attribute_equals/url_matches 因只看 target 而显示 "(no target)" 丢掉关键值（#1）。
+ * @param {{check:string, target:*, expected:*}} c
+ * @returns {string}
+ */
+function describeCriterion(c) {
+  const tgt = (c.target != null && c.target !== '') ? String(c.target) : '';
+  const exp = (c.expected != null && c.expected !== '') ? String(c.expected) : '';
+  switch (c.check) {
+    case 'text_contains': return `[text_contains] ${exp || tgt || '(no text)'}`;
+    case 'attribute_equals': return `[attribute_equals] ${tgt}${exp ? ' = ' + exp : ''}`;
+    case 'url_matches': return `[url_matches] ${tgt || exp || '(no pattern)'}`;
+    default: return `[${c.check}] ${tgt || '(no target)'}`;
+  }
 }
 
 /**
@@ -195,18 +203,21 @@ export function buildCompletionNote(verdict) {
   if (v === VERDICTS.SATISFIED) return t('completionVerifier.satisfied');
   if (v === VERDICTS.UNMET_RETRYABLE || v === VERDICTS.UNMET_PERMANENT) {
     if (verdict.missing && verdict.missing.length > 0) {
-      // M4：用可读 [check] target 而非内部 id，让父模型能据此行动
+      // M4/#1：用可读的 [check] + 关键值（含 expected）而非内部 id，让父模型能据此行动
       const crits = verdict.criteria || [];
       const missingText = verdict.missing.map((id) => {
         const c = crits.find((x) => x.id === id);
-        return c ? `[${c.check}] ${c.target != null ? String(c.target) : '(no target)'}` : id;
+        return c ? describeCriterion(c) : id;
       }).join('; ');
       return t('completionVerifier.unmet', { missing: missingText });
     }
     return t('completionVerifier.judgeUnmet', { reason: verdict.reason });
   }
-  // INDETERMINATE：含"取不到证"——如实说明未取证，绝不谎报未达标
-  if (verdict.reason === 'evidence_unavailable' || verdict.reason === 'evidence_partial') {
+  // INDETERMINATE：如实说明未能求值，绝不谎报未达标；#4 拆分“全部不可评估”与“部分不可评估”
+  if (verdict.reason === 'evidence_partial') {
+    return t('completionVerifier.evidencePartial', { reason: verdict.reason });
+  }
+  if (verdict.reason === 'evidence_unavailable') {
     return t('completionVerifier.evidenceUnavailable', { reason: verdict.reason });
   }
   return t('completionVerifier.noCriteria', { reason: verdict.reason });
