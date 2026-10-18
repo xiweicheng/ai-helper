@@ -1,7 +1,7 @@
 // background/tool-preselector.js - 工具预筛选：通过前置规划调用减少工具传递
 
 import { getStoredConfig } from './config.js';
-import { DEFAULT_REACT_CONFIG } from './constants.js';
+import { PRESELECT_MIN_TOOL_COUNT } from './constants.js';
 import { fetchWithRetry } from './tool-executor.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
@@ -286,10 +286,9 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     status
   });
 
-  // 预筛选阈值：config.js 已保证该字段恒有值（取 DEFAULT_REACT_CONFIG.preselectMinToolCount），
-  // 兜底仅作防御，与 constants 默认值同源，避免多处各写一个魔数
+  // 预筛选阈值为固定常量（非配置项），所有消费点统一引用 PRESELECT_MIN_TOOL_COUNT
   const config = await getStoredConfig();
-  const preselectMinToolCount = config.reactConfig?.preselectMinToolCount ?? DEFAULT_REACT_CONFIG.preselectMinToolCount;
+  const preselectMinToolCount = PRESELECT_MIN_TOOL_COUNT;
 
   // 如果工具数量未超过阈值，不需要筛选
   if (totalCount <= preselectMinToolCount) {

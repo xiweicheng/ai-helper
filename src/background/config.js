@@ -36,7 +36,6 @@ export function getStoredConfig() {
           apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,
           apiRetryBaseDelay: DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
           enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
-          preselectMinToolCount: DEFAULT_REACT_CONFIG.preselectMinToolCount,
           toolConfirmationEnabled: result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled,
           // 内网地址访问：总闸 + 白名单（两者独立存储，关总闸不会清空白名单）
           networkAccessEnabled: result.networkAccessEnabled === true,
