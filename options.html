@@ -382,6 +382,22 @@
 
       <div class="react-config-item">
         <label>
+          <span data-i18n="react.completionVerification">完成度校验</span>
+          <span class="hint-text" data-i18n="react.completionVerificationHint">（子任务结束后独立取证核验是否真正达标，未达标如实上报）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="completionVerificationEnabled">
+          <span class="toggle-switch"></span>
+          <span id="completionVerificationEnabledLabel" data-i18n="react.disabled">已停用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
+          <span data-i18n="react.completionVerificationDesc1">启用后，子任务执行完成时会依据其完成标准独立取证核验，未达标的项目会如实标注上报给模型，而不是默认"跑完即成功"。</span><br>
+          <span data-i18n="react.completionVerificationDesc2">关闭后，子任务完成状态与校验前逐字节一致，不追加任何取证与标注。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item">
+        <label>
           <span data-i18n="react.enableExecutionLog">启用执行日志</span>
           <span class="hint-text" data-i18n="react.enableExecutionLogHint">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
         </label>

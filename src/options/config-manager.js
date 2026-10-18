@@ -942,6 +942,7 @@ export function loadConfig() {
     'networkAccessEnabled',
     'enableExecutionLog',
     'reflectionConfig',
+    'completionVerificationConfig',
     'streamEnabled',
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
@@ -1014,6 +1015,13 @@ export function loadConfig() {
     document.getElementById('networkAccessEnabled').checked =
       result.networkAccessEnabled === true;
     document.getElementById('networkAccessEnabled').dispatchEvent(new Event('change'));
+
+    // 加载完成度校验开关（默认关；存的是整份 config 对象，取其 enabled）
+    const completionVerificationEl = document.getElementById('completionVerificationEnabled');
+    if (completionVerificationEl) {
+      completionVerificationEl.checked = !!(result.completionVerificationConfig && result.completionVerificationConfig.enabled === true);
+      completionVerificationEl.dispatchEvent(new Event('change'));
+    }
 
     // 加载对话配置
 
@@ -1260,6 +1268,8 @@ export function saveConfig() {
     imageApiKey: encodeSecret(imageApiKey),
     // 反思配置
     reflectionConfig: reflectionConfig,
+    // 注（#13）：completionVerificationConfig 不在此「保存」写——它由 options/index.js 开关 change 即时写整份对象，
+    // 真源单一（避免点保存时用面板残值覆盖切换写入的其他字段）；此处的 storage key 列表仍含它仅供加载。
     // 流式输出配置
     streamEnabled: streamEnabled,
     streamExpandTools: streamExpandTools,

@@ -17,6 +17,7 @@ import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subage
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
 import { weightTrimFallback } from './trim-fallback.js';
+import { createContentEvidenceCollector, annotateOneSubtaskCompletion } from './completion-verifier.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -2026,6 +2027,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
               // 开始执行子任务
               // 单子任务结果入进度/汇总的统一截断阈值（先声明供进度钩子 onDone 与下方汇总消息共用）
               const SUBTASK_RESULT_MAX_TOKENS = 3000;
+              const COMPLETION_NOTE_MAX_TOKENS = 500; // #7：上报文案也纳入 token 护栏
+              // M-new-2：完成度校验取证在"子任务成功的 onDone 内即时"进行（此时该子任务现场尚未被
+              // 后续导航抹掉），不再等整轮 executeSubtasks 结束后统一取证。开关默认关，关闭时
+              // cvEnabled=false，onDone 内校验分支整体短路，现有行为逐字节不变。
+              const cvEnabled = !!(reactConfig.completionVerification && reactConfig.completionVerification.enabled);
+              const cvGatherEvidence = cvEnabled ? createContentEvidenceCollector(tabId) : null;
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,
@@ -2052,6 +2059,18 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                     }
                     // 强制立即落 checkpoint：SW 若在下一个子任务执行中被杀，进度已持久化
                     await saveCheckpointNow('subtask_completed', true);
+                    // M-new-2：本子任务成功即刻对其 doneCriteria 取证（现场最新），就地写回
+                    // r.completionNote——r 与 executeSubtasks 推入 results 的是同一引用，汇总处可读。
+                    // 置于 checkpoint 之后，取证往返不拖延进度落盘。
+                    if (cvEnabled) {
+                      await annotateOneSubtaskCompletion(r, subtaskPlan.subtasks, {
+                        gatherEvidence: cvGatherEvidence,
+                        config: reactConfig.completionVerification,
+                        // #11 / M-new-4：用户取消或整体超时即停取证。loopTimeout 只在轮首抛错、从不置
+                        // cancelled，故须显式判 getRemainingTime()<=0，否则预算耗尽后仍逐条发消息取证。
+                        shouldStop: () => isCancelled(tabId) || (sessionId && isCancelled(sessionId)) || getRemainingTime() <= 0,
+                      });
+                    }
                   },
                 }
               );
@@ -2074,6 +2093,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                 throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
               }
               
+              // 完成度校验（M-new-2）：取证时机已挪进上方 per-subtask onDone 钩子即时执行
+              // （子任务成功当场现场最新），此处不再于整轮末尾统一取证。
+
               // 将所有子任务结果添加到消息历史
               // 使用 role: 'user' 而非 'system'，原因：
               //   1. OpenAI 兼容 API 规范要求 system 消息在开头，中间插入 system 可能被某些提供商拒绝
@@ -2085,7 +2107,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                 const truncated = estimateTokens(resultStr) > SUBTASK_RESULT_MAX_TOKENS
                   ? truncateByTokens(resultStr, SUBTASK_RESULT_MAX_TOKENS)
                   : resultStr;
-                return `Subtask ${idx + 1}: ${result.subtaskName}\nResult: ${truncated}`;
+                const noteRaw = result.completionNote || '';
+                const noteCapped = estimateTokens(noteRaw) > COMPLETION_NOTE_MAX_TOKENS
+                  ? truncateByTokens(noteRaw, COMPLETION_NOTE_MAX_TOKENS) : noteRaw;
+                const completionNote = noteCapped ? `\n${noteCapped}` : '';
+                return `Subtask ${idx + 1}: ${result.subtaskName}\nResult: ${truncated}${completionNote}`;
               }).join('\n\n');
               
               currentMessages.push({

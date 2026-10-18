@@ -1,5 +1,6 @@
 // background/tool-executor.js - 工具定义与执行
 import { BUILTIN_TOOLS, TOOL_EXECUTION_MAP, RAW_TOOLS, PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT } from './constants.js';
+import { PLAN_TASK_DONE_CRITERIA_ITEM } from './tools/ai-tools.js';
 import { getStoredConfig } from './config.js';
 import { searchActiveSessionsMessages, getArchivedSessionsMessages, getActiveSessionId, ensureMigration, saveUiPrototype, getUiPrototype, getSession } from '../storage/db.js';
 import * as AgentClient from './local-agent-client.js';
@@ -1110,7 +1111,7 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
   return new Promise((resolve) => {
     const agentToolsKey = `agentEnabledTools_${agentId || 'default'}`;
     const agentMcpClosedKey = `agentMcpClosedServers_${agentId || 'default'}`;
-    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect', agentMcpClosedKey], async (result) => {
+    chrome.storage.local.get([agentToolsKey, 'enabledTools', 'enableImageInput', 'pairedAgents', 'enableToolPreselect', 'completionVerificationConfig', agentMcpClosedKey], async (result) => {
       // 优先读取 agent-specific key，降级到旧的全局 enabledTools
       let enabledTools = result[agentToolsKey];
       if (!Array.isArray(enabledTools)) enabledTools = result.enabledTools;
@@ -1190,6 +1191,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
       // 读取子任务工具筛选（复用 enableToolPreselect 开关）
       const enableToolPreselect = result.enableToolPreselect === true;
       console.log('[Background] getTools - enableToolPreselect:', enableToolPreselect);
+      // M-new-1：完成度校验开关——仅开启时才向 plan_task 下发 doneCriteria schema（关=逐字节基线）
+      const completionVerificationEnabled = result.completionVerificationConfig && result.completionVerificationConfig.enabled === true;
       
       // 检测 Agent 是否真正连通（不仅检查凭据，还要确认服务可达）
       const agentConnected = await checkAgentConnectivity();
@@ -1285,6 +1288,13 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
 
               console.log('[Background] getTools - added requiredTools  to  plan_task (required)');
             }
+          }
+
+          // M-new-1：开启完成度校验时，动态注入 doneCriteria 子任务断言 schema；
+          // 关闭时静态 AI_TOOLS 已无此字段，下发给模型的请求体逐字节=基线。
+          if (tool.id === 'plan_task' && completionVerificationEnabled) {
+            const subtaskItemProps = cloned.function.parameters.properties.subtasks.items.properties;
+            subtaskItemProps.doneCriteria = PLAN_TASK_DONE_CRITERIA_ITEM;
           }
 
           return cloned;
@@ -3496,7 +3506,7 @@ export function executeManageCookies(args, toolCallId) {
 /**
  * 任务规划工具执行函数
  */
-export function executePlanTask(args, toolCallId) {
+export async function executePlanTask(args, toolCallId) {
   const {
     taskDescription,
     subtasks = [],
@@ -3552,6 +3562,19 @@ export function executePlanTask(args, toolCallId) {
   }
   
   // 生成任务规划摘要
+  // M-new-1：读取完成度校验开关——关闭时 planSummary 不带 doneCriteria、回显不作取证承诺（逐字节=基线）。
+  // 套防御超时：配置读取异常/不可用（如 storage 未就绪）一律安全回落"关闭"，绝不阻塞整个 plan_task 规划。
+  let cvEnabled = false;
+  let cvTimer;
+  try {
+    const cvCfg = await Promise.race([
+      getStoredConfig(),
+      new Promise((resolve) => { cvTimer = setTimeout(() => resolve(null), 1000); }),
+    ]);
+    cvEnabled = !!(cvCfg && cvCfg.reactConfig && cvCfg.reactConfig.completionVerification && cvCfg.reactConfig.completionVerification.enabled);
+  } catch { cvEnabled = false; }
+  finally { if (cvTimer) clearTimeout(cvTimer); }
+
   const planSummary = {
     taskDescription: taskDescription,
     isComplex: isComplex,
@@ -3567,7 +3590,8 @@ export function executePlanTask(args, toolCallId) {
       description: st.description,
       dependencies: st.dependencies || [],
       requiredTools: st.requiredTools || [],
-      estimatedSteps: st.estimatedSteps || 1
+      estimatedSteps: st.estimatedSteps || 1,
+      ...(cvEnabled ? { doneCriteria: Array.isArray(st.doneCriteria) ? st.doneCriteria : [] } : {})
     })),
     planId: toolCallId || crypto.randomUUID(),
     createdAt: new Date().toISOString()
@@ -3593,6 +3617,9 @@ export function executePlanTask(args, toolCallId) {
         result += `   - 所需工具: ${st.requiredTools.join(', ')}\n`;
       }
       result += `   - 预估步骤: ${st.estimatedSteps || 1}\n`;
+      if (cvEnabled && Array.isArray(st.doneCriteria) && st.doneCriteria.length > 0) {
+        result += `   - 达标标准（完成后将独立取证核验）: ${st.doneCriteria.map(c => c.check + (c.target ? '(' + c.target + ')' : '')).join('; ')}\n`;
+      }
     });
     
     return result;

@@ -23,7 +23,7 @@ import {
 } from './interaction-tools.js';
 
 import {
-  generateQRCode, injectCss
+  generateQRCode, injectCss, evaluateDoneCriteria
 } from './advanced-tools.js';
 
 import { deepGetSelection } from './shadow-dom-utils.js';
@@ -146,6 +146,8 @@ const HANDLERS = {
   INJECT_CSS:                (msg) => (msg.injectMode === 'highlight'
     ? highlightText(msg.text, msg.color)
     : injectCss(msg.css, msg.targetSelector, msg.injectMode)),
+  // 完成度校验客观取证（Phase 3）：在真实 DOM 上对每条 doneCriteria 求 pass，同步返回数组
+  EVALUATE_DONE_CRITERIA:  (msg) => evaluateDoneCriteria(msg.criteria),
 
   // ── 异步工具（返回 Promise，需保持通道开放）──
   COPY_TO_CLIPBOARD:         (msg) => copyToClipboard(msg.text),
@@ -198,6 +200,8 @@ const TOP_FRAME_ONLY_TYPES = new Set([
   'EXTRACT_TABLE',
   'IFRAME_CONTENT',
   'QUERY_ELEMENTS',
+  // 完成度取证读真实 DOM，必须在顶层 frame 独占响应（all_frames 下避免 iframe 抢先应答致取证帧不确定）
+  'EVALUATE_DONE_CRITERIA',
   // ref 模式依赖 elementRegistry（顶层 frame 维护）；text 模式为页面级查找
   'INTERACT_ELEMENT', 'SCROLL_TO',
 ]);

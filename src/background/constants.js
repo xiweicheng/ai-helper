@@ -48,6 +48,20 @@ export const DEFAULT_REFLECTION_CONFIG = {
   }
 };
 
+// 完成度校验器配置默认值（AUDIT_STATUS 第四节 line 85 长线项 · Phase 1 地基）。
+// 默认 enabled:false —— 关闭时 react-loop 完全不进入校验分支，现有行为逐字节不变。
+// 消费点（回炉四闸门、critic 兜底）在 Phase 2 接入，本处仅提供唯一配置来源。
+export const DEFAULT_COMPLETION_VERIFICATION_CONFIG = {
+  enabled: false,               // 总开关：关闭时短路所有新逻辑
+  objectiveChecksEnabled: true, // 有 doneCriteria 时优先用确定性取证
+  maxRetryAttempts: 1,          // 回炉次数上限（闸门 4）
+  perSubtaskTokenBudget: 0,     // 子任务 token 预算，0=不设限（闸门 3）
+  lowConfidence: 0.6,           // critic 置信下限，低于则回落 indeterminate 转用户
+  model: null,                  // critic 用模型，null=当前模型
+  temperature: 0.2,
+  maxTokens: 1024
+};
+
 // 流式输出配置默认值
 export const DEFAULT_STREAM_CONFIG = {
   streamEnabled: true,           // LLM 流式输出默认开启
