@@ -15,6 +15,7 @@ const EXPORT_KEYS = [
   'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout',
   'reactToolTimeout', 'enableToolPreselect', 'toolConfirmationEnabled',
   'reflectionConfig',
+  'completionVerificationConfig',
   'enableExecutionLog',
   'toolbarTools', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',

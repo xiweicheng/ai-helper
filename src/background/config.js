@@ -1,6 +1,6 @@
 // background/config.js - 配置管理
 
-import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG } from './constants.js';
+import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG, DEFAULT_COMPLETION_VERIFICATION_CONFIG } from './constants.js';
 import { normalizeCustomModels } from '../shared/token-counter.js';
 import { decodeSecret } from '../shared/secret.js';
 
@@ -17,6 +17,7 @@ export function getStoredConfig() {
       'toolConfirmationEnabled',
       'networkAccessEnabled', 'allowedNetworkHosts',
       'reflectionConfig',
+      'completionVerificationConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
       resolve({
@@ -41,7 +42,12 @@ export function getStoredConfig() {
           networkAccessEnabled: result.networkAccessEnabled === true,
           allowedNetworkHosts: Array.isArray(result.allowedNetworkHosts) ? result.allowedNetworkHosts : DEFAULT_REACT_CONFIG.allowedNetworkHosts,
           // 反思配置（从 storage 读取，否则使用默认值）
-          reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG
+          reflection: result.reflectionConfig || DEFAULT_REFLECTION_CONFIG,
+          // 完成度校验器配置（默认 enabled:false，关闭时 react-loop 不进入校验分支）
+          // 深合并：默认值打底，避免 options 只写 {enabled} 时其余默认字段被残缺对象顶替清空
+          completionVerification: Object.assign({}, DEFAULT_COMPLETION_VERIFICATION_CONFIG,
+            result.completionVerificationConfig && typeof result.completionVerificationConfig === 'object'
+              ? result.completionVerificationConfig : {})
         },
         // 流式输出配置
         streamConfig: {

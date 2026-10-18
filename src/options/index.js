@@ -1252,6 +1252,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
+  // 完成度校验开关：切换即写入 completionVerificationConfig（保留其余字段，仅翻 enabled）
+  const completionVerificationEnabledEl = document.getElementById('completionVerificationEnabled');
+  const completionVerificationEnabledLabel = document.getElementById('completionVerificationEnabledLabel');
+  if (completionVerificationEnabledEl && completionVerificationEnabledLabel) {
+    completionVerificationEnabledEl.addEventListener('change', function() {
+      const enabled = this.checked;
+      completionVerificationEnabledLabel.textContent = enabled ? t('common.enabled') : t('common.disabled');
+      chrome.storage.local.get(['completionVerificationConfig'], (result) => {
+        const cfg = Object.assign({}, result.completionVerificationConfig || {}, { enabled });
+        chrome.storage.local.set({ completionVerificationConfig: cfg });
+      });
+    });
+    completionVerificationEnabledLabel.textContent = completionVerificationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
+  }
+
   // 内网地址访问总闸：切换即写入 storage；关闸只改开关与白名单区块的显隐，绝不动 allowedNetworkHosts
   const networkAccessEnabledEl = document.getElementById('networkAccessEnabled');
   const networkAccessEnabledLabel = document.getElementById('networkAccessEnabledLabel');

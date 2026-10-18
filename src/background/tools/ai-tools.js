@@ -126,3 +126,21 @@ export const AI_TOOLS = [
     }
   },
 ];
+
+// M-new-1：doneCriteria 子任务达标断言的 schema。默认**不**随 AI_TOOLS 静态下发
+//（关闭完成度校验时下发给模型的工具定义逐字节=基线）；由 getTools 在
+// completionVerification.enabled 为真时动态注入到 plan_task 的 subtask items。
+export const PLAN_TASK_DONE_CRITERIA_ITEM = {
+  type: 'array',
+  description: 'Optional objective done-criteria to verify this subtask truly achieved its goal. Only verified when the "completion verification" setting is enabled. Unknown check types are ignored (fail-closed). Leave empty for open-ended subtasks.',
+  items: {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      check: { type: 'string', enum: ['element_exists', 'element_absent', 'text_contains', 'url_matches', 'attribute_equals'] },
+      target: { type: 'string', description: 'Meaning depends on check: element_exists/element_absent/attribute_equals -> CSS selector (verification pierces shadow DOM/iframe); url_matches -> a URL substring; text_contains -> optional fallback text (prefer expected). ' },
+      expected: { type: 'string', description: 'text_contains -> substring to find in page text. attribute_equals -> MUST be the form "attr=value" (one = separated pair). url_matches -> fallback substring when target absent. ' }
+    },
+    required: ['check']
+  }
+};
