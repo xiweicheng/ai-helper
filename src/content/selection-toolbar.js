@@ -1,7 +1,7 @@
 // content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
 
 import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
-import { injectStyles } from './selection-toolbar-styles.js';
+import { injectStyles, applyToolbarTheme } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, subscribe } from '../shared/i18n.js';
 
@@ -2070,6 +2070,34 @@ function loadToggleState() {
   });
 }
 
+// ==================== 主题跟随（独立开关 selectionToolbarFollowTheme）====================
+// 划词浮层注入宿主页面，不能借用扩展页 :root 的 theme.css 变量；这里本地解析生效主题，
+// 通过 applyToolbarTheme 把自带 token 子集变量块切到 light/dark。
+// followTheme=true：跟随 appTheme（light/dark/system）；false：恒 light（老用户零感知）。
+let toolbarFollowTheme = true;
+let appThemePref = 'light';
+
+function resolveToolbarTheme() {
+  if (!toolbarFollowTheme) return 'light';
+  if (appThemePref === 'system') {
+    return (typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  return appThemePref === 'dark' ? 'dark' : 'light';
+}
+
+function applyResolvedToolbarTheme() {
+  applyToolbarTheme(resolveToolbarTheme());
+}
+
+function loadThemeState() {
+  if (!isExtensionValid()) return;
+  chrome.storage.local.get(['appTheme', 'selectionToolbarFollowTheme'], (result) => {
+    appThemePref = ['light', 'dark', 'system'].includes(result.appTheme) ? result.appTheme : 'light';
+    toolbarFollowTheme = result.selectionToolbarFollowTheme !== undefined ? !!result.selectionToolbarFollowTheme : true;
+    applyResolvedToolbarTheme();
+  });
+}
+
 if (isExtensionValid()) {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (!isExtensionValid()) return;
@@ -2089,6 +2117,12 @@ if (isExtensionValid()) {
     
     if (areaName === 'local' && changes.toolbarTools) {
       refreshToolbarCache();
+    }
+
+    if (areaName === 'local' && (changes.appTheme || changes.selectionToolbarFollowTheme)) {
+      if (changes.appTheme) appThemePref = ['light', 'dark', 'system'].includes(changes.appTheme.newValue) ? changes.appTheme.newValue : appThemePref;
+      if (changes.selectionToolbarFollowTheme) toolbarFollowTheme = !!changes.selectionToolbarFollowTheme.newValue;
+      applyResolvedToolbarTheme();
     }
   });
 }
@@ -2118,6 +2152,15 @@ export function initSelectionToolbar() {
   createToolbar();
   createResultPanel();
   loadToggleState();
+  loadThemeState();
+
+  // system 偏好下跟随 OS 明暗切换
+  if (typeof matchMedia !== 'undefined') {
+    const mq = matchMedia('(prefers-color-scheme: dark)');
+    const onScheme = () => { if (toolbarFollowTheme && appThemePref === 'system') applyResolvedToolbarTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onScheme);
+    else if (mq.addListener) mq.addListener(onScheme);
+  }
   
   document.addEventListener('selectionchange', onSelectionChange);
   document.addEventListener('click', onDocumentClick, true);
