@@ -6878,6 +6878,26 @@ body {
   margin: 0;
 }
 
+/* 代码块水平滚动条：未主题化时会落到浏览器默认亮色条，暗色下压在 --bg-sunken 深底上很刺眼，
+   统一取与其它滚动条一致的 token（轨道透明、滑块 --border-default，hover 加深） */
+.markdown-body pre::-webkit-scrollbar,
+.code-block-container pre::-webkit-scrollbar {
+  height: 8px;
+}
+.markdown-body pre::-webkit-scrollbar-track,
+.code-block-container pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+.markdown-body pre::-webkit-scrollbar-thumb,
+.code-block-container pre::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+}
+.markdown-body pre::-webkit-scrollbar-thumb:hover,
+.code-block-container pre::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
 .code-copy-btn {
   position: absolute;
   top: 8px;
