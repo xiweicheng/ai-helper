@@ -1,5 +1,6 @@
 // side_panel/index.js - Side Panel 入口文件
 
+import { initTheme } from '../shared/theme.js';
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
 import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
@@ -1727,6 +1728,8 @@ function invalidateSessionDOM(sessionId) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 主题优先初始化：翻转 <html data-theme>（防闪烁镜像已在模块顶层预打，此处读正式存储覆盖）
+  await initTheme();
   // 面板实例上下文镜像（窗口 id / 作用域 / 会话宿主 tab）：
   // 同步注册监听，不阻塞启动链；任务反馈随消息携带快照用于桌面通知可见性判定
   initPanelContext();

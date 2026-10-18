@@ -1,5 +1,6 @@
 // options/index.js - 选项页面入口
 
+import { initTheme } from '../shared/theme.js';
 import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
@@ -100,6 +101,8 @@ function activateByHash() {
 
 // 页面加载时获取已保存的配置
 document.addEventListener('DOMContentLoaded', async function() {
+  // 主题优先初始化：翻转 <html data-theme>，早于其余渲染（防闪烁镜像已在模块顶层预打）
+  await initTheme();
   // 初始化国际化（读取语言偏好 + 跨环境同步监听）
   await initI18n();
   applyI18n();
