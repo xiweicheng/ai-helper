@@ -106,7 +106,7 @@
 | --text-link | #4a90d9 | #7fb3e8 | 7.30:1 | ✓ |
 | --text-on-brand | #ffffff | #ffffff | 暗色 fill 上 4.48:1→fill 微调至 ≥4.5（候选 #566ad3，B0 用对比脚本定值） | ✓(目标) |
 
-**品牌 Brand（13）**
+**品牌 Brand（14）**
 
 | token | 亮 L | 暗 D | 用途 |
 |---|---|---|---|
@@ -120,6 +120,7 @@
 | --brand-soft-bg | #f0f4ff | #232a3d | 品牌浅底（选中菜单、用户气泡） |
 | --brand-soft-border | #c9d4f5 | #3d4c6e | 品牌浅底描边 |
 | --brand-violet-soft-bg | #f3f1ff | #2b2440 | violet 浅底 |
+| --brand-violet-soft-border | #d4cfff | #46386b | violet 浅底描边 |
 | --brand-rgb | 102,126,234 | 141,162,242 | rgba 通道（100 处 rgba(102,126,234,α) 用） |
 | --brand-violet-rgb | 139,92,246 | 167,139,250 | rgba 通道（27 处） |
 | --brand-gradient | 135deg,#667eea→#764ba2 | 135deg,#566ad3→#6f4b99 | header/主按钮渐变 |
@@ -172,7 +173,7 @@
 
 **固定不翻转（2）**：--mark-bg #fff3a0（划词高亮，注入页面用，独立于扩展主题）、--paper #ffffff（PDF/导出纸张）。
 
-合计命名 token 62 个（含 8 个 `-rgb` 通道变量；accent/bg-page 通道以伴生形式在 B0 落地时按需补入，不单独计数）。超出 60 上限的候选削减项：--brand-violet-soft-bg 并入 --brand-soft-bg、--danger-soft-text 并入 --text-secondary 场景、--warning-text-soft 并入 --warning-strong —— 在 B0 落地时二选一执行，默认保留全量。
+合计命名 token 63 个（含 8 个 `-rgb` 通道变量；accent/bg-page 通道以伴生形式在 B0 落地时按需补入，不单独计数）。超出 60 上限的候选削减项：--brand-violet-soft-bg 并入 --brand-soft-bg、--danger-soft-text 并入 --text-secondary 场景、--warning-text-soft 并入 --warning-strong —— 在 B0 落地时二选一执行，默认保留全量。
 
 ## 5. rgba 处理规则（α 分带）
 

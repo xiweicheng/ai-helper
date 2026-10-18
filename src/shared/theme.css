@@ -1,0 +1,197 @@
+/*
+ * AI Helper 主题 token —— 白天/黑夜双主题语义色
+ * 值表来源：docs/superpowers/specs/2026-10-18-theme-switching-design.md §4.2
+ * 约定：所有界面颜色只允许引用本文件 token；亮色值 = 现状主值，暗色值按 WCAG AA 校准。
+ * data-theme 由 src/shared/theme.js 写在 <html> 上：'light' | 'dark'。
+ */
+
+:root {
+  /* 表面 */
+  --bg-page: #ffffff;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f5f7fa;
+  --bg-sunken: #f0f2f5;
+  --bg-disabled: #f0f0f0;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(102, 126, 234, 0.12);
+  --surface-rgb: 255, 255, 255;
+
+  /* 文本 */
+  --text-primary: #333333;
+  --text-secondary: #666666;
+  --text-tertiary: #999999;
+  --text-disabled: #bbbbbb;
+  --text-inverse: #ffffff;
+  --text-link: #4a90d9;
+  --text-on-brand: #ffffff;
+
+  /* 品牌 */
+  --brand-500: #667eea;
+  --brand-600: #5a6fd6;
+  --brand-700: #4c5bd4;
+  --brand-fill: #667eea;
+  --brand-accent: #764ba2;
+  --brand-violet-500: #8b5cf6;
+  --brand-violet-600: #6d28d9;
+  --brand-soft-bg: #f0f4ff;
+  --brand-soft-border: #c9d4f5;
+  --brand-violet-soft-bg: #f3f1ff;
+  --brand-violet-soft-border: #d4cfff;
+  --brand-rgb: 102, 126, 234;
+  --brand-violet-rgb: 139, 92, 246;
+  --brand-accent-rgb: 118, 75, 162;
+  --bg-page-rgb: 245, 247, 250;
+  --brand-gradient: linear-gradient(135deg, #667eea, #764ba2);
+
+  /* 边框与分隔 */
+  --border-subtle: #eeeeee;
+  --border-default: #e0e0e0;
+  --border-strong: #cccccc;
+  --divider: #f0f0f0;
+
+  /* 状态 · 危险 */
+  --danger-500: #e53e3e;
+  --danger-strong: #c53030;
+  --danger-soft-text: #fc8181;
+  --danger-soft-bg: #fef2f2;
+  --danger-soft-border: #fecaca;
+  --danger-rgb: 229, 62, 62;
+
+  /* 状态 · 成功 */
+  --success-500: #22c55e;
+  --success-strong: #2f855a;
+  --success-soft-bg: #e0f5e8;
+  --success-soft-border: #c6f0d4;
+  --success-rgb: 34, 197, 94;
+
+  /* 状态 · 警告 */
+  --warning-500: #f59e0b;
+  --warning-strong: #b45309;
+  --warning-text-soft: #856404;
+  --warning-soft-bg: #fef3c7;
+  --warning-soft-border: #fde68a;
+  --warning-rgb: 245, 158, 11;
+
+  /* 状态 · 信息 */
+  --info-500: #4a90d9;
+  --info-strong: #1a73e8;
+  --info-soft-bg: #e8f0fe;
+  --info-soft-border: #d6e4ff;
+  --info-rgb: 74, 144, 217;
+
+  /* 蒙层 / 阴影 / 杂项 */
+  --scrim: rgba(0, 0, 0, 0.5);
+  --overlay-rgb: 0, 0, 0;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.25);
+  --tooltip-bg: rgba(30, 30, 30, 0.92);
+  --scrollbar-thumb: #c1c1c1;
+  --selection-bg: rgba(102, 126, 234, 0.25);
+
+  /* 固定不翻转（纸面语义） */
+  --mark-bg: #fff3a0;
+  --paper: #ffffff;
+}
+
+html[data-theme="dark"] {
+  /* 表面 */
+  --bg-page: #16181d;
+  --bg-surface: #1e2128;
+  --bg-elevated: #262a33;
+  --bg-subtle: #22262e;
+  --bg-sunken: #12151a;
+  --bg-disabled: #2a2f38;
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --bg-active: rgba(141, 162, 242, 0.16);
+  --surface-rgb: 30, 33, 40;
+
+  /* 文本 */
+  --text-primary: #e8eaef;
+  --text-secondary: #b8bec9;
+  --text-tertiary: #8b93a1;
+  --text-disabled: #6b7280;
+  --text-inverse: #16181d;
+  --text-link: #7fb3e8;
+  --text-on-brand: #ffffff;
+
+  /* 品牌 */
+  --brand-500: #8da2f2;
+  --brand-600: #7d92ec;
+  --brand-700: #6d84ee;
+  --brand-fill: #566ad3;
+  --brand-accent: #6f4b99;
+  --brand-violet-500: #a78bfa;
+  --brand-violet-600: #b7a4f5;
+  --brand-soft-bg: #232a3d;
+  --brand-soft-border: #3d4c6e;
+  --brand-violet-soft-bg: #2b2440;
+  --brand-violet-soft-border: #46386b;
+  --brand-rgb: 141, 162, 242;
+  --brand-violet-rgb: 167, 139, 250;
+  --brand-accent-rgb: 111, 75, 153;
+  --bg-page-rgb: 22, 24, 29;
+  --brand-gradient: linear-gradient(135deg, #566ad3, #6f4b99);
+
+  /* 边框与分隔 */
+  --border-subtle: #2e343d;
+  --border-default: #3a404c;
+  --border-strong: #4a5160;
+  --divider: #262b33;
+
+  /* 状态 · 危险 */
+  --danger-500: #fc8181;
+  --danger-strong: #f87171;
+  --danger-soft-text: #fca5a5;
+  --danger-soft-bg: #3a2628;
+  --danger-soft-border: #57353a;
+  --danger-rgb: 252, 129, 129;
+
+  /* 状态 · 成功 */
+  --success-500: #6fdba0;
+  --success-strong: #9ae6b4;
+  --success-soft-bg: #1f3a2a;
+  --success-soft-border: #375c42;
+  --success-rgb: 111, 219, 160;
+
+  /* 状态 · 警告 */
+  --warning-500: #fbbf24;
+  --warning-strong: #d9a441;
+  --warning-text-soft: #fcd34d;
+  --warning-soft-bg: #3d3220;
+  --warning-soft-border: #5f4d24;
+  --warning-rgb: 251, 191, 36;
+
+  /* 状态 · 信息 */
+  --info-500: #7fb3e8;
+  --info-strong: #a8c8f0;
+  --info-soft-bg: #1f2b3d;
+  --info-soft-border: #35486b;
+  --info-rgb: 127, 179, 232;
+
+  /* 蒙层 / 阴影 / 杂项 */
+  --scrim: rgba(0, 0, 0, 0.7);
+  --overlay-rgb: 255, 255, 255;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.6);
+  --tooltip-bg: #3c424e;
+  --scrollbar-thumb: #3a404c;
+  --selection-bg: rgba(141, 162, 242, 0.35);
+
+  /* 固定不翻转（纸面语义） */
+  --mark-bg: #fff3a0;
+  --paper: #ffffff;
+}
+
+/* 通用基底：划选高亮跟随主题 */
+::selection {
+  background: var(--selection-bg);
+}
+
+/* 暗色下 markdown 容器底透明（覆盖 github-markdown-light 写死的 #fff），
+   完整覆盖段见 Task 11（markdown 暗色规则） */
+html[data-theme="dark"] .markdown-body {
+  background-color: transparent;
+}
