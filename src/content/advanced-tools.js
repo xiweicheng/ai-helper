@@ -353,11 +353,30 @@ export function screenshotElement(selector, quality = 0.9, format = 'png') {
 
 
 
+// SEC-10 简单白名单：过滤可造成外链信标 / 属性选择器外泄 / 脚本执行的危险 CSS 构造。
+// 只剔除危险片段，正当视觉改样式（颜色/字号/背景色/隐藏/定位等）不受影响。
+// 因确认闸门被 toolConfirmationEnabled 总开关 AND 门控（用户关开关即失效），此净化
+// 在执行内部恒定生效、不依赖任何确认。@import 先删（可吞掉其后的 url），再删各危险函数/绑定。
+export function sanitizeInjectedCss(css) {
+  if (typeof css !== 'string') return '';
+  return css
+    .replace(/@import\b[^;{}]*;?/gi, '')        // 顶层 @import 外链样式表（信标 + 二次载荷）
+    .replace(/url\s*\([^;{}]*\)/gi, '')          // 一切 url(...)：出网信标 + 属性选择器外泄信道
+    .replace(/expression\s*\([^;{}]*\)/gi, '')   // IE CSS 表达式（可执行脚本）
+    .replace(/-moz-element\s*\([^;{}]*\)/gi, '') // -moz-element() 引用其它元素作图像（外泄）
+    .replace(/element\s*\([^;{}]*\)/gi, '')      // element() 同上
+    .replace(/-moz-binding\b[^;}]*;?/gi, '')     // XBL 绑定（脚本）
+    .replace(/\bbehavior\b[^;}]*;?/gi, '');      // HTC behavior 绑定（脚本）
+}
+
 export function injectCss(css, targetSelector = null, injectMode = 'style') {
   try {
     if (!css || typeof css !== 'string') {
       return { success: false, error: t('advancedTools.cssParamRequired') };
     }
+
+    // SEC-10：注入前统一净化；style(global/scoped) 与 inline 三条分支都使用净化后的 css
+    css = sanitizeInjectedCss(css);
 
     if (injectMode !== 'style' && injectMode !== 'inline') {
       return { success: false, error: t('advancedTools.unsupportedInjectMode', { mode: injectMode }) };

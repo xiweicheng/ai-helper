@@ -80,7 +80,7 @@ export const MEDIA_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          content: { type: 'string' },
+          content: { type: 'string', description: 'Text/URL to encode; omit to encode the current page URL' },
           size: { type: 'integer' },
           errorCorrection: { type: 'string', enum: ['L', 'M', 'Q', 'H'] },
           showImage: { type: 'boolean' }
@@ -107,7 +107,8 @@ export const MEDIA_TOOLS = [
           quality: { type: 'integer' },
           visionMaxDim: { type: 'integer', minimum: 512, maximum: 2048, description: 'Max dimension (px) of image for vision analysis' },
           visionQuality: { type: 'integer', minimum: 30, maximum: 95, description: 'JPEG quality of image for vision analysis' }
-        }
+        },
+        required: ['action']
       }
     }
   },

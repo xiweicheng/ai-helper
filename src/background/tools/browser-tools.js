@@ -170,8 +170,8 @@ export const BROWSER_TOOLS = [
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          key: { type: 'string' },
-          text: { type: 'string' },
+          key: { type: 'string', description: 'Single key to dispatch, e.g. Enter/Escape/Tab. Provide at least one of key or text' },
+          text: { type: 'string', description: 'Text to type into the focused element. Provide at least one of key or text' },
           ctrlKey: { type: 'boolean' },
           shiftKey: { type: 'boolean' },
           altKey: { type: 'boolean' }
