@@ -690,11 +690,10 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `iframe_content` | 获取 iframe 内容（同源，支持嵌套） |
 | `scroll_collect` | 滚动收集长内容（去重聚合） |
 
-### 页面交互（6 个）
+### 页面交互（5 个）
 | 工具 | 说明 |
 |------|------|
 | `interact_element` | 页面元素交互（click/hover/type 输入，支持 ref/text/selector 三种定位，优先 ref） |
-| `drag_drop` | 拖拽操作（⚠️实验性，多数网页可能不生效，必要时改用点击） |
 | `scroll_to` | 滚动到指定位置/元素/文本（支持对齐方式） |
 | `wait_element` | 等待元素出现/消失（严格可见性检测） |
 | `wait_navigation` | 等待页面跳转完成（支持 load/domcontentloaded/networkidle） |
@@ -719,12 +718,11 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 |------|------|
 | `search_browser_data` | 搜索浏览器书签和历史记录 |
 
-### 存储管理（3 个）
+### 存储管理（2 个）
 | 工具 | 说明 |
 |------|------|
-| `manage_cookies` | Cookie 管理（CRUD，需确认） |
-| `manage_storage` | localStorage/sessionStorage 管理 |
-| `clear_data` | 一键清除站点数据（需确认） |
+| `manage_cookies` | Cookie 管理（CRUD + 按域名批量清除，需确认） |
+| `manage_storage` | localStorage/sessionStorage 管理（清除操作需确认） |
 
 ### 网络请求（1 个）
 | 工具 | 说明 |
@@ -740,12 +738,10 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 | `download_file` | 下载文件（需确认） |
 | `notify` | 桌面通知 |
 
-### 调试与开发（4 个）
+### 调试与开发（2 个）
 | 工具 | 说明 |
 |------|------|
-| `inject_css` | 注入 CSS 样式（全局/作用域/内联） |
-| `browser_info` | 获取浏览器环境信息 |
-| `highlight_text` | 高亮页面文本 |
+| `inject_css` | 修改页面外观（注入样式表/内联样式/高亮文本） |
 | `debug_page` | 通过 Chrome DevTools Protocol 高级调试页面（attach → 操作 → detach）：原生输入事件、XHR/fetch 抓包、页面上下文求值、全页截图、设备模拟等 |
 
 ### AI 协作（7 个）
@@ -789,7 +785,7 @@ AI Helper 具备长期记忆能力，可以跨会话存储和检索用户信息�
 
 以下工具操作前会弹出确认对话框（**5 分钟超时自动拒绝**，由 `reactConfig.toolConfirmationEnabled` 总开关控制，关闭后敏感操作直接放行）：
 
-- `manage_tab`（close action）、`download_file`、`manage_cookies`、`clear_data`
+- `manage_tab`（close action）、`download_file`、`manage_cookies`、`manage_storage`（clear action）
 - `agent_file`（delete action）、`agent_exec`
 
 > 💡 **并发排队与计时起点**：并行子任务可能同时请求多条确认 / 澄清。两类弹窗共用一个**单模态闸门**，按 FIFO **逐条呈现**（同一时刻只弹一个，当前弹窗上会告知「另有 N 条在排队」），不会出现后一个遮住前一个、点不到按钮的情况。超时倒计时只在某条**真正显示出来**之后才开始消耗 —— 排队中的请求不计时，因此不存在「没机会拒绝就被判拒」。面板关闭或弹窗无法送达时按 **fail-closed** 立即拒绝，不白等 5 分钟。
