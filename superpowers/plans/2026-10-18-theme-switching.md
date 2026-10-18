@@ -31,7 +31,7 @@
 - Modify: `options.html`（同样置于 `src/options/styles.css` link 之前）
 
 **Interfaces:**
-- Produces: 62 个 CSS 自定义属性（命名见 spec §4.2 表格），`:root` 亮色块 + `[data-theme="dark"]` 暗色块；后续所有 CSS/JS 任务只引用这些变量名。
+- Produces: 63 个 CSS 自定义属性（命名见 spec §4.2 表格），`:root` 亮色块 + `[data-theme="dark"]` 暗色块；后续所有 CSS/JS 任务只引用这些变量名。
 
 - [ ] **Step 1: 创建 theme.css**
 
@@ -51,7 +51,7 @@
   --brand-fill: #667eea; --brand-accent: #764ba2;
   --brand-violet-500: #8b5cf6; --brand-violet-600: #6d28d9;
   --brand-soft-bg: #f0f4ff; --brand-soft-border: #c9d4f5;
-  --brand-violet-soft-bg: #f3f1ff;
+  --brand-violet-soft-bg: #f3f1ff; --brand-violet-soft-border: #d4cfff;
   --brand-rgb: 102,126,234; --brand-violet-rgb: 139,92,246;
   --brand-accent-rgb: 118,75,162; --bg-page-rgb: 245,247,250;
   --brand-gradient: linear-gradient(135deg, #667eea, #764ba2);
@@ -83,7 +83,7 @@
      --brand-700:#6d84ee; --brand-fill:#566ad3; --brand-accent:#6f4b99;
      --brand-violet-500:#a78bfa; --brand-violet-600:#b7a4f5;
      --brand-soft-bg:#232a3d; --brand-soft-border:#3d4c6e;
-     --brand-violet-soft-bg:#2b2440; --brand-rgb:141,162,242;
+     --brand-violet-soft-bg:#2b2440; --brand-violet-soft-border:#46386b; --brand-rgb:141,162,242;
      --brand-violet-rgb:167,139,250; --brand-accent-rgb:111,75,153;
      --brand-gradient:linear-gradient(135deg,#566ad3,#6f4b99);
      --border-subtle:#2e343d; --border-default:#3a404c; --border-strong:#4a5160;
@@ -266,19 +266,7 @@ export async function setTheme(pref) {
 }
 ```
 
-- [ ] **Step 4: 防闪烁 boot**。Create `src/shared/theme-boot.js`（非 module 同步脚本，head 最先引入，早于一切渲染样式）：
-
-```js
-// 用 localStorage 镜像做首帧校正，正式值由 theme.js initTheme() 从 storage 覆盖
-(function () {
-  try {
-    var v = localStorage.getItem('appThemeResolved');
-    if (v === 'dark' || v === 'light') document.documentElement.setAttribute('data-theme', v);
-  } catch (e) {}
-})();
-```
-
-在 `side_panel.html`/`options.html` 的 `<head>` 最前（theme.css link 之前）加 `<script src="src/shared/theme-boot.js"></script>`（路径写法对齐该文件现有 script 引入）。
+- [ ] **Step 4: 防闪烁（方案已调整，执行时侦察确认）**：构建管线为 crxjs+vite，HTML 中非 module 同步外链 script 不被支持（dist 产物全为 type=module）。改为：theme.js 模块顶层同步执行 `applyFromCache()`（读 localStorage 镜像 `appThemeResolved` 立即 setAttribute），index.js 把 `import { initTheme } from '../shared/theme.js'` 置于首条 import；白闪窗口仅 dark 用户首帧，验收实测可感知则后续用 transformIndexHtml 补正。不再创建 theme-boot.js。
 
 - [ ] **Step 5: 页面接线**：`src/side_panel/index.js` 与 `src/options/index.js` 启动流程中 `import { initTheme } from '../shared/theme.js'` 并 `await initTheme()`（options 尽早、side panel 在 DOM ready 后立刻，其余初始化不依赖它）。
 - [ ] **Step 6: `npx vitest run test/unit/theme.unit.test.js` 4 用例 PASS → 全量 `npm run test:unit` PASS → build:silent → Commit** `feat(theme): theme.js 三态读写与跨环境同步 + 防闪烁 boot`
