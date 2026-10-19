@@ -46,3 +46,4 @@ dist/
 # 主题暗色审计探针运行期临时 profile
 scripts/_theme-dark-audit-profile/
 tool-results/
+.qoder/

@@ -5157,14 +5157,14 @@ body {
 .scroll-to-bottom-btn:hover svg {
   color: var(--text-primary);
 }
-/* ========== 消息跳转按钮（上一条/下一条，默认收起，hover 展开） ========== */
+/* ========== 消息跳转把手（上一条/下一条 + 问题列表，默认收起，hover 展开，点击钉住） ========== */
 .chat-nav-hotzone {
   position: fixed;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 8px;
-  height: 84px;
+  width: 10px;
+  height: 96px;
   border-radius: 0 6px 6px 0;
   background: rgba(var(--brand-rgb), 0.16);
   cursor: pointer;
@@ -5174,6 +5174,10 @@ body {
 .chat-nav-hotzone:hover {
   background: rgba(var(--brand-rgb), 0.38);
   box-shadow: 0 0 8px rgba(var(--brand-rgb), 0.35);
+}
+.chat-nav-hotzone.pinned {
+  background: rgba(var(--brand-rgb), 0.55);
+  box-shadow: 0 0 10px rgba(var(--brand-rgb), 0.45);
 }
 .chat-nav-buttons {
   position: fixed;
@@ -5233,24 +5237,26 @@ body {
 .chat-nav-btn:hover svg {
   color: var(--brand-500);
 }
-/* ========== 用户问题列表（悬停消息跳转热区时右侧展开，半透明） ========== */
+/* ========== 用户问题列表（悬停消息跳转把手时右侧展开，可钉住） ========== */
 .chat-nav-question-panel {
   position: fixed;
   left: 48px;
   top: 50%;
   transform: translateY(-50%) translateX(-8px);
-  width: 280px;
+  width: 300px;
   max-width: calc(100vw - 64px);
   max-height: 62vh;
-  overflow-y: auto;
+  /* 面板自身不滚动：Header 固定，滚动交给内部的 .chat-nav-question-list */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px;
   box-sizing: border-box;
-  background: rgba(var(--surface-rgb), 0.78);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  /* 实色表面：列表叠在正文上时不能透出聊天文字 */
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
   border-radius: 12px;
-  box-shadow: 0 8px 28px var(--shadow-sm);
+  box-shadow: 0 10px 32px var(--shadow-lg);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -5263,8 +5269,29 @@ body {
   pointer-events: auto;
   transform: translateY(-50%) translateX(0);
 }
+.chat-nav-question-panel.pinned {
+  border-color: rgba(var(--brand-rgb), 0.45);
+}
+.chat-nav-question-list {
+  /* basis 必须是 auto：面板只有 max-height 没有显式 height，
+     auto 高度的纵向 flex 容器按子项假设主轴尺寸定高，
+     basis 0 会让列表对面板高度贡献 0 → 整个列表塌成 0 高。
+     内容超过 62vh 时由 min-height:0 允许收缩，滚动才发生在这里。 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.chat-nav-question-list::-webkit-scrollbar {
+  width: 6px;
+}
+.chat-nav-question-list::-webkit-scrollbar-thumb {
+  background: rgba(var(--overlay-rgb), 0.22);
+  border-radius: 3px;
+}
 .chat-nav-question-header {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   padding: 4px 8px 8px;
@@ -5278,11 +5305,37 @@ body {
   margin-left: auto;
   font-weight: normal;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.chat-nav-pin {
+  padding: 1px 7px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chat-nav-pin:hover {
+  border-color: rgba(var(--brand-rgb), 0.4);
+  color: var(--brand-600);
+}
+.chat-nav-pin.on {
+  background: rgba(var(--brand-rgb), 0.16);
+  border-color: rgba(var(--brand-rgb), 0.45);
+  color: var(--brand-600);
 }
 .chat-nav-question-item {
+  /* 条目保持块级普通流：行盒截断只落在内部 .chat-nav-question-text 上，
+     条目自身不承载 clamp，也不参与 flex 布局。 */
   display: block;
+  overflow: hidden;
   width: 100%;
   padding: 8px 10px;
+  margin-bottom: 2px;
   border: none;
   background: transparent;
   border-radius: 8px;
@@ -5291,13 +5344,19 @@ body {
   font-size: 13px;
   line-height: 1.35;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.chat-nav-question-item:hover {
+.chat-nav-question-item.current {
   background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-600);
+  box-shadow: inset 2px 0 0 var(--brand-600);
+}
+.chat-nav-question-item.current .idx {
+  color: var(--brand-600);
+  font-weight: 600;
+}
+.chat-nav-question-item:hover {
+  background: rgba(var(--brand-rgb), 0.22);
   color: var(--brand-600);
 }
 .chat-nav-question-item .idx {
@@ -5306,11 +5365,16 @@ body {
   font-size: 11px;
   color: var(--text-tertiary);
 }
-.chat-nav-question-empty {
-  padding: 12px 10px;
-  font-size: 12px;
-  color: var(--text-disabled);
-  text-align: center;
+/* 两行截断落在内部文本节点上（button 上的 -webkit-box 会被 Chromium 改掉）。
+   text-overflow: ellipsis 必需：新版 Chromium（130+）把所有 -webkit-box 转成
+   flow-root 布局，line-clamp 仍压行数，但省略号改由 text-overflow 决定，
+   缺省 clip 时第三行被 overflow:hidden 硬切一半、不画省略号。 */
+.chat-nav-question-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 新内容指示器（小蓝点 badge） */
 .scroll-to-bottom-badge {

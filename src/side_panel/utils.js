@@ -1058,3 +1058,117 @@ export function clampPanelToViewport(panel) {
 export function releasePanelClamp(panel) {
   if (panel) panel.style.removeProperty('--clamp-y');
 }
+
+/** 消息跳转遍历的消息节点选择器：用户提问、助手回答、提问上方的上下文气泡 */
+const JUMP_MESSAGE_SELECTOR = '.message.user, .message.assistant, .user-context-bubble';
+
+/**
+ * 把会话消息按「一次提问 + 其后的所有回答」分组成问答对。
+ * 上下箭头与问题列表都基于同一份分组，编号才能一一对应；
+ * 第一条提问之前的内容并入首组，否则那段跳不到。
+ * @param {HTMLElement|null} container - 聊天容器
+ * @returns {Array<{start: HTMLElement, userElement: HTMLElement|null, elements: HTMLElement[]}>}
+ */
+export function buildMessageJumpGroups(container) {
+  if (!container) return [];
+  const nodes = Array.from(container.querySelectorAll(JUMP_MESSAGE_SELECTOR));
+  if (nodes.length === 0) return [];
+
+  const groups = [];
+  const leading = [];
+  for (const node of nodes) {
+    const isUser = node.classList.contains('message') && node.classList.contains('user');
+    if (isUser) {
+      groups.push({ start: leading.length ? leading[0] : node, userElement: node, elements: [...leading, node] });
+      leading.length = 0;
+    } else if (groups.length === 0) {
+      leading.push(node);
+    } else {
+      groups[groups.length - 1].elements.push(node);
+    }
+  }
+
+  if (groups.length === 0) {
+    // 纯助手输出（无提问）的历史会话：整体作为一组，保证箭头仍可用
+    groups.push({ start: nodes[0], userElement: null, elements: nodes });
+  }
+  return groups;
+}
+
+/**
+ * 判定当前所在组：第一组「底边已进入视口阈值以下」的消息。
+ * 被顶边切掉一半的组不算当前，避免连按上一条时原地不动。
+ * @returns {number} 组下标；全部消息滚到视口上方时返回 -1
+ */
+export function findActiveGroupIndex(groups, viewportTop, threshold = 10) {
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].start.getBoundingClientRect().bottom > viewportTop + threshold) return i;
+  }
+  return -1;
+}
+
+/**
+ * 计算上一条/下一条目标组下标。
+ * @param {number} groupCount
+ * @param {number} activeIndex - findActiveGroupIndex 的结果，-1 表示当前无可见组
+ * @param {'prev'|'next'} direction
+ * @returns {number|null} 目标下标；已在边界时返回 null
+ */
+export function resolveJumpTarget(groupCount, activeIndex, direction) {
+  if (groupCount <= 0) return null;
+  let base = activeIndex;
+  if (base === -1) {
+    if (direction !== 'prev') return null;
+    base = groupCount;
+  }
+  const target = direction === 'prev' ? base - 1 : base + 1;
+  return target >= 0 && target < groupCount ? target : null;
+}
+
+/**
+ * 问题列表条目的展示文案：折叠空白，并按体积上限截断（省略号计入长度）。
+ * 上限只是限制写进 innerHTML 的字符量（列表每次悬停/滚动都会重建），
+ * 不承担视觉截断——可见的两行截断与省略号由 CSS 的 line-clamp 负责，
+ * 因此该值必须明显大于条目实际能显示的长度，否则会出现两个省略号。
+ * 空文本返回空串，占位文案由调用方按 i18n 决定。
+ */
+export function formatQuestionPreview(text, maxLength = 120) {
+  const flat = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  return flat.length > maxLength ? `${flat.slice(0, maxLength)}…` : flat;
+}
+
+/** DOM 文本节点类型常量：utils.js 也被 node 环境（单测）引用，不能依赖全局 Node */
+const TEXT_NODE_TYPE = 3;
+
+/**
+ * 渲染问题列表 HTML：Header 作为固定区，条目放进独立的滚动区，
+ * 保证列表垂直滚动时 Header 始终可见。
+ * @param {Array} groups - buildMessageJumpGroups 的结果
+ * @param {number} activeIndex - 当前组下标，-1 表示尚无命中组
+ * @param {boolean} isPinned - 是否处于钉住态
+ */
+export function renderQuestionListHtml(groups, activeIndex, isPinned) {
+  const items = groups.map((group, index) => {
+    const anchor = group.userElement || group.start;
+    // 仅取直接文本节点，排除图片/文件等子元素
+    const text = Array.from(anchor.childNodes || [])
+      .filter(n => n.nodeType === TEXT_NODE_TYPE)
+      .map(n => n.textContent)
+      .join('');
+    const displayText = formatQuestionPreview(text) || t('chat.navQuestionNoText');
+    const messageId = (anchor.dataset && anchor.dataset.messageId) || '';
+    const cls = `chat-nav-question-item${index === activeIndex ? ' current' : ''}`;
+    // 序号必须嵌在被 clamp 的文本节点内部：行盒截断只发生在内部文本节点上，
+    // 编号若独立于 clamp 节点，会被当成单独行盒参与截断计算。
+    // 两行省略号的渲染前提见 styles.css 的 .chat-nav-question-text 注释（text-overflow 驱动）。
+    const textHtml = `<span class="chat-nav-question-text"><span class="idx">${index + 1}</span>${escapeAttr(displayText)}</span>`;
+    return `<button class="${cls}" data-message-id="${escapeAttr(messageId)}" title="${escapeAttr(displayText)}">${textHtml}</button>`;
+  }).join('');
+
+  const pinLabel = t(isPinned ? 'chat.navUnpinLabel' : 'chat.navPinLabel');
+  const current = activeIndex >= 0 ? activeIndex + 1 : groups.length;
+  const header = `<div class="chat-nav-question-header"><span>${t('chat.navQuestionTitle')}</span><button type="button" class="chat-nav-pin${isPinned ? ' on' : ''}" title="${escapeAttr(pinLabel)}">${escapeAttr(pinLabel)}</button><span class="count">${t('chat.navPosition', { current, total: groups.length })}</span></div>`;
+
+  return `${header}<div class="chat-nav-question-list">${items}</div>`;
+}

@@ -221,22 +221,22 @@
     </div>
   </div>
   
-  <!-- 消息跳转按钮（上一条/下一条，默认收起为左侧窄条，鼠标移入展开） -->
-  <div class="chat-nav-hotzone" id="chatNavHotzone" title="消息跳转"></div>
+  <!-- 消息跳转把手（上一个/下一个问题 + 问题列表；悬停展开，点击钉住） -->
+  <div class="chat-nav-hotzone" id="chatNavHotzone" data-i18n-title="chat.navHotzoneTitle"></div>
   <div class="chat-nav-buttons" id="chatNavButtons">
-    <button class="chat-nav-btn" id="chatNavUp" data-i18n-title="chat.navPrevTitle" title="上一条消息 (Alt+↑)，Ctrl/Cmd+点击回到最顶端">
+    <button class="chat-nav-btn" id="chatNavUp" data-i18n-title="chat.navPrevTitle" title="上一个问题 (Alt+↑)，Ctrl/Cmd+点击回到最顶端">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="18 15 12 9 6 15"/>
       </svg>
     </button>
-    <button class="chat-nav-btn" id="chatNavDown" data-i18n-title="chat.navNextTitle" title="下一条消息 (Alt+↓)，Ctrl/Cmd+点击跳到底端">
+    <button class="chat-nav-btn" id="chatNavDown" data-i18n-title="chat.navNextTitle" title="下一个问题 (Alt+↓)，Ctrl/Cmd+点击跳到底端">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>
     </button>
   </div>
 
-  <!-- 用户问题列表：鼠标悬停消息跳转热区时右侧展开（半透明） -->
+  <!-- 用户问题列表：悬停消息跳转把手时右侧展开，按问答组编号，可钉住 -->
   <div class="chat-nav-question-panel" id="chatNavQuestionPanel"></div>
 
   <!-- Toast 提示容器 -->
@@ -989,8 +989,8 @@
             <tr><th data-i18n="shortcuts.colShortcut">快捷键</th><th data-i18n="shortcuts.colFunction">功能</th><th data-i18n="shortcuts.colPlatform">平台</th></tr>
           </thead>
           <tbody>
-            <tr><td><kbd>Alt</kbd> + <kbd>↑</kbd></td><td data-i18n="shortcuts.gotoPrev">跳转到上一条消息</td><td>Win / Mac</td></tr>
-            <tr><td><kbd>Alt</kbd> + <kbd>↓</kbd></td><td data-i18n="shortcuts.gotoNext">跳转到下一条消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>↑</kbd></td><td data-i18n="shortcuts.gotoPrev">跳转到上一个问题</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>↓</kbd></td><td data-i18n="shortcuts.gotoNext">跳转到下一个问题</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Alt</kbd> + <kbd>Ctrl/Cmd</kbd> + <kbd>↑</kbd></td><td data-i18n="shortcuts.scrollTop">回到对话顶部</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Alt</kbd> + <kbd>Ctrl/Cmd</kbd> + <kbd>↓</kbd></td><td data-i18n="shortcuts.scrollBottom">跳到对话底部</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>

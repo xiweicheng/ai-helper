@@ -4,6 +4,18 @@
 
 ## 2026-10-19
 
+### 消息跳转（问题列表定位感：统一口径 + 当前高亮 + 钉住 + 实色面板）
+> 用户反馈：用户问题导航列表（编号条目 + 上一个/下一个 + 点击定位）有没有优化空间。核查后确认三处硬伤：列表完全没有「当前在哪」的提示；▲▼ 与列表是两套口径（箭头按混合消息列表走、列表只按用户提问编号，编号点了跳不对）；列表半透明穿透且移出即收起，长列表没法读。方案文档：`docs/superpowers/specs/2026-10-19-message-jump-navigator-design.md`。
+
+- **口径统一为「问答组」**（新增 `utils.js` 纯函数 `buildMessageJumpGroups`/`findActiveGroupIndex`/`resolveJumpTarget`/`formatQuestionPreview`）：一次提问 + 其后所有回答为一组，首条提问之前的内容并入首组，无提问的历史会话整体成一组；`jumpToMessage` 与问题列表共用同一分组，列表编号与按 ▲▼ 落到的位置严格对应。
+- **当前定位**：面板展开时高亮当前组条目（品牌色 + 14% 底 + 左侧指示条），头部由「10」改「3 / 10」，当前条目自动滚进列表可视区；`#chatContainer` 滚动经 rAF 节流实时同步；组数变化（流式新增提问）时重建列表防高亮错位；面板已展开时再次进入只同步不重建。
+- **钉住**：点击把手切换 `pinned`，钉住后移出不收起、`Esc` 取消；头部加纯文字「钉住/取消钉住」按钮；非钉住时点击条目立即收起让位正文；收起延时 200→300ms。
+- **视觉与死代码**：面板底 `rgba(--surface-rgb,.78)`+blur 改实色 `var(--bg-surface)`、边框/阴影升档；条目取消 `nowrap` 改 `-webkit-line-clamp:2` + `text-overflow:ellipsis`（原来 JS 40 字 + CSS 再截一刀只剩十几字；新版 Chromium 130+ 把所有 `-webkit-box` 的 computed 值转成 `flow-root`，省略号改由 `text-overflow` 驱动，缺它则只压行数、第三行被 `overflow:hidden` 硬切不画省略号，已经真实 Chromium 截图取证）、宽度 280→300px；把手 8→10px 便于点击；删除从未渲染的 `.chat-nav-question-empty`。
+- **i18n**：新增 `chat.navHotzoneTitle`/`navPinLabel`/`navUnpinLabel`/`navPosition`（zh/en），把手 `title="消息跳转"` 硬编码改 `data-i18n-title`。
+- **Header 固定可见**：面板原先自身是滚动容器，列表一滚「问题列表/钉住/位置」整行就被推走。改为面板 `display:flex; flex-direction:column; overflow:hidden`，条目收进新增的 `.chat-nav-question-list`（`flex:1 1 auto; min-height:0; overflow-y:auto`）里滚动，Header `flex:none` 不参与压缩。列表区 flex-basis 必须是 `auto` 不能是 `0`：真实产品面板只有 `max-height:62vh` 没有显式 height，auto 高度的纵向 flex 容器按子项假设主轴尺寸定高，basis 0 会让列表对面板高度贡献 0、整个列表塌成 0 高只剩 Header（首版写 `1 1 0` 实机复现过，因当时 e2e 给面板内联了固定高而漏测；已补真实约束回归例并对 `1 1 0` 做变异验证转红）。列表 HTML 从 `index.js` 内联模板提取为 `utils.js` 的 `renderQuestionListHtml(groups, activeIndex, isPinned)`，e2e 因此直接驱动产品级 DOM。转义改用已有的 `escapeAttr`（`escapeHtml` 走 `document`，且不转义引号——用户提问里的 `"` 会破坏 `title`/`data-message-id` 属性）。
+- **快捷键文案同步口径**：跳转单位已变成问答组，但快捷键表还写「跳转到上一条/下一条消息」。改为「跳转到上一个/下一个问题」（`shortcuts.gotoPrev`/`gotoNext`），▲▼ tooltip 同步为「上一个/下一个问题 (Alt+↑/↓)…」（`chat.navPrevTitle`/`navNextTitle`），en 侧 `previous/next question`；`side_panel.html` 的行内 `title` 兜底与表格 `<td>` 默认文本、`docs/zh|en/DOCUMENTATION.md` 与 `.wiki/Configuration*.md` 的 `Alt+↑/↓` 行一并改掉；顺手删除全仓无引用、说法过时的重复死键 `shortcuts.prevMessage`/`nextMessage`。把手名「消息跳转」保留（它是入口功能名，含 Ctrl/Cmd 回顶/到底）。
+- **验证**：新增 `message-jump-navigator.unit.test.js` 57 例（TDD 先红后绿，对「组数变化重建」与属性转义做变异验证）+ 真实 Chromium `message-jump.e2e.spec.js` 10 例（用真实布局证明跳转编号与当前组反查一致、面板 alpha=1、两行截断由 CSS 画省略号且渲染高度恰为整数行、暗色实色、列表滚动时 Header 位置不变、面板无显式高度时列表区不塌成 0；Header 例经「面板改回自身滚动」、塌高例经 `flex:1 1 0` 变异确认均会失败）；全量单测 136 文件 / 2038 例、全量 e2e 48 例、`build:silent`、`theme:contrast`/`theme:check` 通过。悬停/钉住接线仍在 `index.js` 初始化闭包内，只有源码守卫断言，未用真实鼠标驱动（见方案文档「已知缺口」）。
+
 ### 配置页（推理循环「配置说明」与实际字段对齐）
 > 用户反馈：说明文案与当前配置项对不上。核对后修正两处失真、补一处缺失。
 
