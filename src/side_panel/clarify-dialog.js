@@ -135,10 +135,10 @@ export function updateClarifyTimer(remainingSeconds, totalSeconds) {
     timerElement.classList.add('warning');
   }
 
-  // 延长按钮：剩余偏低（≤60s 或 ≤30%）时高亮浮现，引导用户主动续时
+  // 延长按钮：剩余过半（≤50%，兜底 ≤60s）时高亮浮现，给中途离开/需要调研的用户留足缓冲
   const extendBtn = document.getElementById('clarifyExtendBtn');
   if (extendBtn) {
-    extendBtn.classList.toggle('show', remainingSeconds <= 60 || percentage <= 30);
+    extendBtn.classList.toggle('show', remainingSeconds <= 60 || percentage <= 50);
   }
   
   // 播放提示音（最后 30 秒时）
