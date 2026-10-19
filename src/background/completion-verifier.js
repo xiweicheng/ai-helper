@@ -28,6 +28,7 @@ registerTranslations('zh', {
     evidencePartial: 'ℹ️ [完成度校验] 部分判据已确证达成，但另有判据未能求值（{detail}），故不盖章“全部达成”。',
     detailCriteria: '多因判据写法不合法，需修正',
     detailChannel: '目标页/本地 Agent 不可达或取证通道异常',
+    detailCommandPolicy: '命令需人工确认或被安全策略拒绝，无法自动取证',
     detailMixed: '部分判据写法需修正、部分目标页不可达',
     detailUnknown: '未能取得有效取证',
   },
@@ -42,6 +43,7 @@ registerTranslations('en', {
     evidencePartial: 'ℹ️ [Completion check] Some criteria were confirmed met, but others could not be evaluated ({detail}), so full completion is not stamped.',
     detailCriteria: 'usually malformed criteria that need fixing',
     detailChannel: 'the target page or local agent was unreachable, or the evidence channel errored',
+    detailCommandPolicy: 'the command requires manual confirmation or was refused by the security policy, so it was not auto-verified',
     detailMixed: 'some criteria malformed, some target page unreachable',
     detailUnknown: 'no valid evidence could be gathered',
   },
@@ -245,13 +247,16 @@ export function buildVerifyCommand(criterion) {
 /**
  * 构造一个把命令/文件判据落到本地 Agent 执行、以退出码/输出取证的异步取证器。
  * 返回契约与内容取证器一致：{ available, pass, reason }。
- * 安全红线：执行前先过 isReadOnlyVerifyCommand，非只读命令一律拒（不发不执行）；
- * 永不传 force=true；agent 离线/超时/执行错→ available:false（indeterminate），绝不折成 pass:false。
- * @param {{execWait:(command:string, cwd?:string, force?:boolean, timeoutMs?:number)=>Promise<any>, isOnline?:()=>boolean|Promise<boolean>, timeoutMs?:number}} deps
+ * 安全：
+ * - readOnlyGate=true（默认，重跑关=Phase A）：执行前先过 isReadOnlyVerifyCommand，非只读命令一律拒（不发不执行）。
+ * - readOnlyGate=false（重推开=Phase B）：去本地只读硬拦，一律交 agent /api/exec 三档门控——
+ *   allow(含 pytest/build) 才执行读退出码；confirm/deny 由 agent 不执行→各自 reason 归 indeterminate。
+ * 两档均：永不传 force=true；agent 离线/超时/执行错→ available:false（indeterminate），绝不折成 pass:false。
+ * @param {{execWait:(command:string, cwd?:string, force?:boolean, timeoutMs?:number)=>Promise<any>, isOnline?:()=>boolean|Promise<boolean>, timeoutMs?:number, readOnlyGate?:boolean}} deps
  * @returns {(criterion: object) => Promise<{available:boolean, pass:boolean, reason?:string}>}
  */
 export function createCommandEvidenceCollector(deps = {}) {
-  const { execWait, isOnline, timeoutMs = COMMAND_EVIDENCE_TIMEOUT_MS } = deps;
+  const { execWait, isOnline, timeoutMs = COMMAND_EVIDENCE_TIMEOUT_MS, readOnlyGate = true } = deps;
   const unavailable = (reason, criterion, extra) => {
     try {
       logger.debug('[completion-verifier] command evidence unavailable', {
@@ -264,8 +269,9 @@ export function createCommandEvidenceCollector(deps = {}) {
     if (typeof execWait !== 'function') return unavailable('agent_unavailable', criterion);
     const built = buildVerifyCommand(criterion);
     if (built.reason) return unavailable(built.reason, criterion);
-    // 只读安全门：证明不了只读 → 直接拒，绝不执行（跑测试/构建类命令默认落此）。
-    if (!isReadOnlyVerifyCommand(built.command)) return unavailable('verify_command_not_readonly', criterion, { command: built.command });
+    // 只读安全门：仅 readOnlyGate=true（重跑关=Phase A）时本地硬拦，证明不了只读→拒、绝不执行。
+    // 开重跑时此门关闭，改由 agent 三档门控在下文按 res.level 解释（allow 才执行）。
+    if (readOnlyGate && !isReadOnlyVerifyCommand(built.command)) return unavailable('verify_command_not_readonly', criterion, { command: built.command });
     // agent 在线探测（可选注入）：离线归 agent_unavailable。
     if (typeof isOnline === 'function') {
       let ok = true;
@@ -281,6 +287,9 @@ export function createCommandEvidenceCollector(deps = {}) {
         : await p;
       if (!res || typeof res !== 'object') return unavailable('command_error', criterion);
       if (res.killed) return unavailable('command_timeout', criterion);
+      // agent 三档门控：confirm/deny 均不执行（无 exitCode）→ 归 indeterminate，绝不当未达标。
+      if (res.level === 'confirm') return unavailable('verify_command_confirm_required', criterion, { command: built.command });
+      if (res.level === 'deny') return unavailable('verify_command_denied', criterion, { command: built.command });
       if (typeof res.exitCode === 'number') {
         if (criterion.check === 'command_output_matches') {
           const out = `${res.stdout || ''}${res.stderr || ''}`;
@@ -303,17 +312,30 @@ export function createCommandEvidenceCollector(deps = {}) {
 /**
  * 构造按 check 类型路由的取证器：DOM 类→内容取证器，命令/文件类→命令取证器。
  * 取代 react-loop 直接注入的 createContentEvidenceCollector；verifySubtaskCompletion 仍按条调 gatherEvidence，内核零改动。
- * @param {{tabId:number, execWait?:Function, isOnline?:Function, sendMessage?:Function, contentTimeoutMs?:number, commandTimeoutMs?:number}} deps
+ * #5：DOM 类可按调用时 resolveTabId() 动态解析工作 tab（子任务 open/switch_tab 记在派生 sessionId 名下），
+ * 未提供或解析为空则回落构造时捕获的 tabId（不劣于 Phase A）；解析结果按 tab 缓存内容取证器，逐调用重解析。
+ * @param {{tabId:number, resolveTabId?:()=>number|null, execWait?:Function, isOnline?:Function, sendMessage?:Function, contentTimeoutMs?:number, commandTimeoutMs?:number, commandReadOnlyGate?:boolean}} deps
  * @returns {(criterion: object) => Promise<{available:boolean, pass:boolean, reason?:string}>}
  */
 export function createRoutingEvidenceCollector(deps = {}) {
-  const { tabId, execWait, isOnline, sendMessage, contentTimeoutMs, commandTimeoutMs } = deps;
-  const collectDom = createContentEvidenceCollector(tabId, sendMessage, contentTimeoutMs);
-  const collectCommand = createCommandEvidenceCollector({ execWait, isOnline, timeoutMs: commandTimeoutMs });
+  const { tabId, resolveTabId, execWait, isOnline, sendMessage, contentTimeoutMs, commandTimeoutMs, commandReadOnlyGate } = deps;
+  const collectCommand = createCommandEvidenceCollector({ execWait, isOnline, timeoutMs: commandTimeoutMs, readOnlyGate: commandReadOnlyGate });
+  const domCache = new Map();
+  const domFor = (tid) => {
+    let c = domCache.get(tid);
+    if (!c) { c = createContentEvidenceCollector(tid, sendMessage, contentTimeoutMs); domCache.set(tid, c); }
+    return c;
+  };
+  const resolveDomTab = () => {
+    if (typeof resolveTabId === 'function') {
+      try { const t = resolveTabId(); if (t != null) return t; } catch { /* 解析异常回落捕获 tabId */ }
+    }
+    return tabId;
+  };
   return async (criterion) => {
     const check = criterion && criterion.check;
     if (COMMAND_CHECKS.has(check)) return collectCommand(criterion);
-    if (DOM_CHECKS.has(check)) return collectDom(criterion);
+    if (DOM_CHECKS.has(check)) return domFor(resolveDomTab())(criterion);
     // 未知 check（正常已被 normalize 过滤）：保守取不到证，不派发。
     return { available: false, pass: false, reason: 'unknown_check' };
   };
@@ -342,18 +364,25 @@ function describeCriterion(c) {
 // 无 checkResults / 未知 reason → 回落泛化文案（向后兼容）。
 const CRITERIA_REASON_SET = new Set(['invalid_selector', 'empty_target', 'missing_expected', 'unknown_check', 'no_href', 'eval_error', 'bad_path', 'verify_command_not_readonly']);
 const CHANNEL_REASON_SET = new Set(['channel_timeout', 'channel_no_receiver', 'page_unreachable', 'response_shape', 'channel_error', 'agent_unavailable', 'command_timeout', 'command_error']);
+// B2：命令三档门控策略性不可评估（需人工确认/被安全策略拒绝）单独成桶——
+// 既非判据写法错（不可由模型修正写法解决），也非通道异常（通道其实可达），避免误导上报文案。
+const COMMAND_POLICY_REASON_SET = new Set(['verify_command_confirm_required', 'verify_command_denied']);
 function summarizeEvidenceDetail(checkResults) {
   const un = Array.isArray(checkResults) ? checkResults.filter((r) => r.available === false) : [];
   const reasons = [];
   for (const r of un) { if (r.reason && reasons.indexOf(r.reason) === -1) reasons.push(r.reason); }
   const hasC = reasons.some((x) => CRITERIA_REASON_SET.has(x));
   const hasCh = reasons.some((x) => CHANNEL_REASON_SET.has(x));
-  let phrase;
-  if (hasC && hasCh) phrase = t('completionVerifier.detailMixed');
-  else if (hasC) phrase = t('completionVerifier.detailCriteria');
-  else if (hasCh) phrase = t('completionVerifier.detailChannel');
-  else phrase = t('completionVerifier.detailUnknown');
-  const codes = (hasC || hasCh) ? reasons.join(', ') : '';
+  const hasP = reasons.some((x) => COMMAND_POLICY_REASON_SET.has(x));
+  const phrases = [];
+  if (hasC && hasCh) phrases.push(t('completionVerifier.detailMixed'));
+  else {
+    if (hasC) phrases.push(t('completionVerifier.detailCriteria'));
+    if (hasCh) phrases.push(t('completionVerifier.detailChannel'));
+  }
+  if (hasP) phrases.push(t('completionVerifier.detailCommandPolicy'));
+  const phrase = phrases.length ? phrases.join('；') : t('completionVerifier.detailUnknown');
+  const codes = (hasC || hasCh || hasP) ? reasons.join(', ') : '';
   return codes ? `${phrase}: ${codes}` : phrase;
 }
 
@@ -390,21 +419,39 @@ export function buildCompletionNote(verdict) {
 }
 
 /**
+ * 严格真子集判定（防无限回炉的进闸门）：cur 必须完全包含于 prev 且尺寸严格更小。
+ * 缺项集单调收缩才认定“有进展”，否则（同集/变大）停——避免振荡。
+ * @param {Set} cur 本轮缺项 id 集
+ * @param {Set} prev 上轮缺项 id 集
+ * @returns {boolean}
+ */
+function isStrictSubset(cur, prev) {
+  if (!(cur instanceof Set) || !(prev instanceof Set)) return false;
+  if (cur.size >= prev.size) return false;
+  for (const x of cur) { if (!prev.has(x)) return false; }
+  return true;
+}
+
+/**
  * 对单个子任务结果就地取证并写回 completionNote/verification。返回同一个 r 引用。
  *
  * M-new-2：这是取证时机的正确粒度——react-loop 在子任务成功的 onDone 钩子里即时调用，
  * 此时该子任务的达标现场（toast/表单值/URL）尚未被后续子任务的导航抹掉；旧的"整轮末尾
  * 统一取证"会对早期子任务取到陈旧/缺失的现场，得出假未达或假达成。
- * 严格遵循 1b：四闸门全 false → 永不重跑；只追写 note，绝不改 st.status。
- * 尽力而为：shouldStop/取证/写回任何异常均吞掉，绝不让 onDone 因校验而中断主循环。
+ * 严格遵循 1b：rerunEnabled=false（缺省）时四闸门全 false → 永不重跑，任何未达标一律落
+ * unmet_permanent，仅用于如实上报——输出与 Phase A 逐字节一致；只追写 note，绝不改 st.status。
+ * rerunEnabled=true 且注入 rerun 回调时才进重跑回路：四闸门真实（可重试∧有进展∧有预算∧未超次）
+ * 全过才回炉，防振荡靠缺项集严格收缩 + maxRetryAttempts。
+ * 尽力而为：shouldStop/取证/重跑/写回任何异常均吞掉，绝不让 onDone 因校验而中断主循环。
  * @param {object} r 单子任务结果（会被就地补充 verification/completionNote）
  * @param {Array} subtasks 计划子任务（携带 doneCriteria）
- * @param {{gatherEvidence:Function, config?:object, shouldStop?:()=>boolean}} deps
+ * @param {{gatherEvidence:Function, config?:object, shouldStop?:()=>boolean, rerun?:(directive:string, verdict:object)=>Promise<void>, budgetLeft?:()=>boolean}} deps
+ *   rerun/budgetLeft 仅在 config.rerunEnabled=true 时生效；budgetLeft 缺省视为有预算。
  * @returns {Promise<object>} 同一个 r
  */
 export async function annotateOneSubtaskCompletion(r, subtasks, deps = {}) {
   if (!r) return r;
-  const { gatherEvidence, config = {}, shouldStop } = deps;
+  const { gatherEvidence, config = {}, shouldStop, rerun, budgetLeft } = deps;
   try {
     if (typeof shouldStop === 'function' && shouldStop()) return r; // #11/M-new-4：取消/超时早停，不取证
     const planned = Array.isArray(subtasks)
@@ -412,17 +459,58 @@ export async function annotateOneSubtaskCompletion(r, subtasks, deps = {}) {
       : null;
     const raw = planned && planned.doneCriteria;
     if (!Array.isArray(raw) || raw.length === 0) return r; // 最简起步：无客观断言不动
-    const verdict = await verifySubtaskCompletion({
-      doneCriteria: raw,
-      gatherEvidence,
-      // 1b：不重跑 —— 四闸门全 false，任何未达标一律落 unmet_permanent，仅用于如实上报
-      gates: { failureRetryable: false, progressMade: false, budgetLeft: false, attemptsUnderLimit: false },
-      config,
-    });
-    r.verification = verdict;
-    r.completionNote = buildCompletionNote(verdict);
+
+    // Phase A / 重跑未启用：四闸门全 false，仅标注，输出逐字节不变。
+    if (!(config.rerunEnabled === true && typeof rerun === 'function')) {
+      const verdict = await verifySubtaskCompletion({
+        doneCriteria: raw,
+        gatherEvidence,
+        // 1b：不重跑 —— 四闸门全 false，任何未达标一律落 unmet_permanent，仅用于如实上报
+        gates: { failureRetryable: false, progressMade: false, budgetLeft: false, attemptsUnderLimit: false },
+        config,
+      });
+      r.verification = verdict;
+      r.completionNote = buildCompletionNote(verdict);
+      return r;
+    }
+
+    // Phase B 重跑回路：逐轮取证→四闸门真实计算→未达标且可重跑则回灌 directive 再跑一轮。
+    const maxAttempts = Number.isFinite(config.maxRetryAttempts) ? config.maxRetryAttempts : 1;
+    let verifyAttempt = 0; // 与异常重试 retry 正交，独立计数
+    let prevMissing = null; // 上轮缺项 id 集（null=首轮）
+    while (true) {
+      if (typeof shouldStop === 'function' && shouldStop()) return r; // 每轮回炉前复查取消/超时
+      const attemptsUnderLimit = verifyAttempt < maxAttempts; // 闸门 4
+      const bl = typeof budgetLeft === 'function' ? !!budgetLeft() : true; // 闸门 3（时间+token，由调用方注入）
+      const verdict = await verifySubtaskCompletion({
+        doneCriteria: raw,
+        gatherEvidence,
+        // progressMade 乐观传 true：真子集判定需本轮 missing（取证后才知道），进度闸门由下方 realProgress 兜住。
+        // failureRetryable=true：客观缺项属可重试类（能否真回炉另由 attempts/budget/progress 决定）。
+        gates: { failureRetryable: true, progressMade: true, budgetLeft: bl, attemptsUnderLimit },
+        config,
+      });
+      r.verification = verdict;
+      r.completionNote = buildCompletionNote(verdict);
+
+      const curMissing = new Set(verdict.missing || []);
+      const realProgress = prevMissing === null ? true : isStrictSubset(curMissing, prevMissing); // 闸门 2
+      const wantRerun = verdict.rerun === true && realProgress;
+      if (!wantRerun) {
+        // 若 classify 因乐观 progressMade=true 判成 retryable，但真实无严格收缩→据实降级为永久未达标，避免谎报"可继续"。
+        if (verdict.verdict === VERDICTS.UNMET_RETRYABLE && !realProgress) {
+          const downgraded = { ...verdict, verdict: VERDICTS.UNMET_PERMANENT, reason: 'objective_no_progress', rerun: false, directive: null };
+          r.verification = downgraded;
+          r.completionNote = buildCompletionNote(downgraded);
+        }
+        return r;
+      }
+      verifyAttempt++;
+      prevMissing = curMissing;
+      await rerun(verdict.directive, verdict); // react-loop 追加指令并再跑一轮 reactLoop，就地更新 r.result/executionLog
+    }
   } catch {
-    // 尽力而为：校验环节的异常绝不影响子任务结果与主循环执行序
+    // 尽力而为：校验/重跑环节的异常绝不影响子任务结果与主循环执行序（保留上一轮已写回的 verification/note）
   }
   return r;
 }

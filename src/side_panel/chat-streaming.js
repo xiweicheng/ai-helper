@@ -1930,7 +1930,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     scoreBadge.className = 'reflection-score-btn';
     scoreBadge.type = 'button';
     scoreBadge.title = t('chatStream.qualityAssessmentTitle', { score: reflectionScore, rounds: roundsTag });
-    scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10</span>`;
+    scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}"><span class="reflection-badge-emoji">${scoreEmoji}</span> ${reflectionScore}/10</span>`;
     scoreBadge.dataset.reflectionData = JSON.stringify({
       overallScore: postReflection?.overallScore ?? reflectionScore,
       dimensions: postReflection?.dimensions || null,

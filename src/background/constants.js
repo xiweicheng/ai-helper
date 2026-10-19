@@ -58,6 +58,7 @@ export const DEFAULT_REFLECTION_CONFIG = {
 // 消费点（回炉四闸门、critic 兜底）在 Phase 2 接入，本处仅提供唯一配置来源。
 export const DEFAULT_COMPLETION_VERIFICATION_CONFIG = {
   enabled: false,               // 总开关：关闭时短路所有新逻辑
+  rerunEnabled: false,          // Phase B 子开关：关=仅取证标注（=Phase A 行为，四闸门全 false、命令仅只读硬拦）；开=接通重跑 + agent 三档命令门
   objectiveChecksEnabled: true, // 有 doneCriteria 时优先用确定性取证
   maxRetryAttempts: 1,          // 回炉次数上限（闸门 4）
   perSubtaskTokenBudget: 0,     // 子任务 token 预算，0=不设限（闸门 3）

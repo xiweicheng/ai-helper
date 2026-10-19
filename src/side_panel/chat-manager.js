@@ -1690,7 +1690,7 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       scoreBadge.className = 'reflection-score-btn';
       scoreBadge.type = 'button';
       scoreBadge.title = t('chatMsg.scoreBadgeTitle', { score: reflectionScore, rounds: roundsTag, revised: wasRevised ? t('chatMsg.revisedSuffix') : '' });
-      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}">${scoreEmoji} ${reflectionScore}/10${revisedTag}</span>`;
+      scoreBadge.innerHTML = `<span class="reflection-badge ${scoreColor}"><span class="reflection-badge-emoji">${scoreEmoji}</span> ${reflectionScore}/10${revisedTag}</span>`;
       scoreBadge.dataset.reflectionData = JSON.stringify({
         overallScore: postReflection?.overallScore ?? reflectionScore,
         dimensions: postReflection?.dimensions || null,

@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort, getSessionAncestry } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort, getSessionAncestry, getLastOperatedTab } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT } from './constants.js';
@@ -2014,16 +2014,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
               // 单子任务结果入进度/汇总的统一截断阈值（先声明供进度钩子 onDone 与下方汇总消息共用）
               const SUBTASK_RESULT_MAX_TOKENS = 3000;
               const COMPLETION_NOTE_MAX_TOKENS = 500; // #7：上报文案也纳入 token 护栏
-              // M-new-2：完成度校验取证在"子任务成功的 onDone 内即时"进行（此时该子任务现场尚未被
-              // 后续导航抹掉），不再等整轮 executeSubtasks 结束后统一取证。开关默认关，关闭时
-              // cvEnabled=false，onDone 内校验分支整体短路，现有行为逐字节不变。
-              const cvEnabled = !!(reactConfig.completionVerification && reactConfig.completionVerification.enabled);
-              // 非 DOM 取证（Phase A）：按 check 类型路由——DOM 类走内容脚本，命令/文件类走本地 Agent（仅只读命令）。
-              const cvGatherEvidence = cvEnabled ? createRoutingEvidenceCollector({
-                tabId,
-                execWait: execCommandWait,
-                isOnline: async () => { const c = await getAgentConfig(); return !!(c && c.connected); },
-              }) : null;
+              // 完成度校验取证（Phase B B1）：调用点已下沉到 executeSingleSubtask 内子任务成功当场，
+              // 使 DOM 取证可按子任务派生 sessionId 动态解析工作 tab（#5）。开关默认关（enabled=false）
+              // 时该路径整段短路，现有行为逐字节不变。
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,
@@ -2050,18 +2043,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                     }
                     // 强制立即落 checkpoint：SW 若在下一个子任务执行中被杀，进度已持久化
                     await saveCheckpointNow('subtask_completed', true);
-                    // M-new-2：本子任务成功即刻对其 doneCriteria 取证（现场最新），就地写回
-                    // r.completionNote——r 与 executeSubtasks 推入 results 的是同一引用，汇总处可读。
-                    // 置于 checkpoint 之后，取证往返不拖延进度落盘。
-                    if (cvEnabled) {
-                      await annotateOneSubtaskCompletion(r, subtaskPlan.subtasks, {
-                        gatherEvidence: cvGatherEvidence,
-                        config: reactConfig.completionVerification,
-                        // #11 / M-new-4：用户取消或整体超时即停取证。loopTimeout 只在轮首抛错、从不置
-                        // cancelled，故须显式判 getRemainingTime()<=0，否则预算耗尽后仍逐条发消息取证。
-                        shouldStop: () => isCancelled(tabId) || (sessionId && isCancelled(sessionId)) || getRemainingTime() <= 0,
-                      });
-                    }
+                    // 完成度取证已下沉到 executeSingleSubtask（子任务成功当场、checkpoint 之后），
+                    // 使取证能拿到子任务派生 sessionId 解析工作 tab（#5）；此处 onDone 仅管防重放进度 + 锚点 done + 落盘。
                   },
                 }
               );
@@ -2895,6 +2878,92 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         if (progressHooks?.onDone) {
           try { await progressHooks.onDone(doneResult); } catch (e) {
             logger.warn('[Background] subtask progress onDone failed:', e.message);
+          }
+        }
+        // 完成度取证（Phase B）：在子任务成功、onDone（含 checkpoint 落盘）之后即时取证——
+        // 现场最新且落盘优先于取证往返。#5：DOM 类按调用解析工作 tab（子任务派生 sessionId
+        // 的 lastOperatedTab），消解“取证打到非工作 tab 的假达成”。尽力而为：任何异常吞掉不影响子任务结果。
+        const cvCfg = config && config.reactConfig && config.reactConfig.completionVerification;
+        if (cvCfg && cvCfg.enabled) {
+          try {
+            const cvGatherEvidence = createRoutingEvidenceCollector({
+              tabId,
+              resolveTabId: () => (subtaskSessionId ? getLastOperatedTab(subtaskSessionId) : null) ?? tabId,
+              execWait: execCommandWait,
+              isOnline: async () => { const c = await getAgentConfig(); return !!(c && c.connected); },
+              // 重跑关闭时命令取证沿用只读硬拦（=Phase A）；开重跑时改由 agent 三档门控（B2）。
+              commandReadOnlyGate: !cvCfg.rerunEnabled,
+            });
+            await annotateOneSubtaskCompletion(doneResult, [subtask], {
+              gatherEvidence: cvGatherEvidence,
+              config: cvCfg,
+              shouldStop: () => isCancelled(tabId) || (sessionId && isCancelled(sessionId))
+                || (typeof parentBudget?.getRemainingTimeMs === 'function' && parentBudget.getRemainingTimeMs() <= 0),
+              // 闸门 3（预算）：父剩余时间>0；若配置了 perSubtaskTokenBudget，则需本子任务累计估算 token 未超预算。
+              // rerunEnabled=false 时该回调不被调用（annotateOne 走单趟 Phase A 分支）。
+              budgetLeft: () => {
+                const timeOk = !(typeof parentBudget?.getRemainingTimeMs === 'function' && parentBudget.getRemainingTimeMs() <= 0);
+                const tb = cvCfg.perSubtaskTokenBudget;
+                if (tb > 0) return timeOk && estimateMessagesTokens(subtaskMessages) < tb;
+                return timeOk;
+              },
+              // 重跑执行者：子任务内即时把缺项 directive 追加为该子任务新增 user 上下文，再跑一轮内层 reactLoop。
+              // 仅 rerunEnabled=true 时被 annotateOne 调用；绝不重调 onDone（进度回写/计数器语义不变，红线 6）。
+              rerun: async (directive) => {
+                if (!directive) return;
+                subtaskMessages.push({ role: 'user', content: directive });
+                const rerunRemainMs = typeof parentBudget?.getRemainingTimeMs === 'function'
+                  ? parentBudget.getRemainingTimeMs()
+                  : undefined;
+                const rerunTimeoutMs = computeSubtaskLoopTimeoutMs(rerunRemainMs);
+                const rerunResult = await reactLoop(
+                  subtaskMessages,
+                  model,
+                  subtaskTools,
+                  tabId,
+                  { ...apiParams, subtaskLoopTimeoutMs: rerunTimeoutMs },
+                  subtaskSessionId,
+                  { subtaskId: subtask.id, subtaskName: subtask.name },
+                  (rerunLog) => {
+                    // 实时回显：把重跑这一轮的子日志并入父日志（与首趟同构，仅供展示，不动状态计数器）
+                    const mergedLog = [...parentExecutionLog];
+                    (rerunLog || []).forEach((childLog) => {
+                      mergedLog.push({
+                        ...childLog,
+                        subtaskId: subtask.id,
+                        subtaskName: subtask.name,
+                        subtaskIndex,
+                        taskGroup,
+                        taskGroupIndex: subtaskIndex + 1,
+                        taskGroupName: subtask.name,
+                        isSubtask: true,
+                      });
+                    });
+                    sendSubtaskStatusUpdate(t('reactLoop.subtaskNode', { index: subtaskIndex + 1, name: subtask.name }), 'processing', mergedLog, { taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+                  },
+                  globalIteration
+                );
+                if (rerunResult && Array.isArray(rerunResult.executionLog) && rerunResult.executionLog.length > 0) {
+                  rerunResult.executionLog.forEach((childLog) => {
+                    parentExecutionLog.push({
+                      ...childLog,
+                      subtaskId: subtask.id,
+                      subtaskName: subtask.name,
+                      subtaskIndex,
+                      taskGroup,
+                      taskGroupIndex: subtaskIndex + 1,
+                      taskGroupName: subtask.name,
+                      isSubtask: true,
+                    });
+                  });
+                  doneResult.executionLog = (doneResult.executionLog || []).concat(rerunResult.executionLog);
+                }
+                // 只追写结果内容，供下一轮取证与最终上报使用；不重复 checkpoint 落盘/onDone（红线 6）。
+                doneResult.result = rerunResult && rerunResult.content != null ? rerunResult.content : doneResult.result;
+              },
+            });
+          } catch (e) {
+            logger.warn('[Background] completion verify failed:', e && e.message);
           }
         }
         return doneResult;

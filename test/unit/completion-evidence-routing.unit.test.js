@@ -63,4 +63,26 @@ describe('createRoutingEvidenceCollector - 按 check 类型路由', () => {
     expect(exec).toHaveBeenCalledTimes(2);
     expect(send).not.toHaveBeenCalled();
   });
+
+  // #5：DOM 取证按调用时动态解析工作 tab（resolveTabId 优先，未给/返回空则回落捕获 tabId）。
+  it('DOM 类走 resolveTabId 解析后的 tab；命令类不受影响', async () => {
+    const send = makeSend([{ available: true, pass: true }]);
+    const exec = makeExec({ exitCode: 0 });
+    let resolved = 77; // 模拟 getLastOperatedTab(subtaskSessionId)
+    const c = createRoutingEvidenceCollector({ tabId: 1, resolveTabId: () => resolved, sendMessage: send, execWait: exec });
+    await c({ check: 'element_exists', target: '#a' });
+    expect(send.mock.calls[0][0]).toBe(77); // 打到解析后的 tab，而非捕获的 1
+    // 解析结果变化 → 下一次取证打到新 tab（逐调用解析，非构造时冻结）
+    resolved = 88;
+    await c({ check: 'element_exists', target: '#b' });
+    expect(send.mock.calls[1][0]).toBe(88);
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('resolveTabId 返回空 → 回落捕获 tabId（不劣于现状）', async () => {
+    const send = makeSend([{ available: true, pass: true }]);
+    const c = createRoutingEvidenceCollector({ tabId: 5, resolveTabId: () => null, sendMessage: send, execWait: makeExec({ exitCode: 0 }) });
+    await c({ check: 'element_exists', target: '#a' });
+    expect(send.mock.calls[0][0]).toBe(5);
+  });
 });

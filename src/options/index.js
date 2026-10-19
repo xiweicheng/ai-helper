@@ -1231,12 +1231,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     toolConfirmationEnabledLabel.textContent = toolConfirmationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
-  // 完成度校验开关：切换即写入 completionVerificationConfig（保留其余字段，仅翻 enabled）
+  // 完成度校验开关（一级）：切换即写入 completionVerificationConfig（保留其余字段，仅翻 enabled）；
+  // 并联动收起/展开二级"完成度自动重跑"（显隐方式与 .reflection-sub 一致，不改二级开关的存储值）。
   const completionVerificationEnabledEl = document.getElementById('completionVerificationEnabled');
   const completionVerificationEnabledLabel = document.getElementById('completionVerificationEnabledLabel');
+  const completionVerificationSubItems = document.querySelectorAll('.completion-verification-sub');
+  function updateCompletionSubVisibility() {
+    const show = !!(completionVerificationEnabledEl && completionVerificationEnabledEl.checked);
+    completionVerificationSubItems.forEach((el) => { el.style.display = show ? 'block' : 'none'; });
+  }
   if (completionVerificationEnabledEl && completionVerificationEnabledLabel) {
     completionVerificationEnabledEl.addEventListener('change', function() {
       const enabled = this.checked;
+      updateCompletionSubVisibility();
       completionVerificationEnabledLabel.textContent = enabled ? t('common.enabled') : t('common.disabled');
       chrome.storage.local.get(['completionVerificationConfig'], (result) => {
         const cfg = Object.assign({}, result.completionVerificationConfig || {}, { enabled });
@@ -1244,6 +1251,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     });
     completionVerificationEnabledLabel.textContent = completionVerificationEnabledEl.checked ? t('common.enabled') : t('common.disabled');
+    updateCompletionSubVisibility();
+  }
+
+  // 完成度自动重跑子开关（Phase B）：切换即写入 completionVerificationConfig（保留其余字段，仅翻 rerunEnabled）。
+  // 注：rerunEnabled 仅在上方 enabled=true 时被主循环消费（enabled=false 时整链短路），故无需与 enabled 联动置假。
+  const completionVerificationRerunEnabledEl = document.getElementById('completionVerificationRerunEnabled');
+  const completionVerificationRerunEnabledLabel = document.getElementById('completionVerificationRerunEnabledLabel');
+  if (completionVerificationRerunEnabledEl && completionVerificationRerunEnabledLabel) {
+    completionVerificationRerunEnabledEl.addEventListener('change', function() {
+      const rerunEnabled = this.checked;
+      completionVerificationRerunEnabledLabel.textContent = rerunEnabled ? t('common.enabled') : t('common.disabled');
+      chrome.storage.local.get(['completionVerificationConfig'], (result) => {
+        const cfg = Object.assign({}, result.completionVerificationConfig || {}, { rerunEnabled });
+        chrome.storage.local.set({ completionVerificationConfig: cfg });
+      });
+    });
+    completionVerificationRerunEnabledLabel.textContent = completionVerificationRerunEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
   // 内网地址访问总闸：切换即写入 storage；关闸只改开关与白名单区块的显隐，绝不动 allowedNetworkHosts

@@ -1023,6 +1023,13 @@ export function loadConfig() {
       completionVerificationEl.dispatchEvent(new Event('change'));
     }
 
+    // 加载完成度自动重跑子开关（Phase B；默认关；取同一 config 对象的 rerunEnabled）
+    const completionVerificationRerunEl = document.getElementById('completionVerificationRerunEnabled');
+    if (completionVerificationRerunEl) {
+      completionVerificationRerunEl.checked = !!(result.completionVerificationConfig && result.completionVerificationConfig.rerunEnabled === true);
+      completionVerificationRerunEl.dispatchEvent(new Event('change'));
+    }
+
     // 加载对话配置
 
     

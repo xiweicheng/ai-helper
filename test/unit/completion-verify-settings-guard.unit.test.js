@@ -26,6 +26,18 @@ describe('Phase 4 设置页完成度校验接线守卫', () => {
     expect(HTML).toContain('data-i18n="react.completionVerification"');
   });
 
+  // Phase B：设置页暴露 rerunEnabled 子开关（与 enabled 同构，默认关）。
+  test('①b options.html 暴露完成度自动重跑子开关与 i18n 标签', () => {
+    expect(HTML).toMatch(/<input type="checkbox" id="completionVerificationRerunEnabled">/);
+    expect(HTML).toContain('id="completionVerificationRerunEnabledLabel"');
+    expect(HTML).toContain('data-i18n="react.completionVerificationRerun"');
+  });
+
+  // Phase B：rerun 为完成度校验的二级子开关——HTML 带 completion-verification-sub 类 + 默认收起（display:none）。
+  test('①c options.html rerun 块为二级子项：completion-verification-sub + 默认隐藏', () => {
+    expect(HTML).toMatch(/<div class="react-config-item completion-verification-sub" style="margin-left: 24px; display: none;">[\s\S]*?id="completionVerificationRerunEnabled">/);
+  });
+
   test('② config-io EXPORT_KEYS 白名单含 completionVerificationConfig', () => {
     const keys = IO.match(/const EXPORT_KEYS = \[([\s\S]*?)\];/);
     expect(keys).not.toBeNull();
@@ -38,12 +50,36 @@ describe('Phase 4 设置页完成度校验接线守卫', () => {
     );
   });
 
+  // Phase B：config-manager 从持久化 config 水合 rerunEnabled 子勾选。
+  test('③b config-manager 水合 rerun 子勾选读取 completionVerificationConfig.rerunEnabled', () => {
+    expect(CM).toMatch(
+      /getElementById\('completionVerificationRerunEnabled'\)[\s\S]{0,200}?result\.completionVerificationConfig[\s\S]{0,80}?\.rerunEnabled === true/,
+    );
+  });
+
   test('④ index.js change 处理写回并保留其余字段', () => {
     expect(IDX).toMatch(
-      /document\.getElementById\('completionVerificationEnabled'\)[\s\S]{0,600}?chrome\.storage\.local\.set\(\{ completionVerificationConfig: cfg \}\)/,
+      /document\.getElementById\('completionVerificationEnabled'\)[\s\S]{0,1400}?chrome\.storage\.local\.set\(\{ completionVerificationConfig: cfg \}\)/,
     );
     // 仅翻 enabled：用 Object.assign 保留其余字段
     expect(IDX).toMatch(/Object\.assign\(\{\}, result\.completionVerificationConfig \|\| \{\}, \{ enabled \}\)/);
+  });
+
+  // Phase B：rerun 子开关 change 同样保留其余字段、仅翻 rerunEnabled。
+  test('④b index.js rerun change 处理写回并仅翻 rerunEnabled', () => {
+    expect(IDX).toMatch(
+      /document\.getElementById\('completionVerificationRerunEnabled'\)[\s\S]{0,900}?chrome\.storage\.local\.set\(\{ completionVerificationConfig: cfg \}\)/,
+    );
+    expect(IDX).toMatch(/Object\.assign\(\{\}, result\.completionVerificationConfig \|\| \{\}, \{ rerunEnabled \}\)/);
+  });
+
+  // Phase B：二级可见性——一级 enabled 关闭时收起 completion-verification-sub（与 .reflection-sub 同机制）。
+  test('④c index.js 一级开关联动二级子项显隐（querySelectorAll .completion-verification-sub 按 checked 切换 display）', () => {
+    expect(IDX).toMatch(/querySelectorAll\('\.completion-verification-sub'\)/);
+    expect(IDX).toMatch(/function updateCompletionSubVisibility\(\) \{[\s\S]*?completionVerificationEnabledEl\.checked[\s\S]*?style\.display = show \? 'block' : 'none'/);
+    // 一级 change 与初始化都需调用可见性更新
+    expect(IDX).toMatch(/completionVerificationEnabledEl\.addEventListener\('change'[\s\S]{0,200}?updateCompletionSubVisibility\(\);/);
+    expect(IDX).toMatch(/completionVerificationEnabledEl\.checked[\s\S]{0,120}?updateCompletionSubVisibility\(\);\s*\n\s*\}/);
   });
 
   test('⑤ zh/en locales 均定义 react.completionVerification 文案键', () => {
@@ -52,6 +88,16 @@ describe('Phase 4 设置页完成度校验接线守卫', () => {
       expect(src).toMatch(/completionVerificationHint:/);
       expect(src).toMatch(/completionVerificationDesc1:/);
       expect(src).toMatch(/completionVerificationDesc2:/);
+    }
+  });
+
+  // Phase B：zh/en 均定义 rerun 子开关文案键。
+  test('⑤b zh/en locales 均定义 react.completionVerificationRerun* 文案键', () => {
+    for (const src of [ZH, EN]) {
+      expect(src).toMatch(/completionVerificationRerun:/);
+      expect(src).toMatch(/completionVerificationRerunHint:/);
+      expect(src).toMatch(/completionVerificationRerunDesc1:/);
+      expect(src).toMatch(/completionVerificationRerunDesc2:/);
     }
   });
 

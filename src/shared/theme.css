@@ -102,6 +102,15 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);
   --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.25);
+
+  /* 浮层 elevation：ring 描边 + overlay-rgb 微光晕。值由 --border-strong / --overlay-rgb / --bg-elevated
+     组合而成，这三者已在暗色块覆盖，var() 在使用元素上惰性解析，故只需在 :root 定义一次即随主题自适应。
+     锚定浮层（popover/菜单/工具条/浮动 toast）用 --elev-pop / --elev-float + --elev-surface；
+     真模态沿用 overlay 的 --scrim 遮罩，容器可选升 --elev-surface。 */
+  --elev-ring: 0 0 0 1px var(--border-strong);
+  --elev-pop: var(--elev-ring), 0 2px 10px rgba(var(--overlay-rgb), 0.14);
+  --elev-float: var(--elev-ring), 0 10px 34px rgba(var(--overlay-rgb), 0.20);
+  --elev-surface: var(--bg-elevated);
   --tooltip-bg: rgba(30, 30, 30, 0.92);
   --scrollbar-thumb: #c1c1c1;
   --selection-bg: rgba(102, 126, 234, 0.25);

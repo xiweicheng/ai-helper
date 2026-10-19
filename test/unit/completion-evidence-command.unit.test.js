@@ -101,3 +101,45 @@ describe('createCommandEvidenceCollector - 通道/离线/超时归 indeterminate
     await expect(c({ check: 'command_exit_zero', target: 'ls' })).resolves.toMatchObject({ available: false, reason: 'command_error' });
   });
 });
+
+// B2：rerunEnabled=true（readOnlyGate=false）时去本地只读硬拦，委派 agent 三档门控。
+// allow→执行读退出码；confirm/deny→agent 不执行→indeterminate；force 仍恒 false。
+describe('createCommandEvidenceCollector - agent 三档门控（readOnlyGate=false）', () => {
+  it('非只读 allow 命令（pytest）：本地不拦、发 agent、exit0→pass', async () => {
+    const exec = makeExec({ success: true, level: 'allow', exitCode: 0, stdout: '', stderr: '' });
+    const c = createCommandEvidenceCollector({ execWait: exec, readOnlyGate: false });
+    const r = await c({ check: 'command_exit_zero', target: 'pytest' });
+    expect(r).toEqual({ available: true, pass: true });
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(exec.mock.calls[0][0]).toBe('pytest');
+    expect(exec.mock.calls[0][2]).toBe(false); // 红线：永不 force
+  });
+  it('allow 但 exit≠0 → available true + pass false（真实未达成）', async () => {
+    const exec = makeExec({ success: true, level: 'allow', exitCode: 1 });
+    const c = createCommandEvidenceCollector({ execWait: exec, readOnlyGate: false });
+    await expect(c({ check: 'command_exit_zero', target: 'pytest' })).resolves.toEqual({ available: true, pass: false });
+  });
+  it('agent 返 level:confirm（未执行）→ verify_command_confirm_required、indeterminate', async () => {
+    const exec = makeExec({ success: true, level: 'confirm', reason: '需要确认' });
+    const c = createCommandEvidenceCollector({ execWait: exec, readOnlyGate: false });
+    await expect(c({ check: 'command_exit_zero', target: 'rm -rf ./dist' })).resolves.toMatchObject({ available: false, reason: 'verify_command_confirm_required' });
+  });
+  it('agent 返 403 level:deny（未执行）→ verify_command_denied、indeterminate', async () => {
+    const exec = makeExec({ success: false, level: 'deny', httpStatus: 403, error: '黑名单' });
+    const c = createCommandEvidenceCollector({ execWait: exec, readOnlyGate: false });
+    await expect(c({ check: 'command_exit_zero', target: 'rm -rf /' })).resolves.toMatchObject({ available: false, reason: 'verify_command_denied' });
+  });
+  it('文件类走只读模板：agent allow exit0 → pass（不受只读门影响）', async () => {
+    const exec = makeExec({ success: true, level: 'allow', exitCode: 0 });
+    const c = createCommandEvidenceCollector({ execWait: exec, readOnlyGate: false });
+    const r = await c({ check: 'file_exists', target: '/tmp/a' });
+    expect(r).toEqual({ available: true, pass: true });
+    expect(exec.mock.calls[0][0]).toBe("test -e '/tmp/a'");
+  });
+  it('默认（只读门开）：非只读命令仍被本地拦、不发 agent', async () => {
+    const exec = makeExec({ success: true, level: 'allow', exitCode: 0 });
+    const c = createCommandEvidenceCollector({ execWait: exec }); // readOnlyGate 默认 true
+    await expect(c({ check: 'command_exit_zero', target: 'pytest' })).resolves.toMatchObject({ available: false, reason: 'verify_command_not_readonly' });
+    expect(exec).not.toHaveBeenCalled();
+  });
+});

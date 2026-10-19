@@ -238,6 +238,20 @@ describe('完成度校验 #3：取证不可用文案按 reason 分桶', () => {
     expect(note).toContain('missing_expected');
   });
 
+  // B2：命令三档门控策略性不可评估单独成桶（非判据写法、非通道异常）。
+  test('命令策略类 reason（confirm/deny）→ 文案含“人工确认/安全策略”且带具体码', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [],
+      checkResults: [{ id: 'a', available: false, reason: 'verify_command_confirm_required' }, { id: 'b', available: false, reason: 'verify_command_denied' }],
+    });
+    expect(note).toContain('命令需人工确认或被安全策略拒绝');
+    expect(note).toContain('verify_command_confirm_required');
+    expect(note).toContain('verify_command_denied');
+    // 不应被误归为判据写法错或通道异常
+    expect(note).not.toContain('判据写法');
+    expect(note).not.toContain('取证通道异常');
+  });
+
   test('无 checkResults（向后兼容）→ 回落泛化文案，不崩', () => {
     const note = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [] });
     expect(note).toContain('ℹ️');
