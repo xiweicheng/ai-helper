@@ -29,24 +29,30 @@ registerTranslations('zh', {
   clarify: {
     remainingTimeDynamic: '剩余时间: {time}',
     timeoutSoon: '时间即将耗尽',
-    sessionNameTitle: '当前会话名称',
+    sessionNameTitle: '{title}',
     sessionNameId: '会话 ID: {id}',
     recommended: '推荐',
-    otherOption: '其他选项',
+    otherOption: '其他（自定义输入）',
     timedOut: '已超时',
     dropped: '澄清弹窗无法显示，已按未澄清继续',
+    extend: '延长时间',
+    extended: '已延长倒计时',
+    extendLimit: '已达延长上限',
   },
 });
 registerTranslations('en', {
   clarify: {
     remainingTimeDynamic: 'Remaining time: {time}',
     timeoutSoon: 'Time is almost up',
-    sessionNameTitle: 'Current session name',
+    sessionNameTitle: '{title}',
     sessionNameId: 'Session ID: {id}',
     recommended: 'Recommended',
-    otherOption: 'Other options',
+    otherOption: 'Other (custom input)',
     timedOut: 'Timed out',
     dropped: 'Clarification dialog could not be shown; continuing as unanswered',
+    extend: 'Extend time',
+    extended: 'Countdown extended',
+    extendLimit: 'Extend limit reached',
   },
 });
 
@@ -54,6 +60,10 @@ registerTranslations('en', {
 const clarifyQueue = [];
 // 正在呈现的澄清请求（无则为 null）
 let visibleClarify = null;
+
+// 延长倒计时：剩余可延长次数（null=尚未由后台告知，按允许处理）、请求在途标志
+let clarifyExtendsLeft = null;
+let clarifyExtendPending = false;
 
 export function formatTimeDisplay(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -106,6 +116,12 @@ export function updateClarifyTimer(remainingSeconds, totalSeconds) {
   
   // 计算剩余百分比
   const percentage = (remainingSeconds / totalSeconds) * 100;
+
+  // 进度条宽度表达剩余比例
+  const barFill = document.getElementById('clarifyTimerBarFill');
+  if (barFill) {
+    barFill.style.width = `${Math.max(0, Math.min(100, percentage))}%`;
+  }
   
   // 根据剩余时间设置样式
   timerElement.classList.remove('warning', 'critical');
@@ -117,6 +133,12 @@ export function updateClarifyTimer(remainingSeconds, totalSeconds) {
   } else if (remainingSeconds <= 30 || percentage <= 15) {
     // 最后 30 秒或 15%：警告状态
     timerElement.classList.add('warning');
+  }
+
+  // 延长按钮：剩余偏低（≤60s 或 ≤30%）时高亮浮现，引导用户主动续时
+  const extendBtn = document.getElementById('clarifyExtendBtn');
+  if (extendBtn) {
+    extendBtn.classList.toggle('show', remainingSeconds <= 60 || percentage <= 30);
   }
   
   // 播放提示音（最后 30 秒时）
@@ -156,6 +178,60 @@ export function stopClarifyTimer() {
     clearInterval(state.clarifyTimerInterval);
     state.clarifyTimerInterval = null;
   }
+}
+
+/** 按剩余可延长次数与在途标志刷新延长按钮的禁用/文案 */
+function refreshExtendBtnState() {
+  const extendBtn = document.getElementById('clarifyExtendBtn');
+  if (!extendBtn) return;
+  const exhausted = clarifyExtendsLeft === 0;
+  extendBtn.disabled = exhausted || clarifyExtendPending;
+  extendBtn.textContent = exhausted ? t('clarify.extendLimit') : t('clarify.extend');
+}
+
+/** 用户点击“延长时间”：上行一条 CLARIFY_EXTEND，由后台重置权威计时器并回 CLARIFY_EXTENDED */
+export function requestClarifyExtend() {
+  if (!visibleClarify || clarifyExtendPending) return;
+  if (clarifyExtendsLeft === 0) return;
+  clarifyExtendPending = true;
+  refreshExtendBtnState();
+  Promise.resolve(chrome.runtime.sendMessage({
+    type: 'CLARIFY_EXTEND',
+    toolCallId: visibleClarify.toolCallId,
+    sessionId: visibleClarify.sessionId,
+  })).catch((err) => {
+    logger.debug('[SidePanel] send clarify extend failed:', err?.message);
+  });
+  // 回执丢失兜底：3s 后若仍无回音，解除在途锁让用户可重试（后台仍以自身上限为准）
+  setTimeout(() => {
+    if (clarifyExtendPending) {
+      clarifyExtendPending = false;
+      refreshExtendBtnState();
+    }
+  }, 3000);
+}
+
+/**
+ * 处理后台延长回执（port 定向与广播两条通道共用）：
+ * 按 toolCallId 精确匹配当前可见条，重启镜像倒计时并刷新按钮次数。
+ * @param {Object} message - { toolCallId, remainingMs, extendsLeft, denied }
+ */
+export function handleClarifyExtended(message) {
+  const toolCallId = message?.toolCallId;
+  if (!visibleClarify || visibleClarify.toolCallId !== toolCallId) return;
+  clarifyExtendPending = false;
+  if (message.denied || typeof message.remainingMs !== 'number') {
+    clarifyExtendsLeft = 0;
+    refreshExtendBtnState();
+    showToast(t('clarify.extendLimit'), 'warning');
+    return;
+  }
+  clarifyExtendsLeft = typeof message.extendsLeft === 'number' ? message.extendsLeft : clarifyExtendsLeft;
+  // 以后台权威的新窗口重启倒计时（与后台 armCountdown 同值）
+  startClarifyTimer(message.remainingMs);
+  refreshExtendBtnState();
+  showToast(t('clarify.extended'), 'success');
+  logger.debug('[SidePanel] clarify extended, remainingMs:', message.remainingMs, 'left:', clarifyExtendsLeft);
 }
 
 /**
@@ -213,13 +289,17 @@ function renderActiveClarify(item) {
       const session = state.sessions.find(s => s.id === sessionId);
       if (session) {
         sessionNameEl.textContent = t('clarify.sessionNameTitle', { title: session.title });
+        // 会话名在标题下方另起一行（block）；过长时单行省略，靠 title 悬浮看全名
         sessionNameEl.style.display = 'block';
+        sessionNameEl.title = session.title || '';
       } else {
         sessionNameEl.textContent = t('clarify.sessionNameId', { id: sessionId.substring(0, 8) });
         sessionNameEl.style.display = 'block';
+        sessionNameEl.title = sessionId;
       }
     } else {
       sessionNameEl.textContent = '';
+      sessionNameEl.title = '';
       sessionNameEl.style.display = 'none';
     }
   }
@@ -249,6 +329,9 @@ function renderActiveClarify(item) {
       const el = document.createElement('div');
       el.className = `clarify-option-item ${finalDefaultOption === index ? 'selected' : ''} ${isRecommended ? 'recommended' : ''}`;
       el.dataset.index = index;
+      el.setAttribute('role', 'radio');
+      el.setAttribute('aria-checked', finalDefaultOption === index ? 'true' : 'false');
+      el.setAttribute('tabindex', finalDefaultOption === index ? '0' : '-1');
       el.innerHTML = `
         <div class="clarify-option-radio"></div>
         <div class="clarify-option-content">${option}${isRecommended ? `<span class="clarify-option-badge">${t('clarify.recommended')}</span>` : ''}</div>
@@ -262,6 +345,9 @@ function renderActiveClarify(item) {
       const otherItem = document.createElement('div');
       otherItem.className = 'clarify-option-item';
       otherItem.dataset.index = -1;
+      otherItem.setAttribute('role', 'radio');
+      otherItem.setAttribute('aria-checked', 'false');
+      otherItem.setAttribute('tabindex', '-1');
       otherItem.innerHTML = `
         <div class="clarify-option-radio"></div>
         <div class="clarify-option-content clarify-option-other">${t('clarify.otherOption')}</div>
@@ -301,6 +387,17 @@ function renderActiveClarify(item) {
 
   // 显示对话框
   overlay.classList.add('show');
+
+  // 新一条从顶部开始呈现：重置中间滚动区，并清掉上一条遗留的 Header 滚动阴影
+  const clarifyContent = document.querySelector('#clarifyContainer .clarify-content');
+  const clarifyHeader = document.querySelector('#clarifyContainer .clarify-header');
+  if (clarifyContent) clarifyContent.scrollTop = 0;
+  if (clarifyHeader) clarifyHeader.classList.remove('scrolled');
+
+  // 新一条重置延长额度：后台每条澄清各自计数，面板不得沿用上一条的禁用态
+  clarifyExtendsLeft = null;
+  clarifyExtendPending = false;
+  refreshExtendBtnState();
 
   // 启动倒计时（与后台计时同起点：两者都以"本条真正呈现"为准）
   startClarifyTimer(timeout);
@@ -428,12 +525,16 @@ export function selectClarifyOption(index) {
   // 移除所有选中状态
   document.querySelectorAll('.clarify-option-item').forEach(item => {
     item.classList.remove('selected');
+    item.setAttribute('aria-checked', 'false');
+    item.setAttribute('tabindex', '-1');
   });
   
   // 添加当前选中状态 - 根据 dataset.index 查找对应元素
   const selectedItem = document.querySelector(`.clarify-option-item[data-index="${index}"]`);
   if (selectedItem) {
     selectedItem.classList.add('selected');
+    selectedItem.setAttribute('aria-checked', 'true');
+    selectedItem.setAttribute('tabindex', '0');
   }
   
   // 显示/隐藏自定义输入区域
@@ -591,8 +692,23 @@ export function initClarifyEvents() {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', cancelClarify);
   }
+
+  // 延长时间按钮
+  const extendBtn = document.getElementById('clarifyExtendBtn');
+  if (extendBtn) {
+    extendBtn.addEventListener('click', requestClarifyExtend);
+  }
   
   // 不响应遮罩层点击关闭（防止误触导致澄清卡死）
+
+  // Header 滚动阴影：中间内容区真正滚动时，固定 Header 底部浮现阴影
+  const clarifyContent = document.querySelector('#clarifyContainer .clarify-content');
+  const clarifyHeader = document.querySelector('#clarifyContainer .clarify-header');
+  if (clarifyContent && clarifyHeader) {
+    clarifyContent.addEventListener('scroll', () => {
+      clarifyHeader.classList.toggle('scrolled', clarifyContent.scrollTop > 2);
+    });
+  }
   
   // 监听来自 background.js 的澄清请求
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -608,6 +724,8 @@ export function initClarifyEvents() {
       sendResponse({ success: true });
     } else if (message.type === 'CLARIFY_TIMEOUT') {
       handleClarifyTimeout(message);
+    } else if (message.type === 'CLARIFY_EXTENDED') {
+      handleClarifyExtended(message);
     }
   });
   

@@ -2,7 +2,7 @@
 // 从 index.js 提取的聊天相关函数
 
 import state from './state.js';
-import { showClarifyDialog, handleClarifyTimeout } from './clarify-dialog.js';
+import { showClarifyDialog, handleClarifyTimeout, handleClarifyExtended } from './clarify-dialog.js';
 import { showConfirmDialog, dismissConfirmDialog } from './confirm-dialog.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig, formatChatTime, formatChatTimeFull } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
@@ -3292,6 +3292,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       showClarifyDialog(msg.data);
     } else if (msg.type === 'CLARIFY_TIMEOUT') {
       handleClarifyTimeout(msg);
+    } else if (msg.type === 'CLARIFY_EXTENDED') {
+      handleClarifyExtended(msg);
     } else if (msg.type === 'SHOW_CONFIRM_DIALOG') {
       showConfirmDialog(msg.data);
     } else if (msg.type === 'DISMISS_CONFIRM_DIALOG') {

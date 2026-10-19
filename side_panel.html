@@ -847,24 +847,27 @@
   
   <!-- 问题澄清对话框 -->
   <div class="clarify-overlay" id="clarifyOverlay">
-    <div class="clarify-container" id="clarifyContainer">
-      <div class="clarify-content">
-        <div class="clarify-header">
-          <div class="clarify-icon">💡</div>
-          <div class="clarify-header-content">
-            <div class="clarify-title" data-i18n="clarify.title">需要您的澄清</div>
-            <div class="clarify-session-name" id="clarifySessionName"></div>
-            <div class="clarify-question" id="clarifyQuestion"></div>
+    <div class="clarify-container" id="clarifyContainer" role="dialog" aria-modal="true" aria-labelledby="clarifyTitleText">
+      <div class="clarify-header">
+        <div class="clarify-icon">💡</div>
+        <div class="clarify-header-content">
+          <div class="clarify-title-row">
+            <div class="clarify-title"><span id="clarifyTitleText" data-i18n="clarify.title">需要您的澄清</span></div>
             <div class="clarify-timer" id="clarifyTimer">
-              <span class="clarify-timer-icon">⏱️</span>
               <span id="clarifyTimerText" data-i18n="clarify.remainingTime">剩余时间: 3:00</span>
+              <div class="clarify-timer-bar"><div class="clarify-timer-bar-fill" id="clarifyTimerBarFill"></div></div>
+              <button class="clarify-extend-btn" id="clarifyExtendBtn" type="button" data-i18n="clarify.extend">延长时间</button>
             </div>
           </div>
+          <div class="clarify-session-name" id="clarifySessionName"></div>
         </div>
+      </div>
+      <div class="clarify-content">
+        <div class="clarify-question" id="clarifyQuestion"></div>
 
         <div class="clarify-options" id="clarifyOptions">
           <div class="clarify-options-title" data-i18n="clarify.selectOption">请选择一个选项</div>
-          <div id="clarifyOptionsList">
+          <div id="clarifyOptionsList" role="radiogroup">
             <div class="clarify-custom-input" id="clarifyCustomInput">
               <textarea class="clarify-custom-textarea" id="clarifyCustomTextarea" data-i18n-placeholder="clarify.customPlaceholder" placeholder="请输入您的自定义内容..."></textarea>
             </div>
@@ -873,7 +876,6 @@
 
         <div class="clarify-additional-info" id="clarifyAdditionalInfo">
           <div class="clarify-additional-title" data-i18n="clarify.additionalTitle">补充说明（可选）</div>
-          <div class="clarify-additional-hint" data-i18n="clarify.additionalHint">如果您有更多相关信息，可以在此补充说明</div>
           <textarea class="clarify-additional-textarea" id="clarifyAdditionalTextarea" data-i18n-placeholder="clarify.inputPlaceholder" placeholder="请输入补充信息（可选）..."></textarea>
         </div>
       </div>

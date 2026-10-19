@@ -2547,6 +2547,9 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     let clarifyResponseHandler = null;
     let sidePanelCheckId = null;
     let countdownStarted = false;
+    // 用户手动延长倒计时的次数上限（防被遗忘后无限延长→任务悬挂）；每次延长一个完整超时窗口
+    const CLARIFY_MAX_EXTENDS = 3;
+    let extendCount = 0;
     
     /**
      * 清理函数：确保监听器和计时器都被正确清理
@@ -2570,11 +2573,8 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
      * 面板真正把这一条澄清呈现出来后启动超时计时（计时约定见 constants）：
      * 面板侧确认与澄清共用单模态闸门，排队而未被看到的澄清不得消耗用户时间。
      */
-    const startCountdown = () => {
-      if (countdownStarted) return;
-      countdownStarted = true;
-      console.log('[Background] clarification dialogdisplayed, timeout:', clarifyTimeout, 'ms');
-
+    const armCountdown = (ms) => {
+      if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         console.error('[Background] clarification dialogtimeout');
         cleanup(); // 确保清理
@@ -2593,7 +2593,14 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
           error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
           tool_call_id: toolCallId 
         });
-      }, clarifyTimeout);
+      }, ms);
+    };
+
+    const startCountdown = () => {
+      if (countdownStarted) return;
+      countdownStarted = true;
+      console.log('[Background] clarification dialogdisplayed, timeout:', clarifyTimeout, 'ms');
+      armCountdown(clarifyTimeout);
     };
 
     /**
@@ -2607,6 +2614,30 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         msg.data.toolCallId === toolCallId
       ) {
         startCountdown();
+        return;
+      }
+
+      // 用户请求延长倒计时：仅在已呈现起计后、未结算时有效
+      // （结算后 cleanup 已移除本监听器，迟到的延长消息会被自然忽略）
+      if (msg.type === 'CLARIFY_EXTEND' && msg.toolCallId === toolCallId) {
+        if (!countdownStarted) return;
+        if (extendCount >= CLARIFY_MAX_EXTENDS) {
+          sendToInitiator({
+            type: 'CLARIFY_EXTENDED',
+            toolCallId, sessionId,
+            remainingMs: null, extendsLeft: 0, denied: true,
+          });
+          return;
+        }
+        extendCount++;
+        armCountdown(clarifyTimeout);
+        console.log(`[Background] clarify extended (${extendCount}/${CLARIFY_MAX_EXTENDS}): ${toolCallId}`);
+        sendToInitiator({
+          type: 'CLARIFY_EXTENDED',
+          toolCallId, sessionId,
+          remainingMs: clarifyTimeout,
+          extendsLeft: CLARIFY_MAX_EXTENDS - extendCount,
+        });
         return;
       }
 

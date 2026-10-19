@@ -105,6 +105,18 @@ async function drainToTimeout(toolCallId) {
   await vi.advanceTimersByTimeAsync(300000 + 1000);
 }
 
+/** 模拟面板用户点击“延长时间”上行 CLARIFY_EXTEND */
+function sendExtend(toolCallId) {
+  for (const l of [...messageListeners]) {
+    l({ type: 'CLARIFY_EXTEND', toolCallId }, {}, noop);
+  }
+}
+
+/** 从 port 已发送消息中挑出后台的延长回执 CLARIFY_EXTENDED */
+function extendedMsgs(port) {
+  return port.postMessage.mock.calls.map((c) => c[0]).filter((m) => m.type === 'CLARIFY_EXTENDED');
+}
+
 describe('keepalive port 注册表（定向路由基础设施）', () => {
   test('register → get/has 返回注册的 port；unregister 后失效', () => {
     const port = makePort();
@@ -274,5 +286,95 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
     } finally {
       globalThis.chrome.runtime.getContexts = original;
     }
+  });
+});
+
+describe('澄清倒计时手动延长（后台权威计时器重置）', () => {
+  test('延长重置超时：从延长点重新起一个完整窗口', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('s-ext1', port);
+
+    const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-ext1', 's-ext1');
+    await vi.advanceTimersByTimeAsync(0);
+    markDisplayed('tc-ext1');
+    await vi.advanceTimersByTimeAsync(200000); // 已走 200s（<300s）
+
+    let settled = false;
+    p.then(() => { settled = true; });
+
+    sendExtend('tc-ext1');
+    await vi.advanceTimersByTimeAsync(0);
+    const ext = extendedMsgs(port);
+    expect(ext[0].remainingMs).toBe(300000);
+    expect(ext[0].extendsLeft).toBe(2);
+
+    // 从延长点再走 200s：累计 400s 但已重置，距延长仅 200s，未超时
+    await vi.advanceTimersByTimeAsync(200000);
+    expect(settled).toBe(false);
+
+    // 再走 150s（距延长 350s > 300s）→ 超时结算
+    await vi.advanceTimersByTimeAsync(150000);
+    const result = await p;
+    expect(result.success).toBe(false);
+    expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT')).toBe(true);
+
+    bgState.unregisterKeepalivePort('s-ext1');
+  });
+
+  test('延长次数上限：第 4 次被拒（denied），前 3 次 extendsLeft 递减', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('s-ext2', port);
+
+    const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-ext2', 's-ext2');
+    await vi.advanceTimersByTimeAsync(0);
+    markDisplayed('tc-ext2');
+
+    for (let i = 0; i < 4; i++) {
+      sendExtend('tc-ext2');
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    const ext = extendedMsgs(port);
+    expect(ext.length).toBe(4);
+    expect(ext[0].extendsLeft).toBe(2);
+    expect(ext[1].extendsLeft).toBe(1);
+    expect(ext[2].extendsLeft).toBe(0);
+    expect(ext[3].denied).toBe(true);
+    expect(ext[3].remainingMs).toBeNull();
+
+    // 收敛：最后一次成功延长后计时器仍在跑，推进到超时
+    await vi.advanceTimersByTimeAsync(300000 + 1000);
+    await p;
+    bgState.unregisterKeepalivePort('s-ext2');
+  });
+
+  test('未呈现（未起计时）时延长无效：不回 CLARIFY_EXTENDED', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('s-ext3', port);
+
+    const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-ext3', 's-ext3');
+    await vi.advanceTimersByTimeAsync(0);
+    sendExtend('tc-ext3');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(extendedMsgs(port).length).toBe(0);
+
+    await drainToTimeout('tc-ext3');
+    await p;
+    bgState.unregisterKeepalivePort('s-ext3');
+  });
+
+  test('toolCallId 不匹配的延长被忽略（并行子任务不串台）', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('s-ext4', port);
+
+    const p = executeClarifyQuestion({ question: 'q?', options: ['a'] }, 'tc-ext4', 's-ext4');
+    await vi.advanceTimersByTimeAsync(0);
+    markDisplayed('tc-ext4');
+    sendExtend('other-tool-call-id');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(extendedMsgs(port).length).toBe(0);
+
+    await drainToTimeout('tc-ext4');
+    await p;
+    bgState.unregisterKeepalivePort('s-ext4');
   });
 });

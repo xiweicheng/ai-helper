@@ -8991,8 +8991,8 @@ body {
 .clarify-container {
   background: var(--bg-surface);
   border-radius: 16px;
-  max-width: 420px;
-  width: 90%;
+  /* 响应式宽度：随侧边栏变宽而变宽，上限 720px 保证可读行宽 */
+  width: min(92%, 720px);
   max-height: 80vh;
   box-shadow: 0 20px 60px var(--shadow-md);
   animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -9047,6 +9047,66 @@ body {
   margin-bottom: 4px;
 }
 
+/* 固定 Header：图标+标题+会话名居左，倒计时居右；内容多时仅中间区滚动 */
+#clarifyContainer .clarify-header {
+  flex-shrink: 0;
+  align-items: center;
+  margin: 0;
+  padding: 16px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 16px 16px 0 0;
+  transition: box-shadow 0.2s ease;
+}
+
+/* 内容真正滚动时，Header 底部浮现轻阴影（与 footer 阴影呼应） */
+#clarifyContainer .clarify-header.scrolled {
+  box-shadow: 0 6px 12px -8px rgba(0, 0, 0, 0.28);
+}
+
+#clarifyContainer .clarify-header-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 标题行：弹框标题居左、倒计时居右，同一行 */
+#clarifyContainer .clarify-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 标题与会话名各自单行省略：再长也不换行撑高固定 Header、不挤瘪内容区 */
+#clarifyContainer .clarify-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 选项区适度收紧：多数 3-5 项默认一屏看全、免滚动（触控热区仍 ≥36px） */
+#clarifyContainer .clarify-content {
+  padding: 20px;
+}
+
+#clarifyContainer .clarify-question {
+  margin-bottom: 12px;
+}
+
+#clarifyContainer .clarify-options-title {
+  margin-bottom: 8px;
+}
+
+#clarifyContainer .clarify-option-item {
+  padding: 9px 12px;
+  margin-bottom: 6px;
+}
+
+#clarifyContainer .clarify-options {
+  margin-bottom: 12px;
+}
+
 .clarify-question {
   font-size: 14px;
   color: var(--text-secondary);
@@ -9057,42 +9117,94 @@ body {
 .clarify-session-name {
   display: none;
   font-size: 12px;
-  color: var(--brand-500);
-  background: rgba(var(--brand-rgb), 0.08);
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-bottom: 4px;
-  font-weight: 500;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* 倒计时：固定 Header 右侧，小号文字 + 细进度条 */
 .clarify-timer {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
-  margin-top: 6px;
-  padding: 4px 8px;
+  transition: color 0.3s ease;
+}
+
+.clarify-timer-bar {
+  width: 64px;
+  height: 2px;
+  border-radius: 2px;
   background: var(--bg-subtle);
-  border-radius: 6px;
-  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.clarify-timer-bar-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 2px;
+  background: var(--text-tertiary);
+  transition: width 1s linear, background 0.3s ease;
 }
 
 .clarify-timer.warning {
-  background: var(--danger-soft-bg);
-  color: var(--danger-500);
-  animation: pulse 1s infinite;
+  color: var(--warning-500);
+}
+
+.clarify-timer.warning .clarify-timer-bar-fill {
+  background: var(--warning-500);
 }
 
 .clarify-timer.critical {
-  background: var(--danger-soft-bg);
   color: var(--danger-strong);
   font-weight: 600;
-  animation: pulse 0.5s infinite;
+  animation: pulse 0.8s infinite;
 }
 
-.clarify-timer-icon {
-  font-size: 14px;
+.clarify-timer.critical .clarify-timer-bar-fill {
+  background: var(--danger-strong);
+}
+
+/* 延长时间按钮：默认隐藏，剩余时间偏低时由 JS 加 .show 高亮浮现（#clarifyContainer 作用域，不影响确认弹框） */
+#clarifyContainer .clarify-extend-btn {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--brand-500);
+  background: var(--brand-soft-bg);
+  border: 1px solid var(--brand-500);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#clarifyContainer .clarify-extend-btn.show {
+  display: inline-flex;
+}
+
+#clarifyContainer .clarify-extend-btn:hover {
+  background: var(--brand-500);
+  color: var(--text-on-brand);
+}
+
+#clarifyContainer .clarify-extend-btn:disabled {
+  display: inline-flex;
+  color: var(--text-tertiary);
+  background: transparent;
+  border-color: var(--border-default);
+  cursor: not-allowed;
 }
 
 @keyframes pulse {
@@ -9112,12 +9224,6 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.clarify-options-title::before {
-  content: '1.';
-  color: var(--brand-500);
-  font-weight: 600;
 }
 
 .clarify-option-item {
@@ -9184,22 +9290,11 @@ body {
 }
 
 .clarify-option-item.selected .clarify-option-content {
-  color: var(--brand-500);
   font-weight: 500;
 }
 
 .clarify-option-item.recommended {
-  border-color: var(--warning-500);
-  background: linear-gradient(135deg, var(--warning-soft-bg) 0%, var(--warning-soft-bg) 100%);
-}
-
-.clarify-option-item.recommended .clarify-option-radio {
-  border-color: var(--warning-500);
-}
-
-.clarify-option-item.recommended.selected .clarify-option-radio {
-  background: var(--warning-500);
-  border-color: var(--warning-500);
+  box-shadow: inset 3px 0 0 var(--warning-500);
 }
 
 .clarify-option-badge {
@@ -9273,27 +9368,15 @@ body {
   gap: 6px;
 }
 
-.clarify-additional-title::before {
-  content: '2.';
-  color: var(--brand-500);
-  font-weight: 600;
-}
-
-.clarify-additional-hint {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-bottom: 8px;
-}
-
 .clarify-additional-textarea {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--border-default);
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 14px;
   resize: vertical;
-  min-height: 80px;
-  max-height: 150px;
+  min-height: 56px;
+  max-height: 140px;
   font-family: inherit;
   outline: none;
   transition: all 0.2s ease;
@@ -9313,6 +9396,31 @@ body {
   border-radius: 0 0 16px 16px;
   box-shadow: 0 -2px 10px rgba(var(--overlay-rgb), 0.08);
   flex-shrink: 0;
+}
+
+/* 澄清弹框底部：取消降为轻量文字按钮，确认保持主操作地位（不影响共用样式的确认弹框） */
+#clarifyContainer .clarify-footer {
+  justify-content: flex-end;
+}
+
+#clarifyContainer .clarify-btn {
+  flex: 0 0 auto;
+  padding: 12px 22px;
+}
+
+#clarifyContainer .clarify-btn.cancel {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+#clarifyContainer .clarify-btn.cancel:hover {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
+
+#clarifyContainer .clarify-btn.confirm {
+  flex: 1;
+  max-width: 220px;
 }
 
 .clarify-btn {
@@ -10023,12 +10131,11 @@ body {
 }
 
 .clarify-option-other {
-  color: var(--text-tertiary);
-  font-style: italic;
+  color: var(--text-secondary);
 }
 
 .clarify-option-item.selected .clarify-option-other {
-  color: var(--brand-500);
+  color: var(--text-primary);
 }
 
 /* 执行日志按钮样式 */
