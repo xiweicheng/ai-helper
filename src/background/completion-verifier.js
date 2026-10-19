@@ -51,13 +51,15 @@ registerTranslations('en', {
 
 /**
  * 构造"还缺什么"的纠正指令（user-role，回灌主循环驱动再来一轮）。
- * 只点名取证未通过的缺项，已通过项不出现，避免模型重复已完成动作。
+ * 只点名"可取证且未通过"的缺项（与 classifyVerdict 的 missing 对齐）：已通过项、以及
+ * available===false 的不可评估项（通道不可用/命令需确认或被拒）一律不点名——
+ * 红线 #4：绝不把"取不到证"谎报成"确证未达成"并叫模型去补。缺 available 字段的旧入参视为可评估。
  * @param {Array} criteria normalizeDoneCriteria 的输出
- * @param {Array<{id:string, pass:boolean}>} checkResults 取证结果
+ * @param {Array<{id:string, pass:boolean, available?:boolean}>} checkResults 取证结果
  * @returns {string}
  */
 export function buildMissingCriteriaDirective(criteria, checkResults) {
-  const failedIds = new Set(checkResults.filter((r) => !r.pass).map((r) => r.id));
+  const failedIds = new Set(checkResults.filter((r) => r.available !== false && !r.pass).map((r) => r.id));
   const lines = criteria
     .filter((c) => failedIds.has(c.id))
     .map((c) => `- ${describeCriterion(c)}`);

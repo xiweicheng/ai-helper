@@ -149,4 +149,21 @@ describe('buildMissingCriteriaDirective：纯文本纠正指令', () => {
     expect(d).toContain('home');
     expect(d).not.toContain('#go'); // 已通过项不应被列入待补齐
   });
+
+  // 安全红线 #4：available:false（取不到证：confirm/deny/页面不可达）绝不能被 directive 谎报成"确证未达成"并叫模型去补。
+  test('available:false 的不可评估项不得进入 directive（与 missing 对齐，不谎报未达）', () => {
+    const criteria = [
+      { id: 'a', check: 'element_exists', target: '#go' },
+      { id: 'c', check: 'command_exit_zero', target: 'npm test' },
+    ];
+    // a 可取证且未达；c 取不到证（pass 是占位 false）
+    const checkResults = [
+      { id: 'a', check: 'element_exists', pass: false, available: true },
+      { id: 'c', check: 'command_exit_zero', pass: false, available: false, reason: 'verify_command_confirm_required' },
+    ];
+    const d = buildMissingCriteriaDirective(criteria, checkResults);
+    expect(d).toContain('element_exists'); // 真缺项点名
+    expect(d).not.toContain('npm test'); // 不可评估项绝不点名
+    expect(d).not.toContain('command_exit_zero');
+  });
 });
