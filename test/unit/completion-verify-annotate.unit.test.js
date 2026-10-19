@@ -199,3 +199,54 @@ describe('可读性修复 #1/#4', () => {
     expect(note).not.toBe(un);
   });
 });
+
+// #3：evidence_unavailable/partial 文案按逐条 reason 分桶（判据写法 vs 目标页不可达），附具体码供模型修正。
+describe('完成度校验 #3：取证不可用文案按 reason 分桶', () => {
+  test('判据类 reason → 文案含“判据写法”且带具体码', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [],
+      checkResults: [{ id: 'a', available: false, reason: 'invalid_selector' }, { id: 'b', available: false, reason: 'missing_expected' }],
+    });
+    expect(note).toContain('判据写法');
+    expect(note).toContain('invalid_selector');
+    expect(note).toContain('missing_expected');
+  });
+
+  test('通道类 reason → 文案含“目标页不可达”', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [],
+      checkResults: [{ id: 'a', available: false, reason: 'channel_no_receiver' }],
+    });
+    expect(note).toContain('目标页不可达');
+  });
+
+  test('混合→两类码都列入（供模型逐条修正）', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [],
+      checkResults: [{ id: 'a', available: false, reason: 'invalid_selector' }, { id: 'b', available: false, reason: 'page_unreachable' }],
+    });
+    expect(note).toContain('invalid_selector');
+    expect(note).toContain('page_unreachable');
+  });
+
+  test('evidence_partial 也带 detail（仅统计不可用项的 reason）', () => {
+    const note = buildCompletionNote({
+      verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_partial', criteria: [],
+      checkResults: [{ id: 'a', available: true, pass: true }, { id: 'b', available: false, reason: 'missing_expected' }],
+    });
+    expect(note).toContain('部分');
+    expect(note).toContain('missing_expected');
+  });
+
+  test('无 checkResults（向后兼容）→ 回落泛化文案，不崩', () => {
+    const note = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [] });
+    expect(note).toContain('ℹ️');
+  });
+
+  // #1 补充：所有判据因 check 类型不受支持/非法被 normalize 丢弃时，文案需提示“已被忽略”而非只说“无可机检断言”。
+  test('no_evidence 文案提示不支持/非法的 check 类型已被忽略', () => {
+    const note = buildCompletionNote({ verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'no_evidence', criteria: [] });
+    expect(note).toContain('ℹ️');
+    expect(note).toContain('被忽略');
+  });
+});

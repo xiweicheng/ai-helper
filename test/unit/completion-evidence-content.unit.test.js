@@ -134,7 +134,50 @@ describe('evaluateDoneCriteria M-new-3：求不出值一律 available:false（�
   });
 });
 
-describe('evaluateDoneCriteria：输入形状兜底', () => {
+describe('evaluateDoneCriteria #1：available:false 带机器可读 reason 码（供上层分文案）', () => {
+  test('非法选择器 → reason:invalid_selector', () => {
+    const [r] = evaluateDoneCriteria([{ id: 'a', check: 'element_exists', target: '##[[bad' }]);
+    expect(r.available).toBe(false);
+    expect(r.reason).toBe('invalid_selector');
+  });
+
+  test('element_absent 缺 target → reason:empty_target', () => {
+    const [r] = evaluateDoneCriteria([{ id: 'a', check: 'element_absent' }]);
+    expect(r.reason).toBe('empty_target');
+  });
+
+  test('text_contains 无待查文本 → reason:missing_expected', () => {
+    const [r] = evaluateDoneCriteria([{ id: 'a', check: 'text_contains' }]);
+    expect(r.reason).toBe('missing_expected');
+  });
+
+  test('url_matches 无 pattern → reason:empty_target；无 href → reason:no_href', () => {
+    const [noPat] = evaluateDoneCriteria([{ id: 'a', check: 'url_matches' }], document, { href: 'https://x' });
+    expect(noPat.reason).toBe('empty_target');
+    const [noHref] = evaluateDoneCriteria([{ id: 'b', check: 'url_matches', target: '/x' }], document, {});
+    expect(noHref.reason).toBe('no_href');
+  });
+
+  test('attribute_equals 坏 attr=value → reason:missing_expected；非法选择器 → invalid_selector', () => {
+    const [badFmt] = evaluateDoneCriteria([{ id: 'a', check: 'attribute_equals', target: '#x', expected: 'href' }]);
+    expect(badFmt.reason).toBe('missing_expected');
+    const [badSel] = evaluateDoneCriteria([{ id: 'b', check: 'attribute_equals', target: '##[[bad', expected: 'href=go' }]);
+    expect(badSel.reason).toBe('invalid_selector');
+  });
+
+  test('未知 check 类型 → reason:unknown_check', () => {
+    const [r] = evaluateDoneCriteria([{ id: 'a', check: 'vague_hope', target: '#x' }]);
+    expect(r.reason).toBe('unknown_check');
+  });
+
+  test('可用项不带 reason（pass/fail 真实结论无需原因）', () => {
+    const [r] = evaluateDoneCriteria([{ id: 'a', check: 'element_exists', target: '#x' }]);
+    expect(r.available).toBe(true);
+    expect(r.reason).toBeUndefined();
+  });
+});
+
+describe('evaluateDoneCriteria：输入形状兼容兜底', () => {
   test('非数组输入 → 空结果，缺 id 时保留 undefined', () => {
     expect(evaluateDoneCriteria(undefined)).toEqual([]);
     const [r] = evaluateDoneCriteria([{ check: 'element_exists', target: '#x' }]);

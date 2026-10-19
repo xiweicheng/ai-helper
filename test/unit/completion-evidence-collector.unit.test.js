@@ -9,49 +9,59 @@ import { createContentEvidenceCollector } from '../../src/background/completion-
 
 const INDEX_SRC = readFileSync(join(process.cwd(), 'src/content/index.js'), 'utf8');
 
-describe('createContentEvidenceCollector：真实 DOM 取证客户端', () => {
-  test('发正确的消息形状并映射 pass=true', async () => {
+describe('createContentEvidenceCollector：真实 DOM 取证客户端（返回 {available,pass,reason}）', () => {
+  test('发正确的消息形状并映射 available:true pass:true', async () => {
     let captured = null;
-    const send = async (tabId, msg) => { captured = { tabId, msg }; return [{ id: msg.criteria[0].id, pass: true }]; };
+    const send = async (tabId, msg) => { captured = { tabId, msg }; return [{ id: msg.criteria[0].id, available: true, pass: true }]; };
     const collect = createContentEvidenceCollector(42, send);
     const ok = await collect({ id: 'c1', check: 'element_exists', target: '#x' });
-    expect(ok).toBe(true);
+    expect(ok).toMatchObject({ available: true, pass: true });
     expect(captured.tabId).toBe(42);
     expect(captured.msg.type).toBe('EVALUATE_DONE_CRITERIA');
     expect(captured.msg.criteria).toEqual([{ id: 'c1', check: 'element_exists', target: '#x' }]);
   });
 
-  test('内容脚本判未通过 → false（真实 DOM 结论，非不可用）', async () => {
-    const collect = createContentEvidenceCollector(1, async () => [{ pass: false }]);
-    expect(await collect({ id: 'c', check: 'url_matches', target: 'x' })).toBe(false);
+  test('内容脚本判未通过 → available:true pass:false（真实 DOM 结论，非不可用）', async () => {
+    const collect = createContentEvidenceCollector(1, async () => [{ available: true, pass: false }]);
+    expect(await collect({ id: 'c', check: 'url_matches', target: 'x' })).toMatchObject({ available: true, pass: false });
   });
 
-  test('空/非数组响应 → null（取证不可用，不等于未达标）', async () => {
-    expect(await createContentEvidenceCollector(1, async () => [])({ id: 'c' })).toBe(null);
-    expect(await createContentEvidenceCollector(1, async () => null)({ id: 'c' })).toBe(null);
-    expect(await createContentEvidenceCollector(1, async () => ({ results: [{ pass: true }] }))({ id: 'c' })).toBe(true);
+  test('空/非数组响应 → available:false reason:response_shape', async () => {
+    expect(await createContentEvidenceCollector(1, async () => [])({ id: 'c' })).toMatchObject({ available: false, reason: 'response_shape' });
+    expect(await createContentEvidenceCollector(1, async () => null)({ id: 'c' })).toMatchObject({ available: false, reason: 'response_shape' });
+    expect(await createContentEvidenceCollector(1, async () => ({ results: [{ available: true, pass: true }] }))({ id: 'c' })).toMatchObject({ available: true, pass: true });
   });
 
-  test('sendMessage 抛错（内容脚本不可达）→ null（不可用 ≠ 未达标，交上层归 indeterminate）', async () => {
+  test('sendMessage reject（内容脚本不可达）→ available:false reason:channel_no_receiver', async () => {
     const collect = createContentEvidenceCollector(1, async () => { throw new Error('Receiving end does not exist'); });
-    expect(await collect({ id: 'c', check: 'element_exists', target: '#x' })).toBe(null);
+    expect(await collect({ id: 'c', check: 'element_exists', target: '#x' })).toMatchObject({ available: false, reason: 'channel_no_receiver' });
   });
 
-  // M-new-3：内容脚本报 available:false（求不出值）必须映射成 null（不可用），绝不折成 false（未达标）
-  test('内容脚本 available:false（求不出值）→ null（不可用 ≠ 未达标）', async () => {
-    const collect = createContentEvidenceCollector(1, async () => [{ id: 'c', check: 'element_exists', pass: false, available: false }]);
-    expect(await collect({ id: 'c', check: 'element_exists', target: '##bad' })).toBe(null);
+  test('扩展页/不可访问 → reason:page_unreachable', async () => {
+    const collect = createContentEvidenceCollector(1, async () => { throw new Error('Cannot access a chrome-extension:// URL'); });
+    expect(await collect({ id: 'c' })).toMatchObject({ available: false, reason: 'page_unreachable' });
   });
 
-  test('内容脚本 available:true + pass:false（真实 DOM 确证未达）→ false（非不可用）', async () => {
-    const collect = createContentEvidenceCollector(1, async () => [{ id: 'c', pass: false, available: true }]);
-    expect(await collect({ id: 'c', check: 'element_exists', target: '#nope' })).toBe(false);
+  // M-new-3 + #1：内容脚本报 available:false 必须映射为不可用且透传其 reason
+  test('内容脚本 available:false → 透传 reason（不可用 ≠ 未达标）', async () => {
+    const collect = createContentEvidenceCollector(1, async () => [{ id: 'c', available: false, reason: 'invalid_selector' }]);
+    expect(await collect({ id: 'c', check: 'element_exists', target: '##bad' })).toMatchObject({ available: false, reason: 'invalid_selector' });
   });
 
-  // M-new-4：单条取证超时（渲染进程阻塞）→ null（不可用），不无界挂起
-  test('取证超时 → null（防无界挂起，计为不可用而非未达标）', async () => {
+  test('内容脚本 available:false 但无 reason（老脚本）→ reason:content_unavailable（向后兼容）', async () => {
+    const collect = createContentEvidenceCollector(1, async () => [{ id: 'c', available: false }]);
+    expect(await collect({ id: 'c' })).toMatchObject({ available: false, reason: 'content_unavailable' });
+  });
+
+  test('内容脚本 available:true + pass:false → available:true pass:false（非不可用）', async () => {
+    const collect = createContentEvidenceCollector(1, async () => [{ id: 'c', available: true, pass: false }]);
+    expect(await collect({ id: 'c', check: 'element_exists', target: '#nope' })).toMatchObject({ available: true, pass: false });
+  });
+
+  // M-new-4：单条取证超时（渲染进程阻塞）→ 不可用，不无界挂起
+  test('取证超时 → available:false reason:channel_timeout（防无界挂起）', async () => {
     const collect = createContentEvidenceCollector(1, () => new Promise(() => {}), 5);
-    expect(await collect({ id: 'c', check: 'element_exists', target: '#x' })).toBe(null);
+    expect(await collect({ id: 'c', check: 'element_exists', target: '#x' })).toMatchObject({ available: false, reason: 'channel_timeout' });
   });
 });
 

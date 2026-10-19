@@ -2548,6 +2548,8 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 清零全局 label 的 margin-bottom:8px：flex 项带外边距不再拉伸，底部会漏出 8px 轨道底色 */
+  margin: 0;
   padding: 7px 16px;
   font-size: 13px;
   color: var(--text-secondary);

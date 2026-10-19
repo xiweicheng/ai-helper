@@ -478,18 +478,20 @@ function evalOneDoneCriterion(criterion, doc, loc) {
   const target = criterion.target != null ? String(criterion.target) : '';
   switch (criterion.check) {
     case 'element_exists': {
-      if (!target || !selectorQueryable(doc, target)) return { available: false };
+      if (!target) return { available: false, reason: 'empty_target' };
+      if (!selectorQueryable(doc, target)) return { available: false, reason: 'invalid_selector' };
       return { available: true, pass: !!deepQuerySelector(target, doc) };
     }
     case 'element_absent': {
-      if (!target || !selectorQueryable(doc, target)) return { available: false };
+      if (!target) return { available: false, reason: 'empty_target' };
+      if (!selectorQueryable(doc, target)) return { available: false, reason: 'invalid_selector' };
       return { available: true, pass: !deepQuerySelector(target, doc) };
     }
     case 'text_contains': {
       // 待查文本优先 expected，缺时回落 target（模型常把文本写进 target）
       const needle = criterion.expected != null ? String(criterion.expected)
         : (criterion.target != null ? String(criterion.target) : '');
-      if (!needle) return { available: false };
+      if (!needle) return { available: false, reason: 'missing_expected' };
       const text = deepGetText(doc) || (doc.body ? (doc.body.textContent || '') : '');
       return { available: true, pass: text.includes(needle) };
     }
@@ -497,19 +499,22 @@ function evalOneDoneCriterion(criterion, doc, loc) {
       // URL 子串优先 target，缺时回落 expected
       const pat = target || (criterion.expected != null ? String(criterion.expected) : '');
       const href = loc && loc.href ? String(loc.href) : '';
-      if (!pat || !href) return { available: false };
+      if (!pat) return { available: false, reason: 'empty_target' };
+      if (!href) return { available: false, reason: 'no_href' };
       return { available: true, pass: href.includes(pat) };
     }
     case 'attribute_equals': {
       // target = CSS 选择器；expected = "attr=value"
       const raw = criterion.expected != null ? String(criterion.expected) : '';
       const idx = raw.indexOf('=');
-      if (!target || idx <= 0 || !selectorQueryable(doc, target)) return { available: false };
+      if (!target) return { available: false, reason: 'empty_target' };
+      if (idx <= 0) return { available: false, reason: 'missing_expected' };
+      if (!selectorQueryable(doc, target)) return { available: false, reason: 'invalid_selector' };
       const el = deepQuerySelector(target, doc);
       return { available: true, pass: !!el && el.getAttribute(raw.slice(0, idx)) === raw.slice(idx + 1) };
     }
     default:
-      return { available: false }; // 未知类型：无从取证（≠ 确证未达标）
+      return { available: false, reason: 'unknown_check' }; // 未知类型：无从取证（≠ 确证未达标）
   }
 }
 
@@ -517,14 +522,21 @@ export function evaluateDoneCriteria(criteria, doc, loc) {
   const list = Array.isArray(criteria) ? criteria : [];
   const d = doc || (typeof document !== 'undefined' ? document : null);
   const l = loc || (typeof window !== 'undefined' ? window.location : null);
-  if (!d) return list.map((c) => ({ id: c.id, check: c.check, pass: false, available: false }));
+  if (!d) return list.map((c) => ({ id: c.id, check: c.check, pass: false, available: false, reason: 'no_dom' }));
   return list.map((c) => {
     let out;
     try {
       out = evalOneDoneCriterion(c, d, l);
     } catch {
-      out = { available: false }; // 求值异常：取证不可用，绝不折成"确证未达标"
+      out = { available: false, reason: 'eval_error' }; // 求值异常：取证不可用，绝不折成"确证未达标"
     }
-    return { id: c.id, check: c.check, pass: out.available ? !!out.pass : false, available: !!out.available };
+    // #1：available:true 不带 reason（真实 DOM 结论无需原因）；available:false 透传机器可读 reason 码供上层分文案
+    return {
+      id: c.id,
+      check: c.check,
+      pass: out.available ? !!out.pass : false,
+      available: !!out.available,
+      ...(out.available || !out.reason ? {} : { reason: out.reason }),
+    };
   });
 }
