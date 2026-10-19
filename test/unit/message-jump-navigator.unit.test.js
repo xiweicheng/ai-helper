@@ -249,14 +249,16 @@ describe('renderQuestionListHtml：列表结构（Header 固定 + 条目独立�
     expect(html).not.toContain('<script>');
   });
 
-  // 条目是 <button>，且新版 Chromium 会把 -webkit-box 连同样式计算一起转成 flow-root：
-  // 省略号改由 text-overflow 驱动，序号必须并入被 clamp 的文本节点内部，
-  // 否则行首编号会被当成独立行盒参与截断计算。
-  it('文案包在 .chat-nav-question-text 里，序号作为其内部首个行内节点', () => {
+  // 条目是 <button>，新版 Chromium 会把 -webkit-box 连同样式计算一起转成 flow-root，
+  // 省略号改由 text-overflow 驱动。序号必须是 clamp 文本节点的兄弟列（而非内联于其内部），
+  // 否则正文折行的第二行会回退到 x=0、顶到序号下方而非与第一行文字左对齐。
+  it('序号是 .chat-nav-question-text 的兄弟列，正文不再内嵌序号', () => {
     const groups = [{ start: anchor('u1', '一个很长的问题'.repeat(10)), userElement: null, elements: [] }];
     groups[0].userElement = groups[0].start;
     const html = renderQuestionListHtml(groups, 0, false);
-    expect(html).toMatch(/<span class="chat-nav-question-text"><span class="idx">1<\/span>/);
+    expect(html).toMatch(/<span class="idx">1<\/span><span class="chat-nav-question-text">/);
+    // 序号不得再出现在 clamp 文本节点内部
+    expect(html).not.toMatch(/chat-nav-question-text"><span class="idx"/);
   });
 });
 
@@ -496,8 +498,16 @@ describe('styles.css：面板实色不透明 + 当前项/钉住样式', () => {
     const itemStart = css.indexOf('.chat-nav-question-item {');
     const itemRule = css.slice(itemStart, css.indexOf('}', itemStart));
     expect(itemRule).not.toMatch(/-webkit-line-clamp/);
-    // 条目是横向 flex：文本居左占剩余宽度，时间独占右列（B4 从下方一行改到右侧）
+    // 条目是横向 flex 三列（序号|正文|时间），baseline 让序号/时间与正文首行同基线
     expect(itemRule).toMatch(/display:\s*flex/);
+    expect(itemRule).toMatch(/align-items:\s*baseline/);
+
+    // 序号是独立列：flex:none 不随正文伸缩，min-width 统一个位/十位行的正文左边界
+    const idxStart = css.indexOf('.chat-nav-question-item .idx {');
+    const idxRule = css.slice(idxStart, css.indexOf('}', idxStart));
+    expect(idxRule).toMatch(/flex:\s*none/);
+    expect(idxRule).toMatch(/min-width:/);
+    expect(idxRule).not.toMatch(/display:\s*inline-block/);
   });
 
   it('提问时间为右侧独立列：不压缩、单行不换行', () => {

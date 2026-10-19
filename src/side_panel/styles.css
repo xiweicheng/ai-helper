@@ -5331,10 +5331,10 @@ body {
   color: var(--brand-600);
 }
 .chat-nav-question-item {
-  /* 横向 flex：左侧序号+问题文本占剩余宽度并两行截断，右侧时间独占一列不被压缩。
-     行盒截断仍只落在内部 .chat-nav-question-text 上，条目自身不承载 clamp。 */
+  /* 横向 flex 三列：序号 | 正文（占剩余宽度、两行截断）| 时间。baseline 让序号
+     与时间跟正文首行同基线；序号单独成列，正文折行的第二行才会与第一行左对齐。 */
   display: flex;
-  align-items: flex-start;
+  align-items: baseline;
   gap: 8px;
   overflow: hidden;
   width: 100%;
@@ -5364,10 +5364,12 @@ body {
   color: var(--brand-600);
 }
 .chat-nav-question-item .idx {
-  display: inline-block;
-  margin-right: 8px;
+  /* 序号独立成列：不随正文伸缩，min-width 让个位/十位序号行的正文左边界对齐 */
+  flex: none;
+  min-width: 14px;
   font-size: 11px;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 /* 两行截断落在内部文本节点上（button 上的 -webkit-box 会被 Chromium 改掉）。
    text-overflow: ellipsis 必需：新版 Chromium（130+）把所有 -webkit-box 转成
@@ -5383,10 +5385,9 @@ body {
   flex: 1 1 auto;
   min-width: 0;
 }
-/* 条目提问时间（B4）：右侧独立一列，单行不压缩、与首行文字顶部对齐 */
+/* 条目提问时间（B4）：右侧独立一列，单行不压缩，baseline 与正文首行同基线 */
 .chat-nav-question-time {
   flex: none;
-  margin-top: 1px;
   font-size: 11px;
   color: var(--text-tertiary);
   white-space: nowrap;

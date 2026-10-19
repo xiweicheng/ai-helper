@@ -1215,13 +1215,14 @@ export function renderQuestionListHtml(groups, activeIndex, isPinned, query = ''
     const title = time ? `${displayText} · ${time}` : displayText;
     const isCurrent = index === activeIndex;
     const cls = `chat-nav-question-item${isCurrent ? ' current' : ''}`;
-    // 序号必须嵌在被 clamp 的文本节点内部：行盒截断只发生在内部文本节点上，
-    // 编号若独立于 clamp 节点，会被当成单独行盒参与截断计算。
+    // 序号、正文、时间各是条目 flex 行的独立列：序号单独成列，正文折行的第二行
+    // 才会与第一行文字左对齐（inline 序号会让折行回退到 x=0、顶到序号下方）。
     // 两行省略号的渲染前提见 styles.css 的 .chat-nav-question-text 注释（text-overflow 驱动）。
     // data-group-index 供过滤态下按原始下标反查高亮/键盘导航，aria-current 让读屏也能定位当前组。
-    const textHtml = `<span class="chat-nav-question-text"><span class="idx">${index + 1}</span>${escapeAttr(displayText)}</span>`;
+    const idxHtml = `<span class="idx">${index + 1}</span>`;
+    const textHtml = `<span class="chat-nav-question-text">${escapeAttr(displayText)}</span>`;
     const timeHtml = time ? `<span class="chat-nav-question-time">${escapeAttr(time)}</span>` : '';
-    return `<button class="${cls}" data-message-id="${escapeAttr(messageId)}" data-group-index="${index}" aria-current="${isCurrent ? 'true' : 'false'}" title="${escapeAttr(title)}">${textHtml}${timeHtml}</button>`;
+    return `<button class="${cls}" data-message-id="${escapeAttr(messageId)}" data-group-index="${index}" aria-current="${isCurrent ? 'true' : 'false'}" title="${escapeAttr(title)}">${idxHtml}${textHtml}${timeHtml}</button>`;
   }).join('');
 
   const pinLabel = t(isPinned ? 'chat.navUnpinLabel' : 'chat.navPinLabel');

@@ -199,6 +199,34 @@ test('长提问恰好两行且由 CSS 画省略号，不出现被硬切的第三
   expect(out.textEndsWithEllipsis).toBe(false);
 });
 
+// 序号必须是正文列的兄弟而非内联在 clamp 节点内：否则正文折行的第二行会
+// 回退到 x=0、顶到序号下方。这里用 Range.getClientRects 量真实行盒，
+// 证明第二行与第一行左边界一致，且整列文字在序号右侧。
+test('折行的第二行与第一行文字左对齐，不回退到序号下方', async ({ page }) => {
+  await page.setContent(pageHtml());
+  await mountPanel(page, 0);
+  const m = await page.evaluate(() => {
+    const item = document.querySelectorAll('.chat-nav-question-item')[1];
+    const textEl = item.querySelector('.chat-nav-question-text');
+    const idxEl = item.querySelector('.idx');
+    const range = document.createRange();
+    range.selectNodeContents(textEl);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    return {
+      lines: rects.length,
+      firstLeft: rects[0] ? Math.round(rects[0].left) : null,
+      secondLeft: rects[1] ? Math.round(rects[1].left) : null,
+      idxLeft: Math.round(idxEl.getBoundingClientRect().left),
+    };
+  });
+  expect(m.lines).toBeGreaterThanOrEqual(2); // 确实发生了折行
+  expect(m.secondLeft).not.toBeNull();
+  // 第二行与第一行左边界对齐（±1px），不再顶到序号下方
+  expect(Math.abs(m.secondLeft - m.firstLeft)).toBeLessThanOrEqual(1);
+  // 正文列整体在序号右侧
+  expect(m.firstLeft).toBeGreaterThan(m.idxLeft);
+});
+
 test('当前组条目在列表内获得高亮态样式', async ({ page }) => {
   await page.setContent(pageHtml());
   // activeIndex=-1：初始无任何高亮，才能对比出 .current 带来的变化
