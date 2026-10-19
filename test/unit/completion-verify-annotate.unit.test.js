@@ -212,12 +212,12 @@ describe('完成度校验 #3：取证不可用文案按 reason 分桶', () => {
     expect(note).toContain('missing_expected');
   });
 
-  test('通道类 reason → 文案含“目标页不可达”', () => {
+  test('通道类 reason → 文案含“取证通道异常”（含本地 Agent/目标页）', () => {
     const note = buildCompletionNote({
       verdict: VERDICTS.INDETERMINATE, missing: [], reason: 'evidence_unavailable', criteria: [],
       checkResults: [{ id: 'a', available: false, reason: 'channel_no_receiver' }],
     });
-    expect(note).toContain('目标页不可达');
+    expect(note).toContain('取证通道异常');
   });
 
   test('混合→两类码都列入（供模型逐条修正）', () => {

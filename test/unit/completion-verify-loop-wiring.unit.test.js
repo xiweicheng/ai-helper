@@ -11,9 +11,23 @@ import { join } from 'node:path';
 const LOOP = readFileSync(join(process.cwd(), 'src/background/react-loop.js'), 'utf8');
 
 describe('react-loop 完成度校验接线守卫', () => {
-  test('① 从 ./completion-verifier.js 引入取证器与单子任务注解原语', () => {
+  test('① 从 ./completion-verifier.js 引入路由取证器与单子任务注解原语', () => {
     expect(LOOP).toMatch(
-      /import\s*\{[^}]*createContentEvidenceCollector[^}]*annotateOneSubtaskCompletion[^}]*\}\s*from\s*'\.\/completion-verifier\.js'/,
+      /import\s*\{[^}]*createRoutingEvidenceCollector[^}]*annotateOneSubtaskCompletion[^}]*\}\s*from\s*'\.\/completion-verifier\.js'/,
+    );
+  });
+
+  // Phase A 非 DOM 取证：路由取证器须注入 execCommandWait 与 getAgentConfig 在线判定；
+  // 开关关闭（cvEnabled=false）时 cvGatherEvidence 恒为 null——不变式 1：逐字节回退基线。
+  test('①b 路由取证器注入 execWait=getAgentConfig 在线门，且 cvEnabled=false 时为 null', () => {
+    expect(LOOP).toMatch(
+      /const cvGatherEvidence = cvEnabled \? createRoutingEvidenceCollector\(\{[\s\S]*?execWait: execCommandWait,[\s\S]*?isOnline:[\s\S]*?getAgentConfig\(\)[\s\S]*?\}\) : null;/,
+    );
+  });
+
+  test('①c 本地 Agent 客户端导入 execCommandWait 与 getAgentConfig', () => {
+    expect(LOOP).toMatch(
+      /import\s*\{[^}]*execCommandWait[^}]*getAgentConfig[^}]*\}\s*from\s*'\.\/local-agent-client\.js'/,
     );
   });
 

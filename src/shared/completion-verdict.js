@@ -10,12 +10,20 @@
 // 本文件只做纯归约，取证器(evaluate)与 critic(judge) 由调用方（Phase 2）注入，故可单测。
 
 // 支持的客观断言类型白名单。归一时只认这些，未知类型 fail-closed（绝不放行陌生断言）。
+// 前 5 项为浏览器 DOM 取证（发往内容脚本）；后 5 项为非 DOM 取证（命令/文件，走本地 Agent）。
 export const OBJECTIVE_CHECK_TYPES = [
+  // —— 浏览器 DOM 类 ——
   'element_exists',   // 目标选择器在页面存在
   'element_absent',   // 目标选择器已消失
   'text_contains',    // 页面正文包含期望文本
   'url_matches',      // 当前 URL 命中期望模式
   'attribute_equals', // 元素属性等于期望值
+  // —— 非 DOM：命令 / 文件类（Phase A，仅只读命令可自动取证）——
+  'command_exit_zero',     // target 为 shell 命令，退出码 0 即达成
+  'command_output_matches',// target 命令的 stdout+stderr 含 expected 即达成
+  'file_exists',           // target 路径存在
+  'file_absent',           // target 路径不存在
+  'file_contains',         // target 文件内容含 expected 子串
 ];
 
 // 判定三态 + 无法判定（开放任务 critic 拿不准时回落，交上层转 HITL）。

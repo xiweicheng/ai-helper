@@ -12,12 +12,12 @@ import { t, registerTranslations } from '../shared/i18n.js';
 import { wrapUntrusted, applyUntrustedContract, getContractText } from '../shared/untrusted-content.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { createLoopDetector } from './loop-detector.js';
-import { isAgentPaired, writeFile as writeAgentFile } from './local-agent-client.js';
+import { isAgentPaired, writeFile as writeAgentFile, execCommandWait, getAgentConfig } from './local-agent-client.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
 import { weightTrimFallback } from './trim-fallback.js';
-import { createContentEvidenceCollector, annotateOneSubtaskCompletion } from './completion-verifier.js';
+import { createRoutingEvidenceCollector, annotateOneSubtaskCompletion } from './completion-verifier.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -2018,7 +2018,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
               // 后续导航抹掉），不再等整轮 executeSubtasks 结束后统一取证。开关默认关，关闭时
               // cvEnabled=false，onDone 内校验分支整体短路，现有行为逐字节不变。
               const cvEnabled = !!(reactConfig.completionVerification && reactConfig.completionVerification.enabled);
-              const cvGatherEvidence = cvEnabled ? createContentEvidenceCollector(tabId) : null;
+              // 非 DOM 取证（Phase A）：按 check 类型路由——DOM 类走内容脚本，命令/文件类走本地 Agent（仅只读命令）。
+              const cvGatherEvidence = cvEnabled ? createRoutingEvidenceCollector({
+                tabId,
+                execWait: execCommandWait,
+                isOnline: async () => { const c = await getAgentConfig(); return !!(c && c.connected); },
+              }) : null;
               const subtaskResults = await executeSubtasks(
                 subtaskPlan, model, tools, tabId, apiParams, sessionId, executionLog, globalIteration,
                 reactConfig.reflection, config, lastSentLogSnapshot, callId, abortSignal,

@@ -14,6 +14,7 @@ registerTranslations('zh', {
     decisionRevised: '已修订',
     decisionNeedsImprovement: '需改进',
     postNodeName: '质量评估 {round}/{maxRounds}',
+    reviseNodeName: '答案修订 {round}',
     subtaskNodeName: '子任务反思: {name}',
     lowScoreRevised: '⚠️ 原答案评分过低，已由反思修订',
     retrySuggestion: '建议：重新执行任务，基于反思问题调整工具选择和执行策略',
@@ -28,6 +29,7 @@ registerTranslations('en', {
     decisionRevised: 'Revised',
     decisionNeedsImprovement: 'Needs Improvement',
     postNodeName: 'Quality Assessment {round}/{maxRounds}',
+    reviseNodeName: 'Answer Revision {round}',
     subtaskNodeName: 'Subtask Reflection: {name}',
     lowScoreRevised: '⚠️ Original score too low, revised by reflection',
     retrySuggestion: 'Suggestion: Re-execute the task, adjust tool selection and execution strategy based on reflection issues',
@@ -36,6 +38,17 @@ registerTranslations('en', {
 
 // 反思总轮数上限（模块级常量）
 export const MAX_REFLECTION_ROUNDS = 10;
+
+// 反思 API 调用超时/重试默认值（代码内配置，不开放 UI）。
+// 消费点对残缺的旧 storage 配置回落到这里，禁止再散落硬编码。
+export const REFLECTION_FETCH_DEFAULTS = {
+  timeoutMs: 90000,
+  reviseTimeoutMs: 150000,
+  maxRetries: 2,
+};
+
+// 修订调用独立于评估调用，token 上限放宽以容纳完整修订答案
+const REVISE_MAX_TOKENS = 4096;
 
 /**
  * 判断是否需要执行反思
@@ -135,48 +148,94 @@ Please output in strict JSON format (do not include markdown code block markers)
     "efficiency": 8
   },
   "issues": ["specific issue 1", "specific issue 2"],
-  "suggestions": ["specific improvement suggestion 1", "specific improvement suggestion 2"],
-  "refinedAnswer": "If the answer has obvious flaws, output the complete revised answer (must be complete, not just the modified parts); otherwise set to null"
+  "suggestions": ["specific improvement suggestion 1", "specific improvement suggestion 2"]
 }`;
 }
 
 /**
- * 从反思 API 返回的文本中解析 JSON 结果
+ * 构建修订 Prompt：仅在评估分数低于质量阈值时单独发起，
+ * 与评估调用解耦，避免评估响应被迫携带完整修订答案导致耗时膨胀超时
+ */
+export function buildRevisionPrompt(messages, answer, evaluation, executionLog) {
+  const userMessages = messages.filter(m => m.role === 'user');
+  const userQuestion = userMessages.length > 0
+    ? extractTextFromContent(userMessages[userMessages.length - 1].content)
+    : 'unknown';
+
+  const issues = evaluation?.issues?.length ? evaluation.issues.join('; ') : 'none';
+  const suggestions = evaluation?.suggestions?.length ? evaluation.suggestions.join('; ') : 'none';
+  const truncatedAnswer = answer.length > 6000 ? answer.substring(0, 6000) + '...' : answer;
+
+  return `A previous AI answer to the user's question was evaluated and found lacking. Produce a complete revised answer.
+
+## User Question
+${userQuestion}
+
+## Original Answer (score ${evaluation?.overallScore ?? 'unknown'}/10)
+${truncatedAnswer}
+
+## Issues Found
+${issues}
+
+## Improvement Suggestions
+${suggestions}
+
+Please output in strict JSON format (do not include markdown code block markers):
+{
+  "refinedAnswer": "The COMPLETE revised answer (not just the modified parts), or null if the original answer is actually fine"
+}`;
+}
+
+/**
+ * 解析修订调用返回的 JSON，失败返回 null（降级保留原答案）
+ */
+export function parseRevisionAnswer(rawContent) {
+  if (!rawContent) return null;
+  const candidates = [rawContent.trim()];
+  const jsonMatch = rawContent.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (jsonMatch) candidates.push(jsonMatch[1].trim());
+  for (const text of candidates) {
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed?.refinedAnswer === 'string' && parsed.refinedAnswer.trim()) {
+        return parsed.refinedAnswer;
+      }
+      return null;
+    } catch { /* try next candidate */ }
+  }
+  return null;
+}
+
+/**
+ * 从评估 API 返回的文本中解析 JSON 结果
  */
 export function parseReflectionResult(rawContent) {
-  const defaults = {
-    overallScore: 7,
-    dimensions: {},
-    issues: [],
-    suggestions: [],
-    refinedAnswer: null
-  };
-
-  if (!rawContent) return defaults;
-
-  try {
-    // 尝试直接解析
-    const parsed = JSON.parse(rawContent.trim());
+  const normalize = (parsed) => {
+    // 兼容模型把分数输出成字符串（"8"）的情况
+    const raw = parsed.overallScore;
+    const num = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
     return {
-      overallScore: typeof parsed.overallScore === 'number' ? parsed.overallScore : 7,
+      overallScore: typeof num === 'number' && Number.isFinite(num) ? num : 7,
       dimensions: parsed.dimensions || {},
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
       refinedAnswer: typeof parsed.refinedAnswer === 'string' ? parsed.refinedAnswer : null
     };
+  };
+
+  const defaults = normalize({});
+
+  if (!rawContent) return defaults;
+
+  try {
+    // 尝试直接解析
+    return normalize(JSON.parse(rawContent.trim()));
   } catch {
     // 尝试从 markdown 代码块提取
     const jsonMatch = rawContent.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
     if (jsonMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[1].trim());
-        return {
-          overallScore: typeof parsed.overallScore === 'number' ? parsed.overallScore : 7,
-          dimensions: parsed.dimensions || {},
-          issues: Array.isArray(parsed.issues) ? parsed.issues : [],
-          suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
-          refinedAnswer: typeof parsed.refinedAnswer === 'string' ? parsed.refinedAnswer : null
-        };
+        return normalize(JSON.parse(jsonMatch[1].trim()));
       } catch { /* fall through */ }
     }
   }
@@ -186,15 +245,14 @@ export function parseReflectionResult(rawContent) {
 }
 
 /**
- * 后置反思：对 ReAct 循环的最终答案进行质量评估（多轮修订循环）
+ * 后置反思：对 ReAct 循环的最终答案进行质量评估（评估/修订解耦的多轮循环）
  *
- * 决策逻辑：
- *   score >= qualityThreshold(7)  → passed，使用原答案（或 refinedAnswer）
- *   score >= refineThreshold(5)  → revised，使用 refinedAnswer（标记为已修订）
- *   score < refineThreshold(5)   → needs_improvement
- *     - 有 refinedAnswer → revised，使用修订答案，issues 中加入"经反思修订"说明
- *     - 无 refinedAnswer → needs_improvement，issues 中加入"建议重新执行"建议
- *   第二轮（maxRounds>=2）：对修订答案再做一次评估
+ * 每轮先发起轻量"评估调用"（只输出评分 JSON，不携带修订答案）；
+ * 分数低于质量阈值时再发起独立"修订调用"生成完整修订答案：
+ *   score >= qualityThreshold(7)  → passed，使用原答案
+ *   score >= refineThreshold(5)   → 修订成功 revised / 修订失败降级 needs_improvement（保留原答案）
+ *   score <  refineThreshold(5)   → 修订成功 revised（issues 标注低分修订）/ 失败 needs_improvement
+ *   修订调用失败不判整条反思失败，仅记录失败子节点并降级
  *
  * @returns {{ content: string, reflectionLog: Array, status: string, overallScore: number|null, wasRevised: boolean }}
  */
@@ -204,6 +262,11 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
   if (!reflectionConfig?.enabled || !postConfig?.enabled || postConfig.maxRounds < 1) {
     return { content: answer, reflectionLog: [], status: 'skipped', overallScore: null, wasRevised: false };
   }
+
+  // 旧 storage 配置可能缺少超时/重试字段，统一回落模块默认值
+  const timeoutMs = postConfig.timeoutMs || REFLECTION_FETCH_DEFAULTS.timeoutMs;
+  const reviseTimeoutMs = postConfig.reviseTimeoutMs || REFLECTION_FETCH_DEFAULTS.reviseTimeoutMs;
+  const maxRetries = typeof postConfig.maxRetries === 'number' ? postConfig.maxRetries : REFLECTION_FETCH_DEFAULTS.maxRetries;
 
   const reflectionLog = [];
   const maxRounds = Math.min(
@@ -222,14 +285,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     const apiUrl = `${config.apiBase}/chat/completions`;
     const reflectionModel = postConfig.model || model || config.modelName;
 
-    for (let round = 1; round <= maxRounds; round++) {
-      totalReflectionRounds++;
-      const roundStartTime = Date.now();
-      const roundId = crypto.randomUUID();
-
-      // 如果是第 2 轮，使用上一轮的修订答案作为反思对象
-      const prompt = buildReflectionPrompt(messages, currentContent, executionLog, round);
-
+    const callApi = async (prompt, maxTokens, callTimeoutMs) => {
       const response = await fetchWithRetry(apiUrl, {
         method: 'POST',
         headers: {
@@ -244,62 +300,101 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
           ],
           stream: false,
           temperature: postConfig.temperature,
-          max_tokens: postConfig.maxTokens,
+          max_tokens: maxTokens,
           response_format: { type: 'json_object' }
         }),
         signal
-      }, 30000, 1, 1000);
+      }, callTimeoutMs, maxRetries, 1000);
 
       if (!response.ok) {
         throw new Error(`Reflection API error: ${response.status}`);
       }
+      return response.json();
+    };
 
-      const data = await response.json();
+    for (let round = 1; round <= maxRounds; round++) {
+      totalReflectionRounds++;
+      const roundStartTime = Date.now();
+      const roundId = crypto.randomUUID();
+
+      // 如果是第 2 轮，使用上一轮的修订答案作为反思对象
+      const prompt = buildReflectionPrompt(messages, currentContent, executionLog, round);
+      const data = await callApi(prompt, postConfig.maxTokens, timeoutMs);
       const rawContent = data.choices?.[0]?.message?.content || '';
       const parsed = parseReflectionResult(rawContent);
       const duration = Date.now() - roundStartTime;
 
       bestScore = parsed.overallScore;
 
-      // 决策
+      // 决策：低于质量阈值才发起修订调用（评估响应保持小而快）
       let decision;
       let applyContent = currentContent;
 
       if (parsed.overallScore >= postConfig.qualityThreshold) {
         decision = 'passed';
-        applyContent = parsed.refinedAnswer || currentContent;
-        // 即使通过，如果模型主动修订了也用修订版
-        if (parsed.refinedAnswer && parsed.refinedAnswer !== currentContent) {
-          wasRevised = true;
-        }
-      } else if (parsed.overallScore >= postConfig.refineThreshold) {
-        decision = 'revised';
-        if (parsed.refinedAnswer) {
-          applyContent = parsed.refinedAnswer;
-          wasRevised = true;
-        }
       } else {
-        // 低于 refineThreshold
-        if (parsed.refinedAnswer) {
-          decision = 'revised';
-          applyContent = parsed.refinedAnswer;
-          wasRevised = true;
-          // 标记这是低分修订
-          parsed.issues = parsed.issues || [];
-          if (!parsed.issues.some(i => i.includes('反思修订'))) {
-            parsed.issues.unshift(t('reflection.lowScoreRevised'));
+        let refinedAnswer = null;
+        let reviseError = null;
+        const reviseStartTime = Date.now();
+        try {
+          const reviseData = await callApi(
+            buildRevisionPrompt(messages, currentContent, parsed, executionLog),
+            REVISE_MAX_TOKENS,
+            reviseTimeoutMs
+          );
+          refinedAnswer = parseRevisionAnswer(reviseData.choices?.[0]?.message?.content || '');
+          if (reviseData.usage) {
+            recordTokenUsage({
+              sessionId,
+              model: reflectionModel,
+              usage: reviseData.usage,
+              callType: 'reflection_revise'
+            }).catch(() => {});
           }
-        } else {
+        } catch (error) {
+          if (error.name === 'AbortError') throw error;
+          reviseError = error.message;
+          logger.warn('[Background] revision call failed, keeping original answer:', error.message);
+        }
+
+        // 修订子节点（成功与失败都记录，失败不影响主评估条目成功状态）
+        reflectionLog.push({
+          id: `${roundId}_revise`,
+          iteration: globalIteration?.value || 0,
+          timestamp: new Date().toISOString(),
+          status: reviseError ? 'failed' : 'success',
+          nodeType: 'reflection',
+          nodeName: t('reflection.reviseNodeName', { round }),
+          reflectionType: 'revise',
+          round,
+          overallScore: null,
+          error: reviseError,
+          duration: Date.now() - reviseStartTime
+        });
+
+        if (refinedAnswer) {
+          decision = 'revised';
+          applyContent = refinedAnswer;
+          wasRevised = true;
+          if (parsed.overallScore < postConfig.refineThreshold) {
+            parsed.issues = parsed.issues || [];
+            if (!parsed.issues.some(i => i.includes('反思修订'))) {
+              parsed.issues.unshift(t('reflection.lowScoreRevised'));
+            }
+          }
+        } else if (parsed.overallScore < postConfig.refineThreshold) {
           decision = 'needs_improvement';
           parsed.suggestions = parsed.suggestions || [];
           if (!parsed.suggestions.some(s => s.includes('重新执行') || s.includes('retry'))) {
             parsed.suggestions.push(t('reflection.retrySuggestion'));
           }
+        } else {
+          // 修订不可用（失败或模型拒答）：降级保留原答案
+          decision = 'needs_improvement';
         }
       }
 
       bestDecision = decision;  // 追踪每轮的实际决策
-      const decisionLabel = decision === 'passed' ? t('reflection.decisionPassed') : decision === 'revised' ? t('reflection.decisionRevised') : t('reflection.decisionNeedsImprovement');
 
       reflectionLog.push({
         id: roundId,
@@ -327,7 +422,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
         },
         action: {
           decision,
-          refinedAnswer: parsed.refinedAnswer && parsed.refinedAnswer !== currentContent ? parsed.refinedAnswer : null
+          refinedAnswer: decision === 'revised' ? applyContent : null
         },
         duration
       });
@@ -353,7 +448,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
     }
 
     const totalDuration = Date.now() - startTime;
-    const lastEntry = reflectionLog[reflectionLog.length - 1];
+    const lastEntry = reflectionLog.find(e => e.reflectionType === 'post');
     const finalScore = bestScore ?? lastEntry?.overallScore;
     const finalDecision = bestDecision || lastEntry?.action?.decision || 'passed';
     const decisionLabel = finalDecision === 'passed' ? t('reflection.decisionPassed') : finalDecision === 'revised' ? t('reflection.decisionRevised') : t('reflection.decisionNeedsImprovement');
@@ -384,6 +479,7 @@ export async function reflectOnResult(messages, answer, executionLog, model, con
       nodeType: 'reflection',
       nodeName: t('reflection.qualityAssessment'),
       reflectionType: 'post',
+      overallScore: null,
       error: error.message,
       duration
     });

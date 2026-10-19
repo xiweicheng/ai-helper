@@ -51,6 +51,7 @@ registerTranslations('zh', {
     subtaskLabel: '子任务',
     scoreTitle: '评分 {score}/10',
     scoreLabel: '评分',
+    scoreUnavailable: '—',
     tokenUsage: 'Token 消耗',
     tokenUsageTitle: 'Token 消耗: {total} (Prompt: {prompt}, Completion: {completion})',
     expandAll: '展开全部',
@@ -102,6 +103,7 @@ registerTranslations('en', {
     subtaskLabel: 'Subtasks',
     scoreTitle: 'Score {score}/10',
     scoreLabel: 'Score',
+    scoreUnavailable: '—',
     tokenUsage: 'Token Usage',
     tokenUsageTitle: 'Token usage: {total} (Prompt: {prompt}, Completion: {completion})',
     expandAll: 'Expand All',
@@ -285,6 +287,10 @@ function showExecutionLog(executionLog) {
   const planTaskCount = executionLog.filter(entry => entry.nodeType === 'tool_exec' && entry.action?.name === 'plan_task' && entry.status === 'success').length;
   const reflectionEntries = executionLog.filter(entry => entry.nodeType === 'reflection');
   const postReflection = reflectionEntries.find(e => e.reflectionType === 'post');
+  // 评估失败/超时的 post 条目 overallScore 为 null，头部显示占位符而非 undefined
+  const postScoreText = postReflection && postReflection.overallScore != null
+    ? `${postReflection.overallScore}/10`
+    : t('chatPanels.scoreUnavailable');
   
   // 汇总 Token 消耗
   const tokenSummary = aggregateTokenUsage(executionLog);
@@ -349,10 +355,10 @@ function showExecutionLog(executionLog) {
             </div>
             ` : ''}
             ${postReflection ? `
-            <div class="combo-stat reflection" title="${t('chatPanels.scoreTitle', { score: postReflection.overallScore })}">
+            <div class="combo-stat reflection" title="${postReflection.overallScore != null ? t('chatPanels.scoreTitle', { score: postReflection.overallScore }) : t('chatPanels.scoreLabel')}">
               <span class="stat-icon">🎯</span>
               <span class="stat-label">${t('chatPanels.scoreLabel')}</span>
-              <span class="stat-value">${postReflection.overallScore}/10</span>
+              <span class="stat-value">${postScoreText}</span>
             </div>
             ` : ''}
           </div>

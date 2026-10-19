@@ -9983,7 +9983,8 @@ body {
   z-index: 10002;
   width: 380px;
   max-height: 560px;
-  background: var(--bg-surface);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   box-shadow: 0 8px 32px var(--shadow-md), 0 2px 8px rgba(var(--overlay-rgb), 0.1);
   overflow: hidden;

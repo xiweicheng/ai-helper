@@ -35,7 +35,12 @@ export const DEFAULT_REFLECTION_CONFIG = {
     refineThreshold: 5,       // 修订阈值（1-10），低于此值直接修订而非重新执行
     model: null,              // 反思用模型，null=使用当前模型
     temperature: 0.3,         // 反思时 temperature
-    maxTokens: 2048           // 反思响应最大 token
+    maxTokens: 2048,          // 修订响应最大 token（评估响应为小 JSON，同值仅作上限保护）
+    // 超时/重试为代码内配置，不开放 UI：评估调用只输出小 JSON 评分，默认 90s；
+    // 修订调用需生成完整答案，默认 150s；旧 storage 残缺配置在 react-reflection 内回落默认值
+    timeoutMs: 90000,         // 评估调用单次超时
+    reviseTimeoutMs: 150000,  // 修订调用单次超时
+    maxRetries: 2             // 评估/修订调用重试次数
   },
   subtaskReflection: {
     enabled: false,           // 子任务反思（默认关闭）

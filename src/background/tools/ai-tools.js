@@ -132,14 +132,14 @@ export const AI_TOOLS = [
 // completionVerification.enabled 为真时动态注入到 plan_task 的 subtask items。
 export const PLAN_TASK_DONE_CRITERIA_ITEM = {
   type: 'array',
-  description: 'Optional objective done-criteria to verify this subtask truly achieved its goal. Only verified when the "completion verification" setting is enabled. Unknown check types are ignored (fail-closed). Leave empty for open-ended subtasks. For a criterion to be EVALUABLE: element_exists/element_absent/attribute_equals need a VALID CSS selector in target; text_contains MUST set expected to the exact substring to find; url_matches set target to a URL substring. A malformed selector or text_contains without expected cannot be evaluated (reported as evidence-unavailable, neither pass nor fail).',
+  description: 'Optional objective done-criteria to verify this subtask truly achieved its goal. Only verified when the "completion verification" setting is enabled. Unknown check types are ignored (fail-closed). Leave empty for open-ended subtasks. For a criterion to be EVALUABLE: element_exists/element_absent/attribute_equals need a VALID CSS selector in target; text_contains MUST set expected to the exact substring to find; url_matches set target to a URL substring. A malformed selector or text_contains without expected cannot be evaluated (reported as evidence-unavailable, neither pass nor fail). NON-BROWSER checks (require the local Agent to be connected): command_exit_zero / command_output_matches put a shell command in target (output_matches also needs expected substring); file_exists / file_absent / file_contains put a file path in target (file_contains also needs expected). Only READ-ONLY commands and file checks can be auto-verified right now; a test/build command (pytest, npm test, make ...) is NOT read-only and will be reported as evidence-unavailable, not run.',
   items: {
     type: 'object',
     properties: {
       id: { type: 'string' },
-      check: { type: 'string', enum: ['element_exists', 'element_absent', 'text_contains', 'url_matches', 'attribute_equals'] },
-      target: { type: 'string', description: 'Meaning depends on check: element_exists/element_absent/attribute_equals -> CSS selector (verification pierces shadow DOM/iframe); url_matches -> a URL substring; text_contains -> optional fallback text (prefer expected). ' },
-      expected: { type: 'string', description: 'text_contains -> substring to find in page text. attribute_equals -> MUST be the form "attr=value" (one = separated pair). url_matches -> fallback substring when target absent. ' }
+      check: { type: 'string', enum: ['element_exists', 'element_absent', 'text_contains', 'url_matches', 'attribute_equals', 'command_exit_zero', 'command_output_matches', 'file_exists', 'file_absent', 'file_contains'] },
+      target: { type: 'string', description: 'Meaning depends on check: element_exists/element_absent/attribute_equals -> CSS selector (verification pierces shadow DOM/iframe); url_matches -> a URL substring; text_contains -> optional fallback text (prefer expected); command_exit_zero/command_output_matches -> a shell command; file_exists/file_absent/file_contains -> a file path. ' },
+      expected: { type: 'string', description: 'text_contains -> substring to find in page text. attribute_equals -> MUST be the form "attr=value" (one = separated pair). url_matches -> fallback substring when target absent. command_output_matches / file_contains -> substring that the command output / file content must contain. ' }
     },
     required: ['check']
   }
