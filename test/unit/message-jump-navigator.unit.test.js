@@ -17,6 +17,10 @@ import {
   resolveJumpTarget,
   formatQuestionPreview,
   renderQuestionListHtml,
+  formatNavTime,
+  getQuestionPreview,
+  filterJumpGroups,
+  NAV_SEARCH_MIN_GROUPS,
 } from '../../src/side_panel/utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -256,41 +260,44 @@ describe('renderQuestionListHtml：列表结构（Header 固定 + 条目独立�
   });
 });
 
-describe('index.js 接线：箭头与问题列表共用同一分组口径', () => {
-  const src = read('src/side_panel/index.js');
-  const jumpFn = src.slice(
-    src.indexOf('function jumpToMessage'),
-    src.indexOf('function jumpToMessage') + 1200
+describe('message-jump-nav.js 接线：箭头与问题列表共用同一分组口径', () => {
+  const navModule = read('src/side_panel/message-jump-nav.js');
+  const jumpFn = navModule.slice(
+    navModule.indexOf('function jumpToMessage'),
+    navModule.indexOf('function flashNavBlocked')
   );
-  const listFn = src.slice(
-    src.indexOf('function buildQuestionList'),
-    src.indexOf('function buildQuestionList') + 1400
+  const listFn = navModule.slice(
+    navModule.indexOf('function buildQuestionList'),
+    navModule.indexOf('// ========== 展开 / 收起 / 钉住 ==========')
   );
-  // 高亮/滚动同步/条目点击都集中在跳转区块内
-  const navSection = src.slice(
-    src.indexOf('function paintActiveQuestion'),
-    src.indexOf('// 全局键盘快捷键')
-  );
+  // 高亮/滚动同步/条目点击都集中在模块接线区
+  const navSection = navModule.slice(navModule.indexOf('function paintActiveQuestion'));
 
   it('从 utils.js 引入分组与定位函数', () => {
-    expect(src).toMatch(/import\s*\{[^}]*buildMessageJumpGroups[^}]*\}\s*from\s*'\.\/utils\.js'/s);
-    expect(src).toMatch(/findActiveGroupIndex/);
-    expect(src).toMatch(/resolveJumpTarget/);
+    expect(navModule).toMatch(/import\s*\{[^}]*buildMessageJumpGroups[^}]*\}\s*from\s*'\.\/utils\.js'/s);
+    expect(navModule).toMatch(/findActiveGroupIndex/);
+    expect(navModule).toMatch(/resolveJumpTarget/);
   });
 
-  it('jumpToMessage 改为按组跳转，不再直接使用混合选择器', () => {
+  it('jumpToMessage 按组跳转，不再直接使用混合选择器', () => {
     expect(jumpFn).toContain('buildMessageJumpGroups');
     expect(jumpFn).not.toContain("'message.user, .message.assistant, .user-context-bubble'");
-    expect(src).not.toContain("querySelectorAll('.message.user, .message.assistant, .user-context-bubble')");
+    expect(navModule).not.toContain("querySelectorAll('.message.user, .message.assistant, .user-context-bubble')");
   });
 
   it('问题列表同样来自分组结果，编号与箭头一致', () => {
     expect(listFn).toContain('buildMessageJumpGroups');
-    expect(listFn).not.toContain("querySelectorAll('#chatContainer .message.user')");
+    expect(listFn).toContain('renderQuestionListHtml');
+  });
+
+  it('搜索框在 IME 组合期间不重建列表，中文上屏后才过滤', () => {
+    // input 事件要先短路 isComposing，否则拼音未上屏就 innerHTML 重建、销毁组合中的 input
+    expect(listFn).toMatch(/addEventListener\('input', \(e\) => \{\s*[^}]*if \(e\.isComposing\) return;/s);
+    // 组合提交后由 compositionend 触发过滤
+    expect(listFn).toMatch(/addEventListener\('compositionend',\s*applyQuery\)/);
   });
 
   it('列表项按 messageId 定位，避免消息增删后索引错位', () => {
-    expect(listFn).toContain('renderQuestionListHtml');
     expect(read('src/side_panel/utils.js')).toContain('data-message-id');
     expect(navSection).toContain('dataset.messageId');
     // 空 id 不参与匹配，否则会误命中第一组
@@ -300,6 +307,10 @@ describe('index.js 接线：箭头与问题列表共用同一分组口径', () =
   it('当前组条目高亮并滚动到可见', () => {
     expect(navSection).toMatch(/classList\.add\('current'\)/);
     expect(navSection).toContain("block: 'nearest'");
+  });
+
+  it('过滤态按原始组下标比对高亮，不能按渲染位置', () => {
+    expect(navSection).toMatch(/Number\(item\.dataset\.groupIndex\)/);
   });
 
   it('头部展示「当前位置 / 总数」', () => {
@@ -312,7 +323,7 @@ describe('index.js 接线：箭头与问题列表共用同一分组口径', () =
   });
 
   it('流式新增提问导致组数变化时重建列表，避免高亮错位', () => {
-    expect(navSection).toMatch(/rendered !== navJumpGroups\.length/);
+    expect(navSection).toMatch(/renderedAll !== navJumpGroups\.length/);
   });
 
   it('面板已展开时再次进入只同步定位，不重建列表打断钉住阅读', () => {
@@ -320,26 +331,77 @@ describe('index.js 接线：箭头与问题列表共用同一分组口径', () =
     expect(showFn).toMatch(/contains\('expanded'\)\)\s*\{\s*updateActiveQuestion\(\);\s*return;/);
   });
 
-  it('点击列表项后非钉住状态下自动收起', () => {
-    expect(navSection).toMatch(/if \(!isNavPinned\) hideChatNav\(true\)/);
+  it('点击列表项后非钉住状态下自动收起（并把焦点交回把手）', () => {
+    expect(navSection).toMatch(/if \(!isNavPinned\) \{[\s\S]*?collapseChatNavReturningFocus\(\)/);
+  });
+
+  it('收起并交回焦点时屏蔽把手 focus 重展开，避免收起即弹回', () => {
+    expect(navModule).toMatch(/function collapseChatNavReturningFocus/);
+    expect(navModule).toMatch(/suppressFocusExpand = true;[\s\S]*?chatNavHotzone\.focus\([\s\S]*?suppressFocusExpand = false;/);
+    // 把手 focus 监听要先判断抑制位
+    expect(navModule).toMatch(/addEventListener\('focus', \(\) => \{\s*if \(suppressFocusExpand\) return;/);
   });
 });
 
-describe('index.js 接线：钉住与 Esc', () => {
-  const src = read('src/side_panel/index.js');
+describe('message-jump-nav.js 接线：钉住、键盘可达与边界反馈', () => {
+  const navModule = read('src/side_panel/message-jump-nav.js');
 
   it('热区点击切换钉住状态', () => {
-    expect(src).toMatch(/let isNavPinned = false/);
-    expect(src).toMatch(/function toggleNavPin/);
-    expect(src).toMatch(/classList\.toggle\('pinned'/);
+    expect(navModule).toMatch(/let isNavPinned = false/);
+    expect(navModule).toMatch(/function toggleNavPin/);
+    expect(navModule).toMatch(/classList\.toggle\('pinned'/);
   });
 
   it('钉住后鼠标移出不收起', () => {
-    expect(src).toMatch(/if \(isNavPinned\) return/);
+    expect(navModule).toMatch(/if \(isNavPinned\) return/);
   });
 
-  it('Esc 取消钉住并收起面板', () => {
-    expect(src).toMatch(/setNavPinned\(false\)/);
+  it('钉住态同步 aria-pressed', () => {
+    expect(navModule).toMatch(/setAttribute\('aria-pressed', String\(pinned\)\)/);
+  });
+
+  it('键盘可达：把手聚焦即展开，Enter/Space 切钉住', () => {
+    expect(navModule).toMatch(/chatNavHotzone\.addEventListener\('focus', [\s\S]*?showChatNav\(\)/);
+    expect(navModule).toMatch(/if \(e\.key === 'Enter' \|\| e\.key === ' '\)/);
+  });
+
+  it('键盘可达：列表内 ↑/↓ 移动焦点', () => {
+    expect(navModule).toMatch(/e\.key === 'ArrowDown'/);
+    expect(navModule).toMatch(/e\.key === 'ArrowUp'/);
+    expect(navModule).toMatch(/items\[next\]\.focus\(\)/);
+  });
+
+  it('键盘可达：焦点在把手/按钮/列表内时鼠标移出不收起', () => {
+    expect(navModule).toMatch(/function navContainsFocus/);
+    expect(navModule).toMatch(/if \(navContainsFocus\(\)\) return/);
+  });
+
+  it('边界反馈：跳不动时给按钮加 blocked 类', () => {
+    expect(navModule).toMatch(/function flashNavBlocked/);
+    expect(navModule).toMatch(/classList\.add\('blocked'\)/);
+    expect(navModule).toMatch(/return 'blocked'/);
+  });
+
+  it('Esc 优先交给导航处理（清搜索词 / 退钉住 / 收起）', () => {
+    expect(navModule).toMatch(/function handleEscape/);
+    expect(navModule).toMatch(/setNavPinned\(false\)/);
+  });
+});
+
+describe('index.js 接线：改用 initMessageJumpNav 模块', () => {
+  const src = read('src/side_panel/index.js');
+
+  it('从模块引入并初始化，不再内联接线', () => {
+    expect(src).toMatch(/import\s*\{\s*initMessageJumpNav\s*\}\s*from\s*'\.\/message-jump-nav\.js'/);
+    expect(src).toMatch(/const navApi = initMessageJumpNav\(\)/);
+    expect(src).not.toMatch(/function paintActiveQuestion/);
+    expect(src).not.toMatch(/function buildQuestionList/);
+  });
+
+  it('全局快捷键委托到 navApi', () => {
+    expect(src).toMatch(/navApi\.handleEscape\(\)/);
+    expect(src).toMatch(/navApi\.jumpToMessage\(/);
+    expect(src).toMatch(/navApi\.updateActiveQuestion\(\)/);
   });
 });
 
@@ -373,8 +435,23 @@ describe('styles.css：面板实色不透明 + 当前项/钉住样式', () => {
     expect(css).toMatch(/-webkit-line-clamp:\s*2/);
   });
 
-  it('删除从未渲染的空态死样式', () => {
-    expect(css).not.toContain('.chat-nav-question-empty');
+  it('过滤无命中时渲染空态，空态样式存在且被 utils 引用', () => {
+    expect(css).toMatch(/\.chat-nav-question-empty\s*\{/);
+    expect(read('src/side_panel/utils.js')).toContain('chat-nav-question-empty');
+  });
+
+  it('搜索框、时间、键盘焦点环样式齐备', () => {
+    expect(css).toMatch(/\.chat-nav-question-filter\s*\{/);
+    expect(css).toMatch(/\.chat-nav-question-search\s*\{/);
+    expect(css).toMatch(/\.chat-nav-question-time\s*\{/);
+    expect(css).toMatch(/\.chat-nav-hotzone:focus-visible\s*\{/);
+    expect(css).toMatch(/\.chat-nav-question-item:focus-visible\s*\{/);
+  });
+
+  it('边界反馈抖动动画存在，减少动态效果下退化为无位移', () => {
+    expect(css).toMatch(/@keyframes chatNavShake/);
+    expect(css).toMatch(/\.chat-nav-btn\.blocked\s*\{[^}]*animation:\s*chatNavShake/s);
+    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]{0,400}\.chat-nav-btn\.blocked\s*\{[^}]*animation:\s*none/s);
   });
 
   it('面板自身不再是滚动容器，Header 才能固定', () => {
@@ -412,13 +489,25 @@ describe('styles.css：面板实色不透明 + 当前项/钉住样式', () => {
     expect(textRule).toMatch(/overflow:\s*hidden/);
     // 新版 Chromium（130+）的省略号由 text-overflow 决定，缺它则第三行被硬切不画省略号
     expect(textRule).toMatch(/text-overflow:\s*ellipsis/);
+    // 文本在 flex 行内占剩余宽度，min-width:0 是两行截断/省略号在 flex 下生效的前提
+    expect(textRule).toMatch(/flex:\s*1\s+1\s+auto/);
+    expect(textRule).toMatch(/min-width:\s*0/);
 
     const itemStart = css.indexOf('.chat-nav-question-item {');
     const itemRule = css.slice(itemStart, css.indexOf('}', itemStart));
     expect(itemRule).not.toMatch(/-webkit-line-clamp/);
-    // 条目自身保持块级普通流，不参与 flex 布局，行盒截断只发生在内部文本节点
-    expect(itemRule).toMatch(/display:\s*block/);
-    expect(itemRule).not.toMatch(/display:\s*flex/);
+    // 条目是横向 flex：文本居左占剩余宽度，时间独占右列（B4 从下方一行改到右侧）
+    expect(itemRule).toMatch(/display:\s*flex/);
+  });
+
+  it('提问时间为右侧独立列：不压缩、单行不换行', () => {
+    const start = css.indexOf('.chat-nav-question-time {');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const timeRule = css.slice(start, css.indexOf('}', start));
+    expect(timeRule).toMatch(/flex:\s*none/);
+    expect(timeRule).toMatch(/white-space:\s*nowrap/);
+    // 不再用旧的「下方一行 + padding-left 越过序号」定位
+    expect(timeRule).not.toMatch(/padding-left:/);
   });
 });
 
@@ -496,5 +585,110 @@ describe('快捷键与提示文案对齐「问答组」口径', () => {
   it('仓库 wiki 快捷键表（zh/en）同步改口径', () => {
     expect(read('.wiki/Configuration.md')).toContain('| `Alt+↑` / `Alt+↓` | 跳转到上一个 / 下一个问题 | Win / Mac |');
     expect(read('.wiki/Configuration-EN.md')).toContain('| `Alt+↑` / `Alt+↓` | Jump to previous / next question | Win / Mac |');
+  });
+});
+
+describe('formatNavTime：条目提问时间', () => {
+  const p = (n) => String(n).padStart(2, '0');
+  it('缺失或非法时间返回空串', () => {
+    expect(formatNavTime('')).toBe('');
+    expect(formatNavTime(null)).toBe('');
+    expect(formatNavTime('not-a-date')).toBe('');
+  });
+  it('当天只显示 HH:MM', () => {
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T13:05:00`;
+    expect(formatNavTime(iso)).toBe('13:05');
+  });
+  it('跨天补 M-D', () => {
+    expect(formatNavTime('2000-03-04T08:09:00')).toBe('3-4 08:09');
+  });
+});
+
+describe('getQuestionPreview：文本 → 附件名 → 图片数 → 占位', () => {
+  const anchor = ({ text = '', files = null, images = 0 } = {}) => {
+    const el = { dataset: {}, childNodes: [] };
+    if (text) el.childNodes.push({ nodeType: 3, textContent: text });
+    if (files !== null) el.dataset.attachedFiles = files;
+    el.querySelectorAll = (sel) => (sel === '.user-message-image' ? new Array(images).fill({}) : []);
+    return el;
+  };
+  it('有直接文本时优先用文本', () => {
+    expect(getQuestionPreview(anchor({ text: '  请总结  this 页面 ' }))).toBe('请总结 this 页面');
+  });
+  it('无文本取首个附件文件名，多附件补 +N', () => {
+    expect(getQuestionPreview(anchor({ files: JSON.stringify([{ name: 'a.pdf' }, { name: 'b.png' }]) }))).toBe('a.pdf +1');
+    expect(getQuestionPreview(anchor({ files: JSON.stringify([{ name: 'only.md' }]) }))).toBe('only.md');
+  });
+  it('无文本无附件时按图片张数', () => {
+    expect(getQuestionPreview(anchor({ images: 2 }))).toContain('2');
+  });
+  it('全空回落到占位文案', () => {
+    expect(getQuestionPreview(anchor({}))).toContain('图片/附件');
+  });
+  it('非法 attachedFiles JSON 当无附件，不抛错', () => {
+    expect(() => getQuestionPreview(anchor({ files: '{bad json' }))).not.toThrow();
+  });
+});
+
+describe('filterJumpGroups：搜索过滤保留原始组序', () => {
+  const g = (text) => {
+    const el = { dataset: { messageId: text }, childNodes: [{ nodeType: 3, textContent: text }] };
+    return { start: el, userElement: el, elements: [] };
+  };
+  const groups = [g('苹果派'), g('香蕉'), g('Apple 派')];
+  it('空关键词返回全部并保留原始下标', () => {
+    expect(filterJumpGroups(groups, '')).toEqual([
+      { group: groups[0], index: 0 },
+      { group: groups[1], index: 1 },
+      { group: groups[2], index: 2 },
+    ]);
+  });
+  it('大小写不敏感子串命中，编号仍是全局第几组', () => {
+    const out = filterJumpGroups(groups, 'apple');
+    expect(out).toHaveLength(1);
+    expect(out[0].index).toBe(2);
+  });
+  it('无命中返回空数组', () => {
+    expect(filterJumpGroups(groups, 'zzz')).toEqual([]);
+  });
+});
+
+describe('renderQuestionListHtml：搜索框 / 时间 / aria-current / 过滤态', () => {
+  const group = (id, text, timestamp) => {
+    const el = msgEl('message user', { top: 0, bottom: 0 });
+    el.dataset = { messageId: id };
+    if (timestamp) el.dataset.timestamp = timestamp;
+    el.childNodes = [{ nodeType: 3, textContent: text }];
+    return { start: el, userElement: el, elements: [] };
+  };
+  const many = (n) => Array.from({ length: n }, (_, i) => group(`u${i}`, `第${i}个问题`));
+
+  it('组数达到阈值才渲染搜索框', () => {
+    expect(renderQuestionListHtml(many(NAV_SEARCH_MIN_GROUPS - 1), -1, false)).not.toContain('chat-nav-question-search');
+    expect(renderQuestionListHtml(many(NAV_SEARCH_MIN_GROUPS), -1, false)).toContain('chat-nav-question-search');
+  });
+  it('当前项 aria-current=true，其余 false', () => {
+    const html = renderQuestionListHtml(many(3), 1, false);
+    expect(html).toMatch(/data-message-id="u1"[^>]*aria-current="true"/);
+    expect(html).toMatch(/data-message-id="u0"[^>]*aria-current="false"/);
+  });
+  it('有 timestamp 时渲染可见时间', () => {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    const iso = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T09:30:00`;
+    const html = renderQuestionListHtml([group('u1', '带时间', iso)], 0, false);
+    expect(html).toContain('chat-nav-question-time');
+    expect(html).toContain('09:30');
+  });
+  it('过滤态只渲染命中条目，idx 仍是原始组序', () => {
+    const html = renderQuestionListHtml(many(6), -1, false, '第5个');
+    expect(html).toContain('data-message-id="u5"');
+    expect(html).not.toContain('data-message-id="u0"');
+    expect(html).toMatch(/<span class="idx">6<\/span>/);
+  });
+  it('过滤无命中时渲染空态', () => {
+    const html = renderQuestionListHtml(many(6), -1, false, '不存在的关键词zzz');
+    expect(html).toContain('chat-nav-question-empty');
   });
 });

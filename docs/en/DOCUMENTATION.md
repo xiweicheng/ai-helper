@@ -472,7 +472,7 @@ Model Context Protocol (MCP) support for dynamically extending third-party tool 
 - **Prompt System**: Custom prompts CRUD, `/` quick select, drag-to-reorder
 - **Input History**: Arrow key recall, auto-dedup management
 - **System Prompt**: Auto-injects environment info (Chrome extension, OS, agent platform), enforces task planning rules
-- **Question List Navigation**: Hover the bottom message jump hotzone to expand a question list for quickly locating historical questions
+- **Question List Navigation**: Hover or `Tab`-focus the message-jump handle to expand a question list on the right; filter by question keyword, see each question's timestamp; click / `Enter` to jump to a historical question, `↑`/`↓` to move between items, and pin it (`Esc` to collapse)
 
 ### 12. Markdown & Mermaid Rendering
 
@@ -1090,7 +1090,10 @@ Note: user clarification time does not count toward the loop timeout (timer paus
 | `Alt+E` | Edit the latest user message |
 | `Alt+↑/↓` | Jump between questions (previous / next) |
 | `Alt+Ctrl/Cmd+↑/↓` | Jump to top / bottom |
-| `Esc` | Close shortcuts panel / clear input |
+| `Tab` (left handle) | Focus the handle and open the question list (keyboard reachable) |
+| `↑` / `↓` / `Home` / `End` (in list) | Move focus between question items, `Enter` to jump |
+| `Enter` / `Space` (handle) | Pin / unpin the question list |
+| `Esc` | Close shortcuts panel / clear input / collapse question list (clears search text first) |
 | `Ctrl+Shift+Y` / `Cmd+Shift+Y` | Global shortcut to open side panel |
 
 ---

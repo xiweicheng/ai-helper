@@ -3,7 +3,7 @@
 import { initTheme, subscribeTheme, getTheme, setTheme } from '../shared/theme.js';
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition, buildMessageJumpGroups, findActiveGroupIndex, resolveJumpTarget, renderQuestionListHtml } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
 import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent, formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
@@ -12,6 +12,7 @@ import { initContextIndicator, runCompaction, computeCurrentUsage } from './cont
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
+import { initMessageJumpNav } from './message-jump-nav.js';
 import { initSearchPanel } from './search-panel.js';
 import { initSchedulePanel } from './schedule-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
@@ -2631,201 +2632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 在问答组之间跳转：direction = 'prev' | 'next'；toEnd = true 时直接跳到第一组/最后一组
-  function jumpToMessage(direction, toEnd) {
-    const chatContainer = document.getElementById('chatContainer');
-    if (!chatContainer) return;
-
-    const groups = buildMessageJumpGroups(chatContainer);
-    if (groups.length === 0) return;
-    const viewportTop = chatContainer.getBoundingClientRect().top;
-
-    // 快速回到顶部/底部（Ctrl/Cmd+点击 或 Alt+Ctrl/Cmd+方向键）
-    if (toEnd) {
-      if (direction === 'prev') {
-        groups[0].start.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        const elements = groups[groups.length - 1].elements;
-        elements[elements.length - 1].scrollIntoView({ behavior: 'smooth', block: 'end' });
-      }
-      return;
-    }
-
-    const target = resolveJumpTarget(groups.length, findActiveGroupIndex(groups, viewportTop), direction);
-    if (target === null) return;
-    groups[target].start.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  // 消息跳转按钮：上一条/下一条（Ctrl/Cmd+点击 跳到最顶端/底端，与 Alt+Ctrl/Cmd+方向键快捷键一致）
-  const chatNavUp = document.getElementById('chatNavUp');
-  const chatNavDown = document.getElementById('chatNavDown');
-  const chatNavHotzone = document.getElementById('chatNavHotzone');
-  const chatNavButtons = document.getElementById('chatNavButtons');
-  const chatNavQuestionPanel = document.getElementById('chatNavQuestionPanel');
-
-  // 跳转列表与 ▲▼ 共用「问答组」口径（分组由 utils.buildMessageJumpGroups 提供），编号才能与跳转位置一一对应
-  let navJumpGroups = [];
-  let isNavPinned = false;
-  let navHideTimer = null;
-
-  function navViewportTop() {
-    const chatContainer = document.getElementById('chatContainer');
-    return chatContainer ? chatContainer.getBoundingClientRect().top : 0;
-  }
-
-  function paintActiveQuestion(activeIndex, total) {
-    const items = chatNavQuestionPanel.querySelectorAll('.chat-nav-question-item');
-    items.forEach((item, index) => {
-      if (index === activeIndex) item.classList.add('current');
-      else item.classList.remove('current');
-    });
-    const countEl = chatNavQuestionPanel.querySelector('.chat-nav-question-header .count');
-    if (countEl) {
-      countEl.textContent = t('chat.navPosition', {
-        current: activeIndex >= 0 ? activeIndex + 1 : total,
-        total,
-      });
-    }
-    // 当前项不在列表可见范围时把它滚进来（只滚面板，不动聊天区）
-    if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].scrollIntoView({ block: 'nearest' });
-  }
-
-  // 滚动/跳转后同步当前组；消息数变了说明列表已过期，直接重建
-  function updateActiveQuestion() {
-    if (!chatNavQuestionPanel || !chatNavQuestionPanel.classList.contains('expanded')) return;
-    navJumpGroups = buildMessageJumpGroups(document.getElementById('chatContainer'));
-    const rendered = chatNavQuestionPanel.querySelectorAll('.chat-nav-question-item').length;
-    if (rendered !== navJumpGroups.length) {
-      buildQuestionList();
-      return;
-    }
-    paintActiveQuestion(findActiveGroupIndex(navJumpGroups, navViewportTop()), rendered);
-  }
-
-  // 构建问答组列表：悬停把手时右侧展开，点击条目定位到对应提问
-  function buildQuestionList() {
-    if (!chatNavQuestionPanel) return false;
-    navJumpGroups = buildMessageJumpGroups(document.getElementById('chatContainer'));
-    if (navJumpGroups.length === 0) {
-      chatNavQuestionPanel.innerHTML = '';
-      return false;
-    }
-    const activeIndex = findActiveGroupIndex(navJumpGroups, navViewportTop());
-    chatNavQuestionPanel.innerHTML = renderQuestionListHtml(navJumpGroups, activeIndex, isNavPinned);
-    chatNavQuestionPanel.querySelector('.chat-nav-pin').addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleNavPin();
-    });
-    if (activeIndex >= 0) {
-      const activeItem = chatNavQuestionPanel.querySelectorAll('.chat-nav-question-item')[activeIndex];
-      if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
-    }
-    return true;
-  }
-
-  function collapseChatNav() {
-    chatNavButtons.classList.remove('expanded');
-    if (chatNavQuestionPanel) chatNavQuestionPanel.classList.remove('expanded');
-  }
-
-  function showChatNav() {
-    clearTimeout(navHideTimer);
-    chatNavButtons.classList.add('expanded');
-    if (!chatNavQuestionPanel) return;
-    if (chatNavQuestionPanel.classList.contains('expanded')) {
-      updateActiveQuestion();
-      return;
-    }
-    if (buildQuestionList()) chatNavQuestionPanel.classList.add('expanded');
-    else chatNavQuestionPanel.classList.remove('expanded');
-  }
-
-  function hideChatNav(immediate) {
-    clearTimeout(navHideTimer);
-    if (isNavPinned) return;
-    if (immediate) collapseChatNav();
-    else navHideTimer = setTimeout(collapseChatNav, 300);
-  }
-
-  function setNavPinned(pinned) {
-    isNavPinned = pinned;
-    if (chatNavHotzone) chatNavHotzone.classList.toggle('pinned', pinned);
-    if (chatNavQuestionPanel) {
-      chatNavQuestionPanel.classList.toggle('pinned', pinned);
-      const btn = chatNavQuestionPanel.querySelector('.chat-nav-pin');
-      if (btn) {
-        const label = t(pinned ? 'chat.navUnpinLabel' : 'chat.navPinLabel');
-        btn.textContent = label;
-        btn.title = label;
-        btn.classList.toggle('on', pinned);
-      }
-    }
-  }
-
-  function toggleNavPin() {
-    setNavPinned(!isNavPinned);
-  }
-
-  if (chatNavUp) {
-    chatNavUp.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      jumpToMessage('prev', e.ctrlKey || e.metaKey);
-      updateActiveQuestion();
-    });
-  }
-  if (chatNavDown) {
-    chatNavDown.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      jumpToMessage('next', e.ctrlKey || e.metaKey);
-      updateActiveQuestion();
-    });
-  }
-
-  if (chatNavHotzone && chatNavButtons) {
-    chatNavHotzone.addEventListener('mouseenter', showChatNav);
-    chatNavHotzone.addEventListener('mouseleave', () => hideChatNav(false));
-    chatNavHotzone.addEventListener('click', () => toggleNavPin());
-    chatNavButtons.addEventListener('mouseenter', showChatNav);
-    chatNavButtons.addEventListener('mouseleave', () => hideChatNav(false));
-    if (chatNavQuestionPanel) {
-      chatNavQuestionPanel.addEventListener('mouseenter', showChatNav);
-      chatNavQuestionPanel.addEventListener('mouseleave', () => hideChatNav(false));
-      // 事件委托：列表重建后无需重新绑定，条目按 messageId 定位避免索引错位
-      chatNavQuestionPanel.addEventListener('click', (e) => {
-        const item = e.target.closest('.chat-nav-question-item');
-        if (!item || !item.dataset.messageId) return;
-        const group = navJumpGroups.find(
-          g => (g.userElement || g.start).dataset.messageId === item.dataset.messageId
-        );
-        if (!group) return;
-        const anchor = group.userElement || group.start;
-        anchor.scrollIntoView({ behavior: 'instant', block: 'start' });
-        anchor.classList.add('bookmark-highlight');
-        setTimeout(() => anchor.classList.remove('bookmark-highlight'), 2000);
-        if (!isNavPinned) hideChatNav(true);
-        else updateActiveQuestion();
-      });
-    }
-  }
-
-  // 面板展开期间跟随滚动更新当前组
-  {
-    const chatContainer = document.getElementById('chatContainer');
-    if (chatContainer) {
-      let navScrollScheduled = false;
-      chatContainer.addEventListener('scroll', () => {
-        if (!chatNavQuestionPanel || !chatNavQuestionPanel.classList.contains('expanded')) return;
-        if (navScrollScheduled) return;
-        navScrollScheduled = true;
-        requestAnimationFrame(() => {
-          navScrollScheduled = false;
-          updateActiveQuestion();
-        });
-      }, { passive: true });
-    }
-  }
+  const navApi = initMessageJumpNav();
 
   // 全局键盘快捷键
   document.addEventListener('keydown', (e) => {
@@ -2839,10 +2646,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Esc 取消问题列表钉住并收起
-    if (e.key === 'Escape' && isNavPinned) {
-      setNavPinned(false);
-      collapseChatNav();
+    // Esc：问题列表优先（清搜索词 / 退钉住 / 收起），未被导航消费才落到快捷键面板
+    if (e.key === 'Escape' && navApi.handleEscape()) {
       return;
     }
 
@@ -2905,8 +2710,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.preventDefault();
       const direction = e.key === 'ArrowUp' ? 'prev' : 'next';
       // Alt+Ctrl/Cmd+ArrowUp/ArrowDown：快速回到顶部/底部
-      jumpToMessage(direction, e.ctrlKey || e.metaKey);
-      updateActiveQuestion();
+      navApi.jumpToMessage(direction, e.ctrlKey || e.metaKey);
+      navApi.updateActiveQuestion();
       return;
     }
   });

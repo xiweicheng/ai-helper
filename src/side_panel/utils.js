@@ -1138,37 +1138,99 @@ export function formatQuestionPreview(text, maxLength = 120) {
   return flat.length > maxLength ? `${flat.slice(0, maxLength)}…` : flat;
 }
 
+/**
+ * 导航条目用的提问时间：当天只显 HH:MM，跨天补 MM-DD（无效/缺失返回空串，
+ * 改版前的旧消息没有 dataset.timestamp，不显示假时间）。
+ */
+export function formatNavTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return hm;
+  return `${d.getMonth() + 1}-${d.getDate()} ${hm}`;
+}
+
+/**
+ * 提取一条提问的预览文案：直接文本 → 首个附件文件名（多附 +N）→ 图片张数 → 占位。
+ * 只依赖 anchor 的 childNodes/dataset/querySelectorAll，传 fake 节点时缺项安全。
+ */
+export function getQuestionPreview(anchor) {
+  const text = Array.from((anchor && anchor.childNodes) || [])
+    .filter(n => n.nodeType === TEXT_NODE_TYPE)
+    .map(n => n.textContent)
+    .join('');
+  const flat = formatQuestionPreview(text);
+  if (flat) return flat;
+  let files = [];
+  try {
+    files = JSON.parse((anchor.dataset && anchor.dataset.attachedFiles) || '[]');
+  } catch (e) { /* 非法 JSON 当无附件 */ }
+  const names = (Array.isArray(files) ? files : []).map(f => f && f.name).filter(Boolean);
+  if (names.length) {
+    return formatQuestionPreview(names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0]);
+  }
+  const images = anchor.querySelectorAll ? anchor.querySelectorAll('.user-message-image').length : 0;
+  if (images) return t('chat.navQuestionImageCount', { count: images });
+  return t('chat.navQuestionNoText');
+}
+
+/** 搜索框渲染阈值：组数少于它时列表短到无需过滤，不占 Header 空间 */
+export const NAV_SEARCH_MIN_GROUPS = 6;
+
+/**
+ * 按关键词过滤问答组（大小写不敏感子串，匹配预览文案）。
+ * 保留原始组下标：编号/高亮/跳转位置必须仍是「全局第几组」，不能重排。
+ * @returns {Array<{group: object, index: number}>}
+ */
+export function filterJumpGroups(groups, query) {
+  const q = String(query || '').trim().toLowerCase();
+  const all = groups.map((group, index) => ({ group, index }));
+  if (!q) return all;
+  return all.filter(({ group }) =>
+    getQuestionPreview(group.userElement || group.start).toLowerCase().includes(q)
+  );
+}
+
 /** DOM 文本节点类型常量：utils.js 也被 node 环境（单测）引用，不能依赖全局 Node */
 const TEXT_NODE_TYPE = 3;
 
 /**
- * 渲染问题列表 HTML：Header 作为固定区，条目放进独立的滚动区，
+ * 渲染问题列表 HTML：Header 与搜索框作为固定区，条目放进独立的滚动区，
  * 保证列表垂直滚动时 Header 始终可见。
- * @param {Array} groups - buildMessageJumpGroups 的结果
- * @param {number} activeIndex - 当前组下标，-1 表示尚无命中组
+ * @param {Array} groups - buildMessageJumpGroups 的结果（全量，未过滤）
+ * @param {number} activeIndex - 当前组在 groups 中的下标，-1 表示尚无命中组
  * @param {boolean} isPinned - 是否处于钉住态
+ * @param {string} query - 当前搜索关键词（非空时只渲染命中条目，编号仍是原始组序）
  */
-export function renderQuestionListHtml(groups, activeIndex, isPinned) {
-  const items = groups.map((group, index) => {
+export function renderQuestionListHtml(groups, activeIndex, isPinned, query = '') {
+  const matched = filterJumpGroups(groups, query);
+  const items = matched.map(({ group, index }) => {
     const anchor = group.userElement || group.start;
-    // 仅取直接文本节点，排除图片/文件等子元素
-    const text = Array.from(anchor.childNodes || [])
-      .filter(n => n.nodeType === TEXT_NODE_TYPE)
-      .map(n => n.textContent)
-      .join('');
-    const displayText = formatQuestionPreview(text) || t('chat.navQuestionNoText');
+    const displayText = getQuestionPreview(anchor);
     const messageId = (anchor.dataset && anchor.dataset.messageId) || '';
-    const cls = `chat-nav-question-item${index === activeIndex ? ' current' : ''}`;
+    const time = formatNavTime(anchor.dataset && anchor.dataset.timestamp);
+    const title = time ? `${displayText} · ${time}` : displayText;
+    const isCurrent = index === activeIndex;
+    const cls = `chat-nav-question-item${isCurrent ? ' current' : ''}`;
     // 序号必须嵌在被 clamp 的文本节点内部：行盒截断只发生在内部文本节点上，
     // 编号若独立于 clamp 节点，会被当成单独行盒参与截断计算。
     // 两行省略号的渲染前提见 styles.css 的 .chat-nav-question-text 注释（text-overflow 驱动）。
+    // data-group-index 供过滤态下按原始下标反查高亮/键盘导航，aria-current 让读屏也能定位当前组。
     const textHtml = `<span class="chat-nav-question-text"><span class="idx">${index + 1}</span>${escapeAttr(displayText)}</span>`;
-    return `<button class="${cls}" data-message-id="${escapeAttr(messageId)}" title="${escapeAttr(displayText)}">${textHtml}</button>`;
+    const timeHtml = time ? `<span class="chat-nav-question-time">${escapeAttr(time)}</span>` : '';
+    return `<button class="${cls}" data-message-id="${escapeAttr(messageId)}" data-group-index="${index}" aria-current="${isCurrent ? 'true' : 'false'}" title="${escapeAttr(title)}">${textHtml}${timeHtml}</button>`;
   }).join('');
 
   const pinLabel = t(isPinned ? 'chat.navUnpinLabel' : 'chat.navPinLabel');
   const current = activeIndex >= 0 ? activeIndex + 1 : groups.length;
   const header = `<div class="chat-nav-question-header"><span>${t('chat.navQuestionTitle')}</span><button type="button" class="chat-nav-pin${isPinned ? ' on' : ''}" title="${escapeAttr(pinLabel)}">${escapeAttr(pinLabel)}</button><span class="count">${t('chat.navPosition', { current, total: groups.length })}</span></div>`;
+  const search = groups.length >= NAV_SEARCH_MIN_GROUPS
+    ? `<div class="chat-nav-question-filter"><input type="search" class="chat-nav-question-search" data-role="nav-search" placeholder="${escapeAttr(t('chat.navSearchPlaceholder'))}" value="${escapeAttr(query)}" aria-label="${escapeAttr(t('chat.navSearchPlaceholder'))}"></div>`
+    : '';
+  const empty = matched.length === 0 ? `<div class="chat-nav-question-empty">${escapeAttr(t('chat.navNoMatch'))}</div>` : '';
 
-  return `${header}<div class="chat-nav-question-list">${items}</div>`;
+  return `${header}${search}<div class="chat-nav-question-list">${empty || items}</div>`;
 }

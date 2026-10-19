@@ -3588,6 +3588,8 @@ body {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* 新版 Chromium（130+）把 -webkit-box 转 flow-root 后，省略号改由 text-overflow 驱动 */
+  text-overflow: ellipsis;
   font-size: 12px;
   color: var(--text-primary);
   line-height: 1.55;
@@ -5240,7 +5242,7 @@ body {
 /* ========== 用户问题列表（悬停消息跳转把手时右侧展开，可钉住） ========== */
 .chat-nav-question-panel {
   position: fixed;
-  left: 48px;
+  left: 45px;
   top: 50%;
   transform: translateY(-50%) translateX(-8px);
   width: 300px;
@@ -5329,9 +5331,11 @@ body {
   color: var(--brand-600);
 }
 .chat-nav-question-item {
-  /* 条目保持块级普通流：行盒截断只落在内部 .chat-nav-question-text 上，
-     条目自身不承载 clamp，也不参与 flex 布局。 */
-  display: block;
+  /* 横向 flex：左侧序号+问题文本占剩余宽度并两行截断，右侧时间独占一列不被压缩。
+     行盒截断仍只落在内部 .chat-nav-question-text 上，条目自身不承载 clamp。 */
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   overflow: hidden;
   width: 100%;
   padding: 8px 10px;
@@ -5375,6 +5379,74 @@ body {
   -webkit-line-clamp: 2;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* flex 子项必须 min-width:0，否则内容最小宽度撑住、两行截断与省略号失效 */
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 条目提问时间（B4）：右侧独立一列，单行不压缩、与首行文字顶部对齐 */
+.chat-nav-question-time {
+  flex: none;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Header 搜索过滤（B6）：组数足够多时才渲染，固定在列表滚动区之上不随条目滚动 */
+.chat-nav-question-filter {
+  flex: none;
+  padding: 0 8px 8px;
+}
+.chat-nav-question-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: rgba(var(--surface-rgb), 0.6);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.chat-nav-question-search:focus {
+  border-color: rgba(var(--brand-rgb), 0.45);
+  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.16);
+}
+.chat-nav-question-empty {
+  padding: 16px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+/* 键盘可达（A1）：把手与条目都用焦点环，供 Tab / 方向键导航时可见 */
+.chat-nav-hotzone:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: 2px;
+  background: rgba(var(--brand-rgb), 0.38);
+}
+.chat-nav-question-item:focus-visible {
+  outline: 2px solid var(--brand-600);
+  outline-offset: -2px;
+}
+/* 边界反馈（A3）：已在首/末组仍要跳时按钮轻抖一下，代替静默失败 */
+.chat-nav-btn.blocked {
+  animation: chatNavShake 0.32s ease;
+  border-color: rgba(var(--brand-rgb), 0.5);
+}
+@keyframes chatNavShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 关闭位移动画，退化为一次可见的描边闪烁仍能传达“到头了” */
+  .chat-nav-btn.blocked {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.45);
+  }
 }
 /* 新内容指示器（小蓝点 badge） */
 .scroll-to-bottom-badge {
@@ -12762,6 +12834,8 @@ body {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  /* 同 .kb-bubble-hit-text：line-clamp 需配 text-overflow 才画省略号 */
+  text-overflow: ellipsis;
   word-break: break-all;
 }
 

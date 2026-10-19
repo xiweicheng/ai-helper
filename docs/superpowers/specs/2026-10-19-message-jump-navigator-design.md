@@ -3,7 +3,7 @@
 - 日期：2026-10-19
 - 分支：`youhua-theme`
 - 范围：侧边栏左侧「消息跳转」把手、▲▼ 按钮、用户问题列表面板
-- 交付档：P0 定位感（本文件），P1/P2 明确留待后续（见「本期不做」）
+- 交付档：P0 定位感（§2–§5），原列 P1/P2 的键盘可达/搜索/时间戳/边界反馈/附件预览已在**二期**全部落地（见 §7）；§4「本期不做」表保留作决策留痕
 
 ## 1. 背景与用户反馈
 
@@ -93,12 +93,14 @@
 
 ## 4. 本期不做（已评估，留待后续）
 
-| 项 | 为什么不做 |
-|----|------------|
-| 抽出 `message-jump-panel.js` 模块 | 分组/定位/列表渲染（`renderQuestionListHtml`）已全部沉到 `utils.js` 可直接单测，剩下的是 `index.js` 里的小段接线；再搬只增加回归面 |
-| 键盘可达（把手改可聚焦 button、`:focus-within` 展开） | 牵动 `index.js` 全局快捷键链路，改动面大于收益，单独一期做 |
-| 列表搜索/过滤 | 只有几十条提问时才需要，且与键盘导航绑定更顺 |
-| 条目显示时间戳、边界无动作的反馈、图片消息显示文件名 | P2，一行级但独立 |
+> 下表中除首行「抽出独立模块」外，其余三项均已在**二期**落地（见 §7），保留本表仅作决策留痕。
+
+| 项 | 为什么不做（一期口径） | 二期状态 |
+|----|------------|------|
+| 抽出 `message-jump-panel.js` 模块 | 分组/定位/列表渲染（`renderQuestionListHtml`）已全部沉到 `utils.js` 可直接单测，剩下的是 `index.js` 里的小段接线；再搬只增加回归面 | ✅ 二期为让 e2e 真实驱动，把接线抽为 `message-jump-nav.js` |
+| 键盘可达（把手改可聚焦 button、`:focus-within` 展开） | 牵动 `index.js` 全局快捷键链路，改动面大于收益，单独一期做 | ✅ 二期 A1 已交付 |
+| 列表搜索/过滤 | 只有几十条提问时才需要，且与键盘导航绑定更顺 | ✅ 二期 B6 已交付 |
+| 条目显示时间戳、边界无动作的反馈、图片消息显示文件名 | P2，一行级但独立 | ✅ 二期 B4/A3/B5 已交付 |
 
 ## 5. 验证
 
@@ -108,6 +110,23 @@
 - **构建**：`npm run build:silent` → `BUILD_SUCCESS`。
 - **全量单测**：136 文件 / 2038 例通过；全量 e2e 48 例通过。
 
+> 二期后口径刷新：`message-jump-navigator.unit.test.js` 57→86 例、新增 `message-jump-interaction.e2e.spec.js` 7 例、全量单测 2038→2067 例、全量 e2e 48→55 例（详见 §7）。
+
 ## 6. 已知缺口（如实记录）
 
-悬停展开、点击钉住、Esc 收起这三段接线在 `index.js` 的初始化闭包内，未导出，因此**没有**在真实浏览器里用鼠标驱动验证，只有源码守卫断言 + CSS 层的真实渲染断言。若后续按 §4 抽模块，可补一条 Playwright 真实 hover/click 用例。
+> ✅ 本缺口已由**二期**关闭（见 §7）：接线抽出为 `message-jump-nav.js` 可导入模块，并用 `message-jump-interaction.e2e.spec.js` 以真实鼠标/键盘驱动悬停展开、点击钉住、Esc 收起。
+
+一期时悬停展开、点击钉住、Esc 收起这三段接线在 `index.js` 的初始化闭包内，未导出，因此**没有**在真实浏览器里用鼠标驱动验证，只有源码守卫断言 + CSS 层的真实渲染断言。
+
+## 7. 二期（A/B/C 全量落地）
+
+一期交付后盘点「还有优化空间吗」，按 A/B/C 三档落地以下项（均在 2026-10-19 同日完成，CHANGELOG 见「消息跳转 · 二期」）：
+
+- **接线抽模块**：新增 `src/side_panel/message-jump-nav.js`，导出 `initMessageJumpNav()` 返回 `{ jumpToMessage, updateActiveQuestion, handleEscape, isPinned }`；`index.js` 只留 `const navApi = initMessageJumpNav();` 与 `Esc`/`Alt+↑↓` 两个转发分支。抽模块的直接目的是让 e2e 能用 esbuild 把真实模块打成 IIFE（`globalName:'NavKit'`），以真鼠标/键盘驱动产品代码，关闭 §6 缺口。
+- **A1 键盘可达**：把手补 `role=button tabindex=0 aria-pressed`；聚焦即展开、`↑/↓/Home/End` 条目间移动、`Enter/Space` 钉住、`Esc` 收起；`:focus-visible` 品牌描边。
+- **A3 边界反馈**：`jumpToMessage` 返回 `'jumped'|'blocked'|'noop'`，到顶/到底时 `flashNavBlocked` 给 ▲▼ 播 `chatNavShake` 抖动（`prefers-reduced-motion` 降为静态 ring）。
+- **B4 提问时间**（`formatNavTime`：当天 `HH:MM`、跨天 `M-D`）、**B5 附件预览**（`getQuestionPreview`：首个文件名/多附 `+N`/「N 张图片」）、**B6 搜索过滤**（`filterJumpGroups` 保留原始组序，≥`NAV_SEARCH_MIN_GROUPS(6)` 渲染搜索框，无命中显空态）。
+- **二期反馈修正（用户实测）**：（a）时间从「问题下方一行」改到**右侧独立列**——`.chat-nav-question-item` 改横向 flex，文本 `flex:1 1 auto; min-width:0` 两行截断、时间 `flex:none; white-space:nowrap` 与首行顶部对齐；不选「浮在文字上方」是因为会与 line-clamp 争位、遮挡正文。（b）**中文输入法修复**：搜索框原本每个 `input` 都整体重建 `innerHTML`，拼音上屏前的组合期 `input`（`isComposing=true`）会销毁正在组合的 input → 拼音转不出汉字只剩字母；改为组合期短路、`compositionend` 提交后才过滤（加 `navQuery` 同值早退）。
+- **C7/C8/C9**：删孤儿键 `chat.navEmptyLabel`；当前条目补 `aria-current`；`.kb-bubble-hit-text` 与记忆条目两处既有 `line-clamp` 补 `text-overflow:ellipsis`。
+- **修复「收起即弹回」真 bug**：`Esc`/点击条目收起时把焦点交回把手，会触发把手 `focus→showChatNav` 重展开；`hideChatNav` 的 `navContainsFocus` 守卫又使点击条目后根本收不起。新增 `suppressFocusExpand` 标志位 + `collapseChatNavReturningFocus()`，`focus` 监听先判抑制位。由二期 `Esc` e2e 用例暴露。
+- **验证**：单测 57→86（新增 `formatNavTime`/`getQuestionPreview`/`filterJumpGroups`/`renderQuestionListHtml(query)` 纯函数例、键盘可达/`blocked` 守卫、`index.js` 集成守卫、IME 组合期不重建与时间右列 flex 守卫；「删空态死样式」例翻转为「空态样式存在且被 utils 引用」）+ 新建 `message-jump-interaction.e2e.spec.js` 7 例（含真 `CompositionEvent`/`InputEvent(isComposing)` 驱动验证中文上屏）；全量单测 136 文件 / 2067 例、全量 e2e 55 例、`build:silent`、`eslint`(src+test) 0、`theme:check`/`theme:contrast` 通过。
