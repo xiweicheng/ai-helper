@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 31 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 33 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -699,6 +699,18 @@ The entire UI is built on semantic color tokens and supports three theme modes (
 
 ---
 
+### 33. Objective Sub-task Completion Verification
+
+Complements the "Reflection System": reflection is the model's subjective self-scoring of answer quality, whereas this feature uses real page / command evidence to **objectively** verify whether the sub-tasks decomposed by `plan_task` were actually met, instead of trusting the model's self-report (fully byte-for-byte unchanged when left off).
+
+- **Criteria declaration**: each sub-task may carry `doneCriteria` acceptance checks supporting five check types: `element_exists` / `element_absent` / `text_contains` (must set `expected`) / `attribute_equals` / `url_matches`.
+- **Objective evidence gathering**: the content side uses `deepQuerySelector` / `deepGetText` to penetrate multi-layer Shadow DOM and same-origin iframes, with `selectorQueryable` validating selector syntax; a tri-state verdict `satisfied` / `unmet` / `indeterminate` never reports an unavailable evidence channel as unmet.
+- **Optional auto-rerun loop**: four gates (retryable / progress / budget / under-max) drive unmet sub-tasks back through re-execution; `isStrictSubset` strictly-checks that the missing set shrinks monotonically, halting the rerun the moment it stops to prevent oscillation. Command evidence supports two modes: a read-only hard block and the agent's three-tier gate (allow/confirm/deny).
+- **Inline, non-blocking**: evidence is gathered live inside each sub-task's `onDone` (best effort) with a per-item timeout; results are surfaced as a `completionNote` without interrupting the main loop.
+- **Toggles**: the "Completion Verification" switch and the "auto-rerun" sub-switch (shown only when the former is on) live in the Options → Inference tab, both persisted with config import / export.
+
+---
+
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
 ### Content Extraction (6)
@@ -995,24 +1007,23 @@ Build output in `dist/`. `scripts/fix-build.js` auto-fixes path issues and renam
 
 ### Configuration
 
-The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, Knowledge Base, and Memory.
+The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Base, and Memory (Reflection and completion-verification settings now live inside the ReAct tab).
 
 1. Right-click extension icon → **Options**
 2. **Basic**: Pick UI language and theme (Light / Dark / System), enter provider profile and API Key / API Base URL / Model; optionally enable image recognition, completion feedback, and desktop notifications
-3. **ReAct**: Adjust inference loop parameters and streaming output
-4. **Reflection**: Configure post- and sub-task reflection
-5. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
-6. **Agent**: Pair with the local agent service
-7. **Toolbox**: Manage MCP servers and Skills
-8. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies)
-9. **Memory**: Configure long-term memory semantic vectors (requires a connected agent)
-10. Start chatting in the side panel
+3. **ReAct**: Adjust inference loop parameters and streaming output, and configure reflection (post / sub-task) plus objective completion verification
+4. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
+5. **Agent**: Pair with the local agent service
+6. **Toolbox**: Manage MCP servers and Skills
+7. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies)
+8. **Memory**: Configure long-term memory semantic vectors (requires a connected agent)
+9. Start chatting in the side panel
 
 ---
 
 ## Configuration Reference
 
-The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, Knowledge Base, and Memory.
+The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Base, and Memory (Reflection and completion-verification settings now live inside the ReAct tab).
 
 ### Basic Settings (Basic tab)
 
@@ -1047,15 +1058,17 @@ The Options page has 8 tabs: Basic, ReAct, Reflection, Toolbar, Agent, Toolbox, 
 
 Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection are built-in strategies — no configuration needed.
 
-### Reflection Settings (Reflection tab)
+### Reflection & Completion Verification Settings (inside the ReAct tab)
 
 | Level | Default | Description |
 |-------|---------|-------------|
 | Reflection Master Switch | On | Globally controls all reflection |
 | Post-Reflection | On | Assesses final result quality after the loop; auto-revise or re-execute below threshold |
 | Sub-task Reflection | Off | Independent assessment of decomposed sub-tasks (advanced feature) |
+| Completion Verification | Off | Objectively gathers evidence for `plan_task` sub-task `doneCriteria` (real DOM / command evidence), complementing subjective reflection self-scoring |
+| Auto-rerun | Off | Revealed only when Completion Verification is on; four gates drive unmet sub-tasks back through re-execution |
 
-> The tool-level reflection toggle has been removed; tool-result quality feedback is now handled automatically by the zero-cost inline "Tool Observation Hint" rule, with no configuration needed.
+> The reflection and completion-verification sub-switches both live inside the same ReAct tab panel, toggled via `display`-based visibility; the tool-level reflection toggle has been removed — tool-result quality feedback is now handled automatically by the zero-cost inline "Tool Observation Hint" rule, with no configuration needed.
 
 ### Chat Settings (in the side panel)
 

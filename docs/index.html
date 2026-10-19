@@ -1124,6 +1124,16 @@
       <h3 data-i18n="feat-schedule-title">Scheduled Tasks</h3>
       <p data-i18n="feat-schedule-desc">Create one-time (after X minutes / at a specific time), interval, and Cron scheduled tasks that run automatically with web-page context and host session binding. Built-in management panel, run history, failure notifications, and self-healing session recovery.</p>
     </div>
+    <div class="card">
+      <div class="card-icon">🌓</div>
+      <h3 data-i18n="feat-theme-title">Light / Dark / System Theme</h3>
+      <p data-i18n="feat-theme-desc">A semantic-token redesign across the whole UI with three states (light, dark, follow-system). Switch instantly from the sidebar "More" menu or the Options "Appearance" card; the resolved theme syncs across every page without a reload, with WCAG-AA dark contrast verified per panel.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">✅</div>
+      <h3 data-i18n="feat-verify-title">Objective Completion Checks</h3>
+      <p data-i18n="feat-verify-desc">Sub-tasks from plan_task can declare doneCriteria acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model's self-report. An optional auto-rerun loop drives unmet sub-tasks back through four gates; fully unchanged when left off.</p>
+    </div>
   </div>
 </section>
 
@@ -1866,6 +1876,10 @@
     'feat-privacy-desc':     { en: 'API Key local storage. Agent command tiered control (blacklist blocking + graylist confirmation), file operation sandbox protection, pairing authentication.', zh: 'API Key 本地存储。代理命令分级管控（黑名单拦截 + 灰名单确认），文件操作沙箱保护，配对认证。' },
     'feat-schedule-title':   { en: 'Scheduled Tasks', zh: '定时任务' },
     'feat-schedule-desc':    { en: 'Create one-time (after X minutes / at a specific time), interval, and Cron scheduled tasks that run automatically with web-page context and host session binding. Built-in management panel, run history, failure notifications, and self-healing session recovery.', zh: '创建一次性（多少分钟后 / 指定时间点）、间隔、Cron 三种定时任务，可基于网页上下文与宿主会话自动执行。内置管理面板、运行历史、失败通知与会话自愈恢复。' },
+    'feat-theme-title':      { en: 'Light / Dark / System Theme', zh: '亮 / 暗 / 跟随系统主题' },
+    'feat-theme-desc':       { en: 'A semantic-token redesign across the whole UI with three states (light, dark, follow-system). Switch instantly from the sidebar "More" menu or the Options "Appearance" card; the resolved theme syncs across every page without a reload, with WCAG-AA dark contrast verified per panel.', zh: '全站语义 token 重构，提供亮 / 暗 / 跟随系统三态。侧边栏「更多」菜单与选项页「外观」卡片两处入口即时切换，解析后主题跨页面免刷新同步，逐面板实测暗色对比度符合 WCAG AA。' },
+    'feat-verify-title':     { en: 'Objective Completion Checks', zh: '完成度客观取证校验' },
+    'feat-verify-desc':      { en: 'Sub-tasks from plan_task can declare doneCriteria acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model\'s self-report. An optional auto-rerun loop drives unmet sub-tasks back through four gates; fully unchanged when left off.', zh: 'plan_task 拆出的子任务可用 doneCriteria 声明验收标准，依据真实 DOM / 命令证据（穿透 Shadow DOM / 同源 iframe）客观取证判断是否达成，而非依赖模型自述。可选自动重跑回路以四闸门驱动未达标子任务回炉；默认关闭时现有行为逐字节不变。' },
     'scenarios-title':          { en: 'Typical Use Cases', zh: '典型使用场景' },
     'scenarios-desc':           { en: 'One assistant, covering every aspect of your daily work', zh: '一个助手，覆盖你日常工作的方方面面' },
     'scenario-dev-title':       { en: 'Full-Stack Development Assistant', zh: '全栈开发助手' },

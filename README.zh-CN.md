@@ -45,6 +45,7 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 - **用自己的文档建知识库问答** —— PDF / Word / Excel / PPT / Markdown / HTML / CSV 一键导入本地知识库，检索增强回答附带可点击的引用来源，还支持多库同时检索。
 - **任意厂商，两下切换** —— 保存多套 OpenAI 兼容厂商配置（地址 / Key / 模型列表），在侧边栏先选厂商、再选模型，随切随用。
 - **任务完成不错过** —— 任务完成 / 失败、定时任务结束、AI 等待确认或澄清时弹出桌面通知，点击即可回到侧边栏。
+- **亮 / 暗 / 跟随系统三态主题** —— 全站语义 token 化，侧边栏「更多」菜单与选项页「外观」两处入口即时切换，任一处改动其余页面无需刷新同步。
 
 ## 能力对比
 
@@ -65,6 +66,7 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 ## 为什么不只是"另一个 AI 侧边栏"
 
 - **反思质量保障**：预筛选 → 零成本工具观察提示 → 子任务反思 → 后置反思。每轮最终答案都会做 7 维度评分，未达标自动修订或重跑，不会把 LLM 原始输出直接甩给你。
+- **子任务完成度客观取证**：`plan_task` 拆出的子任务可用 `doneCriteria` 声明验收标准，用真实 DOM / 命令证据（穿透 Shadow DOM / 同源 iframe）判断是否达成，而非依赖模型自述；可选开启自动重跑回路，四闸门驱动未达标子任务回炉（默认关闭时现有行为逐字节不变）。
 - **工具预选省钱**：40+ 个工具定义全塞给主力模型 Token 会爆炸，先用一次轻量 API 缩到 5–10 个真正相关的，再喂给主模型。
 - **Token 预算管理**：按 Token 数而非消息数截断，`tool_calls` / `tool` 消息配对永远不会被腰斩。
 - **长引用自动压缩**：选中一大段网页也不会永远霸占上下文，自动摘要压缩，把空间留给真正相关的信息。
@@ -95,8 +97,8 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 上手之后的所有细节都放在完整技术参考里：
 
-- **中文** —— 架构总览、31 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
-- **English** —— architecture、31 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** —— 架构总览、33 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** —— architecture、33 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
 - **Wiki** —— 安装、功能、工具、代理、配置全站 → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **文档站** —— <https://xiweicheng.github.io/ai-helper/>
 - **作品介绍** —— [`docs/AI-Helper-作品介绍文档.md`](docs/AI-Helper-作品介绍文档.md)

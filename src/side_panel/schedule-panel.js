@@ -217,8 +217,8 @@ export function initSchedulePanel() {
   container.innerHTML = `
     <style>
       .schedule-panel-container { position: relative; display: flex; justify-content: flex-end; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 100%; background: transparent; }
-      .schedule-panel-toggle { background: linear-gradient(135deg, rgba(var(--success-rgb), 0.85) 0%, rgba(31, 145, 80, 0.85) 100%); color: var(--text-on-brand); border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.3); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; opacity: 0.85; }
-      .schedule-panel-toggle:hover { opacity: 1; box-shadow: -3px 3px 12px rgba(var(--success-rgb), 0.4); }
+      .schedule-panel-toggle { background: rgba(var(--success-rgb), 0.14); color: var(--success-strong); border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
+      .schedule-panel-toggle:hover { background: rgba(var(--success-rgb), 0.24); box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.2); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
       .schedule-panel-toggle.running svg { animation: sched-icon-spin 1.4s linear infinite; transform-origin: center; transform-box: fill-box; }
       .schedule-panel-toggle.running { animation: sched-btn-glow 1.4s ease-in-out infinite; }

@@ -11472,24 +11472,23 @@ body {
 }
 
 .message-toc-toggle {
-  background: linear-gradient(135deg, rgba(var(--brand-rgb), 0.85) 0%, rgba(var(--brand-accent-rgb), 0.85) 100%);
-  color: var(--text-on-brand);
+  background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-strong);
   border: none;
   border-radius: 8px 0 0 8px;
   padding: 8px 6px;
   cursor: pointer;
   font-size: 14px;
-  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.3);
+  box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12);
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
 }
 
 .message-toc-toggle:hover {
-  opacity: 1;
-  box-shadow: -3px 3px 12px rgba(var(--brand-rgb), 0.4);
+  background: rgba(var(--brand-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2);
 }
 
 .message-toc-panel {
@@ -12039,24 +12038,23 @@ body {
 
 /* 收藏入口按钮 */
 .bookmark-panel-toggle {
-  background: linear-gradient(135deg, rgba(var(--warning-rgb), 0.85) 0%, rgba(var(--warning-rgb), 0.85) 100%);
-  color: var(--text-on-brand);
+  background: rgba(var(--warning-rgb), 0.14);
+  color: var(--warning-strong);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
   cursor: pointer;
   font-size: 14px;
-  box-shadow: -2px 2px 8px rgba(var(--warning-rgb), 0.3);
+  box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12);
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
 }
 
 .bookmark-panel-toggle:hover {
-  opacity: 1;
-  box-shadow: -3px 3px 12px rgba(var(--warning-rgb), 0.4);
+  background: rgba(var(--warning-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--warning-rgb), 0.2);
 }
 
 .bookmark-panel-toggle svg {
@@ -12425,24 +12423,23 @@ body {
 
 /* 搜索入口按钮 */
 .search-panel-toggle {
-  background: linear-gradient(135deg, rgba(var(--info-rgb), 0.85) 0%, rgba(var(--info-rgb), 0.85) 100%);
-  color: var(--text-on-brand);
+  background: rgba(var(--info-rgb), 0.14);
+  color: var(--info-strong);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
   cursor: pointer;
   font-size: 14px;
-  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.3);
+  box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12);
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
 }
 
 .search-panel-toggle:hover {
-  opacity: 1;
-  box-shadow: -3px 3px 12px rgba(var(--info-rgb), 0.4);
+  background: rgba(var(--info-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.2);
 }
 
 .search-panel-toggle svg {
@@ -12765,24 +12762,23 @@ body {
 
 /* 入口按钮 */
 .workspace-panel-toggle {
-  background: linear-gradient(135deg, rgba(var(--info-rgb), 0.85) 0%, rgba(var(--info-rgb), 0.85) 100%);
-  color: var(--text-on-brand);
+  background: rgba(var(--info-rgb), 0.14);
+  color: var(--info-strong);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
   cursor: pointer;
   font-size: 14px;
-  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.3);
+  box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12);
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
 }
 
 .workspace-panel-toggle:hover {
-  opacity: 1;
-  box-shadow: -3px 3px 12px rgba(var(--info-rgb), 0.4);
+  background: rgba(var(--info-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.2);
 }
 
 .workspace-panel-toggle svg {

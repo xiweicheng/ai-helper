@@ -45,6 +45,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 - **Ask your own documents** — build a local knowledge base from PDF / Word / Excel / PPT / Markdown / HTML / CSV, then get retrieval-augmented answers with clickable citations; multiple bases can be searched together.
 - **Bring any provider, switch in two clicks** — save multiple OpenAI-compatible provider profiles (endpoint / key / model list); pick provider first, then model, right in the chat panel.
 - **Never miss an unfinished task** — desktop notifications when a task completes or fails, when a scheduled task finishes, and when the AI is waiting for your confirmation or clarification; one click jumps back to the side panel.
+- **Light / Dark / Follow-system theme** — a semantic-token redesign across the whole UI, switchable instantly from the sidebar "More" menu and the Options "Appearance" card; a change anywhere syncs every page without a reload.
 
 ## How it compares
 
@@ -65,6 +66,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 ## Why not just use another AI sidebar?
 
 - **Reflection quality assurance.** Preselection → zero-cost tool observation hint → sub-task reflection → post-reflection. Every final answer is scored on 7 dimensions; below-threshold runs get revised or re-executed automatically.
+- **Objective sub-task completion checks.** Sub-tasks from `plan_task` can declare `doneCriteria` acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model's self-report; an optional auto-rerun loop drives unmet sub-tasks back through four gates (fully byte-for-byte unchanged when left off).
 - **Tool preselection saves tokens.** 40+ tool definitions would blow up every call. A lightweight API pre-pass narrows them down to the 5–10 that actually matter before the main model runs.
 - **Token-budget management.** Truncation is by token count, not message count, so `tool_calls` / `tool` message pairs never get split apart.
 - **Long-quote auto-compression.** Big page selections are summarized instead of squatting in your context forever.
@@ -95,8 +97,8 @@ Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 
 Everything below the quickstart lives in the full technical reference:
 
-- **English** — architecture, all 31 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
-- **中文** — 架构总览、31 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** — architecture, all 33 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** — 架构总览、33 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
 - **Wiki** — installation, features, tools, Agent, configuration → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **Website** — <https://xiweicheng.github.io/ai-helper/>
 - **Product write-up (中文)** — [`docs/AI-Helper-作品介绍文档.md`](docs/AI-Helper-作品介绍文档.md)

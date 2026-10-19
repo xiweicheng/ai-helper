@@ -4,6 +4,16 @@
 
 ## 2026-10-19
 
+### Agent 质量（完成度校验自动重跑回路 + 取证契约结构化 + 缺项渲染修复）
+> 承接 10-18 的子任务完成度取证校验器，本次把它从「只上报不断言」升级为可自动重跑的闭环，并修复取证文案与渲染缺项。
+
+- **自动重跑回路**（`react-loop.js`/`completion-verifier.js`）：`annotateOneSubtaskCompletion` 接通 Phase B 重跑，四闸门（可重试 / 有进展 / 有预算 / 未超次）真实计算后驱动子任务回炉；新增 `isStrictSubset` 严格真子集判定——缺项集不单调收缩即停止重跑防振荡。取证逻辑下沉至 `executeSingleSubtask`，DOM 类按派生 `sessionId` 动态解析工作 tab。
+- **命令取证三档门控**：命令类 `doneCriteria` 新增 `readOnlyGate` 参数，重跑模式下改由 agent 侧 allow/confirm/deny 三档门控，与只读硬拦两种取证模式并立；`ai-tools` 的 `doneCriteria` 描述同步说明。
+- **取证契约升级为结构化对象**：返回值从三态 `true/false/null` 改为 `{available, pass, reason}`；内容脚本各分支补机器可读 `reason` 码（`invalid_selector` 等），新增 `summarizeEvidenceDetail` 按判据写法 / 通道异常 / 混合分桶生成提示，`verifySubtaskCompletion` 透传 `checkResults`。
+- **缺项渲染与文案修复**：新增 `describeCriterion` 按 `check` 类型展示 `expected`，修复 `text_contains` 等只显示 `target` 丢失关键值；拆分 `evidence_unavailable` 与 `evidence_partial` 独立文案，不再把「未能求值」误述为「取证通道不可用」；诊断日志降为 debug 级。
+- **选项页**：新增「完成度自动重跑」子开关，切换时联动展开 / 收起；`constants.js` 加 `rerunEnabled` 配置项，`config-manager` 加载回填。
+- **验证**：agent 单测 + 根目录全量测试全绿，eslint 0，`npm run build:silent` 成功。
+
 ### 主题（暗色修复：配置页 Toast/保存按钮等把前景语义 token 当底色用，暗色下浅底白字）
 > 用户反馈：暗色下点「保存配置」后按钮变绿与顶部 Toast 颜色和亮色一致、白字不可读。根因：options 页 token 化时漏接专为浮层底色设的 `--toast-*` token，直接引用了前景语义 token（`--success-strong`/`--danger-500` 等暗色下刻意翻浅）作 background。
 
@@ -27,6 +37,19 @@
 - **导出锁定亮纸张**：PDF / Word / HTML 导出与富文本复制（SVG `fill` 属性 / canvas `fillStyle` / jsPDF / html2canvas 等 `var()` 无效上下文）恒为白底黑字不随暗色，保证离线可读；均加头注释与行内注释说明。
 - **验收**：`test/unit/mermaid-theme.unit.test.js` 等新增单测；真扩展暗色探针验证跨页同步、Markdown/Mermaid 联动、逐浮层对比度扫描（34 浮层 + 骨架）与白斑检测均 0 违规（WCAG AA）。
 - **当日收口（全部实测）**：根目录全量 **119 文件 / 1765 测试全绿**，agent 单测 **503 例全绿**（本次不动 agent 进程），eslint 0，`npm run build:silent` 成功；`theme-migrate.py --check`（白名单外源码 CSS + `src/**/*.js`）exit 0，对比度门禁 0 项未达标。
+- **暗色遗留项顺带清账**：主题切换合入后陆续修复暗色下未主题化的滚动条（Markdown 代码块水平条 / 表格横向条 / 工具调用与结果 `pre` 垂直条过粗）、Toast 对比度与弹窗输入框底色，以及 `theme.js` 健壮性 / 子菜单 / 门禁的代码评审补充。
+
+### Agent 质量（新增子任务完成度独立取证校验器：`plan_task` 子任务的客观验收，默认关时行为逐字节不变）
+> 为 `plan_task` 分解的子任务引入可选的完成度客观取证校验——用真实 DOM / 命令证据而非模型自述判断子任务是否达成。
+
+- **纯判定内核**（`src/shared/completion-verdict.js`）：三态 verdict（`satisfied`/`unmet`/`indeterminate`）+ 四闸门回炉判定（AND）+ judge `goalMet` 类型护栏。
+- **客观取证**（`content/advanced-tools.js`）：`doneCriteria` 断言用 `deepQuerySelector`/`deepGetText` 穿透 Shadow DOM / 同源 iframe，`selectorQueryable` 探语法合法性，三态 `available` 不谎报未达标。
+- **background 端接线**（`completion-verifier.js`/`react-loop.js`）：collector 单条取证超时；`annotateOneSubtaskCompletion` 在 per-subtask `onDone` 内即时取证（现场最新、尽力而为不中断主循环），仅上报 `completionNote` 不重跑不改 `st.status`。
+- **门控与持久化**：`doneCriteria` 移出静态 schema，按开关在 `getTools` 门控注入；`executePlanTask` 透传 / 回显按开关裁剪；设置页开关 + storage 持久化 + 导入导出白名单。
+
+### 选项页（反思配置从独立 Tab 合并至推理 Tab）
+- 移除独立反思 tab 导航与面板，将反思总开关 / 后置反思 / 子任务反思配置项并入推理 tab；反思可见性改为 `display` 显隐控制二级开关，持久化统一为 `persistReflectionField` 辅助函数；删除 `styles.css` 约 200 行反思专属样式。
+- 中英文 locale 移除 `tabReflection` 并调整描述文案；单测 `validTabs` 移除 `reflection`，tab 下限调为 7。
 
 ## 2026-10-17
 
