@@ -740,9 +740,11 @@ export default {
     guideLoopCount: '循环次数',
     guideLoopCountDesc: '：决定 AI 可以进行多少轮推理-行动循环',
     guideTimeout: '超时设置',
-    guideTimeoutDesc: '：防止长时间等待或无限循环',
+    guideTimeoutDesc: '：API 请求 / 整体循环 / 工具执行三项超时，防止长时间等待或无限循环',
+    guideToolConfirm: '敏感操作确认',
+    guideToolConfirmDesc: '：模型执行敏感操作前弹窗等待你确认，防止误操作',
     guideClarifyWait: '澄清等待',
-    guideClarifyWaitDesc: '：用户澄清时间不计入整体循环超时（暂停计时）',
+    guideClarifyWaitDesc: '：用户澄清时间不计入整体循环超时（自动暂停计时，非配置项）',
     guideTip: '• 建议根据网络状况和任务复杂度调整这些参数',
   },
 

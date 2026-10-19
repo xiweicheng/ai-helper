@@ -740,9 +740,11 @@ export default {
     guideLoopCount: 'Loop count',
     guideLoopCountDesc: ': determines how many reason-act iterations the AI can perform',
     guideTimeout: 'Timeout settings',
-    guideTimeoutDesc: ': prevent long waits or infinite loops',
+    guideTimeoutDesc: ': API request / overall loop / tool execution timeouts, preventing long waits or infinite loops',
+    guideToolConfirm: 'Sensitive action confirmation',
+    guideToolConfirmDesc: ': prompts a confirmation dialog before the AI performs sensitive actions, preventing accidental operations',
     guideClarifyWait: 'Clarification wait',
-    guideClarifyWaitDesc: ': user clarification time is not counted toward the overall loop timeout (paused)',
+    guideClarifyWaitDesc: ': user clarification time is not counted toward the overall loop timeout (automatically paused; not a configurable item)',
     guideTip: '• Adjust these parameters based on network conditions and task complexity',
   },
 
