@@ -2,6 +2,18 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-19
+
+### 主题（暗色修复：配置页 Toast/保存按钮等把前景语义 token 当底色用，暗色下浅底白字）
+> 用户反馈：暗色下点「保存配置」后按钮变绿与顶部 Toast 颜色和亮色一致、白字不可读。根因：options 页 token 化时漏接专为浮层底色设的 `--toast-*` token，直接引用了前景语义 token（`--success-strong`/`--danger-500` 等暗色下刻意翻浅）作 background。
+
+- **新增 `--fill-*` 实心语义底色 token**（`src/shared/theme.css`）：`--fill-danger/info/warning` + `--fill-danger-strong`（hover 加深档），亮色 danger/info 沿用原 `--*-500` 值零回归，warning 改深琥珀 `#b45309` 顺带修复亮色白字对比度不足；暗色取深饱和档与 `--toast-*` 同一校准逻辑。
+- **配置页 Toast 全量接线**（`src/options/styles.css`）：`.toast` 底色 `--text-primary`→`--toast-neutral`，success/error/warning/info 分别换 `--toast-success`/`--fill-danger`/`--toast-warning`/`--fill-info`，与侧边栏 Toast 实现完全对齐。
+- **保存按钮 saved 态**：渐变起点 `--success-500`→`--toast-success`（亮色两端仍为绿色系，暗色下深绿底白字可读）。
+- **同类误用顺带清账**：options 页配对代理按钮 delete/disconnect/enable 的 hover 实心底、`.toolbox-btn-warn`、记忆条目 compact 按钮 hover；侧边栏扫描后补修 `.context-usage-btn.primary`、发送按钮 `.send-inner-btn.stop-mode`（hover 原 `--danger-soft-text` 越悬越浅，改 `--fill-danger-strong` 越悬越深）。
+- **保持不动**：状态圆点/进度条填充/flag 轨道等无文字叠层的语义色用法（暗色翻浅正是可见性设计）；`--*-soft-bg` 系作底已有暗色深档，均无问题。
+- **验证**：`npm run build:silent` 成功；改动均为 CSS token 引用替换，无 JS 逻辑变更。
+
 ## 2026-10-18
 
 ### 主题切换（亮 / 暗 / 跟随系统）：全站语义 token 化与三态即时同步

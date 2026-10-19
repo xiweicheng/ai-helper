@@ -197,6 +197,33 @@ export function clearLastOperatedTab(sessionId) {
   if (sessionId) lastOperatedTabBySession.delete(sessionId);
 }
 
+// ========== 派生会话祖先链（子任务/子代理 → 根会话） ==========
+//
+// plan_task 子任务用 `${parent}_subtask_${index}`、dispatch_task 子代理用
+// `${parent}_sub_${agentId}` 派生 sessionId 执行，而面板建立 keepalive 连接、
+// 上报实例身份都用根会话 id。确认/澄清路径若拿派生 id 直查注册表必然落空：
+// 定向发送退化为广播、可见性判定走「信息缺失保守按不可见」→ 用户明明看着
+// 面板仍弹桌面提醒。查找类操作逐层剥后缀回退到最近已注册祖先（与
+// hasLoopApproval 采纳的语义一致）；注册/注销仍按精确 key。
+const DERIVED_SESSION_SUFFIX = /(_subtask_\d+|_sub_.+)$/;
+
+/**
+ * 逐层剥离派生后缀，得到从自身到根任务的会话祖先链（自身在前）。
+ * @param {string|null} sessionId
+ * @returns {string[]}
+ */
+export function getSessionAncestry(sessionId) {
+  const chain = [];
+  let cur = sessionId;
+  while (typeof cur === 'string' && cur) {
+    chain.push(cur);
+    const next = cur.replace(DERIVED_SESSION_SUFFIX, '');
+    if (next === cur) break;
+    cur = next;
+  }
+  return chain;
+}
+
 // ========== Side Panel keepalive 长连接注册表（实例级定向消息路由） ==========
 //
 // side panel 实例发起 CALL_API 时建立 keepalive-<sessionId> 长连接，本表按 sessionId
@@ -210,12 +237,18 @@ export function registerKeepalivePort(sessionId, port) {
   if (sessionId && port) keepalivePorts.set(sessionId, port);
 }
 
+// 查找按祖先链逐层回退：派生会话（子任务/子代理）落到根会话的连接上
 export function getKeepalivePort(sessionId) {
-  return sessionId ? (keepalivePorts.get(sessionId) || null) : null;
+  if (!sessionId) return null;
+  for (const id of getSessionAncestry(sessionId)) {
+    const port = keepalivePorts.get(id);
+    if (port) return port;
+  }
+  return null;
 }
 
 export function hasKeepalivePort(sessionId) {
-  return sessionId ? keepalivePorts.has(sessionId) : false;
+  return Boolean(getKeepalivePort(sessionId));
 }
 
 // ========== Side Panel 实例身份（发起实例的窗口与宿主 tab） ==========
@@ -248,7 +281,13 @@ export function setKeepaliveIdentity(sessionId, identity) {
  * @returns {{windowId:number, hostTabId:number|null}|null}
  */
 export function getKeepaliveIdentity(sessionId) {
-  return sessionId ? (keepaliveIdentities.get(sessionId) || null) : null;
+  if (!sessionId) return null;
+  // 同端口查找：派生会话回退到根会话上报的实例身份（可见性判定不再误按「缺失」处理）
+  for (const id of getSessionAncestry(sessionId)) {
+    const identity = keepaliveIdentities.get(id);
+    if (identity) return identity;
+  }
+  return null;
 }
 
 /**

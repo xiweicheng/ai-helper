@@ -1,5 +1,5 @@
 // background/react-loop.js - ReAct 推理循环与 API 调用
-import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort } from './state.js';
+import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort, getSessionAncestry } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT } from './constants.js';
@@ -140,9 +140,6 @@ function buildConfirmKey(correlationId, toolName) {
   return key;
 }
 
-// 子任务派生会话后缀：`${parent}_subtask_${index}`（见 executeSubtasks）
-const SUBTASK_SESSION_SUFFIX = /_subtask_\d+$/;
-
 // take_note scratchpad 上限：单条 500 字符在 handler 侧截断；此处管存储/锚点/继承的规模与越界处理
 const NOTES_MAX_STORED = 50;      // notesState 最多保留条数，超出 FIFO 丢最旧
 const NOTES_MAX_ANCHOR = 20;      // 锚点每轮最多回注最近多少条
@@ -151,20 +148,9 @@ const NOTES_INHERIT_MAX = 10;     // 只读下发给子任务的父笔记最近�
 
 /**
  * 逐层剥离派生后缀，得到从自身到根任务的会话祖先链。
- * @param {string|null} sessionId
- * @returns {string[]}
+ * 已下沉到 state.js（keepalive 端口/身份查找与任务级放行共同采纳，单一来源）。
  */
-export function getSessionAncestry(sessionId) {
-  const chain = [];
-  let cur = sessionId;
-  while (typeof cur === 'string' && cur) {
-    chain.push(cur);
-    const next = cur.replace(SUBTASK_SESSION_SUFFIX, '');
-    if (next === cur) break;
-    cur = next;
-  }
-  return chain;
-}
+export { getSessionAncestry };
 
 /** 取根任务会话（无派生后缀时即自身） */
 function getRootSessionId(sessionId) {

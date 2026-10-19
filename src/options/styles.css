@@ -238,9 +238,9 @@ textarea {
   100% { left: 150%; }
 }
 
-/* 保存成功 = 按钮变绿 */
+/* 保存成功 = 按钮变绿（走专用浮层底色 token，暗色下深绿保证白字可读） */
 .btn-save.saved {
-  background: linear-gradient(135deg, var(--success-500) 0%, var(--success-strong) 100%);
+  background: linear-gradient(135deg, var(--toast-success) 0%, var(--success-strong) 100%);
   pointer-events: none;
   box-shadow: 0 4px 20px rgba(var(--success-rgb), 0.4);
 }
@@ -438,7 +438,7 @@ textarea {
 }
 
 .toast {
-  background: var(--text-primary);
+  background: var(--toast-neutral);
   color: var(--text-on-brand);
   padding: 12px 24px;
   border-radius: 8px;
@@ -460,21 +460,23 @@ textarea {
   transform: translateY(0);
 }
 
+/* Toast 底色统一走 --toast-* / --fill-* 专用 token（与侧边栏对齐）：
+   前景语义 token 暗色下翻浅，不能直接作底叠白字 */
 .toast.success {
-  background: var(--success-strong);
+  background: var(--toast-success);
 }
 
 .toast.error {
-  background: var(--danger-500);
+  background: var(--fill-danger);
 }
 
 .toast.warning {
-  background: var(--warning-500);
+  background: var(--toast-warning);
   color: var(--text-primary);
 }
 
 .toast.info {
-  background: var(--info-500);
+  background: var(--fill-info);
 }
 
 @keyframes toastFadeIn {
@@ -2338,9 +2340,9 @@ textarea {
   background: var(--danger-soft-bg);
 }
 .paired-agent-btn.delete-btn:hover {
-  background: var(--danger-500);
+  background: var(--fill-danger);
   color: var(--text-inverse);
-  border-color: var(--danger-500);
+  border-color: var(--fill-danger);
 }
 .paired-agent-btn.disconnect-btn {
   color: var(--danger-500);
@@ -2348,9 +2350,9 @@ textarea {
   background: var(--danger-soft-bg);
 }
 .paired-agent-btn.disconnect-btn:hover {
-  background: var(--danger-500);
+  background: var(--fill-danger);
   color: var(--text-inverse);
-  border-color: var(--danger-500);
+  border-color: var(--fill-danger);
 }
 .paired-agent-status-text {
   font-size: 11px;
@@ -2402,9 +2404,9 @@ textarea {
   background: var(--info-soft-bg);
 }
 .paired-agent-btn.enable-btn:hover {
-  background: var(--info-500);
+  background: var(--fill-info);
   color: var(--text-inverse);
-  border-color: var(--info-500);
+  border-color: var(--fill-info);
 }
 
 /* 添加代理区域 */
@@ -2955,11 +2957,11 @@ textarea {
   background: var(--brand-600);
 }
 .toolbox-btn-warn {
-  background: var(--warning-500);
+  background: var(--fill-warning);
   color: var(--text-on-brand);
 }
 .toolbox-btn-warn:hover:not(:disabled) {
-  background: var(--warning-500);
+  background: var(--fill-warning);
 }
 .toolbox-btn-danger {
   background: transparent;
@@ -3599,7 +3601,7 @@ textarea {
 #memoryEntriesSort { width: auto; min-width: 168px; }
 .memory-entries-candidates { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--warning-soft-bg); border: 1px solid var(--warning-soft-border); border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; color: var(--warning-text-soft); }
 .memory-entries-candidates .memory-entries-compact-btn { font-family: inherit; font-size: 12px; padding: 4px 14px; border-radius: 6px; border: 1px solid var(--warning-500); background: var(--bg-surface); color: var(--warning-500); cursor: pointer; margin-left: auto; }
-.memory-entries-candidates .memory-entries-compact-btn:hover { background: var(--warning-500); color: var(--text-inverse); }
+.memory-entries-candidates .memory-entries-compact-btn:hover { background: var(--fill-warning); color: var(--text-inverse); }
 .memory-entries-status { font-size: 12px; color: var(--text-tertiary); margin-bottom: 8px; }
 /* 列表自身限高内滚（同 .toolbox-list 惯例）：条目多时不把整页撑到几屏外。
    min(420px, 50vh) 里的 50vh 是防矮视口：本区上方还有向量配置面板，只定 420px 仍会顶出多屏。

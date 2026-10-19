@@ -401,7 +401,7 @@
       <div class="react-config-item">
         <label>
           <span data-i18n="react.completionVerification">完成度校验</span>
-          <span class="hint-text" data-i18n="react.completionVerificationHint">（子任务结束后独立取证核验是否真正达标，未达标如实上报）</span>
+          <span class="hint-text" data-i18n="react.completionVerificationHint">（子任务结束后依据真实页面独立客观取证核验是否真正达标，未达标如实上报）</span>
         </label>
         <label class="toggle-label">
           <input type="checkbox" id="completionVerificationEnabled">
@@ -409,7 +409,7 @@
           <span id="completionVerificationEnabledLabel" data-i18n="react.disabled">已停用</span>
         </label>
         <div class="info-text" style="font-size: 12px; color: #999; margin-top: 4px;">
-          <span data-i18n="react.completionVerificationDesc1">启用后，子任务执行完成时会依据其完成标准独立取证核验，未达标的项目会如实标注上报给模型，而不是默认"跑完即成功"。</span><br>
+          <span data-i18n="react.completionVerificationDesc1">启用后，子任务执行完成时会依据其完成标准独立取证核验，未达标的项目会如实标注上报给模型，而不是默认"跑完即成功"。属客观取证（查环境是否真的达成目标），与"AI 自我反思"的主观自评互补、不重复。</span><br>
           <span data-i18n="react.completionVerificationDesc2">关闭后，子任务完成状态与校验前逐字节一致，不追加任何取证与标注。</span>
         </div>
       </div>
@@ -418,7 +418,7 @@
       <div class="react-config-item">
         <label>
           <span data-i18n="reflection.title">AI 自我反思</span>
-          <span class="hint-text" data-i18n="reflection.subtitleHint">（控制 AI 对任务执行结果的自我评估和修订行为）</span>
+          <span class="hint-text" data-i18n="reflection.subtitleHint">（控制 AI 对答案质量的自我评估和修订行为——属主观自评，与"完成度校验"的客观取证互补）</span>
         </label>
         <label class="toggle-label">
           <input type="checkbox" id="reflectionEnabled" checked>
@@ -426,7 +426,7 @@
           <span id="reflectionToggleLabel" data-i18n="react.disabled">已停用</span>
         </label>
         <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
-          <span data-i18n="reflection.desc1">启用后，AI 会在推理循环结束后对结果自我评估，评分低于阈值时自动修订或重新执行。</span><br>
+          <span data-i18n="reflection.desc1">启用后，AI 会在推理循环结束后对结果自我评估，评分低于阈值时自动修订或重新执行。尤其适合无客观判据的开放式任务（问答/写作/分析）——这类任务完成度校验不会介入。</span><br>
           <span data-i18n="reflection.desc2">关闭后收起下方二级开关；启用反思会增加 API 调用次数，建议按需权衡。</span>
         </div>
       </div>

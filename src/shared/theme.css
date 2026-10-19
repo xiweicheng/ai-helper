@@ -89,6 +89,13 @@
   --toast-info: #4a90d9;
   --toast-warning: #f59e0b;
 
+  /* 实心语义底色：白字按钮/hover 填充专用（前景语义 token 暗色下翻浅，禁止直接作底）。
+     亮色 danger/info 沿用原 --*-500 值无回归；warning 改深琥珀修复白字对比度 */
+  --fill-danger: #e53e3e;
+  --fill-danger-strong: #c53030;
+  --fill-info: #4a90d9;
+  --fill-warning: #b45309;
+
   /* 蒙层 / 阴影 / 杂项 */
   --scrim: rgba(0, 0, 0, 0.5);
   --overlay-rgb: 0, 0, 0;
@@ -189,6 +196,12 @@ html[data-theme="dark"] {
   --toast-error: #9b2c2c;
   --toast-info: #2b6cb0;
   --toast-warning: #975a16;
+
+  /* 实心语义底色（暗色）：深饱和档，与 toast 同一校准逻辑 */
+  --fill-danger: #9b2c2c;
+  --fill-danger-strong: #7f2222;
+  --fill-info: #2b6cb0;
+  --fill-warning: #975a16;
 
   /* 蒙层 / 阴影 / 杂项 */
   --scrim: rgba(0, 0, 0, 0.7);
