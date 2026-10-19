@@ -11473,7 +11473,7 @@ body {
 
 .message-toc-toggle {
   background: rgba(var(--brand-rgb), 0.14);
-  color: var(--brand-strong);
+  color: var(--brand-600);
   border: none;
   border-radius: 8px 0 0 8px;
   padding: 8px 6px;

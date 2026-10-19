@@ -19,16 +19,16 @@ function rule(src, selector) {
 
 describe('side-rail 入口 tinted 风格', () => {
   const cssToggles = [
-    ['.message-toc-toggle {', '--brand'],
-    ['.bookmark-panel-toggle {', '--warning'],
-    ['.search-panel-toggle {', '--info'],
-    ['.workspace-panel-toggle {', '--info'],
+    ['.message-toc-toggle {', '--brand', '--brand-600'],
+    ['.bookmark-panel-toggle {', '--warning', '--warning-strong'],
+    ['.search-panel-toggle {', '--info', '--info-strong'],
+    ['.workspace-panel-toggle {', '--info', '--info-strong'],
   ];
 
-  test.each(cssToggles)('%s 使用 tinted 语义底与 strong 图标色', (selector, token) => {
+  test.each(cssToggles)('%s 使用 tinted 语义底与语义图标色', (selector, token, colorToken) => {
     const block = rule(STYLES, selector);
     expect(block).toContain(`rgba(var(${token}-rgb), 0.1`);
-    expect(block).toContain(`var(${token}-strong)`);
+    expect(block).toContain(`var(${colorToken})`);
     // 不允许回退为 0.85 实心块
     expect(block).not.toContain('0.85');
     // 不再依赖整体透明度

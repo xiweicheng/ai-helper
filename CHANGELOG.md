@@ -4,6 +4,27 @@
 
 ## 2026-10-19
 
+### 反思机制（超时优化：评估/修订解耦 + 重试 + undefined/10 修复）
+> 用户反馈：质量评估 30s 超时失败、执行日志面板头部评分显示 `undefined/10`。根因是评估调用被迫在响应里输出完整修订答案，长答案下非流式生成远超 30s。方案文档：`docs/superpowers/specs/2026-10-19-reflection-timeout-optimization-design.md`。
+
+- **评估/修订解耦**（`react-reflection.js`）：评估调用只输出评分 JSON（新增 `buildRevisionPrompt`/`parseRevisionAnswer`），仅低分时发起独立修订调用；修订失败降级为「保留原答案 + 需改进」，不再整条反思判失败；修订以 `reflectionType:'revise'` 子节点记入日志。
+- **超时/重试代码内配置（不开放 UI）**：`constants.js` 的 `postReflection` 新增 `timeoutMs:90000`/`reviseTimeoutMs:150000`/`maxRetries:2`，模块导出 `REFLECTION_FETCH_DEFAULTS` 供旧 storage 残缺配置回落；替换原硬编码 30s/1 次。
+- **undefined/10 修复**：失败反思条目显式 `overallScore:null`；`chat-panels.js` 面板头部得分块判空显示「—」。`parseReflectionResult` 兼容字符串数字分数。
+- **验证**：新增 `react-reflection-flow.unit.test.js` 11 用例（TDD 先红后绿）；全量单测、`build:silent` 通过。
+
+### 消息 footer 工具条（对齐与字号统一）
+> 用户反馈：Token 标签/产物/评分/收藏一排按钮水平不齐、字号不协调。根因：控件高度混用（22/24/26px）、字号混用（11/12px）、评分徽章直角而 Token 标签胶囊、emoji 基线偏高。
+
+- **统一控件规格**（`styles.css`）：footer 全部按钮（执行日志/产物/原型/收藏/分叉/删除/复制/导出）固定 `height:20px; padding:0 4px`，文字统一 11px，图标 14px。
+- **评分徽章胶囊化**：与 Token 标签同规格（20px 高、10px 圆角）；emoji 包 `.reflection-badge-emoji`（10px、line-height:1）修正基线，`chat-manager.js`/`chat-streaming.js` 两处渲染点同步。
+- 窄屏媒体查询下 Token 标签改固定 18px 高。
+
+### 主题（side-rail 五个入口按钮暗色适配：实心彩色块改低对比 tinted）
+> 用户反馈：右侧轨道入口按钮在暗色下是悬浮的亮色块。原实现虽走 token，但 0.85 实心底在暗色 token 提亮后更扎眼。
+
+- **tinted 风格**（`styles.css` 4 个 toggle + `schedule-panel.js` 内联样式）：底色改 `rgba(var(--语义-rgb), 0.14)`、图标改语义 strong/brand-600，hover 升至 0.24；移除 `opacity:0.85` 整体透明与重彩阴影，替换定时任务按钮硬编码 `rgba(31,145,80,.85)`。
+- **守卫**：新增 `side-rail-tinted-style.unit.test.js` 防回退；`theme:contrast`/`theme:check` 通过。
+
 ### Agent 质量（完成度校验自动重跑回路 + 取证契约结构化 + 缺项渲染修复）
 > 承接 10-18 的子任务完成度取证校验器，本次把它从「只上报不断言」升级为可自动重跑的闭环，并修复取证文案与渲染缺项。
 
