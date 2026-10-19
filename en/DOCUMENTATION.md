@@ -1088,7 +1088,7 @@ Note: user clarification time does not count toward the loop timeout (timer paus
 | `Alt+N` | New session |
 | `Alt+W` | Close current session |
 | `Alt+E` | Edit the latest user message |
-| `Alt+↑/↓` | Switch message focus (previous / next) |
+| `Alt+↑/↓` | Jump between questions (previous / next) |
 | `Alt+Ctrl/Cmd+↑/↓` | Jump to top / bottom |
 | `Esc` | Close shortcuts panel / clear input |
 | `Ctrl+Shift+Y` / `Cmd+Shift+Y` | Global shortcut to open side panel |
