@@ -10,6 +10,10 @@ import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
+  chat: {
+    fileLinkTitle: '点击在工作目录中定位该文件',
+    fileLinkFailed: '定位文件失败',
+  },
   markdown: {
     copyCode: '复制代码',
     copyMdTableTitle: '复制 Markdown 表格\n按住 Ctrl/⌘ 点击复制富文本表格',
@@ -46,6 +50,10 @@ registerTranslations('zh', {
 });
 
 registerTranslations('en', {
+  chat: {
+    fileLinkTitle: 'Click to locate this file in the working directory',
+    fileLinkFailed: 'Failed to locate file',
+  },
   markdown: {
     copyCode: 'Copy code',
     copyMdTableTitle: 'Copy Markdown table\nCtrl/Cmd+click to copy rich-text table',
@@ -350,10 +358,30 @@ export function svgToPngDataUrl(svgElement) {
 }
 
 /**
+ * 从显示文本中剥离 [[artifact:路径|说明]] 声明标记（这些标记只用于产物解析，不展示给用户）
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripArtifactMarkers(text) {
+  if (!text) return '';
+  // 先把围栏代码块掩成占位符，避免空白整理误伤代码块内的空行
+  const fences = [];
+  const masked = text.replace(/```[\s\S]*?```/g, (f) => { fences.push(f); return `\u0000F${fences.length - 1}\u0000`; });
+  const stripped = masked
+    .replace(/^[ \t]*\[\[artifact:[^\]]*\]\][ \t]*\n/gm, '')
+    .replace(/[ \t]*\[\[artifact:[^\]]*\]\][ \t]*/g, '');
+  // 未命中标记时原样返回，不做任何空白折叠
+  const tidied = stripped === masked ? masked
+    : stripped.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '').replace(/\n+$/, '');
+  return tidied.replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+}
+
+/**
  * 格式化 Markdown 文本
  */
 export function formatMarkdown(text) {
   if (!text) return '';
+  text = stripArtifactMarkers(text);
   
   // 提取 mermaid 图表并替换为占位符
   const mermaidBlocks = [];
@@ -1547,4 +1575,132 @@ export function cleanTableForClipboard(element) {
   });
   clone.querySelectorAll('.table-toolbar').forEach(el => el.remove());
   return clone;
+}
+
+
+// ============================================================
+// 聊天内文件路径可点击（linkify + 定位到工作目录面板）
+// ============================================================
+const FILE_EXT_RE = '\\.[A-Za-z0-9]{1,6}';
+// 疑似路径：~/… 或 /…、Windows 盘符、含分隔符的相对路径、或 词.扩展名 形式的裸文件名
+const PATH_CANDIDATE_RE = new RegExp(
+  '(?:~?/[\\w\\-.\\u4e00-\\u9fa5/]+|\\b[A-Za-z]:\\\\[\\w\\-.\\\\\\u4e00-\\u9fa5]+|\\b[\\w\\-.\\u4e00-\\u9fa5]+/[\\w\\-./\\u4e00-\\u9fa5]*' + FILE_EXT_RE + '|\\b[\\w\\-.\\u4e00-\\u9fa5]+' + FILE_EXT_RE + ')',
+  'g'
+);
+
+/** 从可见文本提取疑似文件路径 token（去 URL、去纯目录） */
+export function extractPathCandidates(text) {
+  if (!text) return [];
+  const noUrl = text.replace(/\bhttps?:\/\/\S+/gi, ' ');
+  const out = [];
+  let m;
+  PATH_CANDIDATE_RE.lastIndex = 0;
+  while ((m = PATH_CANDIDATE_RE.exec(noUrl)) !== null) {
+    const tok = m[0].replace(/[，。、)（）\s]+$/, '');
+    if (!tok) continue;
+    if (/\/$/.test(tok) && !new RegExp(FILE_EXT_RE + '$').test(tok)) continue;
+    if (!/[.\\/~]/.test(tok)) continue;
+    if (!out.includes(tok)) out.push(tok);
+  }
+  return out;
+}
+
+function normalizeForMatch(p) { return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/'); }
+
+/** 把消息内有效文件路径包成可点击链接 */
+export async function applyFilePathLinks(messageEl, validPaths = []) {
+  if (!messageEl) return;
+  const body = messageEl.querySelector('.markdown-body') || messageEl;
+  const validNorm = new Set((validPaths || []).map(normalizeForMatch));
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const parent = n.parentNode;
+      if (!parent || !parent.closest) return NodeFilter.FILTER_REJECT;
+      // 排除链接/代码块/脚本样式/已转链接（closest 覆盖 pre>code 的文本节点，其直接父是 code 非 pre）
+      if (parent.closest('a, pre, code, script, style, .chat-file-link')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  const allCandidates = new Set();
+  for (const n of textNodes) for (const c of extractPathCandidates(n.nodeValue)) allCandidates.add(c);
+  if (allCandidates.size === 0) return;
+  const needCheck = [...allCandidates].filter(c => !validNorm.has(normalizeForMatch(c)));
+  const existSet = new Set();
+  if (needCheck.length > 0) {
+    try {
+      let root = null;
+      // 用实时探测（不经模块级缓存）拿根路径：Agent 不可达时返回 null → 天然 fail-closed，
+      // 避免「曾连过→缓存 root→Agent 掉线→CHECK_FILES_EXIST fail-open」把不存在的路径误转链
+      try { const wm = await import('./workspace-manager.js'); const detail = await wm.getAgentStatusDetail(); if (detail && detail.workdir) root = detail.workdir; } catch { /* 未知根则不纳入非可信候选 */ }
+      // 动态导入规避 markdown-render <-> workspace-panel 循环依赖
+      const wp = await import('./workspace-panel.js');
+      const normRoot = root ? normalizeForMatch(root) : null;
+      const resolved = await Promise.all(needCheck.map(c => wp.resolveWorkspaceAbsolutePath(c).catch(() => null)));
+      const checkable = [];
+      for (let i = 0; i < needCheck.length; i++) {
+        const rp = resolved[i];
+        // fail-closed：仅当工作目录根已知且解析后的绝对路径确在根内才纳入校验（目录外/无法解析一律跳过）
+        if (!normRoot || !rp) continue;
+        const nrp = normalizeForMatch(rp);
+        if (nrp !== normRoot && !nrp.startsWith(normRoot.endsWith('/') ? normRoot : normRoot + '/')) continue;
+        checkable.push({ token: needCheck[i], path: rp });
+      }
+      if (checkable.length) {
+        const resp = await chrome.runtime.sendMessage({ type: 'CHECK_FILES_EXIST', paths: checkable.map(x => x.path) });
+        // CHECK_FILES_EXIST 对失败/离线 fail-open（返回 true），故仅在 root 已知+根内+results===true 才判存在
+        if (resp && resp.success && resp.results) {
+          for (const x of checkable) if (resp.results[x.path] === true) existSet.add(normalizeForMatch(x.token));
+        }
+      }
+    } catch { /* 校验失败：仅可信产物路径转链接 */ }
+  }
+  const clickable = (token) => validNorm.has(normalizeForMatch(token)) || existSet.has(normalizeForMatch(token));
+  const linkTitle = t('chat.fileLinkTitle');
+  for (const node of textNodes) {
+    const val = node.nodeValue;
+    const cands = extractPathCandidates(val).filter(clickable);
+    if (cands.length === 0) continue;
+    const sorted = cands.slice().sort((a, b) => b.length - a.length);
+    const frag = document.createDocumentFragment();
+    let rest = val;
+    while (rest.length) {
+      let earliest = -1, hit = null;
+      for (const c of sorted) {
+        const idx = rest.indexOf(c);
+        if (idx !== -1 && (earliest === -1 || idx < earliest)) { earliest = idx; hit = c; }
+      }
+      if (earliest === -1) { frag.appendChild(document.createTextNode(rest)); break; }
+      if (earliest > 0) frag.appendChild(document.createTextNode(rest.slice(0, earliest)));
+      const span = document.createElement('span');
+      span.className = 'chat-file-link';
+      span.setAttribute('data-path', hit);
+      span.setAttribute('title', linkTitle);
+      span.textContent = hit;
+      frag.appendChild(span);
+      rest = rest.slice(earliest + hit.length);
+    }
+    if (node.parentNode) node.parentNode.replaceChild(frag, node);
+  }
+}
+
+let fileLinkDelegateBound = false;
+/** 绑定一次性的文件链接点击委托 */
+export function bindFileLinkDelegate() {
+  if (fileLinkDelegateBound) return;
+  fileLinkDelegateBound = true;
+  document.addEventListener('click', async (e) => {
+    const link = e.target.closest && e.target.closest('.chat-file-link');
+    if (!link) return;
+    const path = link.getAttribute('data-path');
+    if (!path) return;
+    try {
+      const wp = await import('./workspace-panel.js');
+      await wp.locateFileInWorkspace(path);
+    } catch {
+      showToast(t('chat.fileLinkFailed'), 'error');
+    }
+  }, true);
 }

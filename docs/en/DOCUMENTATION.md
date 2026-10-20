@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 33 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 34 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -708,6 +708,18 @@ Complements the "Reflection System": reflection is the model's subjective self-s
 - **Optional auto-rerun loop**: four gates (retryable / progress / budget / under-max) drive unmet sub-tasks back through re-execution; `isStrictSubset` strictly-checks that the missing set shrinks monotonically, halting the rerun the moment it stops to prevent oscillation. Command evidence supports two modes: a read-only hard block and the agent's three-tier gate (allow/confirm/deny).
 - **Inline, non-blocking**: evidence is gathered live inside each sub-task's `onDone` (best effort) with a per-item timeout; results are surfaced as a `completionNote` without interrupting the main loop.
 - **Toggles**: the "Completion Verification" switch and the "auto-rerun" sub-switch (shown only when the former is on) live in the Options → Inference tab, both persisted with config import / export.
+
+---
+
+### 34. Artifact Declaration & Clickable File Paths
+
+With the Agent connected, files the AI produces via scripts are correctly surfaced in the Artifacts panel, and file paths mentioned in an answer are clickable to locate:
+
+- **Artifact declaration**: the system prompt guides the AI to declare script-generated files with the text convention `[[artifact:path|note]]`. Static analysis (extracted from `agent_file` entries in the execution log) is the floor, declarations fill the gaps, merged by path with de-duplication; each item is tagged `source: 'static'|'declared'`.
+- **stat validation against hallucination**: declared items are persisted and, when the panel opens, run through the existing `validateArtifactsAsync` `stat` check to drop hallucinated or deleted files; no new tool, no directory traversal, no Agent change.
+- **Display-time marker stripping**: `[[artifact:...]]` is only for parsing and stripped before rendering so users never see the raw marker; messages without markers are preserved byte-for-byte (protecting blank lines inside code blocks).
+- **Clickable paths in chat**: file paths in answer text are auto-detected and turned into clickable links. Trusted artifact paths convert directly; other candidates use fail-closed — converting only when the path resolves inside the workspace root and the file actually exists, avoiding system-path false links. Absolute paths do not split tokens across spaces.
+- **Click to locate**: clicking a path link reuses the workspace panel's `locateFileInWorkspace` to locate and highlight the file in the sidebar's built-in **Workspace** panel (not the system Finder).
 
 ---
 

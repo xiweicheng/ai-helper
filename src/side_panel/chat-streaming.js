@@ -7,14 +7,14 @@
 
 import state from './state.js';
 import { escapeHtml, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup } from './utils.js';
-import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid } from './markdown-render.js';
+import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, applyFilePathLinks, stripArtifactMarkers } from './markdown-render.js';
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { handleDuplicateSession } from './session-manager-ui.js';
-import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
+import { buildArtifactsForMessage, parseDeclaredArtifactsFromText, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -1722,8 +1722,8 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
   
   // 设置数据属性（供工具栏按钮使用）
   element.classList.add('assistant', 'message');
-  element.dataset.rawContent = typeof content === 'string' ? content : JSON.stringify(content);
-  element.dataset.textContent_ = extractTextContent(content);
+  element.dataset.rawContent = typeof content === 'string' ? stripArtifactMarkers(content) : JSON.stringify(content);
+  element.dataset.textContent_ = stripArtifactMarkers(extractTextContent(content));
   element.dataset.executionLog = JSON.stringify(executionLog);
   
   // 添加底部工具栏
@@ -1872,8 +1872,10 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     rightActionsContainer.appendChild(tokenTag);
   }
 
-  // 文件产物按钮：从 executionLog 提取写文件操作
-  const artifacts = extractArtifactsFromExecutionLog(executionLog);
+  // 文件产物按钮：静态分析 + AI 声明合并
+  const declaredList = parseDeclaredArtifactsFromText(content);
+  const artifacts = buildArtifactsForMessage(executionLog, content);
+  if (declaredList.length) element.dataset.declaredArtifacts = JSON.stringify(declaredList);
   // 同步预过滤已删除的产物，确保 badge 初始计数准确
   preFilterDeletedArtifacts(artifacts);
   if (artifacts.length > 0) {
@@ -1898,6 +1900,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     // 立即触发异步验证：过滤目录外和不存在的文件，更新 badge
     validateArtifactsAsync(artifacts, artifactsBtn);
   }
+
+  // 聊天内有效文件路径转可点击链接（失败静默，不阻塞渲染）
+  applyFilePathLinks(element, artifacts.map(a => a.path)).catch(() => {});
 
   // 执行日志按钮（如果启用且有日志）
   if (executionLog && executionLog.length > 0 && state.chatConfig?.enableExecutionLog) {

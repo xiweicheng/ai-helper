@@ -1265,6 +1265,90 @@ export function extractArtifactsFromExecutionLog(executionLog) {
 }
 
 /**
+ * 从 assistant 最终回答文本中解析 AI 声明的产物
+ * 标记格式：[[artifact:路径|可选说明]]
+ * @param {string} text
+ * @returns {Array<{path:string, note:string}>}
+ */
+export function parseDeclaredArtifactsFromText(text) {
+  if (!text || typeof text !== 'string') return [];
+  const out = [];
+  const seen = new Set();
+  const re = /\[\[artifact:([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const path = (m[1] || '').trim();
+    const note = (m[2] || '').trim();
+    if (!path) continue;
+    // 变量引用路径无法静态确定真实文件名，丢弃（沿用既有约定）
+    if (/\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|%[A-Za-z0-9_]+%/.test(path)) continue;
+    const norm = declaredDedupKey(path);
+    if (!norm || seen.has(norm)) continue;
+    seen.add(norm);
+    out.push({ path, note });
+  }
+  return out;
+}
+
+/**
+ * 产物去重键：规范化 + 剥离前导 ./，使 a.xlsx 与 ./a.xlsx 判为同一
+ * @param {string} p
+ * @returns {string}
+ */
+function declaredDedupKey(p) {
+  return normalizePath(p).replace(/^\.\//, '');
+}
+
+/**
+ * 将声明产物并入静态分析产物，按规范化路径去重
+ * @param {Array} artifacts - extractArtifactsFromExecutionLog 的结果（会被补 source 字段）
+ * @param {Array<{path,note}>} declared
+ * @returns {Array} 合并后的新数组
+ */
+export function mergeDeclaredArtifacts(artifacts, declared) {
+  const merged = (artifacts || []).map(a => ({ ...a, source: a.source || 'static' }));
+  const normKeys = merged.map(a => declaredDedupKey(a.path));
+  for (const d of (declared || [])) {
+    const norm = declaredDedupKey(d.path);
+    if (!norm) continue;
+    // 完全相同，或声明的相对路径与某静态绝对路径尾段一致 → 判为同一文件（把说明补到已有项，不新增重复行）
+    let hitIdx = normKeys.indexOf(norm);
+    if (hitIdx === -1) hitIdx = normKeys.findIndex(k => k.endsWith('/' + norm));
+    if (hitIdx !== -1) {
+      const hit = merged[hitIdx];
+      if (hit && d.note && !hit.note) hit.note = d.note;
+      continue;
+    }
+    normKeys.push(norm);
+    merged.push({
+      path: d.path,
+      fileName: getFileName(d.path),
+      toolName: 'declared',
+      action: 'typeCreate',
+      size: 0,
+      timestamp: null,
+      status: 'unknown',
+      type: 'file',
+      source: 'declared',
+      note: d.note || '',
+    });
+  }
+  return merged;
+}
+
+/**
+ * 一站式：静态分析 + 声明解析 + 合并去重
+ * @param {Array} executionLog
+ * @param {string|null} rawContent - assistant 原始回答文本（含标记）
+ * @returns {Array}
+ */
+export function buildArtifactsForMessage(executionLog, rawContent) {
+  const staticArtifacts = extractArtifactsFromExecutionLog(executionLog);
+  const declared = parseDeclaredArtifactsFromText(rawContent);
+  return mergeDeclaredArtifacts(staticArtifacts, declared);
+}
+
+/**
  * 判断是否可预览的文件（代理到 workspace-manager.supportsPreview）
  */
 function canPreview(filePath) {

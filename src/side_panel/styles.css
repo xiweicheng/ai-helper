@@ -10490,6 +10490,19 @@ body {
   height: 14px;
 }
 
+/* 聊天内可点击文件路径链接 */
+.chat-file-link {
+  color: var(--brand-500);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.chat-file-link:hover {
+  background: rgba(var(--brand-rgb), 0.12);
+}
+
 .artifacts-btn .artifacts-btn-count {
   display: inline-flex;
   align-items: center;

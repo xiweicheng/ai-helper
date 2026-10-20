@@ -29,6 +29,8 @@ registerTranslations('zh', {
     terminologyTitle: '## 术语定义',
     taskPlanningTitle: '## 任务拆解',
     taskPlanningDesc: '复杂任务（多步骤、有依赖）拆解为子任务，通常 2-6 个、最多不超过 8 个；简单任务（1-2 步即可完成）直接执行，不要为凑数而拆分。使用 plan_task(taskDescription, subtasks) 提交方案。重要：调用 plan_task 时必须单独调用，同一轮响应中不要同时返回其他工具调用；其他想执行的动作请编入子任务描述，由子任务执行。',
+    artifactDeclTitle: '## 文件产物声明',
+    artifactDeclDesc: '当本次任务通过脚本或命令在工作目录内创建/修改了文件（尤其是运行时才确定路径的文件，如带日期的报表），请在最终回答末尾各用一行声明每个产物，格式严格为：[[artifact:相对工作目录或绝对路径|可选中文说明]]。示例：[[artifact:报表_2026-10-20.xlsx|书签统计报表]]。只列本次真实产生的文件，不要虚构、不要列未生成的文件；说明可省略。这些标记不会展示给用户。',
     memoryTitle: '## 记忆',
     memoryRules: '- 统一工具 agent_memory，通过 action 区分：store(增删改)/recall(检索)/manage(审查清理)\n- store: subAction=add需type+content，update需memoryId+type，**delete仅需memoryId无需type**。**删除前先recall查id**\n- recall: query用关键词(如"考试")，不用完整句子。可选memoryType和limit\n- manage: subAction=review审查价值，compact清理低价值\n- 存长期价值信息，加tags和importance(1-10)便于检索\n- importance语义：8-10=跨对话高频相关（环境约束/技术偏好/工作习惯），会常驻系统提示词；5-7=窄场景重要信息（项目详情/配置记录），按需召回；1-4=低价值\n- 不存凭据原文（密码/授权码/密钥），只存位置指针（如"授权码存于 xxx/.env"）',
     importanceLabel: '重要性',
@@ -71,6 +73,8 @@ registerTranslations('en', {
     terminologyTitle: '## Terminology',
     taskPlanningTitle: '## Task Decomposition',
     taskPlanningDesc: 'Break down complex tasks (multi-step, with dependencies) into subtasks — typically 2-6, at most 8; execute simple tasks (doable in 1-2 steps) directly and never split just to hit a count. Use plan_task(taskDescription, subtasks) to submit the plan. Important: when calling plan_task, call it alone — do not return other tool calls in the same turn; put any other intended actions into the subtask descriptions for the subtasks to execute.',
+    artifactDeclTitle: '## File Artifact Declaration',
+    artifactDeclDesc: 'When this task creates/modifies files in the working directory via scripts or commands (especially paths only determined at runtime, e.g. dated reports), append one line per artifact at the very end of your final answer, strictly formatted as: [[artifact:workspace-relative or absolute path|optional note]]. Example: [[artifact:report_2026-10-20.xlsx|bookmark stats report]]. List only files truly produced this task; never fabricate or declare files that were not generated; the note is optional. These markers are not shown to the user.',
     memoryTitle: '## Memory',
     memoryRules: '- Unified tool agent_memory, distinguished by action: store (add/update/delete) / recall (retrieve) / manage (review/cleanup)\n- store: subAction=add requires type+content, update requires memoryId+type, **delete only requires memoryId (no type)**. **Always recall first to find the id before deleting**\n- recall: use keywords for query (e.g. "exam"), not full sentences. Optional memoryType and limit\n- manage: subAction=review to assess value, compact to clean up low-value entries\n- Store long-term valuable information; add tags and importance (1-10) for easier retrieval\n- importance semantics: 8-10 = relevant across most conversations (environment constraints / tech preferences / work habits), always injected into the system prompt; 5-7 = important but narrow-scope info (project details / config records), retrieved on demand; 1-4 = low value\n- Never store raw credentials (passwords / auth codes / keys); store only a location pointer (e.g. "auth code lives in xxx/.env")',
     importanceLabel: 'Importance',
@@ -750,6 +754,12 @@ ${terms}`;
 ${t('util.taskPlanningTitle')}
 ${t('util.taskPlanningDesc')}` : '';
 
+  // 文件产物声明指引——仅在启用工具时注入（无工具则无法产生脚本文件）
+  const artifactDeclSection = (state.useTools && state.agentPlatform?.connected) ? `
+
+${t('util.artifactDeclTitle')}
+${t('util.artifactDeclDesc')}` : '';
+
   // 长期记忆规则——仅在启用工具、Agent 已连接、且拥有记忆工具时注入
   const memoryTools = ['agent_memory'];
   const hasAnyMemoryTool = memoryTools.some(t => agentHasTool(t, agent?.toolIds));
@@ -810,7 +820,7 @@ ${t('util.permanentNotesTitle')}
 
 ${t('util.currentEnvTitle')}
 - ${t('util.currentTimeLabel')}${currentTime}
-- ${t('util.browserLabel')} / ${browserOS}${agentHostSection}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+- ${t('util.browserLabel')} / ${browserOS}${agentHostSection}${commandEnvSection}${taskPlanningRules}${dispatchToolRule}${memoryRules}${artifactDeclSection}
 `;
 
     // 注入 Agent Skill Prompts
@@ -831,7 +841,7 @@ ${t('util.capabilityTitle')}
 ${t('util.capabilityDesc')}${(state.useTools && agentHasTool('plan_task', agent?.toolIds)) ? t('util.taskPlanningJoin') : ''}
 
 ${t('util.requirementTitle')}
-${t('util.requirementDesc')}${taskPlanningRules}${dispatchToolRule}${memoryRules}
+${t('util.requirementDesc')}${taskPlanningRules}${dispatchToolRule}${memoryRules}${artifactDeclSection}
 
 ${t('util.envTitle')}
 ${currentTime} | Chrome Side Panel / ${browserOS}${agentHostSection}${commandEnvSection}

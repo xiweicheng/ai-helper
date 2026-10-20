@@ -7,7 +7,7 @@ import { showConfirmDialog, dismissConfirmDialog } from './confirm-dialog.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, copyToClipboard, escapeHtml, escapeAttr, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup, getReactConfig, formatChatTime, formatChatTimeFull } from './utils.js';
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
-import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents } from './markdown-render.js';
+import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents, applyFilePathLinks, bindFileLinkDelegate, stripArtifactMarkers } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted } from './session-manager.js';
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
@@ -27,7 +27,7 @@ import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from '.
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
-import { extractArtifactsFromExecutionLog, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
+import { extractArtifactsFromExecutionLog, buildArtifactsForMessage, parseDeclaredArtifactsFromText, mergeDeclaredArtifacts, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs, renderKnowledgeIndicator, fetchKnowledgeCollections } from './agent-at-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
@@ -473,6 +473,7 @@ async function _loadChatHistoryImpl() {
     // 消息恢复完成后统一绑定事件委托（避免 restoreMessageFromHtml 逐条调用重复绑定）
     bindExecutionLogDelegate();
     bindReflectionBadgeDelegate();
+    bindFileLinkDelegate();
     
     const welcomeMessage = document.querySelector('.welcome-message');
     if (welcomeMessage && state.messageHistory.length > 0) {
@@ -1464,9 +1465,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
 
   // 存储原始内容：数组格式需要序列化，字符串直接存
-  messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : content;
+  messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : stripArtifactMarkers(content);
   // 额外存储纯文本版本，供复制/编辑/引用使用（优先使用 rawTextContent 以保留完整上下文格式）
-  messageDiv.dataset.textContent_ = rawTextContent || displayContent;
+  messageDiv.dataset.textContent_ = stripArtifactMarkers(rawTextContent || displayContent);
   
   const textContent = displayContent;
   
@@ -1632,12 +1633,15 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     // 绑定事件委托（首次调用时执行一次）
     bindExecutionLogDelegate();
     bindReflectionBadgeDelegate();
+    bindFileLinkDelegate();
 
     // 提取反思详情数据（用于弹窗展示）
     const postReflection = executionLog?.find(e => e.nodeType === 'reflection' && e.reflectionType === 'post');
 
-    // 0. 文件产物按钮：从 executionLog 提取写文件操作（放在执行日志按钮之前）
-    const artifacts = extractArtifactsFromExecutionLog(executionLog);
+    // 0. 文件产物按钮：静态分析 + AI 声明合并（放在执行日志按钮之前）
+    const declaredList = parseDeclaredArtifactsFromText(content);
+    const artifacts = buildArtifactsForMessage(executionLog, content);
+    if (declaredList.length) messageDiv.dataset.declaredArtifacts = JSON.stringify(declaredList);
     // 同步预过滤已删除的产物，确保 badge 初始计数准确
     preFilterDeletedArtifacts(artifacts);
     console.log('[addMessage] executionLog entries:', executionLog?.length, '| agent_file entries:', executionLog?.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| artifacts:', artifacts.length);
@@ -1663,6 +1667,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
       // 立即触发异步验证：过滤目录外和不存在的文件，更新 badge
       validateArtifactsAsync(artifacts, artifactsBtn);
     }
+
+    // 聊天内有效文件路径转可点击链接（失败静默，不阻塞渲染）
+    applyFilePathLinks(messageDiv, artifacts.map(a => a.path)).catch(() => {});
 
     // 1. 执行日志按钮（独立的时钟图标）
     if (hasExecutionLog && state.chatConfig.enableExecutionLog) {
@@ -2266,7 +2273,7 @@ export function removeLoadingMessage(loadingId) {
  */
 function rebindArtifactsButton(messageEl) {
   if (!messageEl) return;
-  const artifacts = extractArtifactsFromExecutionLog(
+  const artifacts0 = extractArtifactsFromExecutionLog(
     (() => {
       try {
         const raw = messageEl.dataset.executionLog;
@@ -2274,8 +2281,12 @@ function rebindArtifactsButton(messageEl) {
       } catch { return []; }
     })()
   );
+  let declared = [];
+  try { declared = JSON.parse(messageEl.dataset.declaredArtifacts || '[]'); } catch { declared = []; }
+  const artifacts = declared.length ? mergeDeclaredArtifacts(artifacts0, declared) : artifacts0;
   // 同步预过滤已删除的产物
   preFilterDeletedArtifacts(artifacts);
+  applyFilePathLinks(messageEl, artifacts.map(a => a.path)).catch(() => {});
   if (artifacts.length === 0) return;
 
   let btn = messageEl.querySelector('.artifacts-btn');

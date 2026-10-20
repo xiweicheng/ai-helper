@@ -42,6 +42,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 - **Summarize any open tab (Bilibili / YouTube / PDF / long article) and export to Word or PDF** — type `@`, pick the tab, ask for a summary, click export.
 - **Watch a page on a schedule** — Cron / interval / one-off tasks re-run your prompt against a bound URL and write results into a chosen session.
 - **Let AI touch your local files and terminal** — optional Agent service, with three-tier command safety and a 7-day trash bin as a safety net.
+- **Never miss a generated file** — files the AI produces via scripts (e.g. an exported spreadsheet) now surface in the Artifacts panel, and any file path it mentions in its answer is clickable to locate and highlight it in the sidebar's built-in workspace.
 - **Ask your own documents** — build a local knowledge base from PDF / Word / Excel / PPT / Markdown / HTML / CSV, then get retrieval-augmented answers with clickable citations; multiple bases can be searched together.
 - **Bring any provider, switch in two clicks** — save multiple OpenAI-compatible provider profiles (endpoint / key / model list); pick provider first, then model, right in the chat panel.
 - **Never miss an unfinished task** — desktop notifications when a task completes or fails, when a scheduled task finishes, and when the AI is waiting for your confirmation or clarification; one click jumps back to the side panel.
@@ -97,8 +98,8 @@ Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 
 Everything below the quickstart lives in the full technical reference:
 
-- **English** — architecture, all 33 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
-- **中文** — 架构总览、33 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** — architecture, all 34 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** — 架构总览、34 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
 - **Wiki** — installation, features, tools, Agent, configuration → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **Website** — <https://xiweicheng.github.io/ai-helper/>
 - **Product write-up (中文)** — [`docs/AI-Helper-作品介绍文档.md`](docs/AI-Helper-作品介绍文档.md)

@@ -2,6 +2,17 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-20
+
+### 文件产物声明识别 + 聊天内可点击文件路径
+> 用户反馈：AI 通过脚本动态生成的文件（如导出的 `浏览器书签分类分析_2026-10-20.xlsx`）在「文件产物」面板里识别不到；回答里提到的文件路径也希望能直接点击定位。方案文档：`docs/superpowers/specs/2026-10-20-artifact-declaration-and-clickable-path-design.md`；实施计划：`docs/superpowers/plans/2026-10-20-artifact-declaration-and-clickable-path.md`。
+
+- **产物声明识别（提示词零成本 + stat 兜底防幻觉）**：系统提示词引导 AI 用文本约定 `[[artifact:路径|说明]]` 声明脚本产物；`artifacts-manager.js` 新增纯函数 `parseDeclaredArtifactsFromText`（解析声明）/`mergeDeclaredArtifacts`（与静态分析结果按路径去重合并、标 `source: 'static'|'declared'`）/`buildArtifactsForMessage`（静态分析地板 + 声明补缺口），三处产物点（`addMessage` 非流式 / `finalizeStreamingMessage` 流式 / `rebindArtifactsButton` 切会话回灌）统一接入；声明项经 `dataset.declaredArtifacts` 持久化，回灌时复用现有 `validateArtifactsAsync` stat 校验剔除幻觉/已删文件。不加工具、不遍历目录、不改 Agent 端。
+- **显示期剥离标记**：`markdown-render.js` 新增 `stripArtifactMarkers`，`formatMarkdown` 渲染前剥离 `[[artifact:...]]` 标记（仅用于产物解析，不展示给用户）；未命中标记时原样返回，保护代码块空行保真。
+- **聊天内文件路径可点击定位**：`markdown-render.js` 新增 `extractPathCandidates`（提取路径候选，兼顾类 Unix/Windows/相对路径，去 URL/去尾标点/去重）、`applyFilePathLinks`（TreeWalker 遍历文本节点转 `.chat-file-link`，产物可信路径直接转链接、其余候选 fail-closed 校验：仅在解析到工作目录根内且 `CHECK_FILES_EXIST` 返回存在才转，防误链与跨空格切词）、`bindFileLinkDelegate`（幂等点击委托，复用 `workspace-panel.js` 的 `locateFileInWorkspace` 在侧边栏自带的工作目录面板定位并高亮）。因 `markdown-render.js ↔ workspace-panel.js` 循环依赖，相关符号走 `await import()` 动态导入破环。
+- **i18n 与样式**：新增 `chat.fileLinkTitle`/`fileLinkFailed`（zh/en）；`.chat-file-link` 用品牌色 token `--brand-500` + 下划线 + hover 底色。
+- **验证**：新增 `artifact-declare-linkify.unit.test.js` 19 例（parse/merge/build 纯函数、system prompt 注入守卫、三处产物点接线守卫、`extractPathCandidates`/`applyFilePathLinks` 含 fail-closed 与不跨空格切词负向例）+ `markdown-strip-marker.unit.test.js` 扩至 6 例（含「无标记不折叠代码块空行 / 有标记才整理」回归）；相关单测 + `build:silent` 通过。
+
 ## 2026-10-19
 
 ### 消息跳转（问题列表定位感：统一口径 + 当前高亮 + 钉住 + 实色面板）
