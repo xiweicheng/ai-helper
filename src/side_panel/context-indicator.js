@@ -221,6 +221,11 @@ export function initContextIndicator() {
     if (changes.chatMaxMemoryMessages || changes.isolateChat) {
       scheduleContextUpdate();
     }
+    // 模型名/模型列表变化（Options 页改模型、切换厂商重建窗口映射）：上下文窗口随之改变，需重算
+    // 用防抖等待 index.js 的 customModels 监听重建 state.customModelMap 完成
+    if (changes.modelName || changes.customModels) {
+      scheduleContextUpdate();
+    }
     if (changes.isolateChat || changes.mcpTools || changes.mcpEnabled || changes.enabledTools || changes.enableTools) {
       refreshContextCaches();
     }

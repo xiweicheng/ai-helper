@@ -8,7 +8,7 @@ import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCusto
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
 import { initMessageToc } from './message-toc.js';
-import { initContextIndicator, runCompaction, computeCurrentUsage } from './context-indicator.js';
+import { initContextIndicator, runCompaction, computeCurrentUsage, updateContextIndicator } from './context-indicator.js';
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
@@ -665,6 +665,8 @@ function loadCustomModelsToDropdown(customModels, callback) {
         state.currentModel = item.name;
         updateModelSelection(item.name);
         saveModelToAgentOrGlobal(item.name);
+        // 切换模型会改变上下文窗口，立即重算占用指示器（否则底部百分比沿用旧模型口径不刷新）
+        updateContextIndicator();
       });
 
       listEl.appendChild(option);
@@ -2511,6 +2513,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.currentModel = value;
       updateModelSelection(value);
       saveModelToAgentOrGlobal(value);
+      // 切换模型会改变上下文窗口，立即重算占用指示器
+      updateContextIndicator();
     });
   });
 
