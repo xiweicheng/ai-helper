@@ -15,6 +15,7 @@ registerTranslations('zh', {
     reasonApiFailed: 'API 请求失败: {status}',
     reasonEmptyResult: '模型返回空数组',
     reasonNoMatch: '筛选结果无匹配',
+    reasonMalformedEnvelope: '预筛选返回的 JSON 格式非法且无法恢复',
   },
 });
 
@@ -26,6 +27,7 @@ registerTranslations('en', {
     reasonApiFailed: 'API request failed: {status}',
     reasonEmptyResult: 'Model returned empty array',
     reasonNoMatch: 'No matching results after filtering',
+    reasonMalformedEnvelope: 'Pre-filter returned malformed JSON that could not be recovered',
   },
 });
 
@@ -94,7 +96,11 @@ ${toolList}
 
 Output in JSON format:
 - For direct answers: {"type": "answer", "data": "your answer text"}
-- When tools are needed: {"type": "tools", "data": ["tool_name_1", "tool_name_2"]}`;
+- When tools are needed: {"type": "tools", "data": ["tool_name_1", "tool_name_2"]}
+
+Strict JSON rules:
+- The output must be ONE valid JSON object and nothing else.
+- Inside the "data" string value, double quotes MUST be escaped as \\" and newlines as \\n. Never place a raw unescaped double quote inside a string (e.g., when quoting JSON examples in your answer).`;
 }
 
 /**
@@ -125,7 +131,12 @@ function parsePreselectResponse(text) {
       }
     }
   } catch {
-    // 非 JSON 或新格式，退到旧逻辑
+    // 非 JSON 或新格式，先尝试 answer 信封的容错恢复，再退到旧逻辑
+    const recovered = recoverAnswerEnvelopeData(trimmed);
+    if (recovered) {
+      logger.debug('[ToolPreselector] answer 信封 JSON 非法，已容错恢复 data 内容');
+      return { type: 'answer', content: recovered };
+    }
   }
 
   // 兜底：旧格式提取（兼容不支持 response_format 的模型）
@@ -135,6 +146,44 @@ function parsePreselectResponse(text) {
   }
 
   return null;
+}
+
+/**
+ * 判断文本是否像一个 {type,data} 预筛选信封（但 JSON.parse 已失败）
+ * 用于区分「模型返回纯文本回答」与「畸形 JSON 信封」：后者不得原样透传给 UI
+ */
+function looksLikePreselectEnvelope(text) {
+  return /^\{\s*"type"\s*:\s*"(answer|tools)"/.test((text || '').trim());
+}
+
+/**
+ * answer 信封容错恢复：模型偶尔会在 data 字符串里输出未转义的双引号
+ * （如在回答中复述 JSON 示例），导致整体 JSON.parse 失败。
+ * 此时提取 "data": " 之后到「最后一个裸引号」之前的原始内容（结尾引号后
+ * 只能跟可选的 } 与空白，据此定位边界），并反转义常见序列。
+ *
+ * @param {string} text - JSON.parse 失败的原始文本
+ * @returns {string|null} 恢复出的回答文本，无法恢复返回 null
+ */
+function recoverAnswerEnvelopeData(text) {
+  if (!/^\{\s*"type"\s*:\s*"answer"/.test(text)) return null;
+  const keyMatch = text.match(/"data"\s*:\s*"/);
+  if (!keyMatch) return null;
+  const start = keyMatch.index + keyMatch[0].length;
+  // 从末尾定位结尾引号：最后一个后面只剩可选 } 与空白的引号即字符串边界
+  const endMatch = text.match(/"\s*\}?\s*$/);
+  if (!endMatch) return null;
+  const end = endMatch.index;
+  if (end <= start) return null;
+  const raw = text.slice(start, end);
+  // 反转义：先保护 \\ 再处理其余序列，避免 \" 被二次解错
+  return raw
+    .replace(/\\\\/g, '\u0000')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\u0000/g, '\\');
 }
 
 /**
@@ -421,7 +470,13 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
       };
     }
 
-    // 无法提取 JSON 数组，当作直接回答
+    // 畸形 {type,data} 信封且恢复失败：内部协议不得原样上屏，回退全量工具走主力模型
+    if (looksLikePreselectEnvelope(rawContent)) {
+      logger.warn('[ToolPreselector] 预筛选返回畸形 JSON 信封且无法恢复，回退全量工具');
+      return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonMalformedEnvelope'), duration, apiResponse: { raw: rawContent.substring(0, 200) } })] };
+    }
+
+    // 非信封格式（不支持 response_format 的模型直接输出纯文本回答），当作直接回答
     logger.debug('[ToolPreselector] modeldirect answer,no secondarycall with ');
     return { type: 'answer', content: rawContent, executionLog: [createEntry('success', { thought: rawContent, duration })] };
   } catch (error) {
