@@ -223,3 +223,51 @@ test('边界反馈：已在最后一组仍向下跳，目标按钮进入 blocked
   expect(res.result).toBe('blocked');
   expect(res.blocked).toBe(true);
 });
+
+test('钉住后手动滚列表去点远处条目，不会被“跟随当前项”拽回顶部', async ({ page }) => {
+  const many = Array.from({ length: 26 }, (_, i) => `第${i + 1}个问题`);
+  await expandByHover(page, many);
+  await page.click('#chatNavHotzone'); // 钉住：保持展开，收起只跟鼠标走
+  // 当前项停在第 1 组（对话在顶部）
+  await page.evaluate(() => document.getElementById('chatContainer').scrollTo(0, 0));
+  // 指针移入列表（模拟去抓列表滚动条），把列表滚到底部
+  await page.locator('.chat-nav-question-list').hover();
+  await page.evaluate(() => { const l = document.querySelector('.chat-nav-question-list'); l.scrollTop = l.scrollHeight; });
+  const before = await page.evaluate(() => {
+    const l = document.querySelector('.chat-nav-question-list');
+    return { top: l.scrollTop, scrollable: l.scrollHeight - l.clientHeight };
+  });
+  expect(before.scrollable).toBeGreaterThan(20); // 列表确实可滚
+  expect(before.top).toBeGreaterThan(20);
+  // 触发一次“跟随重绘”：chat 滚动 → updateActiveQuestion → paintActiveQuestion
+  await page.evaluate(() => document.getElementById('chatContainer').dispatchEvent(new Event('scroll')));
+  await page.waitForTimeout(120);
+  const after = await page.evaluate(() => document.querySelector('.chat-nav-question-list').scrollTop);
+  // 指针仍在列表内 → 列表保持底部，不被拽回第 1 项
+  expect(after).toBeGreaterThanOrEqual(before.top - 2);
+});
+
+test('点击条目后移开鼠标再滚对话，当前项会滚进列表可视区（不被滞留焦点屏蔽）', async ({ page }) => {
+  const many = Array.from({ length: 26 }, (_, i) => `第${i + 1}个问题`);
+  await expandByHover(page, many);
+  await page.click('#chatNavHotzone'); // 钉住
+  await page.locator('.chat-nav-question-item').first().click(); // 点第一条，焦点落到条目（面板内）
+  // 焦点仍滞留在条目上，但把鼠标移出面板 → pointerInPanel=false，跟随应恢复
+  await page.mouse.move(600, 6);
+  await page.waitForTimeout(30);
+  // 用户滚对话到最后一组
+  await page.evaluate(() => { const c = document.getElementById('chatContainer'); c.scrollTo(0, c.scrollHeight); });
+  await page.waitForTimeout(150);
+  const state = await page.evaluate(() => {
+    const list = document.querySelector('.chat-nav-question-list');
+    const cur = list.querySelector('.chat-nav-question-item.current');
+    const focusInPanel = list.contains(document.activeElement);
+    if (!cur) return { has: false, focusInPanel };
+    const lr = list.getBoundingClientRect();
+    const cr = cur.getBoundingClientRect();
+    return { has: true, focusInPanel, gi: Number(cur.dataset.groupIndex), fullyVisible: cr.top >= lr.top - 1 && cr.bottom <= lr.bottom + 1 };
+  });
+  expect(state.focusInPanel).toBe(true); // 复现前提：焦点确实滞留在面板内
+  expect(state.gi).toBe(25); // 当前项已是最后一组
+  expect(state.fullyVisible).toBe(true); // 且被滚进列表可视区
+});

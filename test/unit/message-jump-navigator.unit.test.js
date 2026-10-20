@@ -306,9 +306,18 @@ describe('message-jump-nav.js 接线：箭头与问题列表共用同一分组�
     expect(navSection).toMatch(/if \(!item \|\| !item\.dataset\.messageId\) return/);
   });
 
-  it('当前组条目高亮并滚动到可见', () => {
+  it('当前组条目高亮，但只在指针不在面板内时才滚列表到可见', () => {
     expect(navSection).toMatch(/classList\.add\('current'\)/);
-    expect(navSection).toContain("block: 'nearest'");
+    // 自动滚列表必须只看 pointerInPanel，否则手动滚列表找目标会被拽回旧当前项
+    expect(navSection).toMatch(/if \(!pointerInPanel && activeIndex >= 0 && activeItem\) activeItem\.scrollIntoView\(\{ block: 'nearest' \}\)/);
+    // 不能掺入“焦点在面板内”判定：点过条目后焦点滞留会长期屏蔽跟随，滚对话时当前项不露出
+    expect(navSection).not.toMatch(/activeElement && chatNavQuestionPanel\.contains/);
+    expect(navSection).not.toMatch(/userInPanel/);
+  });
+
+  it('面板 mouseenter/leave 维护 pointerInPanel 标志', () => {
+    expect(navSection).toMatch(/addEventListener\('mouseenter', \(\) => \{ pointerInPanel = true; showChatNav\(\); \}\)/);
+    expect(navSection).toMatch(/addEventListener\('mouseleave', \(\) => \{ pointerInPanel = false; hideChatNav\(false\); \}\)/);
   });
 
   it('过滤态按原始组下标比对高亮，不能按渲染位置', () => {

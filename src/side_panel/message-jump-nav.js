@@ -29,6 +29,9 @@ export function initMessageJumpNav() {
   let navQuery = '';
   // 收起时把焦点交回把手会被 focus 监听重新展开，用它在这一拍里挡住
   let suppressFocusExpand = false;
+  // 指针是否停在列表面板内：为 true 时禁止列表“跟随当前项”自动滚动，
+  // 否则用户手动滚列表去点远处条目时，任一次重绘都会把列表拽回旧当前项。
+  let pointerInPanel = false;
 
   function navViewportTop() {
     const chatContainer = document.getElementById('chatContainer');
@@ -103,9 +106,13 @@ export function initMessageJumpNav() {
         total,
       });
     }
-    // 当前项不在列表可见范围时把它滚进来（只滚面板，不动聊天区）
+    // 当前项不在列表可见范围时把它滚进来（只滚面板，不动聊天区）。
+    // 仅当指针不在列表面板内时才跟随：指针在面板内说明用户正在自己滚列表找
+    // 目标，此时拽回旧当前项会让他点不中；指针移到对话区滚对话时则应滚列表露出当前项。
+    // 不能用“焦点是否在面板内”判断：点过条目后焦点会滞留在条目上，会错误地
+    // 长期屏蔽跟随，导致滚对话时当前项不露出。
     const activeItem = Array.from(items).find((item) => Number(item.dataset.groupIndex) === activeIndex);
-    if (activeIndex >= 0 && activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+    if (!pointerInPanel && activeIndex >= 0 && activeItem) activeItem.scrollIntoView({ block: 'nearest' });
   }
 
   // 滚动/跳转后同步当前组；组数变了说明列表已过期，直接重建
@@ -278,8 +285,8 @@ export function initMessageJumpNav() {
     chatNavButtons.addEventListener('mouseleave', () => hideChatNav(false));
     chatNavButtons.addEventListener('focusin', showChatNav);
     if (chatNavQuestionPanel) {
-      chatNavQuestionPanel.addEventListener('mouseenter', showChatNav);
-      chatNavQuestionPanel.addEventListener('mouseleave', () => hideChatNav(false));
+      chatNavQuestionPanel.addEventListener('mouseenter', () => { pointerInPanel = true; showChatNav(); });
+      chatNavQuestionPanel.addEventListener('mouseleave', () => { pointerInPanel = false; hideChatNav(false); });
       chatNavQuestionPanel.addEventListener('focusin', showChatNav);
       // 列表内 ↑/↓ 在条目间移动焦点（搜索框不参与，Home/End 跳首尾）
       chatNavQuestionPanel.addEventListener('keydown', (e) => {
