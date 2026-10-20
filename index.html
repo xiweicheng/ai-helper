@@ -1010,6 +1010,11 @@
       <p data-i18n="feat-agent-desc">Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.</p>
     </div>
     <div class="card">
+      <div class="card-icon">📦</div>
+      <h3 data-i18n="feat-artifact-title">Artifact Detection & Clickable Paths</h3>
+      <p data-i18n="feat-artifact-desc">Files the AI produces via scripts (e.g. an exported spreadsheet) are declared and surfaced in the Artifacts panel with stat validation against hallucinated entries, and any file path in an answer is clickable to locate and highlight it in the sidebar workspace.</p>
+    </div>
+    <div class="card">
       <div class="card-icon">🎯</div>
       <h3 data-i18n="feat-skill-title">Skill System</h3>
       <p data-i18n="feat-skill-desc">Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill; select multiple skills per conversation from the / picker.</p>
@@ -1830,6 +1835,8 @@
     'feat-rag-desc':         { en: 'Import PDF / Word / Excel / PPT / Markdown / HTML / CSV into local knowledge bases and get retrieval-augmented answers with clickable citations. Hybrid vector + keyword retrieval, multi-base management and cross-base search — fully local via the optional Agent.', zh: '将 PDF / Word / Excel / PPT / Markdown / HTML / CSV 导入本地知识库，检索增强回答附带可点击的引用来源。向量 + 关键词混合检索，支持多库管理与跨库检索，数据全程本地（经可选 Agent 实现）。' },
     'feat-agent-title':      { en: 'Agent Local Operations', zh: '代理本地操作' },
     'feat-agent-desc':       { en: 'Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.', zh: '读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。' },
+    'feat-artifact-title':   { en: 'Artifact Detection & Clickable Paths', zh: '文件产物识别与可点击路径' },
+    'feat-artifact-desc':    { en: 'Files the AI produces via scripts (e.g. an exported spreadsheet) are declared and surfaced in the Artifacts panel with stat validation against hallucinated entries, and any file path in an answer is clickable to locate and highlight it in the sidebar workspace.', zh: 'AI 用脚本动态产出的文件（如导出的 Excel）通过声明进入「文件产物」面板，并以 stat 校验剔除幻觉项；回答里出现的文件路径可直接点击，在侧边栏工作目录中定位高亮。' },
     'feat-skill-title':      { en: 'Skill System', zh: 'Skill 技能系统' },
     'feat-skill-desc':       { en: 'Workflow and Agent skill types, supports distilling skills from conversations. Built-in skill-creator meta-skill; select multiple skills per conversation from the / picker.', zh: 'Workflow 和 Agent 两种技能类型，支持从对话沉淀技能。内置 skill-creator 元技能；`/` 选择器支持对话内多选技能。' },
     'feat-mcp-title':        { en: 'MCP Protocol Extension', zh: 'MCP 协议扩展' },
