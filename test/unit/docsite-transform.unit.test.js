@@ -17,6 +17,11 @@ describe('convertFileLinks', () => {
     expect(out).toContain(BLOB_BASE + 'src/a.js');
     expect(out).toContain(BLOB_BASE + 'agent/b.js');
   });
+  it('消化可选第三斜杠 file:/// 不产生 main// 或前导斜杠', () => {
+    const out = convertFileLinks('[a.js](file:///agent/src/a.js)');
+    expect(out).toBe('[agent/src/a.js](' + BLOB_BASE + 'agent/src/a.js)');
+    expect(out).not.toContain('main//');
+  });
 });
 
 describe('wrapCiteBlock', () => {
@@ -38,8 +43,13 @@ describe('sanitizeName / planPage', () => {
     expect(p.srcRel).toBe('RAG-知识检索/index.md');
     expect(p.pagePath).toBe('/RAG-知识检索/');
     const q = planPage('RAG 知识检索/混合检索引擎.md');
-    expect(q.srcRel).toBe('RAG-知识检索/混合检索引擎.md');
+    expect(q.srcRel).toBe('RAG-知识检索/混合检索引擎/index.md');
     expect(q.pagePath).toBe('/RAG-知识检索/混合检索引擎/');
+  });
+  it('根级散页产出为 <stem>/index.md 以根除 cleanUrls 依赖', () => {
+    const r = planPage('开发者指南.md');
+    expect(r.srcRel).toBe('开发者指南/index.md');
+    expect(r.pagePath).toBe('/开发者指南/');
   });
 });
 
@@ -49,10 +59,19 @@ describe('frontmatter', () => {
     expect(title).toBe('混合检索引擎');
     expect(description).toBe('本技术文档聚焦 X。');
   });
+  it('description 兜底跳过列表/表格/引用起始行，取后续真实介句', () => {
+    const { description } = extractFrontmatter('# T\n\n- 列表项。\n\n> 引用句。\n\n| a | b |\n\n真实介绍句。\n');
+    expect(description).toBe('真实介绍句。');
+  });
   it('inject 产出的 YAML 头合法且置于最前', () => {
     const out = injectFrontmatter('# T\n', { title: 'T', description: '说"明"' });
     expect(out.startsWith('---\ntitle: "T"\ndescription: ')).toBe(true);
     expect(out.endsWith('# T\n')).toBe(true);
+  });
+  it('inject 先转义反斜杠再转义引号，避免破坍 YAML', () => {
+    const out = injectFrontmatter('# T\n', { title: 'C:\\path', description: 'a"b' });
+    expect(out).toContain('title: "C:\\\\path"');
+    expect(out).toContain('description: "a\\"b"');
   });
 });
 
@@ -92,6 +111,10 @@ describe('buildSidebar', () => {
     expect(collect(buildSidebar(tree))).toHaveLength(realistic.length);
     const topOrder = [...new Set(realistic.map(p => p.split('/')[0].replace(/\.md$/, '')))];
     expect(collect(buildSidebar(tree, topOrder))).toHaveLength(realistic.length);
+  });
+  it('topOrder 未命中目录树时抛错而非静默丢页', () => {
+    const tree = buildTree(['开发者指南.md', '构建与部署/构建与部署.md']);
+    expect(() => buildSidebar(tree, ['不存在的顶层'])).toThrow(/topOrder/);
   });
 });
 

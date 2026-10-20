@@ -2,7 +2,7 @@
 export const BLOB_BASE = 'https://github.com/xiweicheng/ai-helper/blob/main/';
 
 export function convertFileLinks(md) {
-  return md.replace(/\[([^\]]*)\]\(file:\/\/([^)\s]+)\)/g,
+  return md.replace(/\[([^\]]*)\]\(file:\/\/\/?([^)\s]+)\)/g,
     (_m, _text, p) => `[${p}](${BLOB_BASE}${p})`);
 }
 
@@ -19,25 +19,25 @@ export function extractFrontmatter(md) {
   const title = md.match(/^# (.+)$/m)?.[1]?.trim() ?? '';
   let description = '';
   const intro = md.match(/## 引言\n+([^\n#]+)/);
-  const first = intro?.[1] ?? md.match(/\n\n([^\n#>]+。)/)?.[1] ?? '';
+  const first = intro?.[1] ?? md.match(/\n\n(?![>|\-#])([^\n#>]+。)/)?.[1] ?? '';
   if (first) description = first.split('。')[0] + '。';
   return { title, description };
 }
 
 export function injectFrontmatter(md, { title, description }) {
-  const esc = s => String(s).replaceAll('"', '\\"');
+  const esc = s => String(s).replaceAll('\\', '\\\\').replaceAll('"', '\\"');
   return `---\ntitle: "${esc(title)}"\ndescription: "${esc(description)}"\n---\n${md}`;
 }
 
 export function planPage(relPath) {
   const segs = relPath.split('/');
-  const file = segs.at(-1);
-  const stem = file.replace(/\.md$/, '');
+  const stem = segs.at(-1).replace(/\.md$/, '');
   const cleanSegs = segs.slice(0, -1);
   const isOverview = cleanSegs.at(-1) === stem;
-  const outFileName = isOverview ? 'index.md' : `${sanitizeName(stem)}.md`;
-  const srcRel = [...cleanSegs.map(sanitizeName), outFileName].join('/');
-  const pagePath = '/' + [...cleanSegs.map(sanitizeName), ...(isOverview ? [] : [sanitizeName(stem)])].join('/') + '/';
+  // 所有页面产出为 <段...>/index.md，使尾斜杠 URL 在 GitHub Pages 静态托管下可靠解析
+  const dirSegs = isOverview ? cleanSegs : [...cleanSegs, stem];
+  const srcRel = [...dirSegs.map(sanitizeName), 'index.md'].join('/');
+  const pagePath = '/' + dirSegs.map(sanitizeName).join('/') + '/';
   return { srcRel, pagePath };
 }
 
@@ -70,7 +70,7 @@ function normalizeRel(base, rel) {
 export function buildTree(relPaths) {
   const root = { name: '', children: [] };
   const dirIndex = new Map([['', root]]);
-  const sorted = [...relPaths].sort();
+  const sorted = [...relPaths].sort((a, b) => a.localeCompare(b, 'zh'));
   for (const p of sorted) {
     const segs = p.split('/');
     const file = segs.at(-1);
@@ -102,7 +102,11 @@ export function buildTree(relPaths) {
 
 export function buildSidebar(tree, topOrder = []) {
   const tops = topOrder.length
-    ? topOrder.map(t => tree.children.find(c => c.name === t)).filter(Boolean)
+    ? topOrder.map(t => {
+        const c = tree.children.find(x => x.name === t);
+        if (!c) throw new Error(`buildSidebar: topOrder 项未命中目录树: ${t}`);
+        return c;
+      })
     : tree.children;
   return tops.map(top => {
     // 根级散页：拍平为单条链接
@@ -124,15 +128,6 @@ function collectGroupItems(dir) {
     return a.item.text.localeCompare(b.item.text, 'zh');
   });
   return entries.map(e => e.item);
-}
-
-// 兼容保留：buildSidebar 已在组内直接产出「概览」标签，此函数对已改名数据是幂等 no-op
-export function overviewLabelFix(items, dirName) {
-  for (const it of items) {
-    if (it.text === dirName) it.text = '概览';
-    if (it.items) overviewLabelFix(it.items, dirName);
-  }
-  return items;
 }
 
 export function transformDocument(md, relPath, pathMap) {
