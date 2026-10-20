@@ -1,5 +1,6 @@
 // test/unit/docsite-transform.unit.test.js — RepoWiki 文档站转换纯函数
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   BLOB_BASE, convertFileLinks, wrapCiteBlock, sanitizeName,
   extractFrontmatter, injectFrontmatter, rewriteMdLinks,
@@ -126,5 +127,36 @@ describe('transformDocument 全链路', () => {
     expect(content).not.toMatch(/file:\/\//);
     expect(content).toContain('::: details');
     expect(content.startsWith('---\ntitle: "标题"')).toBe(true);
+  });
+});
+
+describe('docsite scaffold 守卫', () => {
+  const read = p => readFileSync(new URL(p, import.meta.url), 'utf8');
+  const themeIdx = read('../../.docsite/theme/index.js');
+  const layout = read('../../.docsite/theme/Layout.vue');
+  const docsearch = read('../../.docsite/theme/DocSearch.vue');
+  const home = read('../../.docsite/home.md');
+
+  it('主题入口 extends DefaultTheme 且初始化 mermaid', () => {
+    expect(themeIdx).toContain('extends: DefaultTheme');
+    expect(themeIdx).toContain('mermaid.initialize({ startOnLoad: false');
+  });
+  it('Layout 挂 DocSearch 且路由切换重渲 mermaid', () => {
+    expect(layout).toContain('<DocSearch />');
+    expect(layout).toContain('mermaid.run');
+    expect(layout).toContain('watch(() => route.path');
+  });
+  it('DocSearch 走 Pagefind UI 且 bundlePath 指向站点 base', () => {
+    expect(docsearch).toContain('pagefind-ui.js');
+    expect(docsearch).toContain("bundlePath: `${BASE}pagefind/\`");
+  });
+  it('首页含版本占位与三个入口按钮', () => {
+    expect(home).toContain('{{VERSION}}');
+    expect(home).toContain('返回产品主页');
+    expect(home).toContain('link: /项目概览与快速开始/');
+  });
+  it('home 特性卡 link 均为合法页面路径', () => {
+    const links = home.match(/link: \/(?!\/)[^\n]+/g) ?? [];
+    expect(links.length).toBeGreaterThanOrEqual(7);
   });
 });
