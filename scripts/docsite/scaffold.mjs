@@ -71,7 +71,6 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
   description: 'AI Helper（Chrome 扩展 + 本地 Agent）完整技术文档',
   base: '/ai-helper/wiki/',
   outDir: ${JSON.stringify(outDirAbs)},
-  cleanResults: true,
   ignoreDeadLinks: ['localhost', '/ai-helper/'],
   lastUpdated: true,
   markdown: {

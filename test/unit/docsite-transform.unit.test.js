@@ -136,6 +136,7 @@ describe('docsite scaffold 守卫', () => {
   const layout = read('../../.docsite/theme/Layout.vue');
   const docsearch = read('../../.docsite/theme/DocSearch.vue');
   const home = read('../../.docsite/home.md');
+  const scaffold = read('../../scripts/docsite/scaffold.mjs');
 
   it('主题入口 extends DefaultTheme 且初始化 mermaid', () => {
     expect(themeIdx).toContain('extends: DefaultTheme');
@@ -158,5 +159,9 @@ describe('docsite scaffold 守卫', () => {
   it('home 特性卡 link 均为合法页面路径', () => {
     const links = home.match(/link: \/(?!\/)[^\n]+/g) ?? [];
     expect(links.length).toBeGreaterThanOrEqual(7);
+  });
+  it('站点 base 在 scaffold config 与 DocSearch 两处字面一致（防漂移）', () => {
+    expect(scaffold).toContain("base: '/ai-helper/wiki/',");
+    expect(docsearch).toContain("const BASE = '/ai-helper/wiki/'");
   });
 });

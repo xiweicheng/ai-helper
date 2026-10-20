@@ -7,7 +7,7 @@ const BASE = '/ai-helper/wiki/';
 
 async function ensureUi() {
   if (ui) return;
-  if (!document.querySelector('#pagefind-ui-css')) {
+  if (!window.PagefindUI) {
     const link = document.createElement('link');
     link.id = 'pagefind-ui-css'; link.rel = 'stylesheet';
     link.href = `${BASE}pagefind/pagefind-ui.css`;
@@ -25,7 +25,10 @@ async function ensureUi() {
 function nextTickFrame() { return new Promise(r => requestAnimationFrame(r)); }
 async function toggle() {
   open.value = !open.value;
-  if (open.value) { await nextTickFrame(); await ensureUi(); }
+  if (open.value) {
+    await nextTickFrame();
+    try { await ensureUi(); } catch { open.value = false; }
+  }
 }
 function onKey(e) { if (e.key === 'Escape') open.value = false; }
 onMounted(() => document.addEventListener('keydown', onKey));
