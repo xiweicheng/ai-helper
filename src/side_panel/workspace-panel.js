@@ -1765,11 +1765,21 @@ async function handleFileListClick(e) {
   const type = item.dataset.type;
   const actionBtn = e.target.closest('[data-action]');
 
-  // 更新键盘焦点到点击的文件项
+  // 更新键盘焦点到点击的文件项。
+  // 虚拟滚动下 DOM 只渲染可视窗口，items.indexOf 得到的是窗口内相对下标，
+  // 而 focusedIndex 须是全局绝对下标，否则 updateFocusVisual 会算错滚动位置导致列表跳走。
   const items = getFileItems();
-  const clickedIdx = items.indexOf(item);
-  if (clickedIdx >= 0) {
-    focusedIndex = clickedIdx;
+  let absIdx;
+  if (virtualScrollState) {
+    const clickedPath = item.dataset.path;
+    absIdx = virtualScrollState.sorted.findIndex(
+      e => (isSearchMode ? e.fullPath : normalizePath(`${currentPath}/${e.name}`)) === clickedPath
+    );
+  } else {
+    absIdx = items.indexOf(item);
+  }
+  if (absIdx >= 0) {
+    focusedIndex = absIdx;
     updateFocusVisual();
   }
 
