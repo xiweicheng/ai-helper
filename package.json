@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build && node scripts/fix-build.js",
     "build:silent": "node scripts/silent-build.js",
+    "build:docsite": "node scripts/build-docsite.mjs",
+    "preview:docsite": "node scripts/build-docsite.mjs --preview",
     "package": "node scripts/package.js",
     "release:agent": "bash agent/publish.sh",
     "push:all": "bash scripts/push-all.sh",
@@ -30,9 +32,12 @@
     "esbuild": "^0.28.1",
     "eslint": "^10.7.0",
     "jsdom": "^29.1.1",
+    "mermaid": "^12.2.0",
+    "pagefind": "^1.5.2",
     "sharp": "^0.35.2",
     "vite": "^8.0.0",
     "vite-plugin-static-copy": "^4.1.1",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.10"
   },
   "dependencies": {

@@ -47,3 +47,5 @@ dist/
 scripts/_theme-dark-audit-profile/
 tool-results/
 .qoder/
+# RepoWiki 文档站构建暂存（源在 .qoder/repowiki，产物入库 docs/wiki/）
+.docsite-src/
