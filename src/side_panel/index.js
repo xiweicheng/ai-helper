@@ -2319,7 +2319,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.imageApiBase = changes.imageApiBase.newValue || '';
       }
       if (changes.imageApiKey) {
-        state.imageApiKey = changes.imageApiKey.newValue || '';
+        // 存储态为 enc: 混淆，须与初始化（L2265）一致解码为明文；
+        // 否则用户改过图片 Key 后，state.imageApiKey 变密文 → 视觉模型 Bearer 头携带 enc: 串 401
+        state.imageApiKey = decodeSecret(changes.imageApiKey.newValue) || '';
       }
     }
   });
