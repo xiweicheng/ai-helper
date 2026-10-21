@@ -2,3 +2,14 @@
 .docsearch-btn:hover { color: var(--vp-c-brand-1); border-color: var(--vp-c-brand-1); }
 .docsearch-overlay { position: fixed; inset: 0; z-index: 999; background: rgba(0,0,0,.45); display: flex; justify-content: center; padding: 8vh 4vw; }
 .docsearch-panel { width: min(720px, 100%); max-height: 80vh; overflow: auto; background: var(--vp-c-bg); border-radius: 10px; padding: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+
+/* Pagefind UI 深色适配：其内部控件（搜索框/结果标题/分隔线/底部按钮）默认走浅色 CSS 变量，需随 VitePress .dark 覆盖，否则暗色下白框白线突兀 */
+.dark .pagefind-ui {
+  --pagefind-ui-text: var(--vp-c-text-1);
+  --pagefind-ui-background: var(--vp-c-bg-elv);
+  --pagefind-ui-primary: var(--vp-c-brand-1);
+  --pagefind-ui-border: var(--vp-c-divider);
+  --pagefind-ui-tag: var(--vp-c-bg-soft);
+}
+.dark .pagefind-ui__search-input { color: var(--vp-c-text-1); }
+.dark .pagefind-ui mark { background: rgba(255, 213, 79, .32); color: var(--vp-c-text-1); border-radius: 2px; padding: 0 1px; }
