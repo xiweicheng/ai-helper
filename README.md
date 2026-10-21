@@ -102,7 +102,7 @@ Everything below the quickstart lives in the full technical reference:
 - **中文** — 架构总览、34 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
 - **Wiki** — installation, features, tools, Agent, configuration → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **Website** — <https://xiweicheng.github.io/ai-helper/>
-- **Tech docs site** — full RepoWiki technical documentation (offline search + sidebar navigation) <https://xiweicheng.github.io/ai-helper/wiki/> · maintainers refresh it with `npm run build:docsite` (local preview `npm run preview:docsite`)
+- **Tech docs site** (Chinese only) — full RepoWiki technical documentation (offline full-text search + sidebar tree navigation) <https://xiweicheng.github.io/ai-helper/wiki/> · maintainers refresh it with `npm run build:docsite` (local preview `npm run preview:docsite`)
 - **Product write-up (中文)** — [`docs/AI-Helper-作品介绍文档.md`](docs/AI-Helper-作品介绍文档.md)
 
 ## Community & contributing
