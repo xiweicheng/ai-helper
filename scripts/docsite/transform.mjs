@@ -66,6 +66,7 @@ function mapProseLines(md, fn) {
   for (const line of lines) {
     if (/^\s*(```|~~~)/.test(line)) { flush(); inFence = !inFence; out.push(line); continue; }
     if (inFence) { out.push(line); continue; }
+    if (line.trim() === '') { flush(); out.push(line); continue; }
     prose.push(line);
   }
   flush();
@@ -73,7 +74,7 @@ function mapProseLines(md, fn) {
 }
 
 export function escapeStrayTags(md) {
-  return mapProseLines(md, s => s.replace(/<(\/?[A-Za-z][A-Za-z0-9_-]*(?:\s[^<>\n]*?)?)>/g, '&lt;$1&gt;'));
+  return mapProseLines(md, s => s.replace(/<(\/?[A-Za-z][A-Za-z0-9_-]*(?:[ \t][^<>\n]*?)?)>/g, '&lt;$1&gt;'));
 }
 
 export function escapeMustaches(md) {

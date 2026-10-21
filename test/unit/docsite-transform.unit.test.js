@@ -169,6 +169,11 @@ describe('escapeMustaches', () => {
     const fenced = '```\n{ "a": 1 }\n{{x}}\n```';
     expect(escapeMustaches(fenced)).toBe(fenced);
   });
+  it('跨软换行的行内 code span 内的花括号不被误转义', () => {
+    const md = ['- 示例 ` {{a',
+      'b}} ` 结束'].join('\n');
+    expect(escapeMustaches(md)).toBe(md);
+  });
   it('不影响普通单个花括号', () => {
     expect(escapeMustaches('返回 { a: 1 } 对象')).toBe('返回 { a: 1 } 对象');
   });
