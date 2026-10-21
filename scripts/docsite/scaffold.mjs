@@ -3,7 +3,7 @@ import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  transformDocument, buildTree, buildSidebar, buildPathMap,
+  transformDocument, buildTree, buildSidebar, buildPathMap, planPage,
 } from './transform.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -58,6 +58,12 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
   const tree = buildTree(relPaths);
   const sidebar = buildSidebar(tree);
   const sidebarLinkCount = countLinks(sidebar);
+  // 校验 D 用：sidebar 中实际链接集合 与 页面应有路径集合（供双向差集，spec §7「列出差集」）
+  const sidebarLinks = new Set();
+  (function collect(items) {
+    for (const it of items) { if (it.link) sidebarLinks.add(it.link); if (it.items) collect(it.items); }
+  })(sidebar);
+  const expectedPagePaths = new Set(relPaths.map(r => planPage(r).pagePath));
 
   // 6) 生成 .vitepress/config.mjs + 复制 theme
   const cfgDir = path.join(srcDir, '.vitepress');
@@ -86,6 +92,7 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
     },
   },
   themeConfig: {
+    appearance: 'light',
     nav: [
       { text: '文档首页', link: '/' },
       { text: '产品主页', link: 'https://xiweicheng.github.io/ai-helper/' },
@@ -106,5 +113,5 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
   await mkdir(path.join(srcDir, 'public'), { recursive: true });
   await writeFile(path.join(srcDir, 'public/.nojekyll'), '');
 
-  return { pageCount: relPaths.length + 1, sidebarLinkCount: sidebarLinkCount + 1 };
+  return { pageCount: relPaths.length + 1, sidebarLinkCount: sidebarLinkCount + 1, sidebarLinks, expectedPagePaths };
 }

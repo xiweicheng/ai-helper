@@ -37,3 +37,19 @@ features:
     details: Service Worker 生命周期、消息契约、Side Panel 渲染体系全解。
     link: /系统架构设计/
 ---
+
+## 安装本地代理 Agent（可选）
+
+浏览器扩展本体开箱即用；若需解锁本地文件 / 命令 / MCP / Skill / 知识库，一键安装本地代理端（与 README 一致）：
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.ps1 | iex
+```
+
+或通过 npm 安装：`npm install -g ai-helper-agent && aha start -b`，再把终端里的 6 位配对码填到扩展选项页 → Agent。

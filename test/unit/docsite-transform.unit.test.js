@@ -187,13 +187,14 @@ describe('docsite scaffold 守卫', () => {
   const home = read('../../.docsite/home.md');
   const scaffold = read('../../scripts/docsite/scaffold.mjs');
 
-  it('主题入口 extends DefaultTheme 且初始化 mermaid', () => {
+  it('主题入口 extends DefaultTheme 且不再静态导入 mermaid（I-4 动态加载）', () => {
     expect(themeIdx).toContain('extends: DefaultTheme');
-    expect(themeIdx).toContain('mermaid.initialize({ startOnLoad: false');
+    expect(themeIdx).not.toContain("import mermaid from 'mermaid'");
   });
-  it('Layout 挂 DocSearch 且路由切换重渲 mermaid', () => {
+  it('Layout 挂 DocSearch、mermaid 动态 import 且路由切换重渲', () => {
     expect(layout).toContain('<DocSearch />');
-    expect(layout).toContain('mermaid.run');
+    expect(layout).toContain("import('mermaid')");
+    expect(layout).toContain('mermaidInstance.run');
     expect(layout).toContain('watch(() => route.path');
   });
   it('DocSearch 走 Pagefind UI 且 bundlePath 指向站点 base', () => {
