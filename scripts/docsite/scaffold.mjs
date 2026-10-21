@@ -77,7 +77,8 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
     config(md) {
       const orig = md.renderer.rules.fence.bind(md.renderer.rules);
       md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-        if (tokens[idx].language === 'mermaid') {
+        const lang = (tokens[idx].info || '').trim().split(/\s+/)[0];
+        if (lang === 'mermaid') {
           return '<pre class="mermaid">' + md.utils.escapeHtml(tokens[idx].content) + '</pre>';
         }
         return orig(tokens, idx, options, env, self);
@@ -100,6 +101,10 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
 };
 `;
   await writeFile(path.join(cfgDir, 'config.mjs'), configText);
+
+  // 7) public/.nojekyll → VitePress 会原样拷进 outDir 根（GitHub Pages 禁用 Jekyll 需要）
+  await mkdir(path.join(srcDir, 'public'), { recursive: true });
+  await writeFile(path.join(srcDir, 'public/.nojekyll'), '');
 
   return { pageCount: relPaths.length + 1, sidebarLinkCount: sidebarLinkCount + 1 };
 }

@@ -37,7 +37,7 @@ onBeforeUnmount(() => { document.removeEventListener('keydown', onKey); ui?.dest
 
 <template>
   <button class="docsearch-btn" @click="toggle" aria-label="搜索文档">🔍 搜索</button>
-  <div v-if="open" class="docsearch-overlay" @click.self="open = false">
+  <div v-show="open" class="docsearch-overlay" @click.self="open = false">
     <div id="docsearch-mount" class="docsearch-panel"></div>
   </div>
 </template>

@@ -11,6 +11,27 @@ export function wrapCiteBlock(md) {
     (_m, inner) => `::: details 本文引用的源码文件\n${convertFileLinks(inner.trim())}\n:::`);
 }
 
+// 语料内除已消费的 <cite> 外无任何成对 HTML，所有 <xxx> 均为正文占位/引用；
+// 但它们会被 VitePress 的 Vue 模板编译器当作未闭合开始标签而报错。把标签形态 token 按字面转义，
+// 同时保护围栏代码块与行内代码，且不触及 <https://…> 自动链接（要求闭合 >）。
+// 同理正文中的 {{...}} 会被 Vue 当作插值，一并按字面转义。
+function mapProseLines(md, fn) {
+  let inFence = false;
+  return md.split('\n').map(line => {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
+    if (inFence) return line;
+    return line.split(/(`[^`]*`)/).map((seg, i) => (i % 2 === 1 ? seg : fn(seg))).join('');
+  }).join('\n');
+}
+
+export function escapeStrayTags(md) {
+  return mapProseLines(md, s => s.replace(/<(\/?[A-Za-z][A-Za-z0-9_-]*(?:\s[^<>\n]*?)?)>/g, '&lt;$1&gt;'));
+}
+
+export function escapeMustaches(md) {
+  return mapProseLines(md, s => s.replaceAll('{{', '&#123;&#123;').replaceAll('}}', '&#125;&#125;'));
+}
+
 export function sanitizeName(name) {
   return name.replaceAll(' ', '-');
 }
@@ -135,6 +156,8 @@ export function transformDocument(md, relPath, pathMap) {
   out = convertFileLinks(out);
   const relDir = relPath.split('/').slice(0, -1).join('/');
   out = rewriteMdLinks(out, relDir, pathMap);
+  out = escapeStrayTags(out);
+  out = escapeMustaches(out);
   out = injectFrontmatter(out, extractFrontmatter(out));
   return { srcRel: planPage(relPath).srcRel, content: out };
 }

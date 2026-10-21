@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   BLOB_BASE, convertFileLinks, wrapCiteBlock, sanitizeName,
   extractFrontmatter, injectFrontmatter, rewriteMdLinks,
-  planPage, buildTree, buildSidebar, buildPathMap, transformDocument,
+  planPage, buildTree, buildSidebar, buildPathMap, transformDocument, escapeStrayTags, escapeMustaches,
 } from '../../scripts/docsite/transform.mjs';
 
 describe('convertFileLinks', () => {
@@ -130,6 +130,40 @@ describe('transformDocument 全链路', () => {
   });
 });
 
+describe('escapeStrayTags', () => {
+  it('转义正文占位标签为字面实体', () => {
+    expect(escapeStrayTags('session:<id> 与 <all_urls> 权限')).toBe('session:&lt;id&gt; 与 &lt;all_urls&gt; 权限');
+  });
+  it('转义带属性 token', () => {
+    expect(escapeStrayTags('使用 <textarea id="clipboard-textarea"> 元素')).toContain('&lt;textarea id="clipboard-textarea"&gt;');
+  });
+  it('保护行内代码与围栏代码块', () => {
+    expect(escapeStrayTags('见 `<id>` 占位符')).toBe('见 `<id>` 占位符');
+    const fenced = '```\n<img>\n```';
+    expect(escapeStrayTags(fenced)).toBe(fenced);
+  });
+  it('不破坏自动链接与比较符号', () => {
+    expect(escapeStrayTags('参考 <https://example.com> 且 a < b')).toBe('参考 <https://example.com> 且 a < b');
+  });
+});
+
+describe('escapeMustaches', () => {
+  it('转义正文中的模板插值 token 以免被 Vue 编译', () => {
+    const out = escapeMustaches('支持 {{var}} 替换与 {{#if}} 条件渲染、{{/if}}。');
+    expect(out).not.toContain('{{');
+    expect(out).not.toContain('}}');
+    expect(out).toContain('&#123;&#123;var&#125;&#125;');
+  });
+  it('保护行内代码与围栏中的花括号', () => {
+    expect(escapeMustaches('写 `{{var}}` 即可')).toBe('写 `{{var}}` 即可');
+    const fenced = '```\n{ "a": 1 }\n{{x}}\n```';
+    expect(escapeMustaches(fenced)).toBe(fenced);
+  });
+  it('不影响普通单个花括号', () => {
+    expect(escapeMustaches('返回 { a: 1 } 对象')).toBe('返回 { a: 1 } 对象');
+  });
+});
+
 describe('docsite scaffold 守卫', () => {
   const read = p => readFileSync(new URL(p, import.meta.url), 'utf8');
   const themeIdx = read('../../.docsite/theme/index.js');
@@ -149,7 +183,10 @@ describe('docsite scaffold 守卫', () => {
   });
   it('DocSearch 走 Pagefind UI 且 bundlePath 指向站点 base', () => {
     expect(docsearch).toContain('pagefind-ui.js');
-    expect(docsearch).toContain("bundlePath: `${BASE}pagefind/\`");
+    expect(docsearch).toContain("bundlePath: `${BASE}pagefind/`");
+    // 面板持久挂载（v-show）：避免关闭后重开因 ui 缓存挂到已卸载 DOM 而空白
+    expect(docsearch).toContain('v-show="open"');
+    expect(docsearch).not.toContain('v-if="open"');
   });
   it('首页含版本占位与三个入口按钮', () => {
     expect(home).toContain('{{VERSION}}');

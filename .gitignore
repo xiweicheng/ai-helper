@@ -49,3 +49,5 @@ tool-results/
 .qoder/
 # RepoWiki 文档站构建暂存（源在 .qoder/repowiki，产物入库 docs/wiki/）
 .docsite-src/
+# vitepress 在 repo 根误生成的依赖缓存（构建实际写入 .docsite-src/.vitepress）
+.vitepress/
