@@ -217,4 +217,9 @@ describe('docsite scaffold 守卫', () => {
     expect(scaffold).toContain("base: '/ai-helper/wiki/',");
     expect(docsearch).toContain("const BASE = '/ai-helper/wiki/'");
   });
+  it('主题默认亮色：appearance 位于 config 顶层且 initialValue 为 light，themeConfig 内不再含 appearance（VitePress 只读顶层，防再次放错）', () => {
+    expect(scaffold).toContain("appearance: { initialValue: 'light' },");
+    const tc = scaffold.slice(scaffold.indexOf('themeConfig: {'));
+    expect(tc).not.toMatch(/^\s*appearance:/m);
+  });
 });

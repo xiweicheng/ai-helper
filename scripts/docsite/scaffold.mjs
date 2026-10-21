@@ -76,6 +76,7 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
   title: 'AI Helper 文档中心',
   description: 'AI Helper（Chrome 扩展 + 本地 Agent）完整技术文档',
   base: '/ai-helper/wiki/',
+  appearance: { initialValue: 'light' },
   outDir: ${JSON.stringify(outDirAbs)},
   ignoreDeadLinks: ['localhost', '/ai-helper/'],
   lastUpdated: true,
@@ -92,7 +93,6 @@ export async function stageSite({ contentDir, srcDir, outDirAbs }) {
     },
   },
   themeConfig: {
-    appearance: 'light',
     nav: [
       { text: '文档首页', link: '/' },
       { text: '产品主页', link: 'https://xiweicheng.github.io/ai-helper/' },
