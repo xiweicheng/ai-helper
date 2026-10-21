@@ -102,6 +102,7 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 - **English** —— architecture、34 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
 - **Wiki** —— 安装、功能、工具、代理、配置全站 → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **文档站** —— <https://xiweicheng.github.io/ai-helper/>
+- **技术文档站** —— RepoWiki 全站技术文档（离线全文搜索 + 目录树导航）<https://xiweicheng.github.io/ai-helper/wiki/> · 维护者刷新：`npm run build:docsite`（本地预览 `npm run preview:docsite`）
 - **作品介绍** —— [`docs/AI-Helper-作品介绍文档.md`](docs/AI-Helper-作品介绍文档.md)
 
 ## 社区与贡献

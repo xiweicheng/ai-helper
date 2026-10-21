@@ -13,6 +13,11 @@
 - **i18n 与样式**：新增 `chat.fileLinkTitle`/`fileLinkFailed`（zh/en）；`.chat-file-link` 用品牌色 token `--brand-500` + 下划线 + hover 底色。
 - **验证**：新增 `artifact-declare-linkify.unit.test.js` 19 例（parse/merge/build 纯函数、system prompt 注入守卫、三处产物点接线守卫、`extractPathCandidates`/`applyFilePathLinks` 含 fail-closed 与不跨空格切词负向例）+ `markdown-strip-marker.unit.test.js` 扩至 6 例（含「无标记不折叠代码块空行 / 有标记才整理」回归）；相关单测 + `build:silent` 通过。
 
+### RepoWiki 文档官网（VitePress + Pagefind 静态站）
+> 需求：把 Qoder RepoWiki 生成的全站中文技术文档做成可托管到 GitHub Pages 的文档官网。方案文档：`docs/superpowers/specs/2026-10-20-repowiki-docsite-design.md`；实施计划：`docs/superpowers/plans/2026-10-20-repowiki-docsite.md`。
+
+- 新增 RepoWiki 文档官网：`npm run build:docsite` 一键将 Qoder RepoWiki（134 篇）构建为 VitePress + Pagefind 静态站并发布到 GitHub Pages `/ai-helper/wiki/`（离线中文全文搜索 + mermaid 渲染 + 目录树导航），产物入库 `docs/wiki/`。
+
 ## 2026-10-19
 
 ### 消息跳转（问题列表定位感：统一口径 + 当前高亮 + 钉住 + 实色面板）
