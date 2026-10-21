@@ -145,6 +145,16 @@ describe('escapeStrayTags', () => {
   it('不破坏自动链接与比较符号', () => {
     expect(escapeStrayTags('参考 <https://example.com> 且 a < b')).toBe('参考 <https://example.com> 且 a < b');
   });
+  it('跨软换行的行内 code span 内的标签不被误转义（奇偶按整块 prose 判定）', () => {
+    // 复刻语料真实写法：` ```mermaid\n` 是跨行 code span，其后 `<div class="mermaid">` 亦在行内代码中
+    const md = [
+      '- 提取与占位：将 ` ```mermaid',
+      '` 内容转为 `<div class="mermaid">` 容器。',
+    ].join('\n');
+    const out = escapeStrayTags(md);
+    expect(out).toContain('`<div class="mermaid">`');
+    expect(out).not.toContain('&lt;div');
+  });
 });
 
 describe('escapeMustaches', () => {

@@ -15,13 +15,61 @@ export function wrapCiteBlock(md) {
 // 但它们会被 VitePress 的 Vue 模板编译器当作未闭合开始标签而报错。把标签形态 token 按字面转义，
 // 同时保护围栏代码块与行内代码，且不触及 <https://…> 自动链接（要求闭合 >）。
 // 同理正文中的 {{...}} 会被 Vue 当作插值，一并按字面转义。
+// 行内 code span 可跨软换行（如 ` ```mermaid\n` 这类展示围栏记号的写法），CommonMark 以「等长
+// 反引号 run」配对定界，故按「连续非围栏 prose 行」整块 join 后用 run 长度感知扫描器切分，
+// 只有 code span 之外的 prose 才交给 fn；围栏开关仍逐行判定。
+function mapOutsideInlineCode(block, fn) {
+  let out = '';
+  let i = 0;
+  const n = block.length;
+  while (i < n) {
+    if (block[i] === '`') {
+      let j = i;
+      while (j < n && block[j] === '`') j++;
+      const openLen = j - i;
+      let k = j;
+      let close = -1;
+      while (k < n) {
+        if (block[k] === '`') {
+          let m = k;
+          while (m < n && block[m] === '`') m++;
+          if (m - k === openLen) { close = k; break; }
+          k = m;
+        } else k++;
+      }
+      if (close >= 0) {
+        out += block.slice(i, close + openLen);
+        i = close + openLen;
+        continue;
+      }
+      out += block.slice(i, j);
+      i = j;
+      continue;
+    }
+    let p = i;
+    while (p < n && block[p] !== '`') p++;
+    out += fn(block.slice(i, p));
+    i = p;
+  }
+  return out;
+}
 function mapProseLines(md, fn) {
+  const lines = md.split('\n');
+  const out = [];
+  const prose = [];
   let inFence = false;
-  return md.split('\n').map(line => {
-    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; return line; }
-    if (inFence) return line;
-    return line.split(/(`[^`]*`)/).map((seg, i) => (i % 2 === 1 ? seg : fn(seg))).join('');
-  }).join('\n');
+  const flush = () => {
+    if (!prose.length) return;
+    out.push(mapOutsideInlineCode(prose.join('\n'), fn));
+    prose.length = 0;
+  };
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) { flush(); inFence = !inFence; out.push(line); continue; }
+    if (inFence) { out.push(line); continue; }
+    prose.push(line);
+  }
+  flush();
+  return out.join('\n');
 }
 
 export function escapeStrayTags(md) {
