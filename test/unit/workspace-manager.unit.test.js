@@ -9,7 +9,7 @@ vi.mock('../../src/shared/logger.js', () => ({
 
 import logger from '../../src/shared/logger.js';
 import {
-  getWorkspaceRoot, getHomeDir, getAgentStatusDetail, resetWorkspaceRoot,
+  getWorkspaceRoot, getHomeDir, getAgentStatusDetail, resetWorkspaceRoot, getAgentConfig,
 } from '../../src/side_panel/workspace-manager.js';
 
 globalThis.chrome = {
@@ -61,5 +61,36 @@ describe('探测型请求失败降噪（代理不可达 → debug 降级）', ()
     expect(logger.warn).toHaveBeenCalledWith(
       '[WorkspaceManager] get workingdirectory failed:', 'Unexpected token < in JSON at position 0');
     expect(logger.debug).not.toHaveBeenCalled();
+  });
+});
+
+// 回归钉：存储中的 token 以 enc: 混淆，getAgentConfig 必须解码为明文再签发请求，
+// 否则代理端 verifyToken 比对 enc: 串必然 401（工作目录整套文件接口全部认证失败）
+describe('getAgentConfig 对 enc: token 的解码（防鉴权头携带密文）', () => {
+  const realFetch = globalThis.fetch;
+  const encToken = 'enc:' + btoa('plain-secret-token');
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetWorkspaceRoot();
+    globalThis.chrome.storage.local.get = vi.fn(async () => ({
+      pairedAgents: [{ id: 'a1', name: 'P', url: 'http://127.0.0.1:9', token: encToken }],
+      activeAgentId: 'a1',
+    }));
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ success: true, workdir: '/w' }) }));
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('返回明文 token（非 enc: 密文）', async () => {
+    const config = await getAgentConfig();
+    expect(config.token).toBe('plain-secret-token');
+  });
+
+  it('Authorization 头携带明文而非 enc: 密文', async () => {
+    await getWorkspaceRoot();
+    const headers = globalThis.fetch.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe('Bearer plain-secret-token');
+    expect(headers.Authorization).not.toContain('enc:');
   });
 });

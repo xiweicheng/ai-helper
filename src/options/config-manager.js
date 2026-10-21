@@ -1309,7 +1309,7 @@ export function saveConfig() {
         // 尝试获取工作目录
         try {
           const resp = await fetch(`${activeAgent.url}/api/status/detail`, {
-            headers: { 'Authorization': `Bearer ${activeAgent.token}` }
+            headers: { 'Authorization': `Bearer ${decodeSecret(activeAgent.token)}` }
           });
           if (resp.ok) {
             const data = await resp.json();

@@ -4,6 +4,7 @@
 import { showToast } from './config-manager.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
+import { decodeSecret } from '../shared/secret.js';
 
 // ==================== 共享状态 ====================
 // 所有模块通过此对象读写共享状态，确保 live binding 一致性
@@ -141,7 +142,8 @@ export async function getAgentConnection() {
   const active = agents.find(a => a.id === result.activeAgentId);
 
   state.agentBaseUrl = active?.url || null;
-  state.agentToken = active?.token || null;
+  // token 在存储中以 enc: 混淆，发请求前必须解码为明文，否则代理端鉴权失败（401）
+  state.agentToken = active?.token ? decodeSecret(active.token) : null;
   state.agentConnected = !!active;
   state.agentName = active?.name || null;
   state.agentId = active?.id || null;

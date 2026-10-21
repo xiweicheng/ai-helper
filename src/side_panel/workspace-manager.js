@@ -2,6 +2,7 @@
 
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { decodeSecret } from '../shared/secret.js';
 
 registerTranslations('zh', {
   workspaceMgr: {
@@ -200,7 +201,8 @@ export async function getAgentConfig() {
     if (!activeId || agents.length === 0) return null;
     const active = agents.find(a => a.id === activeId) || agents[0];
     if (!active) return null;
-    _agentConfig = { url: active.url, token: active.token };
+    // token 在存储中以 enc: 混淆，发请求前必须解码为明文，否则代理端鉴权失败（401）
+    _agentConfig = { url: active.url, token: decodeSecret(active.token) };
     return _agentConfig;
   } catch (err) {
     logger.warn('[WorkspaceManager] getAgentconfiguration failed:', err.message);
