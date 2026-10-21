@@ -790,8 +790,8 @@
   }
 
   /* 中等屏（平板横屏、笔记本分屏、非最大化浏览器）：折叠导航文字链接，避免竖排/溢出
-     全量文字链接（英文最长）约需 1150px 以上视口宽，更窄时收起 */
-  @media (max-width: 1150px) {
+     全量文字链接（含「文档中心」，英文最长）实测需 ≈1191px 以上视口宽（nav-inner max-width 1200 − 48 padding，logo 80 + 8 链接 1063 ≈ 1143），更窄时收起 */
+  @media (max-width: 1200px) {
     .nav-links a:not(.nav-cta) { display: none; }
   }
 
