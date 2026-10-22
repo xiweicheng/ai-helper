@@ -14,6 +14,7 @@ import {
   describeImages,
   buildImageBlock,
   buildPreviewStatusText,
+  buildPreviewCompactText,
   VISION_CONSTANTS,
 } from './doc-images.js';
 
@@ -498,7 +499,8 @@ export function renderFilePreviews() {
     if (file.images && file.images.length > 0) {
       const imgTag = document.createElement('span');
       imgTag.className = 'file-preview-status images';
-      imgTag.textContent = buildPreviewStatusText(file);
+      imgTag.textContent = buildPreviewCompactText(file);
+      imgTag.title = buildPreviewStatusText(file);
       wrapper.appendChild(imgTag);
     } else if (!state.enableImageInput && ['docx', 'pdf', 'xlsx'].includes(getFileCategory(file.name))) {
       wrapper.title = `${wrapper.title} — ${t('docImages.previewOff')}`;

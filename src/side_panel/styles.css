@@ -6056,6 +6056,10 @@ body {
   background: rgba(var(--danger-rgb), 0.1);
   cursor: help;
 }
+.file-preview-status.images {
+  cursor: help;
+  white-space: nowrap;
+}
 .file-preview-remove {
   position: absolute;
   top: -6px;
