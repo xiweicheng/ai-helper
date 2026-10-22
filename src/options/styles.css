@@ -1781,6 +1781,65 @@ textarea {
   display: none;
 }
 
+/* 批量已选文件清单 */
+.kb-selected-files {
+  margin-top: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kb-selected-count {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.kb-selected-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+.kb-selected-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-selected-size {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.kb-selected-del {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-disabled);
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s;
+}
+.kb-selected-del:hover {
+  background: var(--danger-soft-bg);
+  color: var(--danger-strong);
+}
+.kb-ingest-fail-item {
+  font-size: 12px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
 /* URL 输入框容器（带链接图标） */
 .url-input-wrapper {
   position: relative;

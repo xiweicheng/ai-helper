@@ -11,6 +11,10 @@ import logger from '../shared/logger.js';
 
 // 单文件大小上限（agent 端 body 上限 200MB，base64 膨胀 33%，前端限 50MB 已足够覆盖文档场景）
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+// 批量上传单次最大文件数：每个文件都要在本机串行走「解析 → 分块 → 向量化」，
+// 而向量化是 CPU 密集操作（首次还要加载模型），数量不设界会让单次导入排队过久。
+// 取业界 Web UI 批量上传的保守值（20）；超限整批拒绝，提示用户分批导入。
+const MAX_BATCH_FILES = 20;
 // 默认分块参数（与 agent config.js 的 DEFAULT_CHUNK_CONFIG 一致）
 const DEFAULT_CHUNK_SIZE = 400;
 const DEFAULT_CHUNK_OVERLAP = 80;
@@ -757,6 +761,77 @@ function formatIngestProgress(p) {
   }
 }
 
+/**
+ * 从 accept 字符串（".txt,.md,..."）提取小写扩展名集合
+ */
+function extSetFromAccept(accept) {
+  return new Set(
+    String(accept || '')
+      .split(',')
+      .map(s => s.trim().toLowerCase())
+      .filter(s => s.startsWith('.'))
+  );
+}
+
+/**
+ * 取文件名的扩展名（含前导点，小写；无扩展名返回空串）
+ */
+function fileExt(name) {
+  const dot = String(name || '').toLowerCase().lastIndexOf('.');
+  return dot >= 0 ? String(name).slice(dot).toLowerCase() : '';
+}
+
+/**
+ * 批量文件校验（纯函数，便于单测）：先查数量上限，再逐个查大小与扩展名；
+ * 任一项不通过即整批拒绝。空列表视为通过（交由调用方判空）。
+ * @param {Array<{name: string, size: number}>} files
+ * @param {{ maxCount: number, maxSize: number, accept: string }} opts
+ * @returns {{ ok: boolean, reason: (string|null), detail: * }} reason: null|'tooMany'|'tooLarge'|'badType'
+ */
+export function validateBatchFiles(files, { maxCount, maxSize, accept }) {
+  const exts = extSetFromAccept(accept);
+  if (files.length > maxCount) {
+    return { ok: false, reason: 'tooMany', detail: { max: maxCount, count: files.length } };
+  }
+  for (const f of files) {
+    if (f.size > maxSize) {
+      return { ok: false, reason: 'tooLarge', detail: { name: f.name } };
+    }
+    const ext = fileExt(f.name);
+    if (exts.size > 0 && !exts.has(ext)) {
+      return { ok: false, reason: 'badType', detail: { name: f.name } };
+    }
+  }
+  return { ok: true, reason: null, detail: null };
+}
+
+/**
+ * 串行执行批量导入（纯编排，便于单测）：逐个 await ingestOne，失败记录后继续下一个。
+ * （agent 端同库 _activeOps 互斥，并发会直接报错，故必须串行而非并发。）
+ * @param {Array} files
+ * @ {(file: any, index: number) => Promise<{ chunkCount?: number }>} ingestOne
+ * @ {(info: { index: number, total: number, file: any }) => void} [onProgress]
+ * @returns {Promise<{ total: number, successCount: number, failCount: number, totalChunks: number, failures: Array<{name: string, error: string}> }>}
+ */
+export async function runBatchIngest(files, ingestOne, onProgress) {
+  const total = files.length;
+  let successCount = 0;
+  let totalChunks = 0;
+  const failures = [];
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    if (onProgress) onProgress({ index: i, total, file });
+    try {
+      const res = await ingestOne(file, i);
+      successCount += 1;
+      totalChunks += (res && res.chunkCount) || 0;
+    } catch (err) {
+      failures.push({ name: file.name, error: (err && err.message) || String(err) });
+    }
+  }
+  return { total, successCount, failCount: failures.length, totalChunks, failures };
+}
+
 function showIngestDialog(c) {
   const bodyHtml = `
     <div class="import-tabs" id="kbIngestTabs">
@@ -769,9 +844,9 @@ function showIngestDialog(c) {
         <div class="upload-icon">📄</div>
         <div style="margin-top:8px; color:var(--text-secondary); font-size:13px;">${escapeHtml(t('knowledge.dropHint'))}</div>
         <div style="margin-top:6px; font-size:12px; color:var(--text-tertiary);">${escapeHtml(t('knowledge.dropSupported'))}</div>
-        <div id="kbSelectedFile" style="display:none; margin-top:8px; color:var(--success-strong); font-weight:500; font-size:13px;"></div>
       </div>
-      <input type="file" id="kbFileInput" style="display:none" accept="${ACCEPT_EXTS}">
+      <div id="kbSelectedFiles" class="kb-selected-files" style="display:none;"></div>
+      <input type="file" id="kbFileInput" multiple style="display:none" accept="${ACCEPT_EXTS}">
     </div>
     <div class="import-panel" data-panel="text">
       <div class="form-group">
@@ -800,7 +875,8 @@ function showIngestDialog(c) {
     </div>
     <div id="kbIngestStatus" class="kb-status" style="display:none;">⏳ ${escapeHtml(t('knowledge.ingesting'))}</div>`;
 
-  let selectedFile = null;
+  // 批量已选文件（累加式：多次选择/拖拽合并，可逐个移除）
+  let selectedFiles = [];
 
   const modal = createModal({
     title: t('knowledge.ingestTitle', { name: c.name }),
@@ -809,17 +885,98 @@ function showIngestDialog(c) {
     onConfirm: async ({ close, setBusy }) => {
       const { overlay } = modal;
       const activeTab = overlay.querySelector('.import-tab.active')?.dataset.tab || 'file';
+      const statusEl = overlay.querySelector('#kbIngestStatus');
+      const ingestPath = `/api/rag/collections/${encodeURIComponent(c.id)}/ingest`;
 
-      // 按来源构造请求体
-      let payload = null;
+      // 分块设置（数值合法性校验，非法值回退默认；批量内所有文件一致）
+      const chunkSize = parseInt(overlay.querySelector('#kbChunkSize').value, 10);
+      const overlap = parseInt(overlay.querySelector('#kbChunkOverlap').value, 10);
+      const chunkConfig = {
+        ...(Number.isFinite(chunkSize) && chunkSize >= 100 && chunkSize <= 2000 ? { chunkSize } : {}),
+        ...(Number.isFinite(overlap) && overlap >= 0 && overlap <= 500 ? { overlap } : {}),
+      };
+
+      // ===== 文件：批量串行导入（agent 端同库 _activeOps 互斥，不可并发） =====
       if (activeTab === 'file') {
-        if (!selectedFile) {
+        if (selectedFiles.length === 0) {
           showToast(t('knowledge.fileRequired'), 'warning');
           return;
         }
-        const contentBase64 = await readFileBase64(selectedFile);
-        payload = { type: 'file', fileName: selectedFile.name, contentBase64 };
-      } else if (activeTab === 'text') {
+        const check = validateBatchFiles(selectedFiles, { maxCount: MAX_BATCH_FILES, maxSize: MAX_FILE_SIZE, accept: ACCEPT_EXTS });
+        if (!check.ok) {
+          if (check.reason === 'tooMany') showToast(t('knowledge.maxBatchFiles', { max: check.detail.max }), 'warning');
+          else if (check.reason === 'tooLarge') showToast(t('knowledge.fileTooLarge'), 'warning');
+          else showToast(t('knowledge.fileTypeUnsupported', { name: check.detail.name }), 'warning');
+          return;
+        }
+
+        if (statusEl) { statusEl.style.display = ''; statusEl.style.color = ''; }
+        setBusy(true);
+
+        // 批次标签（多文件时前缀「正在导入 i/N：文件名」）与分阶段进度合并展示
+        let batchLabel = '';
+        const updateStatus = (progress) => {
+          if (!statusEl) return;
+          const phase = progress ? formatIngestProgress(progress) : `⏳ ${t('knowledge.ingesting')}`;
+          statusEl.textContent = batchLabel ? `${batchLabel} · ${phase}` : phase;
+        };
+        updateStatus(null);
+
+        // POST 阻塞期间经 /ingest/status 轮询分阶段进度（解析 → 分块 → 向量化 x/y → 存储）
+        const pollTimer = setInterval(async () => {
+          try {
+            const s = await agentApi('GET', `${ingestPath}/status`);
+            if (s && s.success && s.progress) updateStatus(s.progress);
+          } catch {}
+        }, 800);
+
+        const total = selectedFiles.length;
+        const resultNames = [];
+        let summary;
+        try {
+          summary = await runBatchIngest(
+            selectedFiles,
+            async (file) => {
+              const contentBase64 = await readFileBase64(file);
+              const res = await agentApi('POST', ingestPath, { type: 'file', fileName: file.name, contentBase64, chunkConfig });
+              if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+              resultNames.push(res.name || file.name);
+              return res;
+            },
+            ({ index, file }) => {
+              batchLabel = total > 1 ? t('knowledge.importingBatch', { current: index + 1, total, name: file.name }) : '';
+              updateStatus(null);
+            }
+          );
+        } finally {
+          clearInterval(pollTimer);
+        }
+
+        // 汇总：全成功 / 部分失败 → 关闭并刷新列表；全失败 → 保留弹窗与已选列表供修正后重试
+        if (summary.failCount === 0) {
+          close();
+          showToast(total === 1
+            ? t('knowledge.ingestSuccess', { name: resultNames[0] || selectedFiles[0].name, chunks: summary.totalChunks })
+            : t('knowledge.batchAllSuccess', { count: summary.successCount, chunks: summary.totalChunks }), 'success');
+          await loadAndRenderList();
+        } else if (summary.successCount > 0) {
+          close();
+          showToast(t('knowledge.batchPartial', { success: summary.successCount, fail: summary.failCount, error: summary.failures[0].error }), 'warning');
+          await loadAndRenderList();
+        } else {
+          if (statusEl) {
+            statusEl.style.color = 'var(--danger-strong)';
+            statusEl.innerHTML = summary.failures.map(f => `<div class="kb-ingest-fail-item">✕ ${escapeHtml(f.name)}：${escapeHtml(f.error)}</div>`).join('');
+          }
+          setBusy(false, t('knowledge.ingestConfirm'));
+          showToast(t('knowledge.batchAllFailed', { error: summary.failures[0].error }), 'error');
+        }
+        return;
+      }
+
+      // ===== 文本 / URL：单条导入（行为与原实现一致） =====
+      let payload;
+      if (activeTab === 'text') {
         const content = overlay.querySelector('#kbIngestText').value;
         const name = overlay.querySelector('#kbIngestName').value.trim();
         if (!content.trim()) {
@@ -835,27 +992,18 @@ function showIngestDialog(c) {
         }
         payload = { type: 'url', url };
       }
+      payload.chunkConfig = chunkConfig;
 
-      // 分块设置（数值合法性校验，非法值回退默认）
-      const chunkSize = parseInt(overlay.querySelector('#kbChunkSize').value, 10);
-      const overlap = parseInt(overlay.querySelector('#kbChunkOverlap').value, 10);
-      payload.chunkConfig = {
-        ...(Number.isFinite(chunkSize) && chunkSize >= 100 && chunkSize <= 2000 ? { chunkSize } : {}),
-        ...(Number.isFinite(overlap) && overlap >= 0 && overlap <= 500 ? { overlap } : {}),
-      };
-
-      // 进行中状态（ingest 为同步接口：解析 + 向量化可能耗时较久，首次还含模型加载）
-      const statusEl = overlay.querySelector('#kbIngestStatus');
       if (statusEl) {
         statusEl.style.display = '';
+        statusEl.style.color = '';
         statusEl.textContent = `⏳ ${t('knowledge.ingesting')}`;
       }
       setBusy(true);
 
-      // 进度轮询：POST 阻塞期间经 /ingest/status 展示分阶段进度（解析 → 分块 → 向量化 x/y → 存储）
       const pollTimer = setInterval(async () => {
         try {
-          const s = await agentApi('GET', `/api/rag/collections/${encodeURIComponent(c.id)}/ingest/status`);
+          const s = await agentApi('GET', `${ingestPath}/status`);
           if (statusEl && s && s.success && s.progress) {
             statusEl.textContent = formatIngestProgress(s.progress);
           }
@@ -863,7 +1011,7 @@ function showIngestDialog(c) {
       }, 800);
 
       try {
-        const res = await agentApi('POST', `/api/rag/collections/${encodeURIComponent(c.id)}/ingest`, payload);
+        const res = await agentApi('POST', ingestPath, payload);
         if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
         close();
         showToast(t('knowledge.ingestSuccess', { name: res.name, chunks: res.chunkCount }), 'success');
@@ -891,24 +1039,71 @@ function showIngestDialog(c) {
 
   const dropzone = overlay.querySelector('#kbDropzone');
   const fileInput = overlay.querySelector('#kbFileInput');
-  const selectedFileEl = overlay.querySelector('#kbSelectedFile');
-  const pickFile = (file) => {
-    if (!file) return;
-    if (file.size > MAX_FILE_SIZE) {
-      showToast(t('knowledge.fileTooLarge'), 'warning');
+  const selectedListEl = overlay.querySelector('#kbSelectedFiles');
+
+  const formatSize = (bytes) => {
+    if (!Number.isFinite(bytes)) return '';
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${bytes} B`;
+  };
+
+  const renderSelectedFiles = () => {
+    if (selectedFiles.length === 0) {
+      selectedListEl.style.display = 'none';
+      selectedListEl.innerHTML = '';
+      dropzone.classList.remove('has-file');
       return;
     }
-    selectedFile = file;
     dropzone.classList.add('has-file');
-    selectedFileEl.style.display = '';
-    selectedFileEl.textContent = t('knowledge.selectedFile', { name: file.name });
+    selectedListEl.style.display = '';
+    selectedListEl.innerHTML = `
+      <div class="kb-selected-count">${escapeHtml(t('knowledge.selectedCount', { count: selectedFiles.length, max: MAX_BATCH_FILES }))}</div>
+      ${selectedFiles.map((f, idx) => `
+        <div class="kb-selected-file" data-idx="${idx}">
+          <span class="kb-selected-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="kb-selected-size">${escapeHtml(formatSize(f.size))}</span>
+          <button class="kb-selected-del" type="button" data-remove="${idx}" title="${escapeHtml(t('knowledge.removeFile'))}">✕</button>
+        </div>`).join('')}`;
   };
+
+  // 累加式添加：按「名称+大小」去重，合并后整批校验；任一项不通过则丢弃本次新增、保留原已选
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
+    const seen = new Set(selectedFiles.map(f => `${f.name}::${f.size}`));
+    const merged = selectedFiles.concat(incoming.filter(f => !seen.has(`${f.name}::${f.size}`)));
+    const check = validateBatchFiles(merged, { maxCount: MAX_BATCH_FILES, maxSize: MAX_FILE_SIZE, accept: ACCEPT_EXTS });
+    if (!check.ok) {
+      if (check.reason === 'tooMany') showToast(t('knowledge.maxBatchFiles', { max: check.detail.max }), 'warning');
+      else if (check.reason === 'tooLarge') showToast(t('knowledge.fileTooLarge'), 'warning');
+      else showToast(t('knowledge.fileTypeUnsupported', { name: check.detail.name }), 'warning');
+      return;
+    }
+    selectedFiles = merged;
+    renderSelectedFiles();
+  };
+
   dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => pickFile(fileInput.files?.[0]));
+  fileInput.addEventListener('change', () => {
+    addFiles(fileInput.files);
+    fileInput.value = ''; // 允许再次选择同一文件仍触发 change
+  });
   dropzone.addEventListener('dragover', (e) => e.preventDefault());
   dropzone.addEventListener('drop', (e) => {
     e.preventDefault();
-    pickFile(e.dataTransfer?.files?.[0]);
+    addFiles(e.dataTransfer?.files);
+  });
+  // 逐个移除（事件委托，重渲染后仍有效）
+  selectedListEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-remove]');
+    if (!btn) return;
+    e.stopPropagation();
+    const idx = parseInt(btn.dataset.remove, 10);
+    if (Number.isFinite(idx)) {
+      selectedFiles.splice(idx, 1);
+      renderSelectedFiles();
+    }
   });
 }
 
