@@ -170,6 +170,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     logger.debug('[SidePanel] Skill global toggle changed:', globalSkillsEnabled);
     needsRefresh = true;
   }
+  if (changes.enableImageInput) {
+    globalVisionEnabled = changes.enableImageInput.newValue === true;
+    logger.debug('[SidePanel] 图片识别全局开关变更:', globalVisionEnabled);
+    needsRefresh = true;
+  }
 
   // 两个开关状态变化（弹窗切换/保存、options 页修改均会触发）→ 刷新按钮状态点与悬停提示
   let flagsChanged = false;
@@ -204,11 +209,13 @@ loadRagToolsFromStorage().then(() => updateToolsToggleState());
 // 全局开关状态（从 chrome.storage 加载，通过 onChanged 实时更新）
 let globalMcpEnabled = false;
 let globalSkillsEnabled = true;
+let globalVisionEnabled = false;
 
 // 加载全局开关初始状态
-chrome.storage.local.get(['mcpEnabled', 'skillsEnabled'], (result) => {
+chrome.storage.local.get(['mcpEnabled', 'skillsEnabled', 'enableImageInput'], (result) => {
   globalMcpEnabled = result.mcpEnabled === true;
   globalSkillsEnabled = result.skillsEnabled !== false;
+  globalVisionEnabled = result.enableImageInput === true;
   updateToolsToggleState();
 });
 
@@ -235,6 +242,10 @@ function getAgentFilteredTools() {
   const agentConnected = state.agentPlatform?.connected === true;
   if (!agentConnected) {
     filtered = filtered.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('knowledge_'));
+  }
+  // 图片识别总开关关闭时，隐藏文档图片深读工具（与 background 下发门控同口径）
+  if (!globalVisionEnabled) {
+    filtered = filtered.filter(t => t.id !== 'read_document_image');
   }
   return filtered;
 }

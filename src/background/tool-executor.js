@@ -1240,6 +1240,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         .filter(tool => {
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
+          // 图片识别总开关关闭时，不下发文档图片深读工具（附件抠图不产出图片、快照必空，按需传递省 token）
+          if (tool.id === 'read_document_image' && !visionEnabled) return false;
           // 配对代理不足 2 个时，隐藏代理管理工具
           if (tool.id === 'manage_agent' && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 工具
