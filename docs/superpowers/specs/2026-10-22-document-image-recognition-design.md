@@ -1,7 +1,7 @@
 # 文档图片识别（Word/PDF 内嵌图片 → AI）设计
 
 - 日期：2026-10-22
-- 状态：已确认（用户逐节批准）
+- 状态：已确认（用户逐节批准）；规划阶段修正一处：PDF 抽取改为两端统一在插件端浏览器执行（Node 无 canvas，pdf.js 服务端解码/渲染不可行），Agent 端仅负责 docx 落盘
 - 范围：侧边栏附件链路（docx/pdf）+ Agent 文件服务 + 内置工具
 
 ## 1. 问题与目标
@@ -21,8 +21,8 @@
 | 功能开关 | 复用现有总开关 `enableImageInput`，不新增配置项；关闭时整条链路不启用、行为与现状逐字节一致 |
 | 转述时机 | 上传/附件处理时预转述前 2 张（阈值内全转），其余仅入清单；细节靠工具按需深读 |
 | 阈值（硬编码） | 预转述 2 张；单图压缩后 ≤200KB；单文档抠图上限 20 张（超出只记数量，`truncated` 标注）；转述 max_tokens=800、≤300 字 |
-| PDF 抽取 | 主线：pdf.js `getOperatorList()` 抓 `paintImageXObject` 位图；兜底：文本层字符数低于阈值的非空白页整页渲染（覆盖扫描件），清单 `kind` 区分 |
-| docx 抽取 | 解 ZIP 读 `word/media/*`，按文档顺序编号（两端同法） |
+| PDF 抽取 | **两端统一在插件端浏览器执行**（Agent 模式下附件瞬间原始 File 仍在内存）：pdf.js `getOperatorList()` 抓 `paintImageXObject` 位图；兜底：文本层字符数低于阈值的非空白页整页渲染（覆盖扫描件），清单 `kind` 区分。理由：Node 端 pdf.js 解码/渲染依赖 canvas 原生模块，破坏 Agent 纯 JS 安装 | 
+| docx 抽取 | 插件端：JSZip 解 `word/media/*`；Agent 端：零依赖 ZIP 解析（node:zlib）。均按 `document.xml` 中 `r:embed` 出现顺序编号 |
 | 工具执行位置 | `read_document_image` 在 background 执行（与其它内置工具一致）；浏览器模式图片在发送时随 session 级中转存储传给 background |
 
 ## 2. 总体数据流
@@ -31,13 +31,14 @@
 用户附加 docx/pdf（enableImageInput 开启）
         │
         ├─ Agent 已连接
-        │   ① 上传（现有 POST /api/files/upload，不变）
-        │   ② POST /api/documents/extract-images { path } → 图片落盘 _attachments/ + 返回清单
-        │   ③ 插件端对前 2 张经 GET /api/fs/download 拉原图 → compressImageForVision → 视觉模型转述
+        │   docx：① 上传（现有 POST /api/files/upload，不变）
+        │         ② POST /api/documents/extract-images { path } → 图片落盘文档旁 _attachments/ + 返回清单（source:'agent'）
+        │         ③ 插件端对前 2 张经 /api/fs/download 拉原图 → 压缩 → 视觉模型转述
+        │   pdf： 同无 Agent 路径（浏览器端抽取，source:'local'；文件仍上传供主模型工具操作）
         │
         └─ 无 Agent
             ① 浏览器端文本提取（现有降级链路，不变）
-            ② doc-images.js 抠图 → dataUrl 存 fileEntry.images（内存）
+            ② doc-images.js 抠图（docx+pdf）→ dataUrl 存内存（source:'local'）
             ③ 对前 2 张直接调视觉通道转述
 
 发送消息：文档文本 + [文档图片] 块（转述内联 + 未转述清单 + 工具用法提示）
@@ -55,8 +56,8 @@
 
 - 位置：`agent/src/server.js` 路由层；body `{ path: string, maxImages?: number = 20 }`
 - 安全：复用 `checkPath`（仅允许工作目录内），沿用 `logFs` / `logSecurity` 审计口径；请求体大小限制沿用现有 JSON body 上限
-- 输入格式：仅 `.docx` / `.pdf`（`.doc`、`.xlsx` 等返回结构化 400 `unsupportedFormat`）
-- 处理：调用新模块抽取，图片落盘到 `<workspace>/_attachments/<文件名词干>/img-{N}.{ext}`，同目录写 `manifest.json`；**幂等**：同 path 重复调用先清空旧目录再抽取
+- 输入格式：仅 `.docx`（pdf 由插件端本地抽取不经此端点；`.doc`、`.pdf`、`.xlsx` 等返回结构化 400 `unsupportedFormat`）
+- 处理：调用新模块抽取，图片落盘到**文档同级目录** `<文档目录>/_attachments/<文件名词干>/img-{N}.{ext}`（处理器无需感知工作区根，路径仍在 checkPath 范围内），同目录写 `manifest.json`；**幂等**：同 path 重复调用先清空旧目录再抽取
 - 成功响应：
   ```json
   { "success": true,
@@ -70,15 +71,13 @@
   ```
 - 失败响应：`{ success: false, error: "unsupportedFormat" | "fileTooLarge" | "parseFailed" | ... }`（HTTP 400/413）；插件端收到失败即跳过图片链路
 
-### 3.2 新模块 `agent/src/documents/image-extractor.js`
+### 3.2 新模块 `agent/src/documents/image-extractor.js`（仅 docx，零新依赖）
 
-- `extractDocxImages(buffer, opts)`：用 JSZip（mammoth 既有依赖）读 `word/media/*`，按 `document.xml` 中 `r:embed` 出现顺序编号（保证"图片N"与文档位置顺序一致）；记录字节数与像素尺寸（PNG/JPEG 头解析）
-- `extractPdfImages(filePath, opts)`：用 **pdfjs-dist legacy build（新增 agent 依赖）**：
-  - 逐页 `getOperatorList()` 收集 `paintImageXObject` 位图 → 转 PNG（pdf.js 已解码为 ImageData/BitmapImage）
-  - 扫描兜底：当页 `getTextContent()` 字符数 < 50 且渲染非空白（canvas 像素方差阈值）→ 整页 2x 渲染为 JPEG，`kind: 'scanned-page'`
-  - `page` 字段记录所在页码；总数超过 `maxImages` 截断并返回 `truncated` 计数
+- 新增 `agent/src/documents/zip-reader.js`：基于 `node:zlib`（inflateRawSync）的最小 ZIP 读取器（解析中央目录，支持 stored/deflate），不引入 jszip
+- `extractDocxImages(buffer, opts)`：zip-reader 读 `word/media/*`；按 `document.xml` 中 `r:embed` 出现顺序→ `document.xml.rels` Target 映射编号（保证与文档位置顺序一致）；PNG/JPEG 头部解析记录尺寸与字节数；`page` 字段为 null（docx 无页概念），`kind: 'embedded'`
 - 单图原始字节 > 5MB 跳过该图（清单仍记录，`bytes` 标注，插件端拉取时报错处理）
-- 单元测试放 `agent/test/documents/`，命令遵循 agent 端 `node --test` 收口规范
+- **PDF 不在 Agent 端抽取**（Node 无 canvas，pdf.js 解码/渲染不可靠）；插件端统一用浏览器 pdf.js 抽取（含扫描页渲染兜底），Agent 模式下图片 `source:'local'`，跨会话/重启后工具返回“请重新附加该文件”；Agent docx 图片因落盘仍可跨会话使用
+- 单元测试放 `agent/test/unit/`（文件名 `*.unit.test.js`），命令遵循 `cd agent && node --test --test-reporter=tap test/unit/*.test.js` 收口规范
 
 ## 4. 扩展端设计（插件端）
 
@@ -86,7 +85,7 @@
 
 - `fileEntry` 新增字段：`images: []`（清单，统一 schema）、`imageDescriptions: {1: '…', 2: '…'}`、`imageStatus: 'none'|'extracted'|'described'|'error'`
 - `processFile`：
-  - Agent 分支：`uploadFileToAgent` 成功后，若 `enableImageInput` 且类别为 pdf/docx → 调 `/api/documents/extract-images` → 存清单 → 对前 `min(2, N)` 张走 `/api/fs/download` 拉图 → 压缩 → 转述
+  - Agent 分支：`uploadFileToAgent` 成功后——若为 **docx** 且 `enableImageInput` → 调 `/api/documents/extract-images` → 存清单（`imageSource:'agent'`）→ 前 `min(2, N)` 张走 `/api/fs/download` 拉图 → 压缩 → 转述；若为 **pdf** → 同浏览器分支本地抽取（`imageSource:'local'`）
   - 浏览器分支：文本提取后，若 `enableImageInput` 且类别为 pdf/docx → 调 `doc-images.js` 抠图（≤20 张，单图压缩后 ≤200KB）→ 存内存 → 转述前 2 张
   - 任一步失败：catch 后置 `imageStatus:'error'`，文本链路结果保留，继续 `renderFilePreviews()`
 - `renderFilePreviews`：附件条目上显示 `📷 已描述 2/9`、`📷 共 4 图（超限未抽取 5）`等状态；`enableImageInput` 关闭且文档含图时提示"图片不会被识别（可在设置中开启图片识别）"
@@ -94,8 +93,8 @@
 
 ### 4.2 新模块 `src/side_panel/doc-images.js`
 
-- `extractDocxImages(file)`：JSZip（mammoth 传递依赖，扩展端 import 可用性需在实现计划中验证；不可用则内联轻量 zip 读取）解 `word/media/*` → dataUrl 数组
-- `extractPdfImages(file)`：pdfjs-dist（复用现有动态 import）`getOperatorList()` 抓位图 + 扫描页渲染兜底，逻辑与 Agent 端对齐；OffscreenCanvas 转 dataUrl
+- `extractDocxImages(file)`：**新增根依赖 `jszip`**（mammoth 的 jszip 为深层传递依赖，不可直接 import，显式声明避免脆弱性）解 `word/media/*` → dataUrl 数组，排序规则与 Agent 端一致（document.xml `r:embed` 顺序）
+- `extractPdfImages(file)`：pdfjs-dist（复用现有动态 import，两端统一在此执行，含 Agent 模式）`getOperatorList()` 抓位图 + 扫描页渲染兜底；OffscreenCanvas 转 dataUrl
 - `compressForVision(dataUrl)`：复用/移植 background `compressImageForVision` 同等参数（maxDim 1024、quality 0.65），目标 ≤200KB
 - `describeImages(images, count)`：直接 fetch `${apiBase}/chat/completions`（端点/Key/模型取 `imageApiBase/imageApiKey/imageModelName`，留空回落 base 配置——与 chat-manager 现有选模回落逻辑一致）；prompt：*"客观描述图片内容并转录其中全部可读文字（OCR），不超过 300 字"*；`max_tokens: 800`；单图 60s AbortController；失败该图置空描述
 - `buildImageBlock(fileEntry)`：生成拼装文本块（见 §5）
@@ -118,11 +117,11 @@
 
 ### 4.4 中转存储 `_docImageSnapshot`（方案 a）
 
-- 发送消息时（chat-manager 组装用户消息处）将本次附件的图片信息写入 `chrome.storage.local._docImageSnapshot`，结构：`{ [sessionId]: { files: [ { name, source: 'agent'|'browser', images: [ { index, page, path?, dataUrl?, described } ] } ], updatedAt } }`（模式对齐现有 `_lastVisionScreenshot` 中转）：
-  - **Agent 模式只写清单**（path/页码，不写 dataUrl，体积可忽略），background 执行工具时按 path 现拉
-  - **浏览器模式写清单 + 压缩后 dataUrl**
-- 总量控制：浏览器模式 dataUrl 合计 ≤ 4MB，超出按 updatedAt 从旧到新淘汰整个 session 的快照
-- session 删除与附件移除时同步清理对应条目；中转存储不做跨重启长期保留（重启后浏览器模式快照视为失效，工具返回"请重新附加"）
+- 发送消息时（chat-manager 组装用户消息处）将本次附件的图片信息写入 `chrome.storage.local._docImageSnapshot`，结构：`{ [sessionId]: { files: [ { name, imageSource: 'agent'|'local', images: [ { index, page, path?, dataUrl?, described } ] } ], updatedAt } }`（模式对齐现有 `_lastVisionScreenshot` 中转）：
+  - **Agent 模式（仅 docx）只写清单**（path/页码，不写 dataUrl，体积可忽略），background 执行工具时按 path 现拉
+  - **local 来源（浏览器模式全部 + Agent 模式的 pdf）写清单 + 压缩后 dataUrl**
+- 总量控制：local 来源 dataUrl 合计 ≤ 4MB，超出按 updatedAt 从旧到新淘汰整个 session 的快照
+- session 删除与附件移除时同步清理对应条目；中转存储不做跨重启长期保留（重启后 local 来源快照视为失效，工具返回“请重新附加”；Agent docx 图片因落盘仍可用）
 
 ## 5. 消息拼装
 
@@ -164,12 +163,13 @@
 
 ## 7. 测试与验收
 
-**Agent 端**（`node --test`，agent/test/）：
-- image-extractor：最小 docx zip fixture（含 word/media 两图）；pdf fixture 覆盖 embedded 位图与空白文本层页渲染两条路径；顺序编号、截断、幂等覆盖
-- extract-images 端点：格式拒绝、路径安全拦截、fileTooLarge、manifest schema
+**Agent 端**（`node --test`，agent/test/unit/*.unit.test.js）：
+- zip-reader：最小 zip fixture（stored/deflate 两种压缩）
+- image-extractor：构造最小 docx zip fixture（含 word/media 两图 + document.xml/rels）；顺序编号、截断、>5MB 跳过
+- extract-images 处理器：格式拒绝、路径安全拦截、fileTooLarge、manifest schema、幂等覆盖
 
 **扩展端**（vitest，test/unit/）：
-- doc-images：operatorList 解析（mock pdfjs）、清单/块渲染、阈值与截断、转述失败降级
+- doc-images：operatorList 解析（mock pdfjs）、扫描页判定、docx 抽取排序、清单/块渲染、阈值与截断、转述失败降级
 - read_document_image 执行器：mock download 与视觉 fetch，断言压缩参数、question 拼接、各类错误文案
 - 中转存储：快照写入/上限淘汰/session 清理
 
