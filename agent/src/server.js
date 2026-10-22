@@ -54,6 +54,7 @@ import { setSkillExecutorLang } from './skill/executor.js';
 import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
 import { setMcpClientLang } from './mcp/client.js';
 import { getRequestI18n, t, parseAcceptLanguage } from './i18n.js';
+import { extractImagesHandler } from './documents/routes.js';
 
 // Server-level i18n helper (uses env/CLI language)
 const serverLang = parseAcceptLanguage();
@@ -1158,6 +1159,17 @@ export function startServer() {
         }
         logFs('delete', { path: check.resolved, type: isDir ? 'directory' : 'file', size: fstat2.size, trashId: trashResult.trashId });
         return jsonResponse(res, 200, { success: true, path: check.resolved, isDir: trashResult.isDir, trashId: trashResult.trashId, message: t('message.movedToTrash') });
+      }
+
+      // === 文档图片抽取（docx；图片落盘到文档旁 _attachments/） ===
+      if (pathname === '/api/documents/extract-images') {
+        const { status, payload } = await extractImagesHandler(body, { t });
+        if (payload.success) {
+          logFs('extract_images', { path: body.path, count: payload.images.length, truncated: payload.truncated });
+        } else {
+          logError('fs', 'extract_images_error', { path: body.path, error: payload.error });
+        }
+        return jsonResponse(res, status, payload);
       }
 
       // 下载文件/目录（返回 base64 内容，目录自动打包为 zip）
