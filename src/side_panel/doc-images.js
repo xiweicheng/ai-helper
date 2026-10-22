@@ -2,6 +2,35 @@
 // 开关唯一入口：state.enableImageInput（不新增配置项）
 // 尺寸解析与 docx 编号算法与 agent/src/documents/image-extractor.js 双端同步，修改需同时改
 import logger from '../shared/logger.js';
+import { t, registerTranslations } from '../shared/i18n.js';
+import { decodeSecret } from '../shared/secret.js';
+
+registerTranslations('zh', {
+  docImages: {
+    header: '[文档图片: 共 {total} 张，已描述 {described} 张]',
+    page: '｜第{page}页',
+    lineDescribed: '〔图片{index}{loc}〕{desc}',
+    lineTool: '〔图片{index}{loc}〕未描述，可调用 read_document_image(file="{file}", image={index}) 查看。',
+    truncated: '[另有 {count} 张图未抽取，超出单文档 20 张上限]',
+    describePrompt: '请客观描述这张图片的内容，并转录其中全部可读文字（OCR），不超过 300 字。',
+    previewDescribed: '📷 已描述 {described}/{total}',
+    previewFail: '📷 图片抽取失败',
+    previewOff: '图片不会被识别（可在设置中开启图片识别）',
+  },
+});
+registerTranslations('en', {
+  docImages: {
+    header: '[Document images: {total} total, {described} described]',
+    page: ' | p.{page}',
+    lineDescribed: '[Image {index}{loc}] {desc}',
+    lineTool: '[Image {index}{loc}] not described; call read_document_image(file="{file}", image={index}) to view.',
+    truncated: '[{count} more images were not extracted due to the 20-image limit]',
+    describePrompt: 'Describe this image objectively and transcribe all readable text (OCR) in it, within 300 words.',
+    previewDescribed: '📷 described {described}/{total}',
+    previewFail: '📷 image extraction failed',
+    previewOff: 'Images will not be recognized (enable image recognition in settings)',
+  },
+});
 
 export const VISION_CONSTANTS = {
   DESCRIBE_LIMIT: 2, // 上传时预转述的最大张数
@@ -250,4 +279,177 @@ export async function extractPdfImagesFromFile(file, opts = {}, deps = {}) {
     }
   }
   return { images, truncated, skipped };
+}
+
+// —— 压缩（真实环境 createImageBitmap+OffscreenCanvas；canvas 分支单测不覆盖，Task 9 视觉验证） ——
+async function defaultToJpeg(dataUrl, maxDim, quality) {
+  const resp = await fetch(dataUrl); // side panel 可 fetch data: URL
+  const bitmap = await createImageBitmap(await resp.blob());
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const canvas = new OffscreenCanvas(Math.round(bitmap.width * scale), Math.round(bitmap.height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: await blobToDataUrl(await canvas.convertToBlob({ type: 'image/jpeg', quality })), width: canvas.width, height: canvas.height };
+}
+
+/**
+ * 压缩到单图视觉上限；5 轮降级（先降 quality 后缩尺寸）仍超 → null（放弃实体，清单保留元信息）
+ * @param {string} dataUrl
+ * @param {{ toJpeg?: Function }} [deps] 单测注入 (dataUrl, maxDim, quality) → Promise<{dataUrl}|null>
+ */
+export async function compressForVision(dataUrl, deps = {}) {
+  const toJpeg = deps.toJpeg || defaultToJpeg;
+  let maxDim = 1024;
+  let quality = 0.65;
+  for (let i = 0; i < 5; i++) {
+    let out;
+    try { out = await toJpeg(dataUrl, maxDim, quality); } catch { return null; }
+    if (!out || !out.dataUrl) return null;
+    if (dataUrlBytes(out.dataUrl) <= VISION_CONSTANTS.MAX_IMAGE_BYTES) return out.dataUrl;
+    if (quality > 0.3) quality = Math.round((quality - 0.15) * 100) / 100;
+    else maxDim = Math.floor(maxDim * 0.75);
+  }
+  return null;
+}
+
+// —— 视觉配置（回落链与 tool-executor.js analyzeScreenshotWithVision / chat-manager 选模一致） ——
+export async function getVisionConfig() {
+  const cfg = await new Promise((r) => chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName'], r));
+  return {
+    apiBase: cfg.imageApiBase || cfg.apiBase || '',
+    apiKey: decodeSecret(cfg.imageApiKey) || decodeSecret(cfg.apiKey) || '',
+    model: cfg.imageModelName || cfg.modelName || '',
+  };
+}
+
+/**
+ * 前 count 张图送视觉模型转述；失败置 null 不抛
+ * @param {Array<{index: number, dataUrl?: string}>} images
+ * @param {number} [count]
+ * @returns {Promise<Record<number, string|null>>}
+ */
+export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_LIMIT) {
+  const out = {};
+  if (!images || images.length === 0) return out;
+  const { apiBase, apiKey, model } = await getVisionConfig();
+  const targets = images.filter((im) => im.dataUrl).slice(0, count);
+  if (!apiBase) {
+    targets.forEach((im) => { out[im.index] = null; });
+    return out;
+  }
+  for (const img of targets) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+      const resp = await fetch(`${apiBase}/chat/completions`, {
+        method: 'POST',
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify({
+          model,
+          max_tokens: 800,
+          stream: false,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: t('docImages.describePrompt') },
+              { type: 'image_url', image_url: { url: img.dataUrl, detail: 'auto' } },
+            ],
+          }],
+        }),
+      });
+      out[img.index] = resp.ok ? ((await resp.json()).choices?.[0]?.message?.content || null) : null;
+    } catch (err) {
+      logger.warn('doc-images: describe failed', String(err?.message || err));
+      out[img.index] = null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return out;
+}
+
+/**
+ * 消息内联图片清单块（spec §5）；无图返空串
+ * @param {{ images: Array<object>, imageDescriptions?: Record<number, string>, truncated?: number }} fileEntry
+ * @param {string} fileName
+ */
+export function buildImageBlock(fileEntry, fileName) {
+  const images = fileEntry.images || [];
+  if (images.length === 0) return '';
+  const descs = fileEntry.imageDescriptions || {};
+  const described = images.filter((im) => descs[im.index]).length;
+  const lines = [t('docImages.header', { total: images.length, described })];
+  for (const im of images) {
+    const loc = im.page ? t('docImages.page', { page: im.page }) : '';
+    if (descs[im.index]) {
+      lines.push(t('docImages.lineDescribed', { index: im.index, loc, desc: String(descs[im.index]).trim() }));
+    } else {
+      lines.push(t('docImages.lineTool', { index: im.index, loc, file: fileName }));
+    }
+  }
+  if (fileEntry.truncated > 0) lines.push(t('docImages.truncated', { count: fileEntry.truncated }));
+  return '\n\n' + lines.join('\n');
+}
+
+// —— 快照中转（background 侧 read_document_image 取图；storage key: _docImageSnapshot）——
+// 结构 { [sessionId]: { updatedAt, files: [{ name, imageSource, images: [{ index, page, path?, dataUrl? }] }] } }
+const SNAPSHOT_KEY = '_docImageSnapshot';
+
+function snapshotEntryBytes(e) {
+  return e.files.reduce((s, f) => s + (f.imageSource === 'local'
+    ? f.images.reduce((is, im) => is + (im.dataUrl ? dataUrlBytes(im.dataUrl) : 0), 0)
+    : 0), 0);
+}
+
+/**
+ * 发送前写入 session 级图片快照；超预算从最旧 session 起淘汰，
+ * 仅剩当前 session 仍超时剥除 dataUrl 保留清单
+ */
+export async function saveDocImageSnapshot(sessionId, attachedFiles) {
+  const store0 = await new Promise((r) => chrome.storage.local.get([SNAPSHOT_KEY], r));
+  const snap = store0[SNAPSHOT_KEY] || {};
+  const withImages = (attachedFiles || []).filter((f) => f.status === 'done' && (f.images || []).length > 0);
+  if (withImages.length === 0) {
+    delete snap[sessionId];
+  } else {
+    snap[sessionId] = {
+      updatedAt: Date.now(),
+      files: withImages.map((f) => ({
+        name: f.name,
+        imageSource: f.imageSource,
+        images: f.images.map((im) => {
+          const c = { index: im.index, page: im.page ?? null };
+          if (im.path) c.path = im.path;
+          if (im.dataUrl) c.dataUrl = im.dataUrl;
+          return c;
+        }),
+      })),
+    };
+    const total = () => Object.values(snap).reduce((s, e) => s + snapshotEntryBytes(e), 0);
+    while (total() > VISION_CONSTANTS.SNAPSHOT_BUDGET && Object.keys(snap).length > 1) {
+      const oldest = Object.entries(snap)
+        .filter(([k]) => k !== sessionId)
+        .sort((a, b) => a[1].updatedAt - b[1].updatedAt)[0];
+      if (!oldest) break;
+      delete snap[oldest[0]];
+    }
+    if (total() > VISION_CONSTANTS.SNAPSHOT_BUDGET && snap[sessionId]) {
+      snap[sessionId].files.forEach((f) => {
+        if (f.imageSource === 'local') f.images.forEach((im) => { delete im.dataUrl; });
+      });
+    }
+  }
+  await new Promise((r) => chrome.storage.local.set({ [SNAPSHOT_KEY]: snap }, r));
+}
+
+export async function removeDocImageSnapshot(sessionId) {
+  const store0 = await new Promise((r) => chrome.storage.local.get([SNAPSHOT_KEY], r));
+  const snap = store0[SNAPSHOT_KEY] || {};
+  if (snap[sessionId]) {
+    delete snap[sessionId];
+    await new Promise((r) => chrome.storage.local.set({ [SNAPSHOT_KEY]: snap }, r));
+  }
 }
