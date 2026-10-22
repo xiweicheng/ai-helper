@@ -3,6 +3,7 @@
 // 同时保留 chrome.storage.local 兜底（双写 + 读降级）
 
 import * as idb from './db.js';
+import { removeDocImageSnapshot } from '../side_panel/doc-images.js';
 import state from '../side_panel/state.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -395,6 +396,9 @@ export async function switchToSession(sessionId) {
 export async function deleteStoreSession(sessionId) {
   const allSessions = await idb.getAllSessions();
   const activeId = await idb.getActiveSessionId();
+
+  // 同步清理该会话的文档图片快照中转存储（失败不阻断删除）
+  try { await removeDocImageSnapshot(sessionId); } catch { /* 中转存储清理失败不阻断删除 */ }
 
   await idb.deleteSession(sessionId);
 

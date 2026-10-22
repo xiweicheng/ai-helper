@@ -24,6 +24,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, clearFiles, getFileIcon, formatFileSize } from './file-extract.js';
+import { saveDocImageSnapshot } from './doc-images.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
@@ -989,6 +990,9 @@ export async function sendMessage() {
     if (fileContent) {
       finalText += fileContent;
     }
+    // 图片快照中转：供 background 的 read_document_image 工具取图（失败不影响发送）
+    try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot); }
+    catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
       if (f.status === 'done') {

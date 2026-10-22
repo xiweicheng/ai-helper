@@ -11,6 +11,7 @@ import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSki
 import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs } from './agent-at-selector.js';
 import { buildFileContentText, clearFiles } from './file-extract.js';
+import { saveDocImageSnapshot } from './doc-images.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
@@ -743,6 +744,9 @@ export async function sendPromptByCode(code) {
     if (fileContent) {
       userMessage += fileContent;
     }
+    // 图片快照中转：与主发送链路（chat-manager sendMessage）对齐，失败不影响发送
+    try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot); }
+    catch (e) { logger.warn('[Prompt] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
       if (f.status === 'done') {
