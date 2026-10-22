@@ -226,6 +226,15 @@ registerTranslations('zh', {
     knowledgeListFailed: '获取知识库列表失败: {error}',
     knowledgeSearchDisabled: '该知识库已停用，无法检索。如需使用，请让用户在扩展设置页「知识库」标签启用后重试。',
     knowledgeIngestDisabled: '该知识库已停用，无法导入。如需使用，请让用户在扩展设置页「知识库」标签启用后重试。',
+    docImageFileNotFound: '附件 {file} 不在当前会话的图片清单中，可用附件：{files}',
+    docImageIndexOutOfRange: '图片序号 {image} 越界（{file} 共 {total} 张）',
+    docImageCacheLost: '图片缓存已失效，请重新附加该文件后再试',
+    docImageAgentOffline: 'Agent 不在线或取图失败，无法读取 {file} 的图片 {image}',
+    docImageVisionNotConfigured: '未配置图片识别 API（可在设置中开启图片识别并配置端点），无法深读图片',
+    docImageVisionFailed: '图片识别 API 调用失败：{detail}',
+    docImageNoAttachment: '无',
+    docImageDeepReadPrompt: '详细完整描述图片内容，逐项转录图中全部可读文字与数值。',
+    docImageDeepReadPromptQuestion: '请结合以下问题重点分析图片，并逐项转录图中相关可读文字与数值。问题：{question}',
   },
 });
 registerTranslations('en', {
@@ -432,6 +441,15 @@ registerTranslations('en', {
     knowledgeListFailed: 'Failed to list knowledge bases: {error}',
     knowledgeSearchDisabled: 'This knowledge base is disabled and cannot be searched. Ask the user to enable it in the extension settings "Knowledge" tab and retry.',
     knowledgeIngestDisabled: 'This knowledge base is disabled; ingest is not allowed. Ask the user to enable it in the extension settings "Knowledge" tab and retry.',
+    docImageFileNotFound: 'Attachment {file} is not in the image manifest of this session. Available: {files}',
+    docImageIndexOutOfRange: 'Image index {image} out of range ({file} has {total} images in total)',
+    docImageCacheLost: 'Image cache expired, please re-attach this file and try again',
+    docImageAgentOffline: 'Agent is offline or image fetch failed, cannot read image {image} of {file}',
+    docImageVisionNotConfigured: 'Image recognition API is not configured (enable it in settings and set an endpoint), cannot deep-read the image',
+    docImageVisionFailed: 'Image recognition API call failed: {detail}',
+    docImageNoAttachment: 'none',
+    docImageDeepReadPrompt: 'Describe the image in full detail, transcribing every readable text and numeric value item by item.',
+    docImageDeepReadPromptQuestion: 'Analyze the image focusing on the question below, transcribing related readable text and numeric values item by item. Question: {question}',
   },
 });
 
@@ -2046,6 +2064,86 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
+/**
+ * read_document_image：按需深读会话附件文档中的指定图片
+ * 数据源为发送链路写入的 _docImageSnapshot 中转快照（Task 5/7）；
+ * agent 来源图片经 downloadFile 现拉，local 来源直读快照 dataUrl；
+ * 视觉配置回落链与 analyzeScreenshotWithVision 一致（image* → 主配置）；
+ * 口径同转述链路：仅 apiBase 必需，apiKey 可选（兼容本地无鉴权视觉服务）。
+ * 深读文本属不可信内容，经现有 tool message 通道回注，不新增拼接格式。
+ */
+async function executeReadDocumentImage(args, toolCallId, sessionId) {
+  const store = await new Promise((r) => chrome.storage.local.get(['_docImageSnapshot'], r));
+  const snap = (store._docImageSnapshot || {})[sessionId];
+  const fileEntry = snap && snap.files ? snap.files.find((f) => f.name === args.file) : null;
+  if (!fileEntry) {
+    return makeResult(false, t('toolExec.docImageFileNotFound', { file: String(args.file), files: ((snap && snap.files) || []).map((f) => f.name).join(', ') || t('toolExec.docImageNoAttachment') }), { tool_call_id: toolCallId });
+  }
+  const images = fileEntry.images || [];
+  const img = images.find((im) => im.index === args.image);
+  if (!img) {
+    return makeResult(false, t('toolExec.docImageIndexOutOfRange', { image: String(args.image), file: String(args.file), total: String(images.length) }), { tool_call_id: toolCallId });
+  }
+
+  let dataUrl = img.dataUrl || '';
+  if (!dataUrl && img.path) {
+    // agent 来源：落盘路径现拉（跨会话仍可用）
+    const dl = await AgentClient.downloadFile(img.path);
+    if (!dl || !dl.success || !dl.content) {
+      return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
+    }
+    dataUrl = 'data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content;
+  }
+  if (!dataUrl) {
+    return makeResult(false, t('toolExec.docImageCacheLost'), { tool_call_id: toolCallId });
+  }
+
+  const compressed = await compressImageForVision(dataUrl, 1024, 0.65) || dataUrl;
+  const prompt = args.question
+    ? t('toolExec.docImageDeepReadPromptQuestion', { question: String(args.question).slice(0, 500) })
+    : t('toolExec.docImageDeepReadPrompt');
+
+  const cfg = await new Promise((r) => chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName'], r));
+  const apiBase = cfg.imageApiBase || cfg.apiBase;
+  const apiKey = decodeSecret(cfg.imageApiKey) || decodeSecret(cfg.apiKey);
+  const model = cfg.imageModelName || cfg.modelName;
+  if (!apiBase) {
+    return makeResult(false, t('toolExec.docImageVisionNotConfigured'), { tool_call_id: toolCallId });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+    const resp = await fetch(apiBase.replace(/\/$/, '') + '/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify({
+        model,
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: compressed, detail: 'auto' } },
+        ] }],
+      }),
+    });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      return makeResult(false, t('toolExec.docImageVisionFailed', { detail: 'HTTP ' + resp.status }), { tool_call_id: toolCallId });
+    }
+    const data = await resp.json();
+    const analysis = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+    if (!analysis) {
+      return makeResult(false, t('toolExec.docImageVisionFailed', { detail: 'empty response' }), { tool_call_id: toolCallId });
+    }
+    return makeResult(true, analysis, { tool_call_id: toolCallId });
+  } catch (err) {
+    return makeResult(false, t('toolExec.docImageVisionFailed', { detail: err.message }), { tool_call_id: toolCallId });
+  }
+}
+
 // Background 工具处理器注册表（单一数据源）
 // 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
 const TOOL_HANDLERS = {
@@ -2079,6 +2177,7 @@ const TOOL_HANDLERS = {
   manage_agent: executeManageAiAgent,
   exec_log: executeExtractExecutionLog,
   query_elements: executeSnapshotQuery,
+  read_document_image: executeReadDocumentImage,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）

@@ -376,4 +376,25 @@ export const BROWSER_TOOLS = [
       }
     }
   },
+  {
+    id: 'read_document_image',
+    category: 'content_extraction',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    type: 'function',
+    function: {
+      name: 'read_document_image',
+      description: 'Deep-read one image extracted from an attached document (docx/pdf) in this session. Use it when the inline image description is insufficient or you need specific details from an image listed in the document image manifest. Returns a text analysis of the image from the vision model.',
+      parameters: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'Attachment file name exactly as shown in the manifest, e.g. 报告.docx' },
+          image: { type: 'integer', description: 'Image index from the manifest, starting at 1' },
+          question: { type: 'string', description: 'Optional: what specific detail to focus on; omit for a full re-description' }
+        },
+        required: ['file', 'image']
+      }
+    }
+  },
 ];

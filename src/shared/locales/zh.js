@@ -667,6 +667,7 @@ export default {
     search_in_page: '在当前页面中查找文本',
     iframe_content: '获取页面中 iframe 的内容',
     scroll_collect: '滚动并收集内容，适用于无限滚动/懒加载页面',
+    read_document_image: '深读会话文档附件中的指定图片',
     notify: '显示浏览器通知',
     clipboard: '剪贴板操作（复制/粘贴/获取选中文本）',
     download_file: '下载文件到本地',
