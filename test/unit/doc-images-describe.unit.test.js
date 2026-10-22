@@ -13,7 +13,7 @@ globalThis.chrome = {
 };
 globalThis.fetch = vi.fn();
 
-const { describeImages, buildImageBlock, saveDocImageSnapshot, removeDocImageSnapshot, compressForVision, VISION_CONSTANTS } = await import('../../src/side_panel/doc-images.js');
+const { describeImages, buildImageBlock, buildPreviewStatusText, saveDocImageSnapshot, removeDocImageSnapshot, compressForVision, VISION_CONSTANTS } = await import('../../src/side_panel/doc-images.js');
 const { setLanguage } = await import('../../src/shared/i18n.js');
 
 beforeEach(() => {
@@ -159,5 +159,38 @@ describe('saveDocImageSnapshot / removeDocImageSnapshot', () => {
     await removeDocImageSnapshot('s3');
     expect(store._docImageSnapshot.s3).toBeUndefined();
     expect(store._docImageSnapshot.s4).toBeDefined();
+  });
+});
+
+describe('buildPreviewStatusText', () => {
+  it('imageStatus=error → 抽取失败文案', () => {
+    expect(buildPreviewStatusText({ imageStatus: 'error', images: [{ index: 1 }] })).toBe('📷 图片抽取失败');
+  });
+
+  it('有未描述且可深读的图 → 追加“可深读 N”（N=total-described）', () => {
+    const images = Array.from({ length: 20 }, (_, i) => ({ index: i + 1, dataUrl: 'data:x' }));
+    const text = buildPreviewStatusText({ images, imageDescriptions: { 1: 'a', 2: 'b' } });
+    expect(text).toBe('📷 已描述 2/20 · 可深读 18');
+  });
+
+  it('agent 来源：未描述但有落盘 path 也算可深读', () => {
+    const images = [{ index: 1, dataUrl: 'data:x' }, { index: 2, path: '/d/img-2.png' }];
+    expect(buildPreviewStatusText({ images, imageDescriptions: { 1: 'a' } })).toBe('📷 已描述 1/2 · 可深读 1');
+  });
+
+  it('全部已描述 → 不追加可深读段', () => {
+    const images = [{ index: 1, dataUrl: 'data:x' }];
+    expect(buildPreviewStatusText({ images, imageDescriptions: { 1: 'a' } })).toBe('📷 已描述 1/1');
+  });
+
+  it('overLimit 且未描述 → 不可深读，不计入', () => {
+    const images = [{ index: 1, dataUrl: 'data:x' }, { index: 2, overLimit: true }];
+    expect(buildPreviewStatusText({ images, imageDescriptions: { 1: 'a' } })).toBe('📷 已描述 1/2');
+  });
+
+  it('英文文案', () => {
+    setLanguage('en', false);
+    const images = [{ index: 1, dataUrl: 'data:x' }, { index: 2, dataUrl: 'data:x' }];
+    expect(buildPreviewStatusText({ images, imageDescriptions: { 1: 'a' } })).toBe('📷 described 1/2 · 1 deep-readable');
   });
 });

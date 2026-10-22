@@ -13,6 +13,7 @@ import {
   compressForVision,
   describeImages,
   buildImageBlock,
+  buildPreviewStatusText,
   VISION_CONSTANTS,
 } from './doc-images.js';
 
@@ -497,13 +498,7 @@ export function renderFilePreviews() {
     if (file.images && file.images.length > 0) {
       const imgTag = document.createElement('span');
       imgTag.className = 'file-preview-status images';
-      if (file.imageStatus === 'error') {
-        imgTag.textContent = t('docImages.previewFail');
-      } else {
-        const descs = file.imageDescriptions || {};
-        const described = file.images.filter(im => descs[im.index]).length;
-        imgTag.textContent = t('docImages.previewDescribed', { described, total: file.images.length });
-      }
+      imgTag.textContent = buildPreviewStatusText(file);
       wrapper.appendChild(imgTag);
     } else if (!state.enableImageInput && ['docx', 'pdf', 'xlsx'].includes(getFileCategory(file.name))) {
       wrapper.title = `${wrapper.title} — ${t('docImages.previewOff')}`;

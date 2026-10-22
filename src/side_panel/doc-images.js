@@ -15,6 +15,7 @@ registerTranslations('zh', {
     truncated: '[另有 {count} 张图未抽取，超出单文档 20 张上限]',
     describePrompt: '请客观描述这张图片的内容，并转录其中全部可读文字（OCR），不超过 300 字。',
     previewDescribed: '📷 已描述 {described}/{total}',
+    previewDeepReadable: ' · 可深读 {count}',
     previewFail: '📷 图片抽取失败',
     previewOff: '图片不会被识别（可在设置中开启图片识别）',
   },
@@ -29,6 +30,7 @@ registerTranslations('en', {
     truncated: '[{count} more images were not extracted due to the 20-image limit]',
     describePrompt: 'Describe this image objectively and transcribe all readable text (OCR) in it, within 300 words.',
     previewDescribed: '📷 described {described}/{total}',
+    previewDeepReadable: ' · {count} deep-readable',
     previewFail: '📷 image extraction failed',
     previewOff: 'Images will not be recognized (enable image recognition in settings)',
   },
@@ -501,6 +503,23 @@ export function buildImageBlock(fileEntry, fileName) {
   }
   if (fileEntry.truncated > 0) lines.push(t('docImages.truncated', { count: fileEntry.truncated }));
   return '\n\n' + lines.join('\n');
+}
+
+/**
+ * 附件预览 📷 状态行文案：已描述 x/总 · 可深读 N
+ * 可深读 = 未转述但已抽出且能取到图（本地 dataUrl / agent 落盘 path）的张数，overLimit 不计
+ * @param {{ images?: Array<object>, imageDescriptions?: Record<number, string>, imageStatus?: string }} fileEntry
+ * @returns {string}
+ */
+export function buildPreviewStatusText(fileEntry) {
+  if (fileEntry.imageStatus === 'error') return t('docImages.previewFail');
+  const images = fileEntry.images || [];
+  const descs = fileEntry.imageDescriptions || {};
+  const described = images.filter((im) => descs[im.index]).length;
+  const deepReadable = images.filter((im) => !descs[im.index] && !im.overLimit && (im.dataUrl || im.path)).length;
+  let text = t('docImages.previewDescribed', { described, total: images.length });
+  if (deepReadable > 0) text += t('docImages.previewDeepReadable', { count: deepReadable });
+  return text;
 }
 
 // —— 快照中转（background 侧 read_document_image 取图；storage key: _docImageSnapshot）——
