@@ -44,6 +44,7 @@
     "@jvmr/pptx-to-html": "^1.1.1",
     "docx": "^9.7.1",
     "dompurify": "^3.4.12",
+    "jszip": "^3.10.2",
     "mammoth": "^1.6.0",
     "pdfjs-dist": "^3.11.174",
     "xlsx": "^0.18.5"
