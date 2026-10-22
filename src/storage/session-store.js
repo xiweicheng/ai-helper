@@ -162,7 +162,8 @@ export async function saveCurrentSession() {
 
   // 更新标题（取第一条用户消息的前 50 个字符）
   // 分叉/复制的会话保留其自定义标题（含"- 分叉"/"- 副本"后缀），不自动覆盖
-  if (!currentSession.forkMetadata) {
+  // 用户手动重命名的会话（titleManuallySet）同样保留自定义标题，避免切换/保存时被首条消息覆盖
+  if (!currentSession.forkMetadata && !currentSession.titleManuallySet) {
     const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
     if (firstUserMsg) {
       currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
@@ -448,6 +449,8 @@ export async function renameSession(sessionId, newTitle) {
   const session = await idb.getSession(sessionId);
   if (!session) return false;
   session.title = newTitle;
+  // 标记为手动命名，后续 saveCurrentSession/归档不再用首条消息自动覆盖标题
+  session.titleManuallySet = true;
   session.updatedAt = new Date().toISOString();
   await idb.putSession(session);
   return true;
@@ -483,10 +486,14 @@ export async function archiveCurrentSession() {
   const currentSession = await idb.getSession(state.activeSessionId);
   if (!currentSession) return;
 
+  // 手动重命名/分叉的会话保留其自定义标题，其余取首条用户消息
+  const keepCustomTitle = currentSession.titleManuallySet || currentSession.forkMetadata;
   const firstUserMsg = state.messageHistory.find((m) => m.role === 'user');
-  const title = firstUserMsg
-    ? getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ')
-    : currentSession.title || t('session.unnamedSession');
+  const title = keepCustomTitle
+    ? currentSession.title || t('session.unnamedSession')
+    : (firstUserMsg
+      ? getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ')
+      : currentSession.title || t('session.unnamedSession'));
 
   const archivedId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 
