@@ -106,6 +106,12 @@ describe('buildImageBlock', () => {
     expect(block).toContain('另有 3 张图未抽取');
   });
 
+  it('xlsx 条目带 sheet/cell 时输出工作表定位段', () => {
+    const block = buildImageBlock({ images: [{ index: 1, page: null, sheet: '汇总', cell: 'B3' }], imageDescriptions: { 1: '趋势图' } }, 'a.xlsx');
+    expect(block).toContain('〔图片1｜工作表汇总!B3〕趋势图');
+    expect(block).not.toContain('第null页');
+  });
+
   it('无图返空串', () => {
     expect(buildImageBlock({ images: [] }, 'a.docx')).toBe('');
   });

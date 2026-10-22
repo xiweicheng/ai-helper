@@ -9,6 +9,7 @@ registerTranslations('zh', {
   docImages: {
     header: '[文档图片: 共 {total} 张，已描述 {described} 张]',
     page: '｜第{page}页',
+    sheetLoc: '｜工作表{sheet}!{cell}',
     lineDescribed: '〔图片{index}{loc}〕{desc}',
     lineTool: '〔图片{index}{loc}〕未描述，可调用 read_document_image(file="{file}", image={index}) 查看。',
     truncated: '[另有 {count} 张图未抽取，超出单文档 20 张上限]',
@@ -22,6 +23,7 @@ registerTranslations('en', {
   docImages: {
     header: '[Document images: {total} total, {described} described]',
     page: ' | p.{page}',
+    sheetLoc: ' | sheet {sheet}!{cell}',
     lineDescribed: '[Image {index}{loc}] {desc}',
     lineTool: '[Image {index}{loc}] not described; call read_document_image(file="{file}", image={index}) to view.',
     truncated: '[{count} more images were not extracted due to the 20-image limit]',
@@ -124,6 +126,112 @@ export async function extractDocxImagesFromFile(file, opts = {}) {
       dataUrl: bytesToDataUrl(bytes, MIME_BY_EXT[ext]),
       kind: 'embedded',
     });
+  }
+  return { images, truncated, skipped };
+}
+
+/** 0-based 列/行 → A1 单元格表示（列超 26 递入双字母） */
+function cellRef(col, row) {
+  let s = '';
+  let c = col + 1;
+  while (c > 0) {
+    const rem = (c - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    c = Math.floor((c - 1) / 26);
+  }
+  return `${s}${row + 1}`;
+}
+
+/**
+ * xlsx 抠图（浏览器端）：浮动图片（drawing anchor）按 sheet 声明顺序 + anchor 顺序编号
+ * 链路：workbook.xml(sheet顺) → workbook rels(rid→sheet 文件) → sheet rels(drawing 文件)
+ *   → drawing(anchors + xdr:from 定位) → drawing rels(rid→media) → xl/media/*
+ * 单元格内嵌图（rich value / vm 属性）不在本功能范围；旧版 .xls 非 zip 安全空返
+ * @param {File} file
+ * @param {{ maxImages?: number }} [opts]
+ * @returns {Promise<{ images: Array<object>, truncated: number, skipped: number }>}
+ */
+export async function extractXlsxImagesFromFile(file, opts = {}) {
+  const maxImages = opts.maxImages || VISION_CONSTANTS.MAX_IMAGES;
+  const JSZip = (await import('jszip')).default;
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(file);
+  } catch {
+    return { images: [], truncated: 0, skipped: 0 }; // 非 zip（如老 .xls）：空清单不报错
+  }
+  const wbEntry = zip.file('xl/workbook.xml');
+  const wbRelsEntry = zip.file('xl/_rels/workbook.xml.rels');
+  if (!wbEntry || !wbRelsEntry) return { images: [], truncated: 0, skipped: 0 };
+
+  const readRelTargets = async (entry, typeRe) => {
+    const map = new Map();
+    if (!entry) return map;
+    for (const m of (await entry.async('string')).matchAll(/<Relationship\b[^>]*>/g)) {
+      const id = m[0].match(/Id="([^"]+)"/)?.[1];
+      const type = m[0].match(/Type="([^"]+)"/)?.[1] || '';
+      const target = m[0].match(/Target="([^"]+)"/)?.[1];
+      if (id && target && typeRe.test(type)) map.set(id, target);
+    }
+    return map;
+  };
+
+  // 按 workbook 声明顺序整理 sheet → 文件路径
+  const wbRels = await readRelTargets(wbRelsEntry, /worksheet$/);
+  const wbXml = await wbEntry.async('string');
+  const sheetOrder = [];
+  for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
+    const name = m[0].match(/name="([^"]+)"/)?.[1];
+    const rid = m[0].match(/r:id="([^"]+)"/)?.[1];
+    const target = rid && wbRels.get(rid);
+    if (name && target) sheetOrder.push({ name, file: 'xl/' + target.replace(/^\//, '') });
+  }
+
+  const images = [];
+  let truncated = 0;
+  let skipped = 0;
+  const seen = new Set(); // 同一张图多锚点去重（同 docx 语义）
+  for (const sheet of sheetOrder) {
+    const sheetRelsEntry = zip.file(`xl/worksheets/_rels/${sheet.file.split('/').pop()}.rels`);
+    const drawingTargets = await readRelTargets(sheetRelsEntry, /drawing$/);
+    for (const relTarget of drawingTargets.values()) {
+      const drawingFile = 'xl/' + relTarget.replace(/^\//, '').replace(/^\.\.\//, '');
+      const drawingEntry = zip.file(drawingFile);
+      if (!drawingEntry) continue;
+      const imgRels = await readRelTargets(zip.file(drawingFile.replace('drawings/', 'drawings/_rels/') + '.rels'), /image$/);
+      const drawingXml = await drawingEntry.async('string');
+      for (const a of drawingXml.matchAll(/<[a-z]+:(?:oneCellAnchor|twoCellAnchor|absoluteAnchor)\b[\s\S]*?<\/[a-z]+:(?:oneCellAnchor|twoCellAnchor|absoluteAnchor)>/g)) {
+        const rid = a[0].match(/r:embed="(rId\d+)"/)?.[1];
+        if (!rid) continue;
+        const target = imgRels.get(rid);
+        if (!target) { skipped++; continue; }
+        const entryName = 'xl/' + target.replace(/^\.\.\//, '').replace(/^\//, '');
+        const ext = entryName.split('.').pop().toLowerCase();
+        if (!MIME_BY_EXT[ext]) { skipped++; continue; }
+        if (seen.has(entryName)) continue;
+        seen.add(entryName);
+        const col = Number(a[0].match(/<xdr:from>[\s\S]*?<xdr:col>(\d+)<\/xdr:col>/)?.[1] ?? 0);
+        const row = Number(a[0].match(/<xdr:from>[\s\S]*?<xdr:row>(\d+)<\/xdr:row>/)?.[1] ?? 0);
+        if (images.length >= maxImages) { truncated++; continue; }
+        const entry = zip.file(entryName);
+        if (!entry) { skipped++; continue; }
+        const bytes = await entry.async('uint8array');
+        if (bytes.length > VISION_CONSTANTS.MAX_RAW_BYTES) { skipped++; continue; }
+        const { width, height } = readImageDimensions(bytes);
+        images.push({
+          index: images.length + 1,
+          page: null,
+          sheet: sheet.name,
+          cell: cellRef(col, row),
+          mimeType: MIME_BY_EXT[ext],
+          bytes: bytes.length,
+          width,
+          height,
+          dataUrl: bytesToDataUrl(bytes, MIME_BY_EXT[ext]),
+          kind: 'embedded',
+        });
+      }
+    }
   }
   return { images, truncated, skipped };
 }
@@ -383,7 +491,8 @@ export function buildImageBlock(fileEntry, fileName) {
   const described = images.filter((im) => descs[im.index]).length;
   const lines = [t('docImages.header', { total: images.length, described })];
   for (const im of images) {
-    const loc = im.page ? t('docImages.page', { page: im.page }) : '';
+    const loc = im.page ? t('docImages.page', { page: im.page })
+      : (im.sheet ? t('docImages.sheetLoc', { sheet: im.sheet, cell: im.cell || '' }) : '');
     if (descs[im.index]) {
       lines.push(t('docImages.lineDescribed', { index: im.index, loc, desc: String(descs[im.index]).trim() }));
     } else {

@@ -9,6 +9,7 @@ import { decodeSecret } from '../shared/secret.js';
 import {
   extractDocxImagesFromFile,
   extractPdfImagesFromFile,
+  extractXlsxImagesFromFile,
   compressForVision,
   describeImages,
   buildImageBlock,
@@ -272,11 +273,13 @@ async function runAgentDocxImages(fileEntry) {
   }
 }
 
-/** 浏览器本地抽图（docx/pdf 均可；Agent 失败时的降级路径） */
+/** 浏览器本地抽图（docx/pdf/xlsx 均可；Agent 失败时的降级路径） */
 async function runLocalImages(fileEntry, file, category) {
   const { images, truncated, skipped } = category === 'docx'
     ? await extractDocxImagesFromFile(file)
-    : await extractPdfImagesFromFile(file);
+    : category === 'xlsx'
+      ? await extractXlsxImagesFromFile(file)
+      : await extractPdfImagesFromFile(file);
   for (const im of images) {
     const c = await compressForVision(im.dataUrl);
     if (c === null) { im.overLimit = true; delete im.dataUrl; } else { im.dataUrl = c; }
@@ -293,7 +296,7 @@ async function runLocalImages(fileEntry, file, category) {
  */
 export async function runImagePipeline(fileEntry, file, category, isAgentMode) {
   if (!state.enableImageInput) return;
-  if (category !== 'docx' && category !== 'pdf') return;
+  if (category !== 'docx' && category !== 'pdf' && category !== 'xlsx') return;
   try {
     if (isAgentMode && category === 'docx') {
       try {
@@ -502,7 +505,7 @@ export function renderFilePreviews() {
         imgTag.textContent = t('docImages.previewDescribed', { described, total: file.images.length });
       }
       wrapper.appendChild(imgTag);
-    } else if (!state.enableImageInput && ['docx', 'pdf'].includes(getFileCategory(file.name))) {
+    } else if (!state.enableImageInput && ['docx', 'pdf', 'xlsx'].includes(getFileCategory(file.name))) {
       wrapper.title = `${wrapper.title} — ${t('docImages.previewOff')}`;
     }
 

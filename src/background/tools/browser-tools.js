@@ -385,7 +385,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'read_document_image',
-      description: 'Deep-read one image extracted from an attached document (docx/pdf) in this session. Use it when the inline image description is insufficient or you need specific details from an image listed in the document image manifest. Returns a text analysis of the image from the vision model.',
+      description: 'Deep-read one image extracted from an attached document (docx/pdf/xlsx) in this session. Use it when the inline image description is insufficient or you need specific details from an image listed in the document image manifest. Returns a text analysis of the image from the vision model.',
       parameters: {
         type: 'object',
         properties: {

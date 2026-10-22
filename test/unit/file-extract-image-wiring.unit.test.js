@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../src/side_panel/doc-images.js', () => ({
   extractDocxImagesFromFile: vi.fn(async () => ({ images: [{ index: 1, page: null, dataUrl: 'data:x' }], truncated: 0, skipped: 0 })),
   extractPdfImagesFromFile: vi.fn(async () => ({ images: [{ index: 1, page: 2, dataUrl: 'data:x' }], truncated: 0, skipped: 0 })),
+  extractXlsxImagesFromFile: vi.fn(async () => ({ images: [{ index: 1, page: null, sheet: 'Sheet1', cell: 'B3', dataUrl: 'data:x' }], truncated: 0, skipped: 0 })),
   compressForVision: vi.fn(async (u) => u),
   describeImages: vi.fn(async (ims) => (ims.length ? { [ims[0].index]: '描述' } : {})),
   buildImageBlock: vi.fn((f) => (f.images && f.images.length ? '\n\n[BLOCK]' : '')),
@@ -13,7 +14,7 @@ vi.mock('../../src/side_panel/doc-images.js', () => ({
 const { runImagePipeline, buildFileContentText, getAgentConnectionInfo } = await import('../../src/side_panel/file-extract.js');
 const state = (await import('../../src/side_panel/state.js')).default;
 const { setLanguage } = await import('../../src/shared/i18n.js');
-const { extractDocxImagesFromFile } = await import('../../src/side_panel/doc-images.js');
+const { extractDocxImagesFromFile, extractXlsxImagesFromFile } = await import('../../src/side_panel/doc-images.js');
 
 beforeEach(() => {
   setLanguage('zh', false);
@@ -57,6 +58,15 @@ describe('runImagePipeline', () => {
     const entry = { name: 'a.pdf', status: 'done', agentPath: '/ws/a.pdf' };
     await runImagePipeline(entry, new File([''], 'a.pdf'), 'pdf', true);
     expect(entry.imageSource).toBe('local');
+  });
+
+  it('xlsx：走本地抽取（Agent 端点仅 docx，不进 agent 分支）', async () => {
+    const entry = { name: 'a.xlsx', status: 'done', agentPath: '/ws/a.xlsx' };
+    await runImagePipeline(entry, new File([''], 'a.xlsx'), 'xlsx', true);
+    expect(extractXlsxImagesFromFile).toHaveBeenCalled();
+    expect(entry.imageSource).toBe('local');
+    expect(entry.images[0].sheet).toBe('Sheet1');
+    expect(entry.imageStatus).toBe('described');
   });
 
   it('Agent 模式 docx：调端点+下载+转述 source=agent', async () => {

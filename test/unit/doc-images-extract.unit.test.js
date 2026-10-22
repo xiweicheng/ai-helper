@@ -2,7 +2,7 @@
 // test/unit/doc-images-extract.unit.test.js - 浏览器端 docx/pdf 抠图单测（编码器全部注入假实现）
 import { describe, it, expect, vi } from 'vitest';
 import JSZip from 'jszip';
-import { extractDocxImagesFromFile, extractPdfImagesFromFile } from '../../src/side_panel/doc-images.js';
+import { extractDocxImagesFromFile, extractPdfImagesFromFile, extractXlsxImagesFromFile } from '../../src/side_panel/doc-images.js';
 
 // —— docx fixture：与 agent Task 2 相同结构，用 JSZip 构造 File ——
 function pngBytes(w, h) {
@@ -54,6 +54,98 @@ describe('extractDocxImagesFromFile', () => {
     const { images, skipped } = await extractDocxImagesFromFile(file);
     expect(images.length).toBe(0);
     expect(skipped).toBe(1);
+  });
+});
+
+// —— xlsx fixture：最小包骨架 workbook→rels→sheet→sheetRels→drawing→drawingRels→media ——
+async function xlsxFile({ sheets, drawings }) {
+  const zip = new JSZip();
+  zip.file('xl/workbook.xml', `<workbook><sheets>${sheets.map((s, i) => `<sheet name="${s.name}" sheetId="${i + 1}" r:id="${s.rid}"/>`).join('')}</sheets></workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', `<Relationships>${sheets.map((s) => `<Relationship Id="${s.rid}" Type="t/worksheet" Target="${s.target}"/>`).join('')}</Relationships>`);
+  for (const s of sheets) {
+    const rels = s.drawing
+      ? `<Relationships><Relationship Id="rIdD1" Type="t/drawing" Target="${s.drawing}"/></Relationships>`
+      : '<Relationships/>';
+    zip.file(`xl/worksheets/_rels/${s.target.split('/').pop()}.rels`, rels);
+  }
+  for (const d of drawings) {
+    zip.file(`xl/drawings/${d.file}`, `<xdr:wsDr>${d.anchors.join('')}</xdr:wsDr>`);
+    zip.file(`xl/drawings/_rels/${d.file}.rels`, `<Relationships>${d.rels.map((r) => `<Relationship Id="${r.rid}" Type="t/image" Target="${r.target}"/>`).join('')}</Relationships>`);
+    for (const r of d.rels) {
+      const name = r.target.split('/').pop();
+      zip.file(`xl/media/${name}`, pngBytes(r.w, r.h));
+    }
+  }
+  return new File([await zip.generateAsync({ type: 'blob' })], 'a.xlsx');
+}
+const anchor = (rid, col, row) =>
+  `<xdr:twoCellAnchor><xdr:from><xdr:col>${col}</xdr:col><xdr:row>${row}</xdr:row></xdr:from><xdr:pic><xdr:blipFill><a:blip r:embed="${rid}"/></xdr:blipFill></xdr:pic></xdr:twoCellAnchor>`;
+
+describe('extractXlsxImagesFromFile', () => {
+  it('按 sheet 顺序 + anchor 顺序输出，带工作表名与单元格定位', async () => {
+    const file = await xlsxFile({
+      sheets: [
+        { name: '汇总', rid: 'rId1', target: 'worksheets/sheet1.xml', drawing: '../drawings/drawing1.xml' },
+        { name: '明细', rid: 'rId2', target: 'worksheets/sheet2.xml', drawing: '../drawings/drawing2.xml' },
+      ],
+      drawings: [
+        { file: 'drawing1.xml', anchors: [anchor('rId2', 1, 2), anchor('rId1', 0, 0)], rels: [{ rid: 'rId1', target: '../media/a.png', w: 8 }, { rid: 'rId2', target: '../media/b.png', w: 40 }].map((r) => ({ ...r, h: 30 })) },
+        { file: 'drawing2.xml', anchors: [anchor('rId1', 3, 5)], rels: [{ rid: 'rId1', target: '../media/c.jpg', w: 20, h: 10 }] },
+      ],
+    });
+    const { images, truncated, skipped } = await extractXlsxImagesFromFile(file);
+    expect(truncated).toBe(0);
+    expect(skipped).toBe(0);
+    expect(images.map((i) => i.index)).toEqual([1, 2, 3]);
+    expect(images[0].width).toBe(40); // drawing1 内按 anchor 顺序：rId2 在前
+    expect(images[0].sheet).toBe('汇总');
+    expect(images[0].cell).toBe('B3'); // col1 row2 → B3（0-based + 行号 1-based）
+    expect(images[2].sheet).toBe('明细');
+    expect(images[2].cell).toBe('D6');
+    expect(images[2].mimeType).toBe('image/jpeg');
+    expect(images[2].dataUrl.startsWith('data:image/jpeg;base64,')).toBe(true);
+  });
+
+  it('同一张图多锚点去重（同 docx seen 语义）', async () => {
+    const file = await xlsxFile({
+      sheets: [{ name: 'S1', rid: 'rId1', target: 'worksheets/sheet1.xml', drawing: '../drawings/drawing1.xml' }],
+      drawings: [{ file: 'drawing1.xml', anchors: [anchor('rId1', 0, 0), anchor('rId1', 2, 2)], rels: [{ rid: 'rId1', target: '../media/a.png', w: 8, h: 8 }] }],
+    });
+    const { images } = await extractXlsxImagesFromFile(file);
+    expect(images.length).toBe(1);
+  });
+
+  it('非白名单扩展名计入 skipped；无 drawing 的 sheet 跳过', async () => {
+    const file = await xlsxFile({
+      sheets: [
+        { name: 'S1', rid: 'rId1', target: 'worksheets/sheet1.xml', drawing: '../drawings/drawing1.xml' },
+        { name: 'S2', rid: 'rId2', target: 'worksheets/sheet2.xml', drawing: null },
+      ],
+      drawings: [{ file: 'drawing1.xml', anchors: [anchor('rId1', 0, 0)], rels: [{ rid: 'rId1', target: '../media/emf1.emf', w: 1, h: 1 }] }],
+    });
+    const { images, skipped } = await extractXlsxImagesFromFile(file);
+    expect(images.length).toBe(0);
+    expect(skipped).toBe(1);
+  });
+
+  it('超出 maxImages 截断计数', async () => {
+    const file = await xlsxFile({
+      sheets: [{ name: 'S1', rid: 'rId1', target: 'worksheets/sheet1.xml', drawing: '../drawings/drawing1.xml' }],
+      drawings: [{
+        file: 'drawing1.xml',
+        anchors: [0, 1, 2, 3, 4].map((i) => anchor(`rId${i + 1}`, i, 0)),
+        rels: [0, 1, 2, 3, 4].map((i) => ({ rid: `rId${i + 1}`, target: `../media/m${i}.png`, w: 4, h: 4 })),
+      }],
+    });
+    const { images, truncated } = await extractXlsxImagesFromFile(file, { maxImages: 3 });
+    expect(images.length).toBe(3);
+    expect(truncated).toBe(2);
+  });
+
+  it('非 zip 内容（如老 .xls）安全返回空清单', async () => {
+    const file = new File([new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 1, 2, 3])], 'old.xls');
+    const res = await extractXlsxImagesFromFile(file);
+    expect(res.images).toEqual([]);
   });
 });
 

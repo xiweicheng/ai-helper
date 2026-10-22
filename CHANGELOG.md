@@ -4,14 +4,15 @@
 
 ## 2026-10-22
 
-### 文档附件图片识别（Word/PDF 内嵌图片 → 视觉转述 + 按需深读）
+### 文档附件图片识别（Word/PDF/Excel 内嵌图片 → 视觉转述 + 按需深读）
 > 需求：上传 Word/PDF 让 AI 能「看见」文档里的图片。双运行形态（有/无本地 Agent）下均可用。方案文档：`docs/superpowers/specs/2026-10-22-document-image-recognition-design.md`；实施计划：`docs/superpowers/plans/2026-10-22-document-image-recognition.md`。
 
-- 新增：文档附件图片识别——上传 Word/PDF 时自动抽取内嵌图片，经视觉模型转述为文本供 AI 阅读（受“启用图片识别”总开关控制，不新增配置项）；新增 `read_document_image` 工具支持 AI 按需深读文档图片（结果按不可信内容包装）；连接 Agent 时 docx 图片抽取落盘 `_attachments/`、跨会话可继续读取。
+- 新增：文档附件图片识别——上传 Word/PDF/Excel 时自动抽取内嵌图片，经视觉模型转述为文本供 AI 阅读（受“启用图片识别”总开关控制，不新增配置项）；新增 `read_document_image` 工具支持 AI 按需深读文档图片（结果按不可信内容包装）；连接 Agent 时 docx 图片抽取落盘 `_attachments/`、跨会话可继续读取。
 - **Agent 端（仅 docx 落盘抽取）**：零依赖 ZIP 读取器（EOCD 反向扫描 + central directory + stored/deflate，不新增依赖）；`documents/image-extractor.js` 按 `document.xml` 的 `r:embed` 出现顺序编号抽 `word/media/*`（MIME 白名单，wmf/emf 计入 skipped）；`/api/documents/extract-images` 端点经 checkPath 安全校验，限 50MB，损坏文件归入 parseFailed。
 - **插件端（docx+pdf 浏览器抠图）**：`doc-images.js` 新增——docx 用 jszip（新增依赖）；pdf 用 pdfjs `getOperatorList` 抓 `paintImageXObject` + RGBA 校验 + 扫描件兜底（低文本页 4×4 采样判非白）；`compressForVision` 5 轮降级（quality 0.65→0.2 后缩尺寸，仍超 200KB 弃）；视觉配置回落链同截图工具（image* → 主配置），仅 apiBase 必需（兼容本地无鉴权视觉服务）；前 2 张转述 + 全量清单块注入消息；Agent docx 端点失败自动降级浏览器本地抽取；图片链路任何失败不阻断文本主链路。
+- **xlsx 浮动图片（浏览器端抠图）**：`extractXlsxImagesFromFile` 沿 `workbook.xml`（sheet 声明序）→ `workbook rels`（rid→worksheet 文件）→ `sheet rels`（drawing 文件）→ `drawing`（`xdr:twoCellAnchor`/`oneCellAnchor` + `xdr:from` 锚点定位）→ `drawing rels`（rid→media）→ `xl/media/*` 逐层解析，按 sheet 顺 + anchor 顺编号；清单块以 `〔图片N｜工作表{sheet}!{cell}`（A1 表示）定位；单元格内嵌图（rich value / `vm` 属性）不在范围；旧版 `.xls` 非 zip 安全空返；复用既有压缩/转述/快照中转/`read_document_image` 全链路，工具与 Agent 无需改动（Agent 端点仍仅 docx，xlsx 走本地分支）。
 - **快照中转与工具**：发送链路（chat-manager `sendMessage` 与 prompt-manager `sendPromptByCode` 双链对齐）写入 `_docImageSnapshot`（chrome.storage.local，4MB 预算从最旧 session 整条淘汰）；session 删除同步清理；`read_document_image(file, image, question?)` 内置工具：local 来源直读快照 dataUrl，agent 来源经 `downloadFile` 现拉落盘图，深读文本经 `UNTRUSTED_CONTENT_TOOLS` 分类包装。**按需下发门控**：图片识别总开关关闭时不下发该工具（getTools 过滤链 + tool-panel 勾选清单同口径）——开关关则附件抠图不产出图片、快照必空，省 schema token；工具不以 `agent_` 前缀命名故不受 Agent 连通性过滤，浏览器模式（无 Agent）下靠快照 dataUrl 独立可用。
-- **验证**：新增 8 个测试文件 59 例（zip-reader/extractor/route 15+ 例、浏览器抠图 7 例、转述/压缩/清单/快照 16 例、file-extract 接线 11 例、快照接线守卫 4 例、工具行为 8 例、逐字节回归基线 4 例：开关关闭与零图时注入文本与旧格式逐字符不变、按需下发门控 4 例）；全量单测 147 文件 / 2197 例、agent 533 例、`build:silent` 通过。
+- **验证**：新增 8 个测试文件 66 例（zip-reader/extractor/route 15+ 例、浏览器抠图 12 例（含 xlsx 5 例）、转述/压缩/清单/快照 17 例（含 xlsx 工作表定位 1 例）、file-extract 接线 12 例（含 xlsx 走本地分支 1 例）、快照接线守卫 4 例、工具行为 8 例、逐字节回归基线 4 例：开关关闭与零图时注入文本与旧格式逐字符不变、按需下发门控 4 例）；全量单测 147 文件 / 2204 例、agent 533 例、`build:silent` 通过。
 
 ## 2026-10-20
 
