@@ -1181,9 +1181,14 @@
 
       <div style="margin-bottom: 12px;">
         <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableTools">可用工具</span> <span id="agentToolCount" style="color: var(--text-tertiary);"></span><span data-i18n="agentEditor.toolsInheritGlobal">（不勾选则继承全局工具设置）</span></label>
-        <div id="agentToolActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
+        <div id="agentToolActions" style="display: flex; gap: 6px; margin-bottom: 6px; align-items: center;">
           <button type="button" class="agent-tool-action-btn" data-action="selectAll" data-i18n="common.selectAll">全选</button>
           <button type="button" class="agent-tool-action-btn" data-action="deselectAll" data-i18n="common.deselectAll">取消全选</button>
+          <button type="button" class="agent-tool-action-btn" id="agentToolSelectedOnlyBtn" data-action="toggleSelectedOnly" data-i18n="agentEditor.selectedOnlyFilter">只看已勾选</button>
+          <div class="agent-tool-search-wrap">
+            <input type="text" id="agentToolSearchInput" class="agent-tool-search-input" data-i18n-placeholder="agentEditor.toolSearchPlaceholder" placeholder="搜索工具名称或描述" autocomplete="off">
+            <button type="button" id="agentToolSearchClear" class="agent-tool-search-clear" data-i18n-title="toolPanel.clearSearch" title="清除搜索">✕</button>
+          </div>
         </div>
         <div id="agentToolList" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: 6px; padding: 8px;"></div>
       </div>

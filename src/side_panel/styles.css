@@ -918,6 +918,61 @@ body {
   background: var(--brand-500);
   color: var(--text-on-brand);
 }
+/* 只看已勾选：激活态与 hover 同色，保持高亮区分过滤状态 */
+.agent-tool-action-btn.active {
+  background: var(--brand-500);
+  color: var(--text-on-brand);
+}
+/* 编辑器工具搜索框：外层容器承担弹性伸缩（flex:1 + min-width:0 防宽字符撞破行布局），
+   相对定位供右侧一键清除按钮锚定（与工具配置弹窗搜索框同模式） */
+.agent-tool-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.agent-tool-search-input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 22px 3px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  outline: none;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  transition: border-color 0.15s;
+}
+.agent-tool-search-input:focus {
+  border-color: var(--brand-500);
+}
+/* 搜索框内右侧清除按钮：有输入时由 JS 切换可见 */
+.agent-tool-search-clear {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.agent-tool-search-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+}
+/* 工具列表过滤后无可见项的空态提示 */
+.agent-tool-empty {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  padding: 8px;
+  text-align: center;
+}
 .agent-tool-item input[type="checkbox"] {
   margin: 0;
   flex-shrink: 0;

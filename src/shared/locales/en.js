@@ -475,6 +475,9 @@ export default {
     noPreset: 'No setting (use global)',
     deleteTitle: 'Delete this assistant',
     deleteAgentTitle: 'Delete this assistant',
+    toolSearchPlaceholder: 'Search tool name or description',
+    selectedOnlyFilter: 'Selected only',
+    showAllTools: 'Show all tools',
   },
 
   // Command audit log

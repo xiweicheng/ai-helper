@@ -7,6 +7,7 @@ import { PRESET_MODES } from './constants.js';
 import { showToast } from './utils.js';
 import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, getMcpToolDisplayDesc, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
+import { filterAgentToolEntries } from './agent-tool-filter.js';
 import { getEnabledSkills } from './skill-selector.js';
 import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
@@ -431,7 +432,42 @@ function initAgentModalEvents() {
       const action = btn.dataset.action;
       if (action === 'selectAll') selectAllTools();
       else if (action === 'deselectAll') deselectAllTools();
+      else if (action === 'toggleSelectedOnly') {
+        // 只看已勾选：切换过滤态并从缓存重渲染（勾选状态不依赖 DOM）
+        agentToolRenderCache.selectedOnly = !agentToolRenderCache.selectedOnly;
+        renderAgentToolListFromCache();
+      }
     });
+  }
+
+  // 工具搜索框：150ms 防抖后按名称/描述过滤可见行；有输入时显示右侧一键清除
+  const toolSearchInput = document.getElementById('agentToolSearchInput');
+  if (toolSearchInput) {
+    let searchTimer = null;
+    const searchClearBtn = document.getElementById('agentToolSearchClear');
+    // 显式设 block/none：隐藏态写在 CSS 类里，置空内联会回落类规则导致永远不显示
+    const syncSearchClearBtn = () => {
+      if (searchClearBtn) searchClearBtn.style.display = toolSearchInput.value ? 'block' : 'none';
+    };
+    toolSearchInput.addEventListener('input', () => {
+      syncSearchClearBtn();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        agentToolRenderCache.searchText = toolSearchInput.value;
+        renderAgentToolListFromCache();
+      }, 150);
+    });
+    if (searchClearBtn) {
+      searchClearBtn.addEventListener('click', () => {
+        clearTimeout(searchTimer);
+        toolSearchInput.value = '';
+        syncSearchClearBtn();
+        agentToolRenderCache.searchText = '';
+        renderAgentToolListFromCache();
+        toolSearchInput.focus();
+      });
+    }
+    syncSearchClearBtn();
   }
 
   // 技能快捷操作按钮
@@ -469,9 +505,24 @@ function initAgentModalEvents() {
       if (!catHeader) return;
       toggleCategorySelection(catHeader.dataset.category);
     });
-    // 工具勾选变化：联动更新分类计数和总计数
+    // 工具勾选变化：先同步到渲染缓存（保存/计数/过滤重渲染都以缓存为准），再联动刷新计数
     toolList.addEventListener('change', (e) => {
-      if (e.target.matches('input[type="checkbox"]')) {
+      if (!e.target.matches('input[type="checkbox"]')) return;
+      const cache = agentToolRenderCache;
+      const toolId = e.target.dataset.toolId;
+      const serverId = e.target.dataset.mcpServerId;
+      cache.inheritMode = false;
+      if (toolId) {
+        if (e.target.checked) cache.selectedSet.add(toolId);
+        else cache.selectedSet.delete(toolId);
+      } else if (serverId) {
+        if (e.target.checked) cache.excludedSet.delete(serverId);
+        else cache.excludedSet.add(serverId);
+      }
+      // 「只看已勾选」下取消勾选会让行退出视图，需重渲染；否则只刷新计数
+      if (cache.selectedOnly) {
+        renderAgentToolListFromCache();
+      } else {
         updateAgentToolCounts();
       }
     });
@@ -619,15 +670,20 @@ function initEmojiPicker() {
 }
 
 function selectAllTools() {
-  const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
-  checkboxes.forEach(cb => { cb.checked = true; });
-  updateAgentToolCounts();
+  // 作用于全量（含被搜索/只看已勾选隐藏的行）：勾选状态以渲染缓存为准
+  const cache = agentToolRenderCache;
+  cache.inheritMode = false;
+  cache.allTools.forEach(tool => cache.selectedSet.add(tool.id));
+  cache.mcpServices.forEach(svc => cache.excludedSet.delete(svc.serverId));
+  renderAgentToolListFromCache();
 }
 
 function deselectAllTools() {
-  const checkboxes = document.querySelectorAll('#agentToolList input[type="checkbox"]');
-  checkboxes.forEach(cb => { cb.checked = false; });
-  updateAgentToolCounts();
+  const cache = agentToolRenderCache;
+  cache.inheritMode = false;
+  cache.allTools.forEach(tool => cache.selectedSet.delete(tool.id));
+  cache.mcpServices.forEach(svc => cache.excludedSet.add(svc.serverId));
+  renderAgentToolListFromCache();
 }
 
 function selectAllSkills() {
@@ -642,49 +698,71 @@ function deselectAllSkills() {
   updateAgentSkillCount();
 }
 
+/**
+ * 分类标题点击：对该分类全量项全选/取消（与搜索、只看已勾选过滤无关）
+ * @param {string} category
+ */
 function toggleCategorySelection(category) {
-  const items = document.querySelectorAll(`#agentToolList .agent-tool-item[data-category="${category}"]`);
-  const checkboxes = [];
-  items.forEach(item => {
-    const cb = item.querySelector('input[type="checkbox"]');
-    if (cb) checkboxes.push(cb);
-  });
-  if (checkboxes.length === 0) return;
-  const allChecked = checkboxes.every(cb => cb.checked);
-  checkboxes.forEach(cb => { cb.checked = !allChecked; });
-  updateAgentToolCounts();
+  const cache = agentToolRenderCache;
+  if (category === 'mcp') {
+    if (cache.mcpServices.length === 0) return;
+    const allOpen = cache.mcpServices.every(svc => !cache.excludedSet.has(svc.serverId));
+    cache.mcpServices.forEach(svc => {
+      if (allOpen) cache.excludedSet.add(svc.serverId);
+      else cache.excludedSet.delete(svc.serverId);
+    });
+    document.querySelectorAll('#agentToolList .agent-mcp-service-item input[type="checkbox"]')
+      .forEach(cb => { cb.checked = !allOpen; });
+  } else {
+    const catTools = cache.allTools.filter(tool => (tool.category || 'other') === category);
+    if (catTools.length === 0) return;
+    cache.inheritMode = false;
+    const allChecked = catTools.every(tool => cache.selectedSet.has(tool.id));
+    catTools.forEach(tool => {
+      if (allChecked) cache.selectedSet.delete(tool.id);
+      else cache.selectedSet.add(tool.id);
+    });
+    document.querySelectorAll(`#agentToolList .agent-tool-item[data-category="${category}"] input[type="checkbox"]`)
+      .forEach(cb => { cb.checked = !allChecked; });
+  }
+  // 「只看已勾选」下勾选变化会引发行显隐，需整体重渲染；否则只刷新计数
+  if (cache.selectedOnly) {
+    renderAgentToolListFromCache();
+  } else {
+    updateAgentToolCounts();
+  }
 }
 
 /**
- * 根据当前勾选状态刷新工具分类计数和总计数
+ * 基于渲染缓存刷新工具分类计数和总计数（过滤可能隐藏行，不能依赖 DOM checkbox）
  */
 function updateAgentToolCounts() {
+  const cache = agentToolRenderCache;
   const container = document.getElementById('agentToolList');
   if (!container) return;
 
-  let totalCount = 0;
-  let totalSelected = 0;
-  const items = Array.from(container.querySelectorAll('.agent-tool-item'));
+  const openSvcCount = cache.mcpServices.filter(svc => !cache.excludedSet.has(svc.serverId)).length;
   container.querySelectorAll('.agent-tool-category-clickable').forEach(catEl => {
     const cat = catEl.dataset.category;
-    const catItems = items.filter(item => item.dataset.category === cat);
-    let catTotal = 0;
-    let catSelected = 0;
-    // 每行按 1 计（MCP 服务按服务粒度：一个服务算一个，不按服务内工具数）
-    catTotal = catItems.length;
-    catItems.forEach(item => {
-      const cb = item.querySelector('input[type="checkbox"]');
-      if (cb && cb.checked) catSelected += 1;
-    });
-    totalCount += catTotal;
-    totalSelected += catSelected;
     const countSpan = catEl.querySelector('.agent-tool-cat-count');
-    if (countSpan) countSpan.textContent = `${catSelected}/${catTotal}`;
+    if (!countSpan) return;
+    if (cat === 'mcp') {
+      // MCP 分类按服务粒度计数（全量口径）
+      countSpan.textContent = `${openSvcCount}/${cache.mcpServices.length}`;
+    } else {
+      const catAll = cache.allTools.filter(tool => (tool.category || 'other') === cat);
+      const catSelected = catAll.filter(tool => cache.selectedSet.has(tool.id)).length;
+      countSpan.textContent = `${catSelected}/${catAll.length}`;
+    }
   });
 
   const countEl = document.getElementById('agentToolCount');
   if (countEl) {
-    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: totalSelected, total: totalCount });
+    const selToolCount = cache.allTools.filter(tool => cache.selectedSet.has(tool.id)).length;
+    const total = cache.allTools.length + cache.mcpServices.length;
+    // 新建/未交互时保持「继承全局=全部」的展示语义
+    const selected = cache.inheritMode ? total : selToolCount + openSvcCount;
+    countEl.textContent = t('agentConfig.selectedTotalCount', { selected, total });
   }
 }
 
@@ -870,7 +948,24 @@ function onTemplateSelect(e) {
 }
 
 /**
- * 渲染工具选择列表
+ * 助手编辑器工具列表渲染缓存
+ *
+ * 过滤（搜索/只看已勾选）时隐藏项不在 DOM 中，勾选状态不能再从 DOM 读取，
+ * 因此以缓存为准维护全量 allTools/mcpServices + selectedSet/excludedSet，
+ * 任何过滤切换都从缓存重渲染：过滤不丢勾选、保存也不漏被隐藏项
+ */
+const agentToolRenderCache = {
+  allTools: [],           // 全量常规工具（内置 + RAG）
+  mcpServices: [],        // 全量 MCP 服务行
+  selectedSet: new Set(), // 已勾选工具 ID（保留已保存但当前不可渲染的 ID，如代理离线时的知识库工具）
+  excludedSet: new Set(), // 已排除 MCP 服务 ID
+  searchText: '',         // 搜索词
+  selectedOnly: false,    // 只看已勾选
+  inheritMode: false,     // 新建未勾选时的「继承全局=全部」展示语义
+};
+
+/**
+ * 渲染工具选择列表：构建全量缓存、重置过滤态，再交由缓存渲染
  */
 async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   const container = document.getElementById('agentToolList');
@@ -916,14 +1011,46 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   }
   const excludedSet = new Set(Array.isArray(excludedMcpServerIds) ? excludedMcpServerIds : []);
 
-  const selectedSet = new Set(selectedToolIds || []);
-  // 常规工具选中数 + MCP 开放服务数（MCP 按服务粒度计数：一个服务算一个）
-  const selectedToolCount = selectedToolIds ? selectedToolIds.length : allTools.length;
-  const openMcpServiceCount = mcpServices.filter(svc => !excludedSet.has(svc.serverId)).length;
+  // 写入渲染缓存并重置过滤态（每次进入编辑器/切换模板都回到全量视图）
+  const cache = agentToolRenderCache;
+  cache.allTools = allTools;
+  cache.mcpServices = mcpServices;
+  cache.selectedSet = new Set(selectedToolIds || []);
+  cache.excludedSet = excludedSet;
+  cache.searchText = '';
+  cache.selectedOnly = false;
+  cache.inheritMode = !selectedToolIds;
+  const searchInput = document.getElementById('agentToolSearchInput');
+  if (searchInput) searchInput.value = '';
+  const searchClearBtn = document.getElementById('agentToolSearchClear');
+  if (searchClearBtn) searchClearBtn.style.display = 'none';
 
-  // 按类别分组
+  renderAgentToolListFromCache();
+}
+
+/**
+ * 从渲染缓存重渲染工具列表（搜索 + 只看已勾选两种过滤叠加）
+ * 分类计数与总数始终按全量口径展示，不受过滤影响
+ */
+function renderAgentToolListFromCache() {
+  const container = document.getElementById('agentToolList');
+  if (!container) return;
+  const cache = agentToolRenderCache;
+
+  const visible = filterAgentToolEntries({
+    tools: cache.allTools,
+    services: cache.mcpServices,
+    selectedSet: cache.selectedSet,
+    excludedSet: cache.excludedSet,
+    query: cache.searchText,
+    selectedOnly: cache.selectedOnly,
+    getDesc: getToolDesc,
+  });
+  const openSvcCount = cache.mcpServices.filter(svc => !cache.excludedSet.has(svc.serverId)).length;
+
+  // 可见项按分类分组
   const grouped = {};
-  for (const tool of allTools) {
+  for (const tool of visible.tools) {
     const cat = tool.category || 'other';
     if (!grouped[cat]) grouped[cat] = [];
     grouped[cat].push(tool);
@@ -932,11 +1059,11 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   let html = '';
   for (const [cat, tools] of Object.entries(grouped)) {
     const catName = t(`toolCategory.${cat}`) !== `toolCategory.${cat}` ? t(`toolCategory.${cat}`) : cat;
-    const catTotal = tools.length;
-    const catSelected = tools.filter(t => selectedSet.has(t.id)).length;
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${catSelected}/${catTotal}</span></div>`;
+    const catAll = cache.allTools.filter(tt => (tt.category || 'other') === cat);
+    const catSelected = catAll.filter(tt => cache.selectedSet.has(tt.id)).length;
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="${escapeAttr(cat)}" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${catName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${catSelected}/${catAll.length}</span></div>`;
     for (const tool of tools) {
-      const checked = selectedSet.has(tool.id) ? 'checked' : '';
+      const checked = cache.selectedSet.has(tool.id) ? 'checked' : '';
       const desc = getToolDesc(tool);
       const truncated = desc.length > 40 ? desc.substring(0, 40) + '...' : desc;
       html += `
@@ -949,11 +1076,11 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   }
 
   // MCP 服务级行（固定排在最后；checkbox 勾选 = 开放，取消 = 排除该服务）
-  if (mcpServices.length > 0) {
+  if (visible.services.length > 0) {
     const mcpCatName = t('toolCategory.mcp') !== 'toolCategory.mcp' ? t('toolCategory.mcp') : 'mcp';
-    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="mcp" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${mcpCatName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${openMcpServiceCount}/${mcpServices.length}</span></div>`;
-    for (const svc of mcpServices) {
-      const checked = excludedSet.has(svc.serverId) ? '' : 'checked';
+    html += `<div class="agent-tool-category agent-tool-category-clickable" data-category="mcp" title="${escapeAttr(t('agentConfig.toggleCategoryAll'))}">${mcpCatName} <span class="agent-tool-cat-count" style="font-weight:400;color:var(--text-tertiary);">${openSvcCount}/${cache.mcpServices.length}</span></div>`;
+    for (const svc of visible.services) {
+      const checked = cache.excludedSet.has(svc.serverId) ? '' : 'checked';
       const countText = t('toolPanel.mcpServiceToolCount', { count: svc.tools.length });
       const names = svc.tools.map(tw => tw.name).join(', ');
       const toolRows = svc.tools.map(tw => {
@@ -977,13 +1104,24 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
     }
   }
 
+  // 过滤后无可见项
+  if (!html) {
+    html = `<div class="agent-tool-empty">${escapeHtml(t('toolPanel.noMatch'))}</div>`;
+  }
+
   container.innerHTML = html;
 
-  // 更新总数（MCP 按服务粒度计数：一个服务算一个）
-  const countEl = document.getElementById('agentToolCount');
-  if (countEl) {
-    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedToolCount + openMcpServiceCount, total: allTools.length + mcpServices.length });
+  // 同步「只看已勾选」按钮外观：激活态 + 文案切换 + 悬停提示已勾选数
+  const onlyBtn = document.getElementById('agentToolSelectedOnlyBtn');
+  if (onlyBtn) {
+    onlyBtn.classList.toggle('active', cache.selectedOnly);
+    onlyBtn.textContent = t(cache.selectedOnly ? 'agentEditor.showAllTools' : 'agentEditor.selectedOnlyFilter');
+    const selToolCount = cache.allTools.filter(tt => cache.selectedSet.has(tt.id)).length;
+    onlyBtn.title = t('agentToolFilter.selectedCountHint', { count: selToolCount + openSvcCount });
   }
+
+  // 更新总数（MCP 按服务粒度计数：一个服务算一个）
+  updateAgentToolCounts();
 }
 
 /**
@@ -1002,33 +1140,26 @@ function toggleMcpServiceToolList(serverId, btn) {
 }
 
 /**
- * 获取当前选中的工具 ID 列表
+ * 获取当前选中的工具 ID 列表（读渲染缓存而非 DOM：被过滤隐藏的行无 checkbox）
  */
 function getSelectedToolIds() {
-  const container = document.getElementById('agentToolList');
-  if (!container) return null;
-  // 仅常规工具（带 data-tool-id）；MCP 服务行由 getSelectedMcpExcludedServerIds 读取
-  const checkboxes = container.querySelectorAll('input[type="checkbox"][data-tool-id]:checked');
-  const ids = [];
-  checkboxes.forEach(cb => ids.push(cb.value));
+  const cache = agentToolRenderCache;
+  const known = cache.allTools.filter(tool => cache.selectedSet.has(tool.id)).map(tool => tool.id);
+  const knownSet = new Set(known);
+  // 保留勾选集合中当前不可渲染的 ID（如代理离线时的知识库工具），保存时不丢勾选
+  const retained = [...cache.selectedSet].filter(id => !knownSet.has(id));
+  const ids = [...known, ...retained];
   return ids.length > 0 ? ids : null;
 }
 
 /**
- * 获取 MCP 服务排除列表（编辑器层 deny-list：未勾选 = 排除）
+ * 获取 MCP 服务排除列表（编辑器层 deny-list：未勾选 = 排除；读渲染缓存）
  * @returns {string[]|undefined} 未渲染 MCP 服务行时返回 undefined（保持原值不变）
  */
 function getSelectedMcpExcludedServerIds() {
-  const container = document.getElementById('agentToolList');
-  if (!container) return undefined;
-  const serviceItems = container.querySelectorAll('.agent-mcp-service-item');
-  if (serviceItems.length === 0) return undefined;
-  const excluded = [];
-  serviceItems.forEach(item => {
-    const cb = item.querySelector('input[type="checkbox"]');
-    if (cb && !cb.checked) excluded.push(item.dataset.mcpServerId);
-  });
-  return excluded;
+  const cache = agentToolRenderCache;
+  if (cache.mcpServices.length === 0) return undefined;
+  return cache.mcpServices.filter(svc => cache.excludedSet.has(svc.serverId)).map(svc => svc.serverId);
 }
 
 /**
