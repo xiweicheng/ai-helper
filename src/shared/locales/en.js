@@ -476,8 +476,10 @@ export default {
     deleteTitle: 'Delete this assistant',
     deleteAgentTitle: 'Delete this assistant',
     toolSearchPlaceholder: 'Search tool name or description',
+    skillSearchPlaceholder: 'Search skill name or description',
     selectedOnlyFilter: 'Selected only',
     showAllTools: 'Show all tools',
+    showAllSkills: 'Show all skills',
   },
 
   // Command audit log

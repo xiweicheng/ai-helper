@@ -470,7 +470,7 @@ function initAgentModalEvents() {
     syncSearchClearBtn();
   }
 
-  // 技能快捷操作按钮
+  // 技能快捷操作按钮（与工具区块同模式：全选/取消作用于缓存全量，过滤态单独切换）
   const skillActions = document.getElementById('agentSkillActions');
   if (skillActions) {
     skillActions.addEventListener('click', (e) => {
@@ -479,7 +479,42 @@ function initAgentModalEvents() {
       const action = btn.dataset.action;
       if (action === 'selectAllSkills') selectAllSkills();
       else if (action === 'deselectAllSkills') deselectAllSkills();
+      else if (action === 'toggleSelectedOnlySkills') {
+        // 只看已勾选：只切过滤态不改勾选集合
+        agentSkillRenderCache.selectedOnly = !agentSkillRenderCache.selectedOnly;
+        renderAgentSkillListFromCache();
+      }
     });
+  }
+
+  // 技能搜索框：150ms 防抖后按名称/描述过滤可见行；有输入时显示右侧一键清除
+  const skillSearchInput = document.getElementById('agentSkillSearchInput');
+  if (skillSearchInput) {
+    let skillSearchTimer = null;
+    const skillClearBtn = document.getElementById('agentSkillSearchClear');
+    // 显式设 block/none：隐藏态写在 CSS 类里，置空内联会回落类规则导致永远不显示
+    const syncSkillClearBtn = () => {
+      if (skillClearBtn) skillClearBtn.style.display = skillSearchInput.value ? 'block' : 'none';
+    };
+    skillSearchInput.addEventListener('input', () => {
+      syncSkillClearBtn();
+      clearTimeout(skillSearchTimer);
+      skillSearchTimer = setTimeout(() => {
+        agentSkillRenderCache.searchText = skillSearchInput.value;
+        renderAgentSkillListFromCache();
+      }, 150);
+    });
+    if (skillClearBtn) {
+      skillClearBtn.addEventListener('click', () => {
+        clearTimeout(skillSearchTimer);
+        skillSearchInput.value = '';
+        syncSkillClearBtn();
+        agentSkillRenderCache.searchText = '';
+        renderAgentSkillListFromCache();
+        skillSearchInput.focus();
+      });
+    }
+    syncSkillClearBtn();
   }
 
   // 工具分类标题点击：切换该分类全选/取消；MCP 服务行展开按钮：切换只读工具列表
@@ -528,11 +563,19 @@ function initAgentModalEvents() {
     });
   }
 
-  // 技能勾选变化：联动更新总计数
+  // 技能勾选变化：先同步到渲染缓存（保存/计数/过滤重渲染都以缓存为准），再联动刷新
   const skillList = document.getElementById('agentSkillList');
   if (skillList) {
     skillList.addEventListener('change', (e) => {
-      if (e.target.matches('input[type="checkbox"]')) {
+      if (!e.target.matches('input[type="checkbox"]')) return;
+      const cache = agentSkillRenderCache;
+      cache.inheritMode = false;
+      if (e.target.checked) cache.selectedSet.add(e.target.value);
+      else cache.selectedSet.delete(e.target.value);
+      // 「只看已勾选」下取消勾选会让行退出视图，需重渲染；否则只刷新计数
+      if (cache.selectedOnly && !e.target.checked) {
+        renderAgentSkillListFromCache();
+      } else {
         updateAgentSkillCount();
       }
     });
@@ -687,15 +730,17 @@ function deselectAllTools() {
 }
 
 function selectAllSkills() {
-  const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
-  checkboxes.forEach(cb => { cb.checked = true; });
-  updateAgentSkillCount();
+  const cache = agentSkillRenderCache;
+  cache.inheritMode = false;
+  cache.skills.forEach(skill => cache.selectedSet.add(skill.name));
+  renderAgentSkillListFromCache();
 }
 
 function deselectAllSkills() {
-  const checkboxes = document.querySelectorAll('#agentSkillList input[type="checkbox"]');
-  checkboxes.forEach(cb => { cb.checked = false; });
-  updateAgentSkillCount();
+  const cache = agentSkillRenderCache;
+  cache.inheritMode = false;
+  cache.selectedSet.clear();
+  renderAgentSkillListFromCache();
 }
 
 /**
@@ -767,16 +812,14 @@ function updateAgentToolCounts() {
 }
 
 /**
- * 根据当前勾选状态刷新技能总计数
+ * 基于渲染缓存刷新技能总计数（inheritMode 下展示「全部继承」语义：已选=总数）
  */
 function updateAgentSkillCount() {
-  const container = document.getElementById('agentSkillList');
   const countEl = document.getElementById('agentSkillCount');
-  if (!container || !countEl) return;
-
-  const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-  const total = checkboxes.length;
-  const selected = container.querySelectorAll('input[type="checkbox"]:checked').length;
+  if (!countEl) return;
+  const cache = agentSkillRenderCache;
+  const total = cache.skills.length;
+  const selected = cache.inheritMode ? total : cache.selectedSet.size;
   countEl.textContent = t('agentConfig.selectedTotalCount', { selected, total });
 }
 
@@ -1163,8 +1206,20 @@ function getSelectedMcpExcludedServerIds() {
 }
 
 /**
- * 渲染技能选择列表
- * @param {string[]|null} selectedSkillNames - 已选技能名称列表，null 表示全部未选
+ * 技能渲染缓存：与 agentToolRenderCache 同模式——过滤会隐藏 DOM 行，
+ * 勾选状态/过滤态必须以缓存为准，保存时也从缓存读取，不依赖 DOM
+ */
+const agentSkillRenderCache = {
+  skills: [],
+  selectedSet: new Set(),
+  searchText: '',
+  selectedOnly: false,
+  inheritMode: false,
+};
+
+/**
+ * 渲染技能选择列表（构建渲染缓存并重置过滤态，再按缓存渲染）
+ * @param {string[]|null} selectedSkillNames - 已选技能名称列表，null 表示全部继承（未交互态）
  */
 async function renderAgentSkillSelector(selectedSkillNames) {
   const container = document.getElementById('agentSkillList');
@@ -1175,42 +1230,80 @@ async function renderAgentSkillSelector(selectedSkillNames) {
     skills = await getEnabledSkills();
   } catch { /* ignore */ }
 
-  const selectedSet = new Set(selectedSkillNames || []);
-  const selectedCount = selectedSkillNames ? selectedSkillNames.length : skills.length;
-  const totalCount = skills.length;
+  const cache = agentSkillRenderCache;
+  cache.skills = skills;
+  cache.selectedSet = new Set(selectedSkillNames || []);
+  cache.searchText = '';
+  cache.selectedOnly = false;
+  cache.inheritMode = selectedSkillNames === null;
 
-  if (skills.length === 0) {
-    container.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px;text-align:center;">${t('agentMgr.noSkillsHint')}</div>`;
-    const countEl = document.getElementById('agentSkillCount');
-    if (countEl) countEl.textContent = '(0)';
-    return;
-  }
+  const searchInput = document.getElementById('agentSkillSearchInput');
+  if (searchInput) searchInput.value = '';
+  const searchClearBtn = document.getElementById('agentSkillSearchClear');
+  if (searchClearBtn) searchClearBtn.style.display = 'none';
 
-  container.innerHTML = skills.map(skill => {
-    const checked = selectedSet.has(skill.name) ? 'checked' : '';
-    return `
-      <label class="agent-tool-item">
-        <input type="checkbox" value="${escapeAttr(skill.name)}" ${checked}>
-        <span class="agent-tool-name" title="${escapeAttr(skill.name)}">${escapeHtml(skill.name)}</span>
-        <span class="agent-tool-desc" title="${escapeAttr(skill.description || '')}">${escapeHtml((skill.description || '').substring(0, 40))}${(skill.description || '').length > 40 ? '...' : ''}</span>
-      </label>`;
-  }).join('');
-
-  const countEl = document.getElementById('agentSkillCount');
-  if (countEl) {
-    countEl.textContent = t('agentConfig.selectedTotalCount', { selected: selectedCount, total: totalCount });
-  }
+  renderAgentSkillListFromCache();
 }
 
 /**
- * 获取当前选中的技能名称列表
+ * 按渲染缓存重新渲染技能列表（应用搜索 + 只看已勾选过滤）
+ * 过滤复用 filterAgentToolEntries：技能以名称作为 ID 口径
+ */
+function renderAgentSkillListFromCache() {
+  const container = document.getElementById('agentSkillList');
+  if (!container) return;
+
+  const cache = agentSkillRenderCache;
+
+  if (cache.skills.length === 0) {
+    container.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px;text-align:center;">${t('agentMgr.noSkillsHint')}</div>`;
+  } else {
+    const entries = cache.skills.map(skill => ({ id: skill.name, name: skill.name, description: skill.description || '' }));
+    const visible = filterAgentToolEntries({
+      tools: entries,
+      services: [],
+      selectedSet: cache.selectedSet,
+      excludedSet: new Set(),
+      query: cache.searchText,
+      selectedOnly: cache.selectedOnly,
+    }).tools;
+
+    if (visible.length === 0) {
+      container.innerHTML = `<div class="agent-tool-empty">${escapeHtml(t('toolPanel.noMatch'))}</div>`;
+    } else {
+      container.innerHTML = visible.map(skill => {
+        const checked = cache.selectedSet.has(skill.name) ? 'checked' : '';
+        const desc = skill.description || '';
+        return `
+          <label class="agent-tool-item">
+            <input type="checkbox" value="${escapeAttr(skill.name)}" ${checked}>
+            <span class="agent-tool-name" title="${escapeAttr(skill.name)}">${escapeHtml(skill.name)}</span>
+            <span class="agent-tool-desc" title="${escapeAttr(desc)}">${escapeHtml(desc.substring(0, 40))}${desc.length > 40 ? '...' : ''}</span>
+          </label>`;
+      }).join('');
+    }
+  }
+
+  const onlyBtn = document.getElementById('agentSkillSelectedOnlyBtn');
+  if (onlyBtn) {
+    onlyBtn.classList.toggle('active', cache.selectedOnly);
+    onlyBtn.textContent = t(cache.selectedOnly ? 'agentEditor.showAllSkills' : 'agentEditor.selectedOnlyFilter');
+    onlyBtn.title = t('agentToolFilter.selectedCountHint', { count: cache.selectedSet.size });
+  }
+
+  updateAgentSkillCount();
+}
+
+/**
+ * 获取当前选中的技能名称列表（读渲染缓存而非 DOM：被过滤隐藏的行无 checkbox）
  */
 function getSelectedSkillNames() {
-  const container = document.getElementById('agentSkillList');
-  if (!container) return null;
-  const checkboxes = container.querySelectorAll('input[type="checkbox"]:checked');
-  const names = [];
-  checkboxes.forEach(cb => names.push(cb.value));
+  const cache = agentSkillRenderCache;
+  const known = cache.skills.filter(skill => cache.selectedSet.has(skill.name)).map(skill => skill.name);
+  const knownSet = new Set(known);
+  // 保留勾选集合中当前不可渲染的名称（如打开后技能被全局禁用），保存时不丢勾选
+  const retained = [...cache.selectedSet].filter(name => !knownSet.has(name));
+  const names = [...known, ...retained];
   return names.length > 0 ? names : null;
 }
 

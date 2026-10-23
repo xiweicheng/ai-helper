@@ -476,8 +476,10 @@ export default {
     deleteTitle: '删除此助手',
     deleteAgentTitle: '删除此助手',
     toolSearchPlaceholder: '搜索工具名称或描述',
+    skillSearchPlaceholder: '搜索技能名称或描述',
     selectedOnlyFilter: '只看已勾选',
     showAllTools: '查看全部工具',
+    showAllSkills: '查看全部技能',
   },
 
   // 命令执行审计

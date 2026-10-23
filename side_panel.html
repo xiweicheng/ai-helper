@@ -1195,9 +1195,14 @@
 
       <div style="margin-bottom: 12px;">
         <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;"><span data-i18n="agentEditor.availableSkills">可用技能</span> <span id="agentSkillCount" style="color: var(--text-tertiary);"></span><span data-i18n="agentEditor.skillsInheritAll">（不勾选则使用全部启用技能）</span></label>
-        <div id="agentSkillActions" style="display: flex; gap: 6px; margin-bottom: 6px;">
+        <div id="agentSkillActions" style="display: flex; gap: 6px; margin-bottom: 6px; align-items: center;">
           <button type="button" class="agent-tool-action-btn" data-action="selectAllSkills" data-i18n="common.selectAll">全选</button>
           <button type="button" class="agent-tool-action-btn" data-action="deselectAllSkills" data-i18n="common.deselectAll">取消全选</button>
+          <button type="button" class="agent-tool-action-btn" id="agentSkillSelectedOnlyBtn" data-action="toggleSelectedOnlySkills" data-i18n="agentEditor.selectedOnlyFilter">只看已勾选</button>
+          <div class="agent-tool-search-wrap">
+            <input type="text" id="agentSkillSearchInput" class="agent-tool-search-input" data-i18n-placeholder="agentEditor.skillSearchPlaceholder" placeholder="搜索技能名称或描述" autocomplete="off">
+            <button type="button" id="agentSkillSearchClear" class="agent-tool-search-clear" data-i18n-title="toolPanel.clearSearch" title="清除搜索">✕</button>
+          </div>
         </div>
         <div id="agentSkillList" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: 6px; padding: 8px;"></div>
       </div>
