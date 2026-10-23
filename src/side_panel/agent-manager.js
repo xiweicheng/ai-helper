@@ -883,16 +883,18 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
     mcpTools = result.mcpTools || [];
   } catch { /* ignore */ }
 
-  // 读取全局开关和 Agent 连接状态
-  const { mcpEnabled, skillsEnabled } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled']);
+  // 读取全局开关、已注册的知识库（RAG）工具和 Agent 连接状态
+  const { mcpEnabled, skillsEnabled, ragTools } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled', 'ragTools']);
   const agentConnected = state.agentPlatform?.connected === true;
 
-  // 常规工具（不含 MCP：MCP 按服务级开关整体开放/关闭）
-  let allTools = [...BUILTIN_TOOLS];
+  // 常规工具（内置 + 知识库 RAG，不含 MCP：MCP 按服务级开关整体开放/关闭）
+  // 必须并入 ragTools：与侧边栏工具配置弹窗 getAgentFilteredTools 同口径，否则
+  // 自定义助手无法勾选知识库工具，保存的 toolIds 不含其 ID，运行期会被过滤排除
+  let allTools = [...BUILTIN_TOOLS, ...(ragTools || [])];
 
-  // Agent 未连接时，隐藏所有 agent_* 工具
+  // Agent 未连接时，隐藏依赖代理服务的工具（agent_* 与知识库 knowledge_*，与弹窗同口径）
   if (!agentConnected) {
-    allTools = allTools.filter(t => !t.id.startsWith('agent_'));
+    allTools = allTools.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('knowledge_'));
   }
   // Skill 全局开关关闭时，隐藏 Skill 相关工具
   if (skillsEnabled === false) {

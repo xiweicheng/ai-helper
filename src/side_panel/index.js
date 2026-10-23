@@ -3242,7 +3242,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
     });
     inputWrapper.addEventListener('drop', async (e) => {
-      e.preventDefault();
       e.stopPropagation();
       dragCounter = 0;
       inputWrapper.classList.remove('drag-over');
@@ -3250,6 +3249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 检查是否从工作目录面板拖过来的文件/目录
       const workspaceData = e.dataTransfer.getData('application/x-workspace-file');
       if (workspaceData) {
+        e.preventDefault();
         try {
           const { path } = JSON.parse(workspaceData);
           if (path) {
@@ -3264,6 +3264,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 系统文件拖拽：图片按截图问答模式处理（缩略图），其他文件走文件问答
       const files = Array.from(e.dataTransfer.files);
       if (files.length > 0) {
+        e.preventDefault();
         const images = files.filter(f => f.type.startsWith('image/'));
         const others = files.filter(f => !f.type.startsWith('image/'));
         if (images.length > 0) {
@@ -3280,6 +3281,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         if (others.length > 0) {
           attachFiles(others);
+        }
+        return;
+      }
+
+      // 纯文本拖拽：不阻止默认行为，交由浏览器原生插入到输入框光标落点；
+      // 若落点在输入框内的非 textarea 区域（工具栏等），则手动在光标处插入兜底，
+      // 避免文本被误当作文件上传而丢失
+      const droppedText = e.dataTransfer.getData('text/plain');
+      if (droppedText) {
+        e.preventDefault();
+        if (userInput) {
+          userInput.focus();
+          const start = userInput.selectionStart ?? userInput.value.length;
+          const end = userInput.selectionEnd ?? userInput.value.length;
+          userInput.value = userInput.value.slice(0, start) + droppedText + userInput.value.slice(end);
+          const caret = start + droppedText.length;
+          userInput.selectionStart = userInput.selectionEnd = caret;
+          userInput.dispatchEvent(new Event('input'));
         }
       }
     });
