@@ -68,6 +68,26 @@ describe('describeImages', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(out[3]).toBeUndefined();
   });
+
+  it('并发转述：两个请求在任一返回前都已发出；onEach 逐张回调', async () => {
+    store.apiBase = 'https://x.example/v1';
+    store.modelName = 'm';
+    const pending = [];
+    fetch.mockImplementation(() => new Promise((resolve) => {
+      pending.push((content) => resolve({ ok: true, json: async () => ({ choices: [{ message: { content } }] }) }));
+    }));
+    const imgs = [{ index: 1, dataUrl: 'data:,' }, { index: 2, dataUrl: 'data:,' }];
+    const seen = [];
+    const p = describeImages(imgs, 2, (idx) => seen.push(idx));
+    await new Promise((r) => setTimeout(r, 0)); // 让 getVisionConfig 与并发发起完成
+    expect(pending.length).toBe(2); // 串行则此处只有 1
+    pending[1]('B'); pending[0]('A'); // 乱序完成
+    const out = await p;
+    expect(out[1]).toBe('A');
+    expect(out[2]).toBe('B');
+    expect(seen).toContain(1);
+    expect(seen).toContain(2);
+  });
 });
 
 describe('compressForVision', () => {

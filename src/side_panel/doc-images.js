@@ -438,21 +438,27 @@ export async function getVisionConfig() {
 }
 
 /**
- * 前 count 张图送视觉模型转述；失败置 null 不抛
+ * 前 count 张并发送视觉模型转述；失败置 null 不抛
  * @param {Array<{index: number, dataUrl?: string}>} images
  * @param {number} [count]
+ * @param {(index:number, desc:string|null)=>void} [onEach] 每张完成即回调（乱序），供上层增量写入、发送不必等全部
  * @returns {Promise<Record<number, string|null>>}
  */
-export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_LIMIT) {
+export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_LIMIT, onEach) {
   const out = {};
   if (!images || images.length === 0) return out;
   const { apiBase, apiKey, model } = await getVisionConfig();
   const targets = images.filter((im) => im.dataUrl).slice(0, count);
+  const report = (index, desc) => {
+    out[index] = desc;
+    if (onEach) { try { onEach(index, desc); } catch { /* 回调异常不影响转述 */ } }
+  };
   if (!apiBase) {
-    targets.forEach((im) => { out[im.index] = null; });
+    targets.forEach((im) => report(im.index, null));
     return out;
   }
-  for (const img of targets) {
+  // 前 count 张并发转述（把最坏 N×60s 压到约 60s）；每张完成即回调，供上层增量使用
+  await Promise.all(targets.map(async (img) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
     try {
@@ -475,14 +481,14 @@ export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_L
         useStream: await readStreamEnabledFromStorage(),
         signal: controller.signal,
       });
-      out[img.index] = ok ? (data.choices?.[0]?.message?.content || null) : null;
+      report(img.index, ok ? (data.choices?.[0]?.message?.content || null) : null);
     } catch (err) {
       logger.warn('doc-images: describe failed', String(err?.message || err));
-      out[img.index] = null;
+      report(img.index, null);
     } finally {
       clearTimeout(timer);
     }
-  }
+  }));
   return out;
 }
 

@@ -14,7 +14,7 @@ vi.mock('../../src/side_panel/doc-images.js', () => ({
 const { runImagePipeline, buildFileContentText, getAgentConnectionInfo } = await import('../../src/side_panel/file-extract.js');
 const state = (await import('../../src/side_panel/state.js')).default;
 const { setLanguage } = await import('../../src/shared/i18n.js');
-const { extractDocxImagesFromFile, extractXlsxImagesFromFile } = await import('../../src/side_panel/doc-images.js');
+const { extractDocxImagesFromFile, extractXlsxImagesFromFile, describeImages } = await import('../../src/side_panel/doc-images.js');
 
 beforeEach(() => {
   setLanguage('zh', false);
@@ -104,6 +104,16 @@ describe('runImagePipeline', () => {
     const entry = { name: 'a.docx', status: 'done' };
     await runImagePipeline(entry, new File([''], 'a.docx'), 'docx', false);
     expect(entry.imageStatus).toBe('error');
+  });
+
+  it('传入 onEach 增量写入 imageDescriptions（发送不等全部转述完）', async () => {
+    let captured;
+    describeImages.mockImplementationOnce(async (ims, cnt, onEach) => { captured = onEach; return {}; });
+    const entry = { name: 'a.docx', status: 'done' };
+    await runImagePipeline(entry, new File([''], 'a.docx'), 'docx', false);
+    expect(typeof captured).toBe('function');
+    captured(3, '半程描述'); // 模拟某张先完成
+    expect(entry.imageDescriptions[3]).toBe('半程描述');
   });
 });
 

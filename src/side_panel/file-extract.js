@@ -312,7 +312,14 @@ export async function runImagePipeline(fileEntry, file, category, isAgentMode) {
     }
     if (!fileEntry.images || fileEntry.images.length === 0) { fileEntry.imageStatus = 'none'; return; }
     fileEntry.imageStatus = 'extracted';
-    fileEntry.imageDescriptions = await describeImages(fileEntry.images.filter(im => im.dataUrl), VISION_CONSTANTS.DESCRIBE_LIMIT);
+    // 增量写入：每张转述完成即落入 imageDescriptions，发送时可直接用已完成部分，不必等全部
+    fileEntry.imageDescriptions = {};
+    const descMap = await describeImages(
+      fileEntry.images.filter((im) => im.dataUrl),
+      VISION_CONSTANTS.DESCRIBE_LIMIT,
+      (idx, d) => { fileEntry.imageDescriptions[idx] = d; },
+    );
+    fileEntry.imageDescriptions = { ...fileEntry.imageDescriptions, ...descMap };
     fileEntry.imageStatus = 'described';
   } catch (err) {
     logger.warn('[FileExtract] image pipeline failed (degrade):', file.name, err.message);
@@ -342,6 +349,7 @@ export async function processFile(file, index) {
         fileEntry.agentPath = result.path;
         fileEntry.text = result.text || '';
         fileEntry.status = 'done';
+        renderFilePreviews();
         await runImagePipeline(fileEntry, file, category, true);
         renderFilePreviews();
         return;
@@ -360,6 +368,7 @@ export async function processFile(file, index) {
 
     fileEntry.text = await extractFileContent(file);
     fileEntry.status = 'done';
+    renderFilePreviews();
     await runImagePipeline(fileEntry, file, category, false);
   } catch (err) {
     logger.error('[FileExtract] file extract failed:', file.name, err);
