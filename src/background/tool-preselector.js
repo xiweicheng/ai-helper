@@ -3,6 +3,7 @@
 import { getStoredConfig } from './config.js';
 import { PRESELECT_MIN_TOOL_COUNT } from './constants.js';
 import { fetchWithRetry } from './tool-executor.js';
+import { callChatCompletion, resolveUseStream } from '../shared/chat-client.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -371,29 +372,29 @@ export async function preselectTools(messages, model, tools, apiParams = {}, cal
     const requestBody = {
       model: model || preselectConfig.modelName,
       messages: apiMessages,
-      stream: false,
       temperature: 0.1,
       max_tokens: Math.min(4096, Math.max(1024, totalCount * 30)),
       response_format: { type: 'json_object' }
     };
 
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
+    // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
+    const { ok, status, data } = await callChatCompletion(apiUrl, {
       headers: {
         'Authorization': `Bearer ${preselectConfig.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(requestBody)
-    }, preselectConfig.reactConfig.apiTimeout, preselectConfig.reactConfig.apiRetryCount, preselectConfig.reactConfig.apiRetryBaseDelay);
+      body: requestBody,
+      useStream: resolveUseStream(preselectConfig),
+      fetchImpl: (url, options) => fetchWithRetry(url, options, preselectConfig.reactConfig.apiTimeout, preselectConfig.reactConfig.apiRetryCount, preselectConfig.reactConfig.apiRetryBaseDelay),
+    });
 
     const duration = Date.now() - startTime;
 
-    if (!response.ok) {
+    if (!ok) {
       logger.warn('[ToolPreselector] API request failed,using alltool');
-      return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonApiFailed', { status: response.status }), duration })] };
+      return { type: 'tools', tools, executionLog: [createEntry('failed', { error: t('preselector.reasonApiFailed', { status }), duration })] };
     }
 
-    const data = await response.json();
     const rawContent = (data.choices?.[0]?.message?.content || '').trim();
 
     logger.debug('[ToolPreselector] largemodelreturn:', rawContent);

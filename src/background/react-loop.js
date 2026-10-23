@@ -1123,13 +1123,18 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
   
-  // 子任务禁用流式输出（子任务的流式消息会干扰主任务的流式 UI 状态）
-  // 子任务的执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示
   // 同时兼容 plan_task 子任务（taskContext.subtaskId）和 dispatch_task 子 Agent（taskContext.type === 'subagent'）
   const isSubtask = taskContext && (taskContext.subtaskId || taskContext.type === 'subagent');
-  const streamConfig = isSubtask
-    ? { ...config.streamConfig, streamEnabled: false }
-    : config.streamConfig;
+  // API 协议流式跟随总开关：部分企业网关会在非流式请求上追加 stream_options，
+  // 导致模型端报 stream/stream_options 不匹配；子任务若被强制非流式则同样必挂，
+  // 故协议层（request.stream / SSE 读取）父/子任务统一由总开关控制
+  const apiStreamEnabled = config.streamConfig?.streamEnabled !== false;
+  // UI 流式推送：子任务仍禁用（子任务的 chunk 会干扰主任务的流式 UI 状态，
+  // 执行日志通过 onLogUpdate 回调传递给父任务，无需流式显示）
+  const uiStreamEnabled = apiStreamEnabled && !isSubtask;
+  const streamConfig = uiStreamEnabled
+    ? config.streamConfig
+    : { ...config.streamConfig, streamEnabled: false };
 
   logger.debug('[Background] reactLoop configuration:', reactConfig);
   logger.debug('[Background] reactLoop received tool column table:', tools.map(t => t.function.name), 'count:', tools.length);
@@ -1388,7 +1393,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
             const { id, ...clean } = t;
             return clean;
           }),
-          stream: streamConfig.streamEnabled !== false
+          stream: apiStreamEnabled
         };
         
         // 流式模式下请求包含 usage 统计（用于 Token 消耗展示）
@@ -1419,8 +1424,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           abortController?.abort();
         }, outerTimeoutMs);
 
-        // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态
-        if (streamConfig.streamEnabled !== false) {
+        // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态（子任务不推送 UI）
+        if (uiStreamEnabled) {
           chrome.runtime.sendMessage({
             type: 'STREAM_START',
             sessionId: sessionId,
@@ -1457,10 +1462,14 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           throw new Error(`HTTP error! status: ${fetchResponse.status}, message: ${errorText.substring(0, 500)}`);
         }
 
-        // 流式模式：读取 SSE 流
-        if (streamConfig.streamEnabled !== false && fetchResponse.body) {
-          logger.debug('[Background] enteringstreamingmode,streamEnabled:', streamConfig.streamEnabled);
-          const streamController = new StreamController(sessionId, streamConfig, { callId, preStarted: true });
+        // 流式模式：读取 SSE 流（协议层按总开关；子任务用静默 sendFn 阻断 UI 消息）
+        if (apiStreamEnabled && fetchResponse.body) {
+          logger.debug('[Background] enteringstreamingmode,streamEnabled:', apiStreamEnabled, 'uiPush:', uiStreamEnabled);
+          const streamController = new StreamController(sessionId, streamConfig, {
+            callId,
+            preStarted: true,
+            sendFn: uiStreamEnabled ? undefined : () => Promise.resolve(),
+          });
           const streamResult = await readSSEStream(fetchResponse.body.getReader(), streamController, abortSignal);
           logger.debug('[Background] streaming API responsecomplete,content length:', streamResult.content.length, 'tool_calls:', streamResult.toolCalls?.length, 'usage:', streamResult.usage);
           

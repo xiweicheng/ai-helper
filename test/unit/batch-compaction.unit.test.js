@@ -9,6 +9,7 @@ vi.mock('../../src/background/tool-executor.js', () => ({
 }));
 
 const config = { apiBase: 'https://api.test/v1', apiKey: 'sk-test', modelName: 'm1' };
+const configStreamOff = { ...config, streamConfig: { streamEnabled: false } };
 
 function okResponse(content) {
   return { ok: true, json: () => Promise.resolve({ choices: [{ message: { content } }] }) };
@@ -48,7 +49,10 @@ describe('summarizeRoundsBatch 批量压缩', () => {
     expect(fetchWithRetryMock).toHaveBeenCalledTimes(1); // 批量：仅一次 LLM 调用
     const [, opts] = fetchWithRetryMock.mock.calls[0];
     const body = JSON.parse(opts.body);
-    expect(body.stream).toBe(false);
+    // 流式总开关跟随（chat-client 收口）：未配置视为开启 → stream:true + include_usage；
+    // 测试替身无 SSE body 时回落 JSON 解析，不影响模板断言
+    expect(body.stream).toBe(true);
+    expect(body.stream_options).toEqual({ include_usage: true });
     const prompt = body.messages[0].content;
     // 结构化模板四段
     for (const section of ['## Task goal', '## Completed', '## Key facts', '## Open issues']) {
@@ -60,6 +64,17 @@ describe('summarizeRoundsBatch 批量压缩', () => {
     expect(prompt).toContain('[Round 1]');
     expect(prompt).toContain('web_search');
     expect(prompt).toContain('fetch_url');
+  });
+
+  test('总开关关闭 → 请求体 stream:false 且不带 stream_options', async () => {
+    fetchWithRetryMock.mockClear();
+    fetchWithRetryMock.mockResolvedValue(okResponse('## Task goal\ngoal'));
+
+    await summarizeRoundsBatch(sampleMessages, '', configStreamOff, 'm1');
+
+    const body = JSON.parse(fetchWithRetryMock.mock.calls[0][1].body);
+    expect(body.stream).toBe(false);
+    expect(body.stream_options).toBeUndefined();
   });
 
   test('API 非 ok 响应 → 返回 null（调用方降级权重裁剪）', async () => {

@@ -4,6 +4,7 @@
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { decodeSecret } from '../shared/secret.js';
+import { callChatCompletion, readStreamEnabledFromStorage } from '../shared/chat-client.js';
 
 registerTranslations('zh', {
   docImages: {
@@ -457,14 +458,12 @@ export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_L
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-      const resp = await fetch(`${apiBase}/chat/completions`, {
-        method: 'POST',
-        signal: controller.signal,
+      // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
+      const { ok, data } = await callChatCompletion(`${apiBase}/chat/completions`, {
         headers,
-        body: JSON.stringify({
+        body: {
           model,
           max_tokens: 800,
-          stream: false,
           messages: [{
             role: 'user',
             content: [
@@ -472,9 +471,11 @@ export async function describeImages(images, count = VISION_CONSTANTS.DESCRIBE_L
               { type: 'image_url', image_url: { url: img.dataUrl, detail: 'auto' } },
             ],
           }],
-        }),
+        },
+        useStream: await readStreamEnabledFromStorage(),
+        signal: controller.signal,
       });
-      out[img.index] = resp.ok ? ((await resp.json()).choices?.[0]?.message?.content || null) : null;
+      out[img.index] = ok ? (data.choices?.[0]?.message?.content || null) : null;
     } catch (err) {
       logger.warn('doc-images: describe failed', String(err?.message || err));
       out[img.index] = null;

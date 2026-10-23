@@ -5,6 +5,7 @@
 // 旧单轮摘要 summarizeRound 已随 P1-6 批量压缩接入后无调用方而移除。
 
 import { fetchWithRetry } from './tool-executor.js';
+import { callChatCompletion, resolveUseStream } from '../shared/chat-client.js';
 import logger from '../shared/logger.js';
 import { truncateByTokens } from '../shared/token-counter.js';
 
@@ -207,28 +208,29 @@ Total length under 500 words. Do not invent information not present above.`;
   try {
     const apiUrl = `${config.apiBase}/chat/completions`;
 
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
+    // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
+    const { ok, status, data } = await callChatCompletion(apiUrl, {
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
+      body: {
         model: model || config.modelName,
         messages: [{ role: 'user', content: summaryPrompt }],
-        stream: false,
         max_tokens: BATCH_SUMMARY_MAX_TOKENS,
         temperature: 0.1
-      }),
-      signal: options.signal
-    }, options.timeout || 30000, 1, 500); // 压缩只重试 1 次，快速失败降级
+      },
+      useStream: resolveUseStream(config),
+      signal: options.signal,
+      // 压缩只重试 1 次，快速失败降级
+      fetchImpl: (url, options_) => fetchWithRetry(url, options_, options.timeout || 30000, 1, 500),
+    });
 
-    if (!response.ok) {
-      logger.warn(`[ContextSummarizer] batch summary API request failed: ${response.status}`);
+    if (!ok) {
+      logger.warn(`[ContextSummarizer] batch summary API request failed: ${status}`);
       return null;
     }
 
-    const data = await response.json();
     const summary = (data.choices?.[0]?.message?.content || '').trim();
 
     if (!summary) {

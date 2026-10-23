@@ -2,6 +2,7 @@
 // 用户手动触发"压缩上下文"时，将由侧边栏清洗后的对话素材交给当前模型生成结构化摘要；
 // 失败不静默降级（用户显式操作，需明确反馈）。
 import { fetchWithRetry } from './tool-executor.js';
+import { callChatCompletion, resolveUseStream } from '../shared/chat-client.js';
 import { getStoredConfig } from './config.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { buildCompactionPrompt } from '../shared/compaction-prompt.js';
@@ -43,26 +44,26 @@ export async function generateCompactionSummary({ material, model, sessionId } =
   const useModel = model || config.modelName;
 
   try {
-    const response = await fetchWithRetry(apiUrl, {
-      method: 'POST',
+    // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
+    const { ok, status, data } = await callChatCompletion(apiUrl, {
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
+      body: {
         model: useModel,
         messages: [{ role: 'user', content: prompt }],
-        stream: false,
         max_tokens: COMPACT_MAX_TOKENS,
         temperature: 0.2
-      })
-    }, COMPACT_TIMEOUT_MS, 1, 1000); // 用户手动触发，快速失败并明确报错
+      },
+      useStream: resolveUseStream(config),
+      fetchImpl: (url, options) => fetchWithRetry(url, options, COMPACT_TIMEOUT_MS, 1, 1000), // 用户手动触发，快速失败并明确报错
+    });
 
-    if (!response.ok) {
-      logger.warn(`[ContextCompactor] request failed: ${response.status}`);
-      return { success: false, error: `http_${response.status}` };
+    if (!ok) {
+      logger.warn(`[ContextCompactor] request failed: ${status}`);
+      return { success: false, error: `http_${status}` };
     }
-    const data = await response.json();
     const summary = (data.choices?.[0]?.message?.content || '').trim();
     if (!summary) {
       return { success: false, error: 'empty_summary' };
