@@ -667,7 +667,7 @@ export default {
     search_in_page: 'Find text in current page content',
     iframe_content: 'Get content of an iframe in the page',
     scroll_collect: 'Scroll and collect content from infinite scroll/lazy-loaded pages',
-    read_document_image: 'Deep-read an attached document image via vision model',
+    read_image: 'Deep-read an image (session document attachment or any agent path) via vision model',
     notify: 'Show browser notification',
     clipboard: 'Clipboard operations (copy/paste/get selection)',
     download_file: 'Download file to local',

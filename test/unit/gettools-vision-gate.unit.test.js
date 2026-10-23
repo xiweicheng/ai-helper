@@ -1,4 +1,4 @@
-// gettools-vision-gate.unit.test.js - 图片识别总开关对 read_document_image 的按需下发门控
+// gettools-vision-gate.unit.test.js - 图片识别总开关对 read_image 的按需下发门控
 // 背景：工具清单按需传递以减少 token 消耗；开关关闭时附件抠图链路不产出图片，
 // 快照永为空、工具必然失败，故未开启图片识别时不应下发该工具。
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -74,29 +74,29 @@ beforeEach(() => {
 
 const ids = () => getTools().then((tools) => tools.map((t) => t.function.name));
 
-describe('read_document_image 按图片识别开关按需下发', () => {
+describe('read_image 按图片识别开关按需下发', () => {
   it('开关关闭：不下发（减少 token 消耗）', async () => {
     const list = await ids();
-    expect(list).not.toContain('read_document_image');
+    expect(list).not.toContain('read_image');
   });
 
   it('开关开启：下发', async () => {
     store.enableImageInput = true;
     const list = await ids();
-    expect(list).toContain('read_document_image');
+    expect(list).toContain('read_image');
   });
 
   it('开关开启但用户曾显式保存勾选且未含该工具：尊重勾选不下发', async () => {
     store.enableImageInput = true;
-    store.enabledTools = BUILTIN_TOOLS.map((t) => t.id).filter((id) => id !== 'read_document_image');
+    store.enabledTools = BUILTIN_TOOLS.map((t) => t.id).filter((id) => id !== 'read_image');
     const list = await ids();
-    expect(list).not.toContain('read_document_image');
+    expect(list).not.toContain('read_image');
   });
 
   it('门控只影响该工具：开关关闭时其余默认工具不受牵连', async () => {
     const off = await ids();
     store.enableImageInput = true;
     const on = await ids();
-    expect(on.filter((id) => !off.includes(id))).toEqual(['read_document_image']);
+    expect(on.filter((id) => !off.includes(id))).toEqual(['read_image']);
   });
 });

@@ -234,6 +234,8 @@ registerTranslations('zh', {
     docImageVisionNotConfigured: '未配置图片识别 API（可在设置中开启图片识别并配置端点），无法深读图片',
     docImageVisionFailed: '图片识别 API 调用失败：{detail}',
     docImageNoAttachment: '无',
+    docImageNoSource: '请提供图片来源：文档附件（file + image 序号）或代理端图片路径（path），二选一',
+    docImagePathFailed: '读取代理端图片失败（Agent 不在线，或路径不在工作目录/已授权范围内）：{path}',
     docImageDeepReadPrompt: '详细完整描述图片内容，逐项转录图中全部可读文字与数值。',
     docImageDeepReadPromptQuestion: '请结合以下问题重点分析图片，并逐项转录图中相关可读文字与数值。问题：{question}',
   },
@@ -449,6 +451,8 @@ registerTranslations('en', {
     docImageVisionNotConfigured: 'Image recognition API is not configured (enable it in settings and set an endpoint), cannot deep-read the image',
     docImageVisionFailed: 'Image recognition API call failed: {detail}',
     docImageNoAttachment: 'none',
+    docImageNoSource: 'Provide an image source: a document attachment (file + image index) or an agent-side image path (path) — one of the two',
+    docImagePathFailed: 'Failed to read the agent-side image (Agent offline, or path not within the working dir / allowed scope): {path}',
     docImageDeepReadPrompt: 'Describe the image in full detail, transcribing every readable text and numeric value item by item.',
     docImageDeepReadPromptQuestion: 'Analyze the image focusing on the question below, transcribing related readable text and numeric values item by item. Question: {question}',
   },
@@ -1241,8 +1245,8 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         .filter(tool => {
           // Agent 未连通时，隐藏所有 agent_* 工具
           if (tool.id.startsWith('agent_') && !agentConnected) return false;
-          // 图片识别总开关关闭时，不下发文档图片深读工具（附件抠图不产出图片、快照必空，按需传递省 token）
-          if (tool.id === 'read_document_image' && !visionEnabled) return false;
+          // 图片识别总开关关闭时，不下发图片深读工具（无源可读，按需传递省 token）
+          if (tool.id === 'read_image' && !visionEnabled) return false;
           // 配对代理不足 2 个时，隐藏代理管理工具
           if (tool.id === 'manage_agent' && pairedCount < 2) return false;
           // Skill 全局开关关闭时，过滤掉 Skill 工具
@@ -2068,42 +2072,13 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
 /**
- * read_document_image：按需深读会话附件文档中的指定图片
- * 数据源为发送链路写入的 _docImageSnapshot 中转快照（Task 5/7）；
- * agent 来源图片经 downloadFile 现拉，local 来源直读快照 dataUrl；
- * 视觉配置回落链与 analyzeScreenshotWithVision 一致（image* → 主配置）；
- * 口径同转述链路：仅 apiBase 必需，apiKey 可选（兼容本地无鉴权视觉服务）。
- * 深读文本属不可信内容，经现有 tool message 通道回注，不新增拼接格式。
+ * 图片视觉分析公共尾段：压缩 → 配置回落链 → 视觉调用 → 文本返回。
+ * dataUrl 已就绪；question 可选（省略则全量重述）。仅 apiBase 必需。
  */
-async function executeReadDocumentImage(args, toolCallId, sessionId) {
-  const store = await new Promise((r) => chrome.storage.local.get(['_docImageSnapshot'], r));
-  const snap = (store._docImageSnapshot || {})[sessionId];
-  const fileEntry = snap && snap.files ? snap.files.find((f) => f.name === args.file) : null;
-  if (!fileEntry) {
-    return makeResult(false, t('toolExec.docImageFileNotFound', { file: String(args.file), files: ((snap && snap.files) || []).map((f) => f.name).join(', ') || t('toolExec.docImageNoAttachment') }), { tool_call_id: toolCallId });
-  }
-  const images = fileEntry.images || [];
-  const img = images.find((im) => im.index === args.image);
-  if (!img) {
-    return makeResult(false, t('toolExec.docImageIndexOutOfRange', { image: String(args.image), file: String(args.file), total: String(images.length) }), { tool_call_id: toolCallId });
-  }
-
-  let dataUrl = img.dataUrl || '';
-  if (!dataUrl && img.path) {
-    // agent 来源：落盘路径现拉（跨会话仍可用）
-    const dl = await AgentClient.downloadFile(img.path);
-    if (!dl || !dl.success || !dl.content) {
-      return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
-    }
-    dataUrl = 'data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content;
-  }
-  if (!dataUrl) {
-    return makeResult(false, t('toolExec.docImageCacheLost'), { tool_call_id: toolCallId });
-  }
-
+async function analyzeImageWithVision(dataUrl, question, toolCallId) {
   const compressed = await compressImageForVision(dataUrl, 1024, 0.65) || dataUrl;
-  const prompt = args.question
-    ? t('toolExec.docImageDeepReadPromptQuestion', { question: String(args.question).slice(0, 500) })
+  const prompt = question
+    ? t('toolExec.docImageDeepReadPromptQuestion', { question: String(question).slice(0, 500) })
     : t('toolExec.docImageDeepReadPrompt');
 
   const cfg = await new Promise((r) => chrome.storage.local.get(['imageApiBase', 'imageApiKey', 'imageModelName', 'apiBase', 'apiKey', 'modelName'], r));
@@ -2147,6 +2122,57 @@ async function executeReadDocumentImage(args, toolCallId, sessionId) {
   }
 }
 
+/**
+ * read_image：按需深读图片并返回视觉模型文本分析。两个来源二选一：
+ *  - path：代理端任意图片文件（AI 生成/落盘的截图等），经 downloadFile 现拉；
+ *          越权读由代理端 /api/fs/download 的 checkPath 沙箱兜底（工作目录内永远放行）。
+ *  - file+image：会话附件文档抠出的图片，数据源为发送链路写入的 _docImageSnapshot 中转快照；
+ *          agent 来源经 downloadFile 现拉，local 来源直读快照 dataUrl。
+ * 视觉配置回落链与 analyzeScreenshotWithVision 一致（image* → 主配置）；口径同转述链路：仅 apiBase 必需。
+ * 深读文本属不可信内容，经现有 tool message 通道回注，不新增拼接格式。
+ */
+async function executeReadImage(args, toolCallId, sessionId) {
+  // 来源一：代理端任意图片路径（优先）——复用已沙箱化的 /api/fs/download，零新增网络代码
+  if (args.path && typeof args.path === 'string') {
+    const dl = await AgentClient.downloadFile(args.path);
+    if (!dl || !dl.success || !dl.content) {
+      return makeResult(false, t('toolExec.docImagePathFailed', { path: String(args.path) }), { tool_call_id: toolCallId });
+    }
+    return analyzeImageWithVision('data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content, args.question, toolCallId);
+  }
+
+  // 来源二：会话附件文档中的图片（file + image 序号）
+  if (!args.file || args.image == null) {
+    return makeResult(false, t('toolExec.docImageNoSource'), { tool_call_id: toolCallId });
+  }
+  const store = await new Promise((r) => chrome.storage.local.get(['_docImageSnapshot'], r));
+  const snap = (store._docImageSnapshot || {})[sessionId];
+  const fileEntry = snap && snap.files ? snap.files.find((f) => f.name === args.file) : null;
+  if (!fileEntry) {
+    return makeResult(false, t('toolExec.docImageFileNotFound', { file: String(args.file), files: ((snap && snap.files) || []).map((f) => f.name).join(', ') || t('toolExec.docImageNoAttachment') }), { tool_call_id: toolCallId });
+  }
+  const images = fileEntry.images || [];
+  const img = images.find((im) => im.index === args.image);
+  if (!img) {
+    return makeResult(false, t('toolExec.docImageIndexOutOfRange', { image: String(args.image), file: String(args.file), total: String(images.length) }), { tool_call_id: toolCallId });
+  }
+
+  let dataUrl = img.dataUrl || '';
+  if (!dataUrl && img.path) {
+    // agent 来源：落盘路径现拉（跨会话仍可用）
+    const dl = await AgentClient.downloadFile(img.path);
+    if (!dl || !dl.success || !dl.content) {
+      return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
+    }
+    dataUrl = 'data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content;
+  }
+  if (!dataUrl) {
+    return makeResult(false, t('toolExec.docImageCacheLost'), { tool_call_id: toolCallId });
+  }
+
+  return analyzeImageWithVision(dataUrl, args.question, toolCallId);
+}
+
 // Background 工具处理器注册表（单一数据源）
 // 新增 background 工具时：只需在 RAW_TOOLS 添加定义 + 在此注册 handler
 const TOOL_HANDLERS = {
@@ -2180,7 +2206,7 @@ const TOOL_HANDLERS = {
   manage_agent: executeManageAiAgent,
   exec_log: executeExtractExecutionLog,
   query_elements: executeSnapshotQuery,
-  read_document_image: executeReadDocumentImage,
+  read_image: executeReadImage,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）

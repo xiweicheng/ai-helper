@@ -2,6 +2,16 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-23
+
+### `read_document_image` → `read_image`：图片深读工具泛化，支持代理端任意路径
+> 需求：原工具只能读会话文档附件里的图片。升级为通用图片深读入口，新增“代理端任意图片路径”来源——AI 可用 `agent_exec` 跑系统命令（如 `screencapture`）生成截图落到工作目录，再用本工具传路径加载进视觉模型分析。方案：本轮只做代理端路径来源（远程 URL / 内置桌面截图 API 后置）。
+
+- **工具契约**：`read_document_image` 改名 `read_image`；参数改为两种**互斥来源**二选一——文档附件（`file` + `image` 序号）或代理端图片（`path`）；`required` 置空，由 handler 校验。`description`/`path` 说明明确引导：相对路径按工作目录解析、也支持绝对路径与 `~`；建议 AI 把生成的截图存到工作目录。纯插件端改动，不新增代理端代码。
+- **Handler（`tool-executor.js`）**：抽出公共尾段 `analyzeImageWithVision(dataUrl, question, toolCallId)`（压缩→配置回落链→视觉调用）；`executeReadImage` 优先判 `path` 走 `AgentClient.downloadFile(path)`现拉→复用同一尾段；文档来源（`file`+`image`）逻辑逐字不变。`path` 越权读由代理端 `/api/fs/download` 已有的 `checkPath` 沙箱兜底（工作目录内永远放行，目录外需 `allowedPaths`）；新增错误文案 `docImageNoSource`（两源皆缺）/`docImagePathFailed`（离线或越权）。
+- **改名 ripple**（同口径全同步）：`tool-executor.js` 下发门控 + `TOOL_HANDLERS` 注册表、`locales/zh.js`+`en.js` 工具名、`untrusted-content.js`（仍列为不可信内容）、`tool-panel.js` 勾选过滤、`doc-images.js` 清单工具用法行（中英）。门控口径不变：仍仅“图片识别总开关”开启时下发。
+- **验证**：`tool-read-document-image` 文档来源回归全数迁移至 `read_image`，新增 path 来源 3 例（`downloadFile(path)` 被调不查快照 / 取图失败含 path 不调视觉 / 两源皆缺参数错）+ 修正 `beforeEach` 清 `downloadFile` 调用记录；`gettools-vision-gate`、`doc-images-describe` 清单断言同步改名。全量单测 150 文件 / 2244 例、`build:silent` 通过。
+
 ## 2026-10-22
 
 ### 文档附件图片识别（Word/PDF/Excel 内嵌图片 → 视觉转述 + 按需深读）

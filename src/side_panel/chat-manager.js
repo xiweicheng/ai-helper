@@ -990,7 +990,7 @@ export async function sendMessage() {
     if (fileContent) {
       finalText += fileContent;
     }
-    // 图片快照中转：供 background 的 read_document_image 工具取图（失败不影响发送）
+    // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
     try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot); }
     catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化

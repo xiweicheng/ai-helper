@@ -1,4 +1,4 @@
-// tool-read-document-image.unit.test.js - read_document_image 内置工具（文档图片按需深读）
+// tool-read-document-image.unit.test.js - read_image 通用图片深读工具（文档附件 + 代理端任意路径）
 // 结果契约按仓库 makeResult/normalizeToolResult 实际 { success, content } 断言
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -81,19 +81,21 @@ vi.stubGlobal('fetch', fetchMock);
 // 压缩在纯 Node 环境无 createImageBitmap → 内部 try/catch 返 null → handler 回退原图
 const { executeTool } = await import('../../src/background/tool-executor.js');
 
-const call = (args) => executeTool({ name: 'read_document_image', arguments: JSON.stringify(args), id: 't1' }, null, 's1');
+const call = (args) => executeTool({ name: 'read_image', arguments: JSON.stringify(args), id: 't1' }, null, 's1');
 
 // 取视觉 API 请求（排除 compress 内部对 dataUrl 的 fetch）
 const visionCall = () => fetchMock.mock.calls.find(([u]) => String(u).includes('/chat/completions'));
 const visionReqBody = () => JSON.parse(visionCall()[1].body);
 const visionReqHeaders = () => visionCall()[1].headers;
 
-beforeEach(() => {
+beforeEach(async () => {
   useConfiguredVision();
   fetchMock.mockClear();
+  const dl = await import('../../src/background/local-agent-client.js');
+  dl.downloadFile.mockClear();
 });
 
-describe('read_document_image', () => {
+describe('read_image — 文档附件来源', () => {
   it('local 来源：直读快照 dataUrl → 视觉深读 → 返回文本', async () => {
     const r = await call({ file: 'b.pdf', image: 1, question: '图里的表格数值是多少' });
     expect(r.success).toBe(true);
@@ -152,5 +154,36 @@ describe('read_document_image', () => {
     expect(r.success).toBe(true);
     const headers = visionReqHeaders();
     expect(headers.Authorization).toBeUndefined();
+  });
+});
+
+describe('read_image — 代理端任意路径来源', () => {
+  it('path 来源：走 downloadFile(path) → 视觉深读（不查快照）', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    dl.downloadFile.mockResolvedValueOnce({ success: true, content: 'QUFB', mimeType: 'image/png' });
+    const r = await call({ path: 'shot.png', question: '这是什么界面' });
+    expect(dl.downloadFile).toHaveBeenCalledWith('shot.png');
+    expect(r.success).toBe(true);
+    expect(r.content).toContain('180 万');
+    const body = visionReqBody();
+    expect(body.messages[0].content[0].text).toContain('这是什么界面');
+    expect(body.messages[0].content[1].image_url.url).toBe('data:image/png;base64,QUFB');
+  });
+
+  it('path 取图失败（离线/越权）→ 错误文案含 path，不调视觉', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    dl.downloadFile.mockResolvedValueOnce({ success: false });
+    const r = await call({ path: '/etc/secret.png' });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('/etc/secret.png');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('既无 file+image 又无 path → 参数错误，不取图不调视觉', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    const r = await call({ question: 'x' });
+    expect(r.success).toBe(false);
+    expect(dl.downloadFile).not.toHaveBeenCalled();
+    expect(visionCall()).toBeUndefined();
   });
 });

@@ -243,9 +243,9 @@ function getAgentFilteredTools() {
   if (!agentConnected) {
     filtered = filtered.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('knowledge_'));
   }
-  // 图片识别总开关关闭时，隐藏文档图片深读工具（与 background 下发门控同口径）
+  // 图片识别总开关关闭时，隐藏图片深读工具（与 background 下发门控同口径）
   if (!globalVisionEnabled) {
-    filtered = filtered.filter(t => t.id !== 'read_document_image');
+    filtered = filtered.filter(t => t.id !== 'read_image');
   }
   return filtered;
 }

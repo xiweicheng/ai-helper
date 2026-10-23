@@ -117,7 +117,7 @@ describe('buildImageBlock', () => {
     const block = buildImageBlock({ images: [{ index: 1, page: 3 }, { index: 2, page: 5 }], imageDescriptions: { 1: '架构图' } }, '报告.docx');
     expect(block).toContain('共 2 张，已描述 1 张');
     expect(block).toContain('〔图片1｜第3页〕架构图');
-    expect(block).toContain('read_document_image(file="报告.docx", image=2)');
+    expect(block).toContain('read_image(file="报告.docx", image=2)');
   });
 
   it('page=null（docx）不输出页码段；truncated 追加超限行', () => {

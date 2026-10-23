@@ -22,8 +22,8 @@ export const UNTRUSTED_CONTENT_TOOLS = new Set([
   // 页面读取
   'page_content', 'extract_data', 'query_elements', 'search_in_page',
   'iframe_content', 'scroll_collect',
-  // 文档图片深读（视觉模型转述自用户文档图片，可含图片内植入文本）
-  'read_document_image',
+  // 图片深读（视觉模型转述自文档图片或代理端任意图片，可含图片内植入文本）
+  'read_image',
   // 标签页/书架（标题、历史标题可被页面控制）
   'list_tabs', 'search_browser_data',
   // 存储/Cookie（含 get 读取，值可被页面写入）

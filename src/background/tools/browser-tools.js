@@ -377,23 +377,24 @@ export const BROWSER_TOOLS = [
     }
   },
   {
-    id: 'read_document_image',
+    id: 'read_image',
     category: 'content_extraction',
     execution: 'background',
     parallelizable: false,
     requiresConfirmation: false,
     type: 'function',
     function: {
-      name: 'read_document_image',
-      description: 'Deep-read one image extracted from an attached document (docx/pdf/xlsx) in this session. Use it when the inline image description is insufficient or you need specific details from an image listed in the document image manifest. Returns a text analysis of the image from the vision model.',
+      name: 'read_image',
+      description: 'Deep-read one image and return a text analysis from the vision model. Provide ONE of two sources: (a) an image extracted from an attached document (docx/pdf/xlsx) in this session — pass file + image index from the document image manifest; (b) any image file on the connected agent — pass path (e.g. a screenshot you generated via agent_exec). Use it when you need specific details from an image. For agent-generated screenshots, save them into the working directory (a relative path like ./shot.png) and pass that same path.',
       parameters: {
         type: 'object',
         properties: {
-          file: { type: 'string', description: 'Attachment file name exactly as shown in the manifest, e.g. 报告.docx' },
-          image: { type: 'integer', description: 'Image index from the manifest, starting at 1' },
+          file: { type: 'string', description: 'Document source: attachment file name exactly as shown in the manifest, e.g. 报告.docx. Pair with image.' },
+          image: { type: 'integer', description: 'Document source: image index from the manifest, starting at 1. Pair with file.' },
+          path: { type: 'string', description: 'Agent source: path to an image file on the connected agent. Relative paths resolve against the agent working directory; absolute paths and ~ are also accepted. The file must be within the working directory (or an allowed path), otherwise the read is blocked by the sandbox.' },
           question: { type: 'string', description: 'Optional: what specific detail to focus on; omit for a full re-description' }
         },
-        required: ['file', 'image']
+        required: []
       }
     }
   },
