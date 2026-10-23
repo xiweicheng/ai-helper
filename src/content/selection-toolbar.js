@@ -175,6 +175,8 @@ let enableSelectionToolbar = true;
 let blockedDomains = []; // 域名屏蔽列表
 let toolbarTemporarilyHidden = false; // 临时隐藏（页面刷新后恢复）
 let suppressNextClick = false;
+let lastToolbarShowTime = 0; // 最后一次显示工具栏时间（IFRAME_CLICK_DISMISS 防误关窗口）
+let toolbarInteracting = false; // 鼠标在工具栏/下拉浮层内按下的交互窗口期
 let lastPanelPos = { x: 0, y: 0 };  // 保存面板位置，避免工具栏隐藏后无法获取
 let pendingSelection = null;  // 鼠标拖动选中时暂存，抬起时再显示工具栏
 let toolbarTools = null;  // 工具栏工具配置缓存
@@ -447,6 +449,11 @@ function renderOverflowDropdown(overflowTools) {
       }
     }
   });
+  
+  // 富文本宿主页面（如飞书文档）在 mousedown 阶段会清除页面选区触发 selectionchange，
+  // 若不加保护会在 click 派发前就把工具栏隐藏，导致按钮点不了；与工具栏同策略保护
+  overflowDropdownEl.addEventListener('mousedown', () => { toolbarInteracting = true; });
+  document.addEventListener('mouseup', () => { toolbarInteracting = false; }, true);
 }
 
 // ==================== 工具栏创建 ====================
@@ -538,6 +545,11 @@ async function createToolbar() {
       }
     }
   });
+  
+  // 交互窗口期标记：鼠标在工具栏内按下期间，宿主页面清选区触发的
+  // selectionchange 不得隐藏工具栏（飞书等富文本编辑器在 mousedown 时就清选区）
+  toolbarEl.addEventListener('mousedown', () => { toolbarInteracting = true; });
+  document.addEventListener('mouseup', () => { toolbarInteracting = false; }, true);
   
   appendToDoc(toolbarEl);
   
@@ -1249,14 +1261,16 @@ function onSelectionChange() {
       pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
       logger.debug('[SelectionToolbar] iframe pendingIframeSelection set');
     } else if (currentSelectedText) {
-      // 选区被清除，通知顶层 frame 隐藏工具栏
-      currentSelectedText = '';
-      lastSentIframeText = '';
-      pendingIframeSelection = null;
-      try {
-        chrome.runtime.sendMessage({ type: 'IFRAME_SELECTION_CLEAR' }).catch(() => {});
-      } catch {
-        // 扩展上下文失效时静默忽略
+      // 选区被清除，通知顶层 frame 隐藏工具栏；交互窗口期内不上报（宿主 mousedown 清选区）
+      if (!toolbarInteracting) {
+        currentSelectedText = '';
+        lastSentIframeText = '';
+        pendingIframeSelection = null;
+        try {
+          chrome.runtime.sendMessage({ type: 'IFRAME_SELECTION_CLEAR' }).catch(() => {});
+        } catch {
+          // 扩展上下文失效时静默忽略
+        }
       }
     }
     return;
@@ -1279,9 +1293,13 @@ function onSelectionChange() {
   }
   
   if (!text || text.length < 2) {
-    if (!isAskMode) hideToolbar();
-    currentSelectedText = '';
-    pendingSelection = null;
+    // 鼠标在工具栏浮层内按下期间（mousedown→mouseup），宿主清选区不隐藏工具栏，
+    // 否则 click 尚未派发浮层已消失，按钮全部失效（飞书在线文档等富文本页面）
+    if (!isAskMode && !toolbarInteracting) hideToolbar();
+    if (!toolbarInteracting) {
+      currentSelectedText = '';
+      pendingSelection = null;
+    }
     return;
   }
   
@@ -1921,6 +1939,7 @@ if (isExtensionValid()) {
   
   if (message.type === 'IFRAME_SELECTION_CLEAR') {
     if (!isTopFrame) return;
+    if (toolbarInteracting) return;
     if (isToolbarVisible && !isAskMode) {
       hideToolbar();
       currentSelectedText = '';
