@@ -66,6 +66,7 @@ export async function generateCompactionSummary({ material, model, sessionId } =
     }
     const summary = (data.choices?.[0]?.message?.content || '').trim();
     if (!summary) {
+      logger.warn('[ContextCompactor] empty summary (stream aggregation got no content)');
       return { success: false, error: 'empty_summary' };
     }
 

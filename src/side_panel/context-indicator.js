@@ -25,6 +25,9 @@ registerTranslations('zh', {
     compactDone: '压缩完成，节约约 {saved} tokens',
     compactErrConfig: '无法压缩：API 配置缺失',
     compactErrFailed: '压缩失败，请稍后重试',
+    compactErrEmpty: '模型未返回摘要内容',
+    compactErrHttp: '接口错误 HTTP {status}',
+    compactErrTimeout: '请求超时',
     autoCompactedToast: '上下文接近上限，已自动压缩（预计省 {saved} tokens）',
     undoTitle: '撤销压缩',
     undoMessage: '撤销后，发送将恢复携带完整历史。确定撤销吗？',
@@ -72,6 +75,9 @@ registerTranslations('en', {
     compactDone: 'Compaction complete, saved ~{saved} tokens',
     compactErrConfig: 'Cannot compact: API configuration missing',
     compactErrFailed: 'Compaction failed, please try again later',
+    compactErrEmpty: 'the model returned no summary',
+    compactErrHttp: 'API error HTTP {status}',
+    compactErrTimeout: 'request timed out',
     autoCompactedToast: 'Context is near its limit; auto-compacted (est. {saved} tokens saved)',
     undoTitle: 'Undo Compaction',
     undoMessage: 'After undo, sending will include the full history again. Undo?',
@@ -286,6 +292,20 @@ function showCompactingModal() {
 }
 
 /**
+ * 将 background 返回的压缩错误码映射为可读原因，用于在失败 toast 上直接暴露真实根因
+ * （偶发失败仅凭通用提示无法区分超时/空摘要/HTTP/解析异常，这里把差异带到界面）。
+ * @param {string} [error]
+ * @returns {string}
+ */
+function compactErrorDetail(error) {
+  const e = String(error || '');
+  if (e === 'empty_summary') return t('contextUsage.compactErrEmpty');
+  if (e.startsWith('http_')) return t('contextUsage.compactErrHttp', { status: e.slice(5) });
+  if (e.includes('超时') || /timeout/i.test(e)) return t('contextUsage.compactErrTimeout');
+  return e;
+}
+
+/**
  * 执行一次上下文压缩：收集素材 → （可选）确认 → 调 background 生成摘要 → 持久化
  *
  * options.silent = true 时不弹确认框、不弹进行中模态，仅一条轻量 toast ——
@@ -348,8 +368,12 @@ export async function runCompaction({ silent = false } = {}) {
     });
     if (!resp?.success || !resp.summary) {
       if (!silent) {
-        const errKey = resp?.error === 'config_missing' ? 'contextUsage.compactErrConfig' : 'contextUsage.compactErrFailed';
-        showToast(t(errKey), 'error');
+        if (resp?.error === 'config_missing') {
+          showToast(t('contextUsage.compactErrConfig'), 'error');
+        } else {
+          const detail = compactErrorDetail(resp?.error);
+          showToast(`${t('contextUsage.compactErrFailed')}${detail ? `（${detail}）` : ''}`, 'error');
+        }
       }
       return { success: false, reason: resp?.error || 'failed' };
     }
@@ -383,7 +407,10 @@ export async function runCompaction({ silent = false } = {}) {
     return { success: true, savedTokens: state.activeCompaction.savedTokens };
   } catch (err) {
     logger.warn('[ContextIndicator] compaction failed:', err?.message);
-    if (!silent) showToast(t('contextUsage.compactErrFailed'), 'error');
+    if (!silent) {
+      const detail = compactErrorDetail(err?.message);
+      showToast(`${t('contextUsage.compactErrFailed')}${detail ? `（${detail}）` : ''}`, 'error');
+    }
     return { success: false, reason: 'exception' };
   } finally {
     loadingModal?.close();
