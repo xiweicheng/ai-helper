@@ -147,6 +147,24 @@ describe('extractXlsxImagesFromFile', () => {
     const res = await extractXlsxImagesFromFile(file);
     expect(res.images).toEqual([]);
   });
+
+  // 回归：OOXML 允许关系 Target 写绝对形式（部分导出器如此），旧拼接一律加 'xl/' 前缀
+  // 得到 xl/xl/... → zip.file 命中不了，含图 xlsx 静默抽出 0 张且无计数线索
+  it('rels 绝对 Target（/xl/...）同样命中，不误拼 xl/xl 前缀', async () => {
+    const zip = new JSZip();
+    zip.file('xl/workbook.xml', '<workbook><sheets><sheet name="S1" sheetId="1" r:id="rId1"/></sheets></workbook>');
+    zip.file('xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Type="t/worksheet" Target="/xl/worksheets/sheet1.xml"/></Relationships>');
+    zip.file('xl/worksheets/_rels/sheet1.xml.rels', '<Relationships><Relationship Id="rIdD1" Type="t/drawing" Target="/xl/drawings/drawing1.xml"/></Relationships>');
+    zip.file('xl/drawings/drawing1.xml', `<xdr:wsDr>${anchor('rId1', 0, 0)}</xdr:wsDr>`);
+    zip.file('xl/drawings/_rels/drawing1.xml.rels', '<Relationships><Relationship Id="rId1" Type="t/image" Target="/xl/media/a.png"/></Relationships>');
+    zip.file('xl/media/a.png', pngBytes(40, 30));
+    const file = new File([await zip.generateAsync({ type: 'blob' })], 'abs.xlsx');
+    const { images, skipped } = await extractXlsxImagesFromFile(file);
+    expect(images.length).toBe(1);
+    expect(images[0].width).toBe(40);
+    expect(images[0].sheet).toBe('S1');
+    expect(skipped).toBe(0);
+  });
 });
 
 // —— pdf fake：vi.mock 提供静态形状，具体 doc 由每个用例经 state 注入 ——

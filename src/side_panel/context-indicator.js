@@ -294,13 +294,30 @@ function showCompactingModal() {
 /**
  * 将 background 返回的压缩错误码映射为可读原因，用于在失败 toast 上直接暴露真实根因
  * （偶发失败仅凭通用提示无法区分超时/空摘要/HTTP/解析异常，这里把差异带到界面）。
+ * http_x 后缀可能携带网关响应正文（body），尝试从中提取 error.message 一并展示。
  * @param {string} [error]
  * @returns {string}
  */
 function compactErrorDetail(error) {
   const e = String(error || '');
   if (e === 'empty_summary') return t('contextUsage.compactErrEmpty');
-  if (e.startsWith('http_')) return t('contextUsage.compactErrHttp', { status: e.slice(5) });
+  // chat-client SSE 空闲超时（headers 后卡流）：按超时口径展示，不透出原始错误码
+  if (e.includes('CHAT_STREAM_IDLE_TIMEOUT')) return t('contextUsage.compactErrTimeout');
+  if (e.startsWith('http_')) {
+    const rest = e.slice(5); // "400: {body...}" 或 "400"
+    const colon = rest.indexOf(':');
+    const status = colon < 0 ? rest : rest.slice(0, colon);
+    const base = t('contextUsage.compactErrHttp', { status });
+    const body = colon < 0 ? '' : rest.slice(colon + 1).trim();
+    if (!body) return base;
+    // 后端正文是真实根因（如 stream_options 不匹配），解析 JSON 取 message，失败则截断原文
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body);
+      detail = parsed?.error?.message || parsed?.message || body;
+    } catch { /* 非 JSON 正文直接用原文 */ }
+    return `${base}: ${String(detail).slice(0, 200)}`;
+  }
   if (e.includes('超时') || /timeout/i.test(e)) return t('contextUsage.compactErrTimeout');
   return e;
 }

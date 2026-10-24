@@ -751,6 +751,8 @@ function toggleCategorySelection(category) {
   const cache = agentToolRenderCache;
   if (category === 'mcp') {
     if (cache.mcpServices.length === 0) return;
+    // 与其余勾选路径口径一致：发生过显式交互即退出继承展示态，计数按实算
+    cache.inheritMode = false;
     const allOpen = cache.mcpServices.every(svc => !cache.excludedSet.has(svc.serverId));
     cache.mcpServices.forEach(svc => {
       if (allOpen) cache.excludedSet.add(svc.serverId);
@@ -1235,7 +1237,7 @@ async function renderAgentSkillSelector(selectedSkillNames) {
   cache.selectedSet = new Set(selectedSkillNames || []);
   cache.searchText = '';
   cache.selectedOnly = false;
-  cache.inheritMode = selectedSkillNames === null;
+  cache.inheritMode = selectedSkillNames == null; // 宽松判等：历史助手 skillIds 为 undefined 同属「继承全部」
 
   const searchInput = document.getElementById('agentSkillSearchInput');
   if (searchInput) searchInput.value = '';

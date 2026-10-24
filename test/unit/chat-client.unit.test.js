@@ -5,7 +5,7 @@
 // 企业网关在非流式请求上追加 stream_options 导致 stream/stream_options 不匹配报错。
 // 约定：这些调用统一跟随 streamEnabled 总开关；流式时静默聚合 SSE，
 // 返回与非流式同形状的 { choices, usage } 数据。
-import { describe, test, expect } from 'vitest';
+import { describe, test, expect, vi } from 'vitest';
 import {
   resolveUseStream,
   readStreamEnabledFromStorage,
@@ -107,6 +107,61 @@ describe('readChatSSE', () => {
     expect(data.choices[0].message.content).toBe('拼');
     expect(data.usage).toBeNull();
   });
+
+  // 回归：TextDecoder 仅在 stream:true 下保留半个 UTF-8 序列的状态；
+  // 中文/emoji 在 SSE 分块边界被切开时必须拼接还原，不得输出替换符污染摘要/反思 JSON
+  test('多字节字符被切在两块边界仍正确解码（stream:false 旧写法会出 U+FFFD）', async () => {
+    const encoded = encoder.encode('data: {"choices":[{"delta":{"content":"你好👋"}}]}\n\n');
+    // 定位 👋（F0 9F 91 8B）首字节，切点落在序列中间
+    const emojiStart = encoded.indexOf(0xF0);
+    const split = emojiStart + 1;
+    expect(encoded[emojiStart]).toBe(0xF0);
+    expect(encoded[emojiStart + 1]).toBe(0x9F);
+    const resp = makeSseResponse([encoded.slice(0, split), encoded.slice(split)]);
+    const data = await readChatSSE(resp);
+    expect(data.choices[0].message.content).toBe('你好👋');
+    expect(data.choices[0].message.content).not.toContain('\uFFFD');
+  });
+
+  // 回归：网关在 SSE 流内发 event:error 时，旧逻辑当非法行吞掉→上层误归因 empty_summary
+  test('SSE 内 error 事件 → 抛出含后端原因的异常而非静默返回空', async () => {
+    const resp = makeSseResponse([
+      'event: error\ndata: {"error":{"message":"quota exhausted"}}\n\n',
+      'data: [DONE]\n\n',
+    ]);
+    await expect(readChatSSE(resp)).rejects.toThrow(/quota exhausted/);
+  });
+
+  // 回归：fetchWithTimeout 预算只覆盖到响应头；SSE 长连接后半路卡流必须有空闲超时兑底
+  test('流中途停止推送→空闲超时抛错（不永久悬挂）', async () => {
+    vi.useFakeTimers();
+    try {
+      const enc = new TextEncoder();
+      let idx = 0;
+      const chunks = [enc.encode('data: {"choices":[{"delta":{"content":"A"}}]}\n\n')];
+      const resp = {
+        ok: true,
+        status: 200,
+        headers: { get: (k) => (String(k).toLowerCase() === 'content-type' ? 'text/event-stream' : null) },
+        body: {
+          getReader: () => ({
+            read: () => new Promise((resolve) => {
+              if (idx < chunks.length) { resolve({ done: false, value: chunks[idx++] }); return; }
+              // 永不 resolve：模拟网关 headers 后卡流，靠空闲超时解开
+            }),
+            cancel: () => {},
+            releaseLock: () => {},
+          }),
+        },
+      };
+      const p = readChatSSE(resp, { idleTimeoutMs: 5000 });
+      p.catch(() => {}); // 先挂 handler，禁用 timers 推进期间的 unhandled rejection
+      await vi.advanceTimersByTimeAsync(5001);
+      await expect(p).rejects.toThrow(/CHAT_STREAM_IDLE_TIMEOUT/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('callChatCompletion', () => {
@@ -165,14 +220,28 @@ describe('callChatCompletion', () => {
     expect(res.data.choices[0].message.content).toBe('ignored-stream');
   });
 
-  test('HTTP 非 ok 返回 { ok:false, status }，不解析 body', async () => {
+  test('HTTP 非 ok 返回 { ok:false, status, errorText }，后端错误正文不被吞（暴露真实根因）', async () => {
+    const fetchImpl = async () => ({
+      ok: false, status: 400,
+      text: async () => '{"error":{"message":"stream_options only works when stream is enabled"}}',
+    });
+    const res = await callChatCompletion('https://x/v1/chat/completions', {
+      headers: {}, body: {}, useStream: true, fetchImpl,
+    });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(400);
+    expect(res.data).toBeNull();
+    expect(res.errorText).toContain('stream_options');
+  });
+
+  test('非 ok 且 body 不可读时 errorText 容错为空串，不影响状态码返回', async () => {
     const fetchImpl = async () => ({ ok: false, status: 429 });
     const res = await callChatCompletion('https://x/v1/chat/completions', {
       headers: {}, body: {}, useStream: true, fetchImpl,
     });
     expect(res.ok).toBe(false);
     expect(res.status).toBe(429);
-    expect(res.data).toBeNull();
+    expect(res.errorText).toBe('');
   });
 
   test('fetchImpl 透传 signal（取消语义保留）', async () => {

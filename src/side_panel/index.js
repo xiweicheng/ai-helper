@@ -3242,6 +3242,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.stopPropagation();
     });
     inputWrapper.addEventListener('drop', async (e) => {
+      // 入口无条件拦截：未识别的拖拽形态（仅 text/html、自定义 MIME 等）若不兜底，
+      // 浏览器默认投放会把侧栏页面导航/替换；纯文本分支靠下方手动插入，不受影响
+      e.preventDefault();
       e.stopPropagation();
       dragCounter = 0;
       inputWrapper.classList.remove('drag-over');

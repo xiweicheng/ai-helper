@@ -45,7 +45,7 @@ export async function generateCompactionSummary({ material, model, sessionId } =
 
   try {
     // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
-    const { ok, status, data } = await callChatCompletion(apiUrl, {
+    const { ok, status, data, errorText } = await callChatCompletion(apiUrl, {
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json'
@@ -61,8 +61,10 @@ export async function generateCompactionSummary({ material, model, sessionId } =
     });
 
     if (!ok) {
-      logger.warn(`[ContextCompactor] request failed: ${status}`);
-      return { success: false, error: `http_${status}` };
+      // 携带网关响应正文：报错根因（如 stream_options 不匹配）只在 4xx body 里，
+      // 只回状态码则侧边栏 toast 无法暴露真实原因
+      logger.warn(`[ContextCompactor] request failed: ${status}`, errorText || '');
+      return { success: false, error: errorText ? `http_${status}: ${errorText}` : `http_${status}` };
     }
     const summary = (data.choices?.[0]?.message?.content || '').trim();
     if (!summary) {

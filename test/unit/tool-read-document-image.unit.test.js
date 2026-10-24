@@ -50,6 +50,17 @@ globalThis.chrome = {
   notifications: { create: noop },
 };
 
+// 合法 PNG 字节（magic header + 尺寸头最小体）的 base64：path 来源经扩展侧 magic bytes 硬校验后才会送视觉
+const PNG_B64 = b64Png();
+function b64Png() {
+  const head = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const rest = new Array(28).fill(0);
+  const bytes = Uint8Array.from([...head, ...rest]);
+  let bin = '';
+  bytes.forEach((x) => { bin += String.fromCharCode(x); });
+  return btoa(bin);
+}
+
 vi.mock('../../src/background/local-agent-client.js', () => ({
   execCommand: vi.fn(),
   execCommandWait: vi.fn(),
@@ -57,7 +68,7 @@ vi.mock('../../src/background/local-agent-client.js', () => ({
   stopCommand: vi.fn(),
   isAgentPaired: vi.fn(() => Promise.resolve(false)),
   writeFile: vi.fn(),
-  downloadFile: vi.fn(async () => ({ success: true, content: 'QUFB', mimeType: 'image/png' })),
+  downloadFile: vi.fn(async () => ({ success: true, content: PNG_B64, mimeType: 'image/png' })),
 }));
 
 vi.mock('../../src/background/config.js', () => ({
@@ -121,6 +132,20 @@ describe('read_image — 文档附件来源', () => {
     expect(r.content).toContain('180 万');
   });
 
+  // 安全回归：agent 来源（file+image 落盘路径）现拉必须与 path 来源同口径过大小闸门，
+  // 否则 magic bytes 通过但超大的文件仍会整包送外部视觉端点（来源一已挡、来源二漏挡）
+  it('agent 来源图片超单图上限（magic 合法但体积超限）→ 拒绝且不调视觉', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    // 合法 PNG 头 + 填充至 >5MB：magic bytes 判定通过，仅体积闸门可拦截
+    let bin = String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+    bin += 'x'.repeat(5 * 1024 * 1024);
+    dl.downloadFile.mockResolvedValueOnce({ success: true, content: btoa(bin), mimeType: 'image/png' });
+    const r = await call({ file: 'a.docx', image: 1 });
+    expect(dl.downloadFile).toHaveBeenCalled();
+    expect(r.success).toBe(false);
+    expect(visionCall()).toBeUndefined();
+  });
+
   it('file 不在会话附件 → 错误文案含文件名与可用附件', async () => {
     const r = await call({ file: 'zzz.docx', image: 1 });
     expect(r.success).toBe(false);
@@ -160,14 +185,14 @@ describe('read_image — 文档附件来源', () => {
 describe('read_image — 代理端任意路径来源', () => {
   it('path 来源：走 downloadFile(path) → 视觉深读（不查快照）', async () => {
     const dl = await import('../../src/background/local-agent-client.js');
-    dl.downloadFile.mockResolvedValueOnce({ success: true, content: 'QUFB', mimeType: 'image/png' });
+    dl.downloadFile.mockResolvedValueOnce({ success: true, content: PNG_B64, mimeType: 'image/png' });
     const r = await call({ path: 'shot.png', question: '这是什么界面' });
     expect(dl.downloadFile).toHaveBeenCalledWith('shot.png');
     expect(r.success).toBe(true);
     expect(r.content).toContain('180 万');
     const body = visionReqBody();
     expect(body.messages[0].content[0].text).toContain('这是什么界面');
-    expect(body.messages[0].content[1].image_url.url).toBe('data:image/png;base64,QUFB');
+    expect(body.messages[0].content[1].image_url.url).toBe('data:image/png;base64,' + PNG_B64);
   });
 
   it('path 取图失败（离线/越权）→ 错误文案含 path，不调视觉', async () => {
@@ -185,5 +210,50 @@ describe('read_image — 代理端任意路径来源', () => {
     expect(r.success).toBe(false);
     expect(dl.downloadFile).not.toHaveBeenCalled();
     expect(visionCall()).toBeUndefined();
+  });
+
+  // 安全回归：read_image 属不可信内容入口且无需确认，path 来料必须经扩展侧硬校验，
+  // 防止提示注入借任意工作目录文件 → 外部视觉端点外泄非图片内容
+  it('path 取回内容非图片（magic bytes 不符）→ 拒绝且不调视觉 API', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    const notImage = btoa('SECRET TOKEN abc');
+    dl.downloadFile.mockResolvedValueOnce({ success: true, content: notImage, mimeType: 'text/plain' });
+    const r = await call({ path: 'notes.txt' });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('notes.txt');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('path 取回字节超单图上限 → 拒绝且不调视觉', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    const huge = 'A'.repeat(8 * 1024 * 1024); // base64 约 6MB 原文 > 5MB 上限
+    dl.downloadFile.mockResolvedValueOnce({ success: true, content: huge, mimeType: 'image/png' });
+    const r = await call({ path: 'big.png' });
+    expect(r.success).toBe(false);
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('path 非字符串/全空白 → 参数错误，不取图', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    const r1 = await call({ path: '   ' });
+    expect(r1.success).toBe(false);
+    const r2 = await call({ path: 123 });
+    expect(r2.success).toBe(false);
+    expect(dl.downloadFile).not.toHaveBeenCalled();
+  });
+
+  it('path 与 file+image 同时给出 → 明确二选一报错，不静默取 path', async () => {
+    const r = await call({ path: 'shot.png', file: 'b.pdf', image: 1 });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('二选一');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('image 序号字符串归一："1" 等同 1 命中；越界文案仍含总数', async () => {
+    const r = await call({ file: 'b.pdf', image: '1' });
+    expect(r.success).toBe(true);
+    const r2 = await call({ file: 'b.pdf', image: '9' });
+    expect(r2.success).toBe(false);
+    expect(r2.content).toMatch(/共 1 张/);
   });
 });

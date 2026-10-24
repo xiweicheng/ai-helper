@@ -2,7 +2,33 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-24
+
+### 代码评审修复批次：read_image 安全闸门 + 流式收口欠账清算 + 6 项局部缺陷
+> 来源：针对 10-23 全部 15 个提交的代码评审，逐条对源码核验确认后按 TDD 修复（新增/扩展 7 个测试文件，全量单测 153 文件 / 2280 例绿）。
+
+- **Critical① 改名迁移补登**：`read_document_image → read_image` 漏登 `TOOL_NAME_MIGRATION`——曾显式保存勾选的老用户存储里是旧 ID，新工具不再下发且下次保存被宇宙清洗不可自愈。补映射条目 + `gettools-vision-gate` 回归。
+- **Critical② read_image path 安全闸门**：path 来源构成「任意工作目录文件 → 外部视觉端点」外泄通道（代理沙箱对工作目录永远放行 + 扩展侧零类型校验 + 工具属不可信内容入口无需确认）。新增 `shared/image-signature.js`：声明 mimeType 不可信，按 magic bytes（png/jpeg/gif/bmp/webp）硬校验 + 5MB 字节上限，非图片一律拒绝；agent 来源快照取图同口径纵深防御。参数契约补齐：两源同时给出显式二选一报错、`path` 非字符串/全空白拒绝、`image` 序号字符串归一（"1" 等同 1，不再误报越界）。
+- **流式收口三项欠账**（`chat-client.js`）：① SSE 每轮 read 与空闲计时器 race（默认 120s，与主循环 `STREAM_IDLE_TIMEOUT_MS` 同口径），headers 后卡流不再永久悬挂；② 非 2xx 读取并回传响应正文（网关报错根因只在 4xx body 里），压缩 toast 经 `compactErrorDetail` 解析 `error.message` 展示真实原因；③ SSE 内 `error` 数据抛异常不再吞成 `empty_summary`；④ `TextDecoder` 改 `{stream:true}` + 尾 flush，修复跨块多字节字符被切开出 U+FFFD 污染摘要/反思 JSON。新增 `compaction-error-surface`（压缩链路行为级 3 例）+ `aux-chat-call-guards`（辅助调用收口扫描守卫，防后续重新硬编码）。
+- **划词工具栏交互锁**：`toolbarInteracting` 无界锁——页外释放时 document 收不到 mouseup 工具栏永久粘死；复位监听改模块级单例（mouseup + window blur 幂等注册），`hideToolbar` 内置复位；消除语言切换重建时匿名监听器在 document 上线性累积。
+- **xlsx 绝对 Target**：OOXML 关系 Target 允许 `/xl/...` 绝对形式（部分导出器如此），旧拼接一律加 `xl/` 前缀拼出 `xl/xl/...` 静默抽 0 张；三处统一走 `resolveRelTarget`。
+- **助手编辑器**：技能 `inheritMode` 判定改宽松判等（历史助手 `skillIds` 为 undefined 不再误显示「已选 0/N」）；MCP 分类切换补置 `inheritMode=false`（与其余勾选路径口径一致）。
+- **侧边栏拖拽**：`drop` 入口恢复无条件 `preventDefault`，未识别拖拽形态不再放行浏览器默认投放（可能导航/替换侧栏页面）；视觉深读失败也携带后端正文（与压缩链路口径一致）。
+- **验证**：全量单测 153 文件 / 2280 例、ESLint 0 告警、`build:silent` 通过；UTF-8 跨块用例做旧写法负向对照验证有效。
+- **二次评审跟进**（安全/健壮性收口）：① `read_image` 抽出 `guardDownloadedImageBase64` 让来源二（`file+image` 落盘路径）与来源一（`path`）同过「5MB 体积闸门 + magic bytes」，堵住来源二只判类型不判大小的漏挡（新增回归）；② SSE 空闲超时单一来源化——`stream-controller.js` 的 `STREAM_IDLE_TIMEOUT_MS` 改为从 `shared/chat-client.js` 的 `DEFAULT_STREAM_IDLE_TIMEOUT_MS` 导入再导出，消除两处 `120000` 硬编码漂移风险；③ 移除划词工具栏 `unbindInteractingReset` 死代码（复位监听按设计随 content script 生命周期常驻，无拆除调用点）。跟进后全量单测 154 文件 / 2288 例、ESLint 0 告警、`build:silent` 通过。
+
 ## 2026-10-23
+
+### 辅助 LLM 调用流式收口：修复企业网关非流式报错
+> 背景：反思/预筛选/压缩/转述等辅助调用曾硬编码 `stream:false`，部分企业网关会在非流式请求上追加 `stream_options` 导致 stream/stream_options 不匹配报错。
+
+- 新增 `shared/chat-client.js` 统一收口：跟随配置页流式总开关发起，静默聚合 SSE 后返回与非流式完全相同的 `{ choices, usage }` 形状，下游解析零改动；接线反思×2、工具预筛选、上下文压缩、批量摘要、视觉深读/转述全部辅助调用。
+- **react-loop 协议/UI 解耦**：子任务曾强制 `streamEnabled:false`，本意只关 UI 推送却连带降级 API 协议；拆开 `apiStreamEnabled`（协议层，父/子统一生效）与 `uiStreamEnabled`（推送层，子任务用静默 `sendFn` 阻断）。
+- **划词工具栏飞书 bug**：富文本编辑器在 mousedown 阶段程序化清选区，工具栏在 click 派发前已隐藏致按钮全部点不了；新增 mousedown→mouseup 交互窗口期抑制 selectionchange 隐藏与 iframe 清选区上报（含 4 例复现单测）。
+- **侧边栏知识库工具丢失与纯文本拖拽误判**：代理离线时同步隐藏 `knowledge_*`；纯文本拖拽不再被误判为文件上传，改手动光标插入。
+- **上下文压缩失败原因上屏**：`compactErrorDetail()` 把 `http_x`/`empty_summary`/超时映射为可读文案进失败 toast。
+- **助手编辑器搜索过滤**：工具/技能列表支持名称+描述搜索（150ms 防抖、一键清除）与「只看已勾选」；状态迁移到渲染缓存单一真相（抽出纯函数 `agent-tool-filter.js`），全选/计数/保存全部改读缓存；RAG 知识库工具并入可选集。技能列表同步支持。
+- `read_image` 改名 ripple 与按需下发等其余条目见下方同日各节（其中 `tool-executor.js` 的「`path` 越权由代理沙箱兜底」方案存在扩展侧闸门缺失，已于 10-24 评审批次修正）。
 
 ### `read_document_image` → `read_image`：图片深读工具泛化，支持代理端任意路径
 > 需求：原工具只能读会话文档附件里的图片。升级为通用图片深读入口，新增“代理端任意图片路径”来源——AI 可用 `agent_exec` 跑系统命令（如 `screencapture`）生成截图落到工作目录，再用本工具传路径加载进视觉模型分析。方案：本轮只做代理端路径来源（远程 URL / 内置桌面截图 API 后置）。

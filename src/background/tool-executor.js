@@ -7,6 +7,7 @@ import * as AgentClient from './local-agent-client.js';
 import { sendAgentStream, sendAgentStreamDone } from './stream-controller.js';
 import { decodeSecret } from '../shared/secret.js';
 import { callChatCompletion, readStreamEnabledFromStorage } from '../shared/chat-client.js';
+import { detectImageMimeFromBase64 } from '../shared/image-signature.js';
 import { executeDispatchSubAgent } from './agent-dispatcher.js';
 import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
@@ -235,6 +236,10 @@ registerTranslations('zh', {
     docImageVisionFailed: '图片识别 API 调用失败：{detail}',
     docImageNoAttachment: '无',
     docImageNoSource: '请提供图片来源：文档附件（file + image 序号）或代理端图片路径（path），二选一',
+    docImageMultipleSources: '图片来源请二选一：文档附件（file + image 序号）或代理端图片路径（path），不能同时提供',
+    docImagePathInvalid: 'path 参数无效：必须为非空字符串（代理端图片文件路径）：{path}',
+    docImagePathNotImage: '代理端文件不是可识别的图片（png/jpeg/gif/bmp/webp），已拒绝深读：{path}',
+    docImagePathTooLarge: '代理端图片文件过大（超过单图上限），已拒绝深读：{path}',
     docImagePathFailed: '读取代理端图片失败（Agent 不在线，或路径不在工作目录/已授权范围内）：{path}',
     docImageDeepReadPrompt: '详细完整描述图片内容，逐项转录图中全部可读文字与数值。',
     docImageDeepReadPromptQuestion: '请结合以下问题重点分析图片，并逐项转录图中相关可读文字与数值。问题：{question}',
@@ -452,6 +457,10 @@ registerTranslations('en', {
     docImageVisionFailed: 'Image recognition API call failed: {detail}',
     docImageNoAttachment: 'none',
     docImageNoSource: 'Provide an image source: a document attachment (file + image index) or an agent-side image path (path) — one of the two',
+    docImageMultipleSources: 'Image source must be exactly one of: document attachment (file + image index) or agent-side path — not both',
+    docImagePathInvalid: 'Invalid path argument: must be a non-empty string (agent-side image file path): {path}',
+    docImagePathNotImage: 'The agent-side file is not a recognized image (png/jpeg/gif/bmp/webp); deep read refused: {path}',
+    docImagePathTooLarge: 'The agent-side image file exceeds the single-image size limit; deep read refused: {path}',
     docImagePathFailed: 'Failed to read the agent-side image (Agent offline, or path not within the working dir / allowed scope): {path}',
     docImageDeepReadPrompt: 'Describe the image in full detail, transcribing every readable text and numeric value item by item.',
     docImageDeepReadPromptQuestion: 'Analyze the image focusing on the question below, transcribing related readable text and numeric values item by item. Question: {question}',
@@ -1171,6 +1180,9 @@ export async function getTools(agentToolIds = null, agentId = null, agentSkillId
         show_notification: 'notify', generate_qrcode: 'qrcode',
         clear_page_data: 'manage_cookies', clear_data: 'manage_cookies', search_chat_history: 'search_chats',
         ui_prototype: 'preview_ui',
+        // read_document_image → read_image 泛化改名：旧 ID 必须迁移，
+        // 否则曾显式保存勾选的老用户存储里是旧 ID，新工具不再下发且下次保存时被宇宙清洗不可自愈
+        read_document_image: 'read_image',
       };
       let migrated = false;
       enabledTools = enabledTools.map(id => {
@@ -2071,6 +2083,25 @@ async function executeExtractExecutionLog(args, toolCallId, currentSessionId) {
 
 // ==================== 工具路由（基于 RAW_TOOLS 自动派生） ====================
 
+// 单图原始字节上限：与 side_panel/doc-images.js 的 VISION_CONSTANTS.MAX_RAW_BYTES 同值
+//（BG 不导入 side_panel 模块避免打包交叉，两处常量同口径注释同步）
+const VISION_MAX_RAW_BYTES = 5 * 1024 * 1024;
+
+/**
+ * downloadFile 结果的扩展侧硬闸门：先按字节上限拦体量，再按 magic bytes 判类型
+ * （声明 mimeType 不可信）。两来源（path / file+image 落盘路径）共用同一口径，
+ * 避免来源一已挡、来源二漏挡——超大或非图片内容一律不得送外部视觉端点。
+ * @param {string} content - downloadFile 返回的裸 base64
+ * @returns {{ ok: true, mime: string } | { ok: false, reason: 'tooLarge' | 'notImage' }}
+ */
+function guardDownloadedImageBase64(content) {
+  const rawBytes = Math.floor(String(content || '').length * 3 / 4);
+  if (rawBytes > VISION_MAX_RAW_BYTES) return { ok: false, reason: 'tooLarge' };
+  const mime = detectImageMimeFromBase64(content);
+  if (!mime) return { ok: false, reason: 'notImage' };
+  return { ok: true, mime };
+}
+
 /**
  * 图片视觉分析公共尾段：压缩 → 配置回落链 → 视觉调用 → 文本返回。
  * dataUrl 已就绪；question 可选（省略则全量重述）。仅 apiBase 必需。
@@ -2089,13 +2120,13 @@ async function analyzeImageWithVision(dataUrl, question, toolCallId) {
     return makeResult(false, t('toolExec.docImageVisionNotConfigured'), { tool_call_id: toolCallId });
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
     // 跟随流式总开关：部分企业网关会在非流式请求上追加 stream_options 导致报错
-    const { ok, status, data } = await callChatCompletion(apiBase.replace(/\/$/, '') + '/chat/completions', {
+    const { ok, status, data, errorText } = await callChatCompletion(apiBase.replace(/\/$/, '') + '/chat/completions', {
       headers,
       body: {
         model,
@@ -2108,9 +2139,10 @@ async function analyzeImageWithVision(dataUrl, question, toolCallId) {
       useStream: await readStreamEnabledFromStorage(),
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!ok) {
-      return makeResult(false, t('toolExec.docImageVisionFailed', { detail: 'HTTP ' + status }), { tool_call_id: toolCallId });
+      // 后端正文含真实根因时一并透出（与压缩链路口径一致）
+      const detail = errorText ? `HTTP ${status}: ${String(errorText).slice(0, 200)}` : 'HTTP ' + status;
+      return makeResult(false, t('toolExec.docImageVisionFailed', { detail }), { tool_call_id: toolCallId });
     }
     const analysis = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
     if (!analysis) {
@@ -2119,6 +2151,9 @@ async function analyzeImageWithVision(dataUrl, question, toolCallId) {
     return makeResult(true, analysis, { tool_call_id: toolCallId });
   } catch (err) {
     return makeResult(false, t('toolExec.docImageVisionFailed', { detail: err.message }), { tool_call_id: toolCallId });
+  } finally {
+    // 异常路径也要清理：否则 60s 定时器残留至触发才失效
+    clearTimeout(timer);
   }
 }
 
@@ -2132,19 +2167,39 @@ async function analyzeImageWithVision(dataUrl, question, toolCallId) {
  * 深读文本属不可信内容，经现有 tool message 通道回注，不新增拼接格式。
  */
 async function executeReadImage(args, toolCallId, sessionId) {
-  // 来源一：代理端任意图片路径（优先）——复用已沙箱化的 /api/fs/download，零新增网络代码
-  if (args.path && typeof args.path === 'string') {
+  const hasPath = args.path !== undefined && args.path !== null && args.path !== '';
+  const hasDocSource = !!args.file || args.image != null;
+  // 两源同时给出：静默取一会让模型收到错误来源的结果且无从纠正，显式二选一报错
+  if (hasPath && hasDocSource) {
+    return makeResult(false, t('toolExec.docImageMultipleSources'), { tool_call_id: toolCallId });
+  }
+
+  // 来源一：代理端任意图片路径——复用已沙箱化的 /api/fs/download，零新增网络代码；
+  // 但代理沙箱对工作目录永远放行且本工具属不可信内容入口无需确认，
+  // 扩展侧必须硬校验类型与大小：声明 mimeType 不可信，按 magic bytes 判定，
+  // 防止提示注入借任意工作目录文件 → 外部视觉端点外泄内容
+  if (hasPath) {
+    if (typeof args.path !== 'string' || !args.path.trim()) {
+      return makeResult(false, t('toolExec.docImagePathInvalid', { path: String(args.path) }), { tool_call_id: toolCallId });
+    }
     const dl = await AgentClient.downloadFile(args.path);
     if (!dl || !dl.success || !dl.content) {
       return makeResult(false, t('toolExec.docImagePathFailed', { path: String(args.path) }), { tool_call_id: toolCallId });
     }
-    return analyzeImageWithVision('data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content, args.question, toolCallId);
+    const guard = guardDownloadedImageBase64(dl.content);
+    if (!guard.ok) {
+      const key = guard.reason === 'tooLarge' ? 'toolExec.docImagePathTooLarge' : 'toolExec.docImagePathNotImage';
+      return makeResult(false, t(key, { path: String(args.path) }), { tool_call_id: toolCallId });
+    }
+    return analyzeImageWithVision('data:' + guard.mime + ';base64,' + dl.content, args.question, toolCallId);
   }
 
   // 来源二：会话附件文档中的图片（file + image 序号）
   if (!args.file || args.image == null) {
     return makeResult(false, t('toolExec.docImageNoSource'), { tool_call_id: toolCallId });
   }
+  // 模型偶发把序号传成字符串，严格比较会误报越界；先归一为数字
+  const imageIndex = Number(args.image);
   const store = await new Promise((r) => chrome.storage.local.get(['_docImageSnapshot'], r));
   const snap = (store._docImageSnapshot || {})[sessionId];
   const fileEntry = snap && snap.files ? snap.files.find((f) => f.name === args.file) : null;
@@ -2152,19 +2207,25 @@ async function executeReadImage(args, toolCallId, sessionId) {
     return makeResult(false, t('toolExec.docImageFileNotFound', { file: String(args.file), files: ((snap && snap.files) || []).map((f) => f.name).join(', ') || t('toolExec.docImageNoAttachment') }), { tool_call_id: toolCallId });
   }
   const images = fileEntry.images || [];
-  const img = images.find((im) => im.index === args.image);
+  const img = images.find((im) => im.index === imageIndex);
   if (!img) {
     return makeResult(false, t('toolExec.docImageIndexOutOfRange', { image: String(args.image), file: String(args.file), total: String(images.length) }), { tool_call_id: toolCallId });
   }
 
   let dataUrl = img.dataUrl || '';
   if (!dataUrl && img.path) {
-    // agent 来源：落盘路径现拉（跨会话仍可用）
+    // agent 来源：落盘路径现拉（跨会话仍可用）；同样过 magic bytes 硬校验（纵深防御）
     const dl = await AgentClient.downloadFile(img.path);
     if (!dl || !dl.success || !dl.content) {
       return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
     }
-    dataUrl = 'data:' + (dl.mimeType || 'image/png') + ';base64,' + dl.content;
+    // 与 path 来源同口径：先体积闸门再 magic bytes，堵来源二漏挡
+    const guard = guardDownloadedImageBase64(dl.content);
+    if (!guard.ok) {
+      const key = guard.reason === 'tooLarge' ? 'toolExec.docImagePathTooLarge' : 'toolExec.docImagePathNotImage';
+      return makeResult(false, t(key, { path: String(img.path) }), { tool_call_id: toolCallId });
+    }
+    dataUrl = 'data:' + guard.mime + ';base64,' + dl.content;
   }
   if (!dataUrl) {
     return makeResult(false, t('toolExec.docImageCacheLost'), { tool_call_id: toolCallId });

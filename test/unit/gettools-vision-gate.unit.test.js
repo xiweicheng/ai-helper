@@ -99,4 +99,14 @@ describe('read_image 按图片识别开关按需下发', () => {
     const on = await ids();
     expect(on.filter((id) => !off.includes(id))).toEqual(['read_image']);
   });
+
+  // 回归：read_document_image → read_image 改名必须登记 TOOL_NAME_MIGRATION，
+  // 否则曾显式保存勾选的老用户存储里是旧 ID，新工具不再下发且不可自愈
+  it('存储内的旧 ID read_document_image 经迁移后仍下发 read_image', async () => {
+    store.enableImageInput = true;
+    store.enabledTools = BUILTIN_TOOLS.map((t) => t.id).filter((id) => id !== 'read_image')
+      .concat('read_document_image');
+    const list = await ids();
+    expect(list).toContain('read_image');
+  });
 });

@@ -1,4 +1,5 @@
 import logger from '../shared/logger.js';
+import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../shared/chat-client.js';
 
 // background/stream-controller.js - 流式输出控制器
 // 负责 SSE 解析、chunk 节流发送、usage 提取、tool_calls 检测
@@ -6,7 +7,8 @@ import logger from '../shared/logger.js';
 // 流式读取空闲超时：收到响应头后 apiTimeout 即失效（fetchWithTimeout 会 clearTimeout 并移除监听），
 // outerWatchdog 也在 readSSEStream 之前被清除，故空闲超时是"流式数据卡住"的唯一自动保护。
 // 每次收到数据块重置计时，仅当持续该时长无任何 SSE 事件才判定卡住并中断。
-export const STREAM_IDLE_TIMEOUT_MS = 120000;
+// 单一来源：与辅助调用 readChatSSE 共用 shared/chat-client 的同一预算，避免两处硬编码漂移。
+export const STREAM_IDLE_TIMEOUT_MS = DEFAULT_STREAM_IDLE_TIMEOUT_MS;
 
 /**
  * 归一化 tool_calls 数组：过滤稀疏数组空洞与无效元素，并补齐缺失的 id。

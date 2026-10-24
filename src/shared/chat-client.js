@@ -76,10 +76,16 @@ function isEventStreamResponse(response) {
  * 兼容 delta.content / message.content / text 三种增量格式；
  * usage 取自 stream_options.include_usage 的最终独立 chunk；
  * done 时给残留行补换行，防止无尾换行的网关丢末块。
+ * 网关在流内发 error 数据时直接抛出（上层不得误归因 empty_summary）；
+ * 带空闲超时：fetchWithTimeout 预算只覆盖到响应头，headers 后卡流靠本超时兜底。
+ * 本常量为全工程 SSE 空闲超时的单一来源（主循环 readSSEStream 的 STREAM_IDLE_TIMEOUT_MS 亦由此导入）。
  * @param {Response} response
+ * @param {{ idleTimeoutMs?: number }} [opts]
  * @returns {Promise<{ choices: Array<{ message: { role: string, content: string } }>, usage: Object|null }>}
  */
-export async function readChatSSE(response) {
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120000;
+
+export async function readChatSSE(response, { idleTimeoutMs = DEFAULT_STREAM_IDLE_TIMEOUT_MS } = {}) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -88,11 +94,33 @@ export async function readChatSSE(response) {
 
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      // 空闲超时：每轮 read 与定时器 race，到点 cancel 释放挂起的读并抛可识别错误
+      let timer;
+      let readResult;
+      try {
+        readResult = await Promise.race([
+          reader.read(),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`响应流空闲超时 CHAT_STREAM_IDLE_TIMEOUT ${idleTimeoutMs}ms`)),
+              idleTimeoutMs
+            );
+          }),
+        ]);
+      } catch (err) {
+        try { await reader.cancel(); } catch { /* 替身/已关闭流可能无法 cancel */ }
+        throw err;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      const { done, value } = readResult;
       if (done) {
+        // flush：decoder 尾部残留的半个 UTF-8 序列补出；跨块多字节字符靠 stream:true 保持状态
+        buffer += decoder.decode();
         buffer += String.fromCharCode(10);
       } else {
-        buffer += decoder.decode(value, { stream: false });
+        buffer += decoder.decode(value, { stream: true });
       }
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
@@ -106,6 +134,11 @@ export async function readChatSSE(response) {
 
         try {
           const parsed = JSON.parse(data);
+          // 网关在 SSE 流内报错：抛出带后端原因的异常，不能当非法行吞掉
+          if (parsed.error) {
+            const msg = typeof parsed.error === 'string' ? parsed.error : (parsed.error.message || JSON.stringify(parsed.error));
+            throw new Error(`SSE_ERROR: ${msg}`);
+          }
           // usage 在独立最终 chunk（choices 为空）中返回，须在取 delta 前提取
           if (parsed.usage) usage = parsed.usage;
           const delta = parsed.choices?.[0]?.delta?.content
@@ -113,8 +146,12 @@ export async function readChatSSE(response) {
             || parsed.choices?.[0]?.text
             || '';
           if (delta) fullContent += delta;
-        } catch {
-          // 非法行忽略（不同网关 SSE 格式差异），不中断聚合
+        } catch (err) {
+          if (err instanceof SyntaxError) {
+            // 非法行忽略（不同网关 SSE 格式差异），不中断聚合
+            continue;
+          }
+          throw err;
         }
       }
 
@@ -132,6 +169,8 @@ export async function readChatSSE(response) {
 
 /**
  * 统一的聊天补全调用：按 useStream 决定协议形态，无论流式与否返回相同形状。
+ * 非 2xx 时读取并回传响应正文（errorText）：网关的 stream/stream_options 类报错
+ * 正文只出现在 4xx body 里，吞掉则 UI 只能显示裸状态码，拿不到真实根因（口径同主循环）。
  * @param {string} apiUrl - chat/completions 完整地址
  * @param {Object} options
  * @param {Object} options.headers
@@ -139,9 +178,10 @@ export async function readChatSSE(response) {
  * @param {boolean} options.useStream - 是否走流式（调用方经 resolveUseStream/ storage 读取传入）
  * @param {AbortSignal} [options.signal]
  * @param {Function} [options.fetchImpl] - fetch 替身，默认全局 fetch；后台传 fetchWithRetry 包装以保留重试语义
- * @returns {Promise<{ ok: boolean, status: number, data: Object|null }>}
+ * @param {number} [options.streamIdleTimeoutMs] - SSE 两块间最大空闲预算（默认 120s）
+ * @returns {Promise<{ ok: boolean, status: number, data: Object|null, errorText?: string }>}
  */
-export async function callChatCompletion(apiUrl, { headers, body, useStream, signal, fetchImpl } = {}) {
+export async function callChatCompletion(apiUrl, { headers, body, useStream, signal, fetchImpl, streamIdleTimeoutMs } = {}) {
   const doFetch = fetchImpl || ((url, init) => fetch(url, init));
   const stream = useStream !== false;
 
@@ -153,12 +193,14 @@ export async function callChatCompletion(apiUrl, { headers, body, useStream, sig
   });
 
   if (!response.ok) {
-    return { ok: false, status: response.status, data: null };
+    let errorText = '';
+    try { errorText = String(await response.text() || ''); } catch { /* 无 text/可读性差时容错为空 */ }
+    return { ok: false, status: response.status, data: null, errorText: errorText.slice(0, 500) };
   }
 
   // 流式且确为 SSE 才聚合；网关忽略 stream 返回 JSON 时回落普通解析
   if (stream && response.body && isEventStreamResponse(response)) {
-    const data = await readChatSSE(response);
+    const data = await readChatSSE(response, { idleTimeoutMs: streamIdleTimeoutMs });
     return { ok: true, status: response.status, data };
   }
 

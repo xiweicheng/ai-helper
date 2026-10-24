@@ -183,6 +183,14 @@ export async function extractXlsxImagesFromFile(file, opts = {}) {
     return map;
   };
 
+  // 关系 Target → zip 条目名：OOXML 允许绝对形式 /xl/...（部分导出器如此），
+  // 一律加 'xl/' 前缀会拼出 xl/xl/... 静默抽 0 张；绝对形式去首斜杠后已是包内路径
+  const resolveRelTarget = (t) => {
+    const s = String(t || '');
+    if (s.startsWith('/')) return s.replace(/^\/+/, '');
+    return 'xl/' + s.replace(/^\.\.\//, '');
+  };
+
   // 按 workbook 声明顺序整理 sheet → 文件路径
   const wbRels = await readRelTargets(wbRelsEntry, /worksheet$/);
   const wbXml = await wbEntry.async('string');
@@ -191,7 +199,7 @@ export async function extractXlsxImagesFromFile(file, opts = {}) {
     const name = m[0].match(/name="([^"]+)"/)?.[1];
     const rid = m[0].match(/r:id="([^"]+)"/)?.[1];
     const target = rid && wbRels.get(rid);
-    if (name && target) sheetOrder.push({ name, file: 'xl/' + target.replace(/^\//, '') });
+    if (name && target) sheetOrder.push({ name, file: resolveRelTarget(target) });
   }
 
   const images = [];
@@ -202,7 +210,7 @@ export async function extractXlsxImagesFromFile(file, opts = {}) {
     const sheetRelsEntry = zip.file(`xl/worksheets/_rels/${sheet.file.split('/').pop()}.rels`);
     const drawingTargets = await readRelTargets(sheetRelsEntry, /drawing$/);
     for (const relTarget of drawingTargets.values()) {
-      const drawingFile = 'xl/' + relTarget.replace(/^\//, '').replace(/^\.\.\//, '');
+      const drawingFile = resolveRelTarget(relTarget);
       const drawingEntry = zip.file(drawingFile);
       if (!drawingEntry) continue;
       const imgRels = await readRelTargets(zip.file(drawingFile.replace('drawings/', 'drawings/_rels/') + '.rels'), /image$/);
@@ -212,7 +220,7 @@ export async function extractXlsxImagesFromFile(file, opts = {}) {
         if (!rid) continue;
         const target = imgRels.get(rid);
         if (!target) { skipped++; continue; }
-        const entryName = 'xl/' + target.replace(/^\.\.\//, '').replace(/^\//, '');
+        const entryName = resolveRelTarget(target);
         const ext = entryName.split('.').pop().toLowerCase();
         if (!MIME_BY_EXT[ext]) { skipped++; continue; }
         if (seen.has(entryName)) continue;
