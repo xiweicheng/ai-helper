@@ -62,11 +62,16 @@ export function buildToolbarVars(resolved) {
 }
 
 // 组件规则（引用 var(--token)，不内联字面色）
+// 注：浮层经 Popover API 进入 top layer 后，UA 的 [popover] 默认样式（白底/边框/
+// 内边距/overflow:auto）属 UA origin，会被下方各组件基础规则（作者 origin）无条件
+// 盖过，无需额外的 [popover] 重置块——那种块特异性高于基础规则，反而会抹掉组件
+// 自己的背景/内边距/边框。仅在基础规则里补一句 overflow:visible 抵消 UA 的 auto。
 const TOOLBAR_RULES = `
 
     #aih-selection-toolbar {
       position: fixed;
       z-index: 2147483647;
+      overflow: visible;
       display: none;
       align-items: center;
       gap: 1px;
@@ -163,6 +168,7 @@ const TOOLBAR_RULES = `
     .aih-overflow-dropdown {
       position: fixed;
       z-index: 2147483646;
+      overflow: visible;
       background: var(--tb-panel);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
@@ -530,6 +536,7 @@ const TOOLBAR_RULES = `
     .aih-token-popup {
       position: fixed;
       z-index: 2147483647;
+      overflow: visible;
       background: var(--bg-elevated);
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);

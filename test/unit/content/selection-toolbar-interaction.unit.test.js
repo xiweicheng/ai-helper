@@ -5,7 +5,7 @@
 // 表现为"工具栏能弹出但按钮点不了，点一下整个工具栏消失"。
 // 契约：鼠标在工具栏浮层内按下期间（mousedown→mouseup），selectionchange
 // 不得隐藏工具栏、不得清空已保存选区文本。
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // setup 里的全局 chrome-mock 在无 runtime.id 时按"扩展上下文失效"处理，
 // 必须在 import 被测模块前替换为可用且带 Promise 返回的完整 stub
@@ -142,5 +142,53 @@ describe('工具栏浮层内按住期间，宿主清选区不得关闭工具栏'
     await selectTextAndWait('另一段文本');
     clearPageSelection();
     expect(getToolbarEl().style.display).toBe('none');
+  });
+});
+
+// 回归：标志仅在 document mouseup 复位属无界锁——用户在工具栏内按下后
+// 在页面外释放（拖到别的窗口/切走/原生菜单），document 收不到 mouseup，
+// 工具栏永久粘住且后续动作作用在过期选区上
+
+describe('交互锁的兜底复位与监听器生命周期', () => {
+  test('页面失焦（window blur）解锁：释放发生在页面外时工具栏不再粘死', async () => {
+    await selectTextAndWait('测试文本内容');
+    getFirstActionButton().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    clearPageSelection();
+    expect(getToolbarEl().style.display).not.toBe('none');
+    // 鼠标在页外释放：document 始终没有 mouseup，只有窗口失焦事件
+    window.dispatchEvent(new Event('blur'));
+    // 解锁后下一次 selectionchange 应能正常隐藏
+    clearPageSelection();
+    expect(getToolbarEl().style.display).toBe('none');
+  });
+
+  test('重复 init（含语言切换重建）不得在 document 累积交互锁监听', async () => {
+    const spies = [];
+    const countMouseup = () => {
+      let n = 0;
+      for (const name of ['addEventListener', 'removeEventListener']) {
+        const orig = document[name].bind(document);
+        const spy = vi.fn((type, fn, opts) => {
+          // 只统计交互锁复位监听（具名 resetToolbarInteracting）；
+          // 既有的 onMouseUp 抬起显示监听按仓库惯例 init 注册/destroy 移除，不属本回归范围
+          if (type === 'mouseup' && fn?.name === 'resetToolbarInteracting') {
+            n += name === 'addEventListener' ? 1 : -1;
+          }
+          return orig(type, fn, opts);
+        });
+        document[name] = spy;
+        spies.push({ name, orig });
+      }
+      return () => n;
+    };
+    const snapshot = countMouseup();
+    initSelectionToolbar();
+    await new Promise((r) => setTimeout(r, 0));
+    initSelectionToolbar(); // 第二次 init：不应新增重复的 capture mouseup 注册
+    await new Promise((r) => setTimeout(r, 0));
+    const afterTwoInits = snapshot();
+    for (const { name, orig } of spies) document[name] = orig;
+    // 注册幂等：两次 init 后活动监听仍为 1（旧实现每次 createToolbar/renderOverflowDropdown 各加一份）
+    expect(afterTwoInits).toBeLessThanOrEqual(1);
   });
 });

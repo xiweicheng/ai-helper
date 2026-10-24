@@ -177,6 +177,22 @@ let toolbarTemporarilyHidden = false; // 临时隐藏（页面刷新后恢复）
 let suppressNextClick = false;
 let lastToolbarShowTime = 0; // 最后一次显示工具栏时间（IFRAME_CLICK_DISMISS 防误关窗口）
 let toolbarInteracting = false; // 鼠标在工具栏/下拉浮层内按下的交互窗口期
+
+// 交互锁复位：必须同时监听 mouseup 与 window blur——
+// 用户在浮层内按下后在页面外释放（拖到别的窗口/切走/原生菜单）时 document 收不到 mouseup，
+// 若无其它复位通道则锁永久为 true，工具栏粘死且后续动作作用在过期选区上。
+// 监听器为模块级单例（注册幂等），不在 createToolbar/renderOverflowDropdown 内
+// 逐个注册——否则语言切换重建时匿名监听器在 document 上线性累积且无法移除。
+function resetToolbarInteracting() { toolbarInteracting = false; }
+let interactingListenersBound = false;
+// 复位监听随 content script 生命周期常驻（仅复位一个布尔，开销可忽略）：
+// 语言切换/工具栏重建只 bind 一次，页外释放靠 blur 兜底，无需拆除通道。
+function bindInteractingReset() {
+  if (interactingListenersBound) return;
+  document.addEventListener('mouseup', resetToolbarInteracting, true);
+  window.addEventListener('blur', resetToolbarInteracting);
+  interactingListenersBound = true;
+}
 let lastPanelPos = { x: 0, y: 0 };  // 保存面板位置，避免工具栏隐藏后无法获取
 let pendingSelection = null;  // 鼠标拖动选中时暂存，抬起时再显示工具栏
 let toolbarTools = null;  // 工具栏工具配置缓存
@@ -209,6 +225,72 @@ let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区
 // frameset 页面没有 document.body，降级挂载到 document.documentElement
 function appendToDoc(el) {
   (document.body || document.documentElement).appendChild(el);
+}
+
+// ==================== 浮层 top layer 管理 ====================
+// 同文档遮挡治理：宿主页面（如飞书）的超高 z-index / popover 悬浮条会压住我方浮层，
+// z-index 已是 CSS 最大值无法再抬升；交互浮层统一经 Popover API 进入 top layer，
+// 仍被遮挡时探测出遮挡源临时隐藏、我方全部收起后还原。
+// 不支持 Popover API 的老 Chromium 回退为 body 挂载 + 内联 display（既有行为）。
+
+/** 标记为我方浮层节点，遮挡探测据此豁免 */
+function markAih(el) {
+  el.setAttribute('data-aih', '');
+}
+
+function openFloat(el, displayValue) {
+  if (!el) return;
+  try { el.showPopover(); } catch { /* 不支持或状态异常，回退路径靠内联 display */ }
+  el.style.display = displayValue;
+}
+
+function closeFloat(el) {
+  if (!el) return;
+  try { el.hidePopover(); } catch { /* 同上 */ }
+  el.style.display = 'none';
+}
+
+/** 浮层是否处于打开状态（内联 display 为唯一事实源，popover 与之同步） */
+function isFloatOpen(el) {
+  return !!el && el.style.display !== '' && el.style.display !== 'none';
+}
+
+const hiddenOccluders = new Map(); // 被临时隐藏的遮挡源 → 原 inline display
+
+function anyFloatOpen() {
+  return isFloatOpen(toolbarEl) || isFloatOpen(overflowDropdownEl)
+    || isFloatOpen(resultPanelEl) || tokenPopupOpen;
+}
+
+function restoreOccluders() {
+  hiddenOccluders.forEach((prev, el) => {
+    if (prev === null) el.style.removeProperty('display');
+    else el.style.display = prev;
+  });
+  hiddenOccluders.clear();
+}
+
+/** 显示并定位完成后采样浮层矩形，命中非我方元素则临时隐藏 */
+function probeFloatOcclusion(el) {
+  if (!el || typeof el.getBoundingClientRect !== 'function' || !document.elementFromPoint) return;
+  const rect = el.getBoundingClientRect();
+  if (!(rect.width > 0) || !(rect.height > 0)) return;
+  const xs = [rect.left + rect.width * 0.25, rect.left + rect.width / 2, rect.left + rect.width * 0.75];
+  const ys = [rect.top + rect.height / 2, rect.bottom - 2];
+  for (const px of xs) {
+    for (const py of ys) {
+      const hit = document.elementFromPoint(px, py);
+      if (!hit || hit.closest('[data-aih]')) continue;
+      if (hiddenOccluders.has(hit)) continue;
+      hiddenOccluders.set(hit, hit.style.display);
+      hit.style.display = 'none';
+    }
+  }
+}
+
+/** 浮层关闭后调用：我方浮层全部收起时还原被临时隐藏的遮挡源 */
+function releaseOcclusionIfIdle() {
+  if (hiddenOccluders.size && !anyFloatOpen()) restoreOccluders();
 }
 
 // 拖拽状态
@@ -364,13 +446,16 @@ function createOverflowDropdown() {
   overflowDropdownEl = document.createElement('div');
   overflowDropdownEl.id = 'aih-overflow-dropdown';
   overflowDropdownEl.className = 'aih-overflow-dropdown';
+  overflowDropdownEl.setAttribute('popover', 'manual');
+  markAih(overflowDropdownEl);
   overflowDropdownEl.style.display = 'none';
   appendToDoc(overflowDropdownEl);
   
   document.addEventListener('click', (e) => {
-    if (overflowDropdownEl && overflowDropdownEl.style.display === 'block') {
+    if (overflowDropdownEl && isFloatOpen(overflowDropdownEl)) {
       if (!overflowDropdownEl.contains(e.target) && !e.target.closest('.aih-tb-btn-overflow')) {
-        overflowDropdownEl.style.display = 'none';
+        closeFloat(overflowDropdownEl);
+        releaseOcclusionIfIdle();
       }
     }
   });
@@ -403,7 +488,8 @@ function renderOverflowDropdown(overflowTools) {
   overflowDropdownEl._clickHandler = (e) => {
     if (e.target.closest('.aih-dropdown-settings')) {
       e.stopPropagation();
-      overflowDropdownEl.style.display = 'none';
+      closeFloat(overflowDropdownEl);
+      releaseOcclusionIfIdle();
       try {
         chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'toolbar' }).catch(() => {});
       } catch {
@@ -415,7 +501,8 @@ function renderOverflowDropdown(overflowTools) {
     if (e.target.closest('.aih-dropdown-block')) {
       e.stopPropagation();
       e.preventDefault();
-      overflowDropdownEl.style.display = 'none';
+      closeFloat(overflowDropdownEl);
+      releaseOcclusionIfIdle();
       blockCurrentDomain();
       return;
     }
@@ -423,7 +510,8 @@ function renderOverflowDropdown(overflowTools) {
     if (e.target.closest('.aih-dropdown-hide')) {
       e.stopPropagation();
       e.preventDefault();
-      overflowDropdownEl.style.display = 'none';
+      closeFloat(overflowDropdownEl);
+      releaseOcclusionIfIdle();
       toolbarTemporarilyHidden = true;
       hideToolbar();
       hideResultPanel();
@@ -434,7 +522,8 @@ function renderOverflowDropdown(overflowTools) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     e.stopPropagation();
-    overflowDropdownEl.style.display = 'none';
+    closeFloat(overflowDropdownEl);
+    releaseOcclusionIfIdle();
     handleAction(btn.dataset.action, currentSelectedText);
   };
   overflowDropdownEl.addEventListener('click', overflowDropdownEl._clickHandler);
@@ -453,7 +542,6 @@ function renderOverflowDropdown(overflowTools) {
   // 富文本宿主页面（如飞书文档）在 mousedown 阶段会清除页面选区触发 selectionchange，
   // 若不加保护会在 click 派发前就把工具栏隐藏，导致按钮点不了；与工具栏同策略保护
   overflowDropdownEl.addEventListener('mousedown', () => { toolbarInteracting = true; });
-  document.addEventListener('mouseup', () => { toolbarInteracting = false; }, true);
 }
 
 // ==================== 工具栏创建 ====================
@@ -470,6 +558,8 @@ async function createToolbar() {
   
   toolbarEl = document.createElement('div');
   toolbarEl.id = 'aih-selection-toolbar';
+  toolbarEl.setAttribute('popover', 'manual');
+  markAih(toolbarEl);
   
   let buttonsHtml = `<span class="aih-tb-buttons">`;
   buttonsHtml += `<span class="aih-tb-grip" title="${t('selToolbar.dragToMove')}">${ICONS.grip}</span>`;
@@ -519,10 +609,15 @@ async function createToolbar() {
       const btn = e.target.closest('.aih-tb-btn-overflow');
       const rect = btn.getBoundingClientRect();
       if (overflowDropdownEl) {
-        overflowDropdownEl.style.display = 
-          overflowDropdownEl.style.display === 'block' ? 'none' : 'block';
-        overflowDropdownEl.style.top = (rect.bottom + 4) + 'px';
-        overflowDropdownEl.style.left = (rect.right - 160) + 'px';
+        if (isFloatOpen(overflowDropdownEl)) {
+          closeFloat(overflowDropdownEl);
+          releaseOcclusionIfIdle();
+        } else {
+          openFloat(overflowDropdownEl, 'block');
+          overflowDropdownEl.style.top = (rect.bottom + 4) + 'px';
+          overflowDropdownEl.style.left = (rect.right - 160) + 'px';
+          requestAnimationFrame(() => probeFloatOcclusion(overflowDropdownEl));
+        }
       }
       return;
     }
@@ -547,9 +642,10 @@ async function createToolbar() {
   });
   
   // 交互窗口期标记：鼠标在工具栏内按下期间，宿主页面清选区触发的
-  // selectionchange 不得隐藏工具栏（飞书等富文本编辑器在 mousedown 时就清选区）
+  // selectionchange 不得隐藏工具栏（飞书等富文本编辑器在 mousedown 时就清选区）；
+  // 复位监听为模块级单例（mouseup + window blur），重复 init 不累积监听器
   toolbarEl.addEventListener('mousedown', () => { toolbarInteracting = true; });
-  document.addEventListener('mouseup', () => { toolbarInteracting = false; }, true);
+  bindInteractingReset();
   
   appendToDoc(toolbarEl);
   
@@ -665,6 +761,8 @@ function createResultPanel() {
   
   resultPanelEl = document.createElement('div');
   resultPanelEl.id = 'aih-selection-result';
+  resultPanelEl.setAttribute('popover', 'manual');
+  markAih(resultPanelEl);
   resultPanelEl.innerHTML = `
     <div class="aih-result-header">
       <span>${ICONS.sparkle} ${t('selToolbar.aiAnswer')}</span>
@@ -817,7 +915,7 @@ function showResultPanel(x, y, content, suggestions = []) {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   
-  resultPanelEl.style.display = 'flex';
+  openFloat(resultPanelEl, 'flex');
   resultPanelEl.style.left = '-9999px';
   resultPanelEl.style.top = '-9999px';
   
@@ -871,7 +969,7 @@ function showResultLoading(x, y) {
   // 确保面板始终在 body 最末尾，处于最顶层
   appendToDoc(resultPanelEl);
   
-  resultPanelEl.style.display = 'flex';
+  openFloat(resultPanelEl, 'flex');
   
   const body = resultPanelEl.querySelector('.aih-result-body');
   body.innerHTML = `<div class="aih-result-loading"><div class="aih-spinner"></div>${t('selToolbar.aiThinking')}</div>`;
@@ -894,7 +992,7 @@ function showResultError(x, y, errorMsg) {
   // 确保面板始终在 body 最末尾，处于最顶层
   appendToDoc(resultPanelEl);
   
-  resultPanelEl.style.display = 'flex';
+  openFloat(resultPanelEl, 'flex');
   
   const body = resultPanelEl.querySelector('.aih-result-body');
   body.innerHTML = `<div class="aih-result-error">${t('selToolbar.requestFailed', { msg: escapeHtml(errorMsg) })}</div>`;
@@ -930,12 +1028,14 @@ function positionPanel(panel, x, y) {
     
     // 再次确保在最顶层（防止 requestAnimationFrame 期间有其他元素插入）
     appendToDoc(panel);
+    probeFloatOcclusion(panel);
   });
 }
 
 function hideResultPanel() {
   if (!resultPanelEl) return;
-  resultPanelEl.style.display = 'none';
+  closeFloat(resultPanelEl);
+  releaseOcclusionIfIdle();
   isResultVisible = false;
   isResultLocked = false;
   resultRawContent = '';
@@ -1085,8 +1185,12 @@ function formatTokenFull(n) {
 /** 关闭 Token 明细弹窗 */
 function removeTokenUsagePopup() {
   const existing = document.querySelector('.aih-token-popup');
-  if (existing) existing.remove();
+  if (existing) {
+    closeFloat(existing);
+    existing.remove();
+  }
   tokenPopupOpen = false;
+  releaseOcclusionIfIdle();
 }
 
 /** 点击 Token 标签开关消耗明细弹窗（视觉与交互对齐侧边栏 showTokenPopup） */
@@ -1110,6 +1214,8 @@ function showTokenUsagePopup(anchorEl) {
 
   const popup = document.createElement('div');
   popup.className = 'aih-token-popup';
+  popup.setAttribute('popover', 'manual');
+  markAih(popup);
   popup.innerHTML = `
     <div class="aih-token-popup-header">
       <span class="aih-token-popup-title">${t('selToolbar.tokenPopupTitle')}</span>
@@ -1138,7 +1244,7 @@ function showTokenUsagePopup(anchorEl) {
     </div>
   `;
   appendToDoc(popup);
-  popup.style.zIndex = '2147483647';
+  openFloat(popup, 'flex');
   tokenPopupOpen = true;
 
   // 定位：优先锚点上方，空间不足时放下方，并做视口边界约束（与侧边栏一致）
@@ -1154,6 +1260,7 @@ function showTokenUsagePopup(anchorEl) {
   }
   popup.style.top = top + 'px';
   popup.style.left = left + 'px';
+  probeFloatOcclusion(popup);
 
   popup.querySelector('.aih-token-popup-close').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1182,7 +1289,7 @@ function showToolbar(x, y) {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   
-  toolbarEl.style.display = 'flex';
+  openFloat(toolbarEl, 'flex');
   lastToolbarShowTime = Date.now();
   
   requestAnimationFrame(() => {
@@ -1209,6 +1316,9 @@ function showToolbar(x, y) {
     toolbarEl.style.left = left + 'px';
     toolbarEl.style.top = top + 'px';
     
+    // top layer 仍可能被宿主 modal/dialog 压住，采样探测遮挡源
+    probeFloatOcclusion(toolbarEl);
+    
     if (!isToolbarVisible) {
       toolbarEl.classList.add('aih-show');
       isToolbarVisible = true;
@@ -1218,6 +1328,8 @@ function showToolbar(x, y) {
 
 function hideToolbar() {
   if (!toolbarEl || !isToolbarVisible) return;
+  // 工具栏收起即交互窗口期结束：复位锁防粘死（显示期间无鼠标按下会重新置位）
+  toolbarInteracting = false;
   
   if (isAskMode) {
     isAskMode = false;
@@ -1232,7 +1344,8 @@ function hideToolbar() {
   }
   
   toolbarEl.classList.remove('aih-show');
-  toolbarEl.style.display = 'none';
+  closeFloat(toolbarEl);
+  releaseOcclusionIfIdle();
   isToolbarVisible = false;
 }
 
@@ -1746,6 +1859,7 @@ function showCopyErrorToast() {
   
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
+  toast.setAttribute('data-aih', '');
   toast.textContent = t('selToolbar.copyFailed');
   toast.style.cssText = `
     position: fixed;
@@ -1774,6 +1888,7 @@ function showCopyToast(text) {
   
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
+  toast.setAttribute('data-aih', '');
   toast.textContent = text || t('selToolbar.copied');
   toast.style.cssText = `
     position: fixed;
@@ -2272,6 +2387,8 @@ export function destroySelectionToolbar() {
   hideToolbar();
   hideResultPanel();
   removeTokenUsagePopup();
+  // 还原被临时隐藏的宿主遮挡源，避免卸载后页面残留空白
+  restoreOccluders();
   
   if (toolbarEl) {
     toolbarEl.remove();
