@@ -382,10 +382,11 @@ describe('源码接线（AST）：导出回调不得在任何 await 之后读事
   const allListeners = Object.entries(PANEL_SOURCES)
     .flatMap(([file, src]) => extractExportListeners(file, src));
 
-  test('扫描作用域按「含按需 import」动态派生，且覆盖三个已知引用方', () => {
+  test('扫描作用域按「含按需 import」动态派生，且覆盖已知引用方', () => {
     expect(Object.keys(PANEL_SOURCES).sort()).toEqual([
       'chat-manager.js',
       'chat-streaming.js',
+      'message-fullscreen.js',
       'workspace-panel.js',
     ]);
   });

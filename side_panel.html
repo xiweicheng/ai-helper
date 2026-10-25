@@ -1009,6 +1009,7 @@
             <tr><td><kbd>Alt</kbd> + <kbd>N</kbd></td><td data-i18n="shortcuts.newSession">新建会话</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td data-i18n="shortcuts.closeCurrentSession">关闭当前会话</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td data-i18n="shortcuts.editLastMessage">编辑最近一条用户消息</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td data-i18n="shortcuts.messageFullscreen">全屏查看 / 退出查看回答</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
             <tr><td><kbd>Enter</kbd></td><td data-i18n="shortcuts.sendMessage">发送消息</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.newLine">换行</td><td>Win / Mac</td></tr>
@@ -1018,6 +1019,24 @@
         </table>
       </div>
     </div>
+  </div>
+
+  <!-- AI 回答全屏阅读覆盖层（节点迁移，消息节点动态挂入 body） -->
+  <div class="message-fullscreen-overlay" id="messageFullscreenOverlay" style="display:none">
+    <div class="message-fullscreen-header">
+      <span class="message-fullscreen-title" id="messageFullscreenTitle" data-i18n="msgFullscreen.title">全屏阅读</span>
+      <div class="message-fullscreen-actions">
+        <button class="message-fullscreen-icon-btn" id="messageFullscreenCopyBtn" title="复制">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/></svg>
+          <span data-i18n="msgFullscreen.copy">复制</span>
+        </button>
+        <button class="message-fullscreen-icon-btn message-fullscreen-close" id="messageFullscreenCloseBtn" title="退出全屏">
+          <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06z"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="message-fullscreen-body" id="messageFullscreenBody"></div>
+    <div class="message-fullscreen-rail" id="messageFullscreenRail"></div>
   </div>
 
   <!-- 版本信息弹窗 -->

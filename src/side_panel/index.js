@@ -13,6 +13,7 @@ import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initMessageJumpNav } from './message-jump-nav.js';
+import { initMessageFullscreen, getSessionDOMSnapshot } from './message-fullscreen.js';
 import { initSearchPanel } from './search-panel.js';
 import { initSchedulePanel } from './schedule-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
@@ -2390,7 +2391,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 如果当前会话有 resumable 消息（恢复卡片），不缓存（避免缓存中包含不完整的恢复卡片）
     const hasResumable = previousSessionId && state.messageHistory?.some(msg => msg.resumable);
     if (previousSessionId && !state.pendingCallApiSessionIds.has(previousSessionId) && !hasResumable) {
-      cacheSessionDOM(previousSessionId, chatContainerEl.innerHTML);
+      const _prevDomSnap = getSessionDOMSnapshot(chatContainerEl);
+      if (_prevDomSnap) cacheSessionDOM(previousSessionId, _prevDomSnap);
     }
 
     // 如果图片已被上一会话消费（预览栏已隐藏），切换会话时清空图片附件
@@ -2468,7 +2470,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 初次构建后缓存当前会话 DOM
       const isStreamingSession = state.pendingCallApiSessionIds.has(sessionId);
       if (!isStreamingSession) {
-        cacheSessionDOM(sessionId, chatContainerEl.innerHTML);
+        const _curDomSnap = getSessionDOMSnapshot(chatContainerEl);
+        if (_curDomSnap) cacheSessionDOM(sessionId, _curDomSnap);
       }
 
       // 检查被遗弃的 checkpoint（页面关闭/刷新导致任务中断）
@@ -2639,6 +2642,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const navApi = initMessageJumpNav();
+  initMessageFullscreen();
 
   // 全局键盘快捷键
   document.addEventListener('keydown', (e) => {

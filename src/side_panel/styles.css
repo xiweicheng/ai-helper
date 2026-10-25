@@ -11969,11 +11969,13 @@ body {
 @media (max-width: 420px) {
   .message.assistant .copy-btn span,
   .message.assistant .quote-btn span,
+  .message.assistant .fullscreen-btn span,
   .export-trigger-btn span {
     display: none;
   }
   .message.assistant .copy-btn,
   .message.assistant .quote-btn,
+  .message.assistant .fullscreen-btn,
   .export-trigger-btn {
     padding: 4px 6px;
   }
@@ -15237,4 +15239,157 @@ body {
 .side-rail .search-panel,
 .side-rail .schedule-panel {
   pointer-events: auto;
+}
+
+/* ========== AI 回答全屏查看（节点迁移） ========== */
+/* footer 全屏按钮：图标+文字，与 复制/引用/导出 同风格（继承 copy-btn 视觉规格） */
+.message.assistant .fullscreen-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.message.assistant .fullscreen-btn:hover {
+  background: rgba(var(--brand-rgb), 0.1);
+  color: var(--brand-500);
+}
+.message.assistant .fullscreen-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 覆盖层：铺满整个侧边栏视口，隐藏 Header/输入区干扰。
+   z-index 10005：高于会话列表面板(10003)与其确认弹窗(10004)、搜索(10002)，
+   低于自定义确认弹窗(10010)与 toast(100000)，确保弹窗/toast 仍可浮于其上 */
+.message-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10005;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  animation: dropdownFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.message-fullscreen-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
+}
+.message-fullscreen-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #333);
+}
+.message-fullscreen-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-fullscreen-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--elev-surface, #f5f7fa);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary, #555);
+  transition: all 0.2s;
+}
+.message-fullscreen-icon-btn:hover {
+  background: rgba(var(--brand-rgb), 0.1);
+  color: var(--brand-500);
+  border-color: var(--brand-500);
+}
+.message-fullscreen-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.message-fullscreen-close {
+  padding: 0 8px;
+}
+
+/* 头栏导出菜单：触发器复用 message-fullscreen-icon-btn 风格，下拉向下展开 */
+.message-fullscreen-export {
+  position: relative;
+  display: inline-flex;
+}
+.message-fullscreen-export .dropdown-arrow {
+  width: 8px;
+  height: 6px;
+  transition: transform 0.2s;
+}
+.message-fullscreen-export-dropdown.show .dropdown-arrow {
+  transform: rotate(180deg);
+}
+.message-fullscreen-export-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 168px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 4px 0;
+  display: none;
+  z-index: 10006;
+  animation: exportMenuFadeIn 0.15s ease;
+}
+.message-fullscreen-export-dropdown.show {
+  display: block;
+}
+
+.message-fullscreen-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 18px clamp(14px, 3vw, 28px);
+}
+
+/* 全屏内目录导航挂载点：贴覆盖层右缘、垂直居中，浮于正文之上。
+   side-rail 被 fixed 覆盖层遮挡，故在覆盖层内另设此入口承载 .message-toc-container */
+.message-fullscreen-rail {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+/* 阅读聚焦：铺满可用宽度，仅超宽（脱离窗口）时适度居中限宽保证行长；
+   去掉消息卡片自带背景/阴影/内边距——覆盖层底色与卡片底色相同，卡片是冗余的 */
+.message-fullscreen-body > .message {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  line-height: 1.75;
+}
+/* 只展示最终回答：隐藏过程区、工具调用、折叠头与消息自带 footer（覆盖层已有操作栏） */
+.message-fullscreen-body .message .message-toolbar,
+.message-fullscreen-body .message .message-footer,
+.message-fullscreen-body .message .thinking-process,
+.message-fullscreen-body .message .process-history {
+  display: none !important;
 }

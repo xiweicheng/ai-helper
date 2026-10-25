@@ -16,6 +16,7 @@ import { updateBookmarkBtnState } from './bookmark-panel.js';
 import { handleDuplicateSession } from './session-manager-ui.js';
 import { buildArtifactsForMessage, parseDeclaredArtifactsFromText, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { createFullscreenButton } from './message-fullscreen.js';
 
 registerTranslations('zh', {
   chatStream: {
@@ -1759,6 +1760,9 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     quoteAndAsk(element);
   });
   footer.appendChild(quoteBtn);
+
+  // 全屏查看按钮（点击由 message-fullscreen 的 document 委托处理）
+  footer.appendChild(createFullscreenButton());
   
   // 导出菜单
   const exportMenuContainer = document.createElement('div');

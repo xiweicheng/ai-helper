@@ -402,6 +402,7 @@ export default {
     closeSession: '关闭当前会话',
     closeCurrentSession: '关闭当前会话',
     editLastMessage: '编辑最近一条用户消息',
+    messageFullscreen: '全屏查看 / 退出查看回答',
   },
 
   // 版本信息弹窗

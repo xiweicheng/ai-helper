@@ -34,6 +34,7 @@ import { clearKnowledgeRefs, renderKnowledgeIndicator, fetchKnowledgeCollections
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { createFullscreenButton } from './message-fullscreen.js';
 
 // 从拆分子模块导入复制与导出相关函数
 import { copyMessage, copyAssistantMessage, quoteAndAsk, setQuoteContextInjector } from './chat-copy.js';
@@ -1559,6 +1560,9 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     });
     
     footer.appendChild(quoteBtn);
+
+    // 全屏查看按钮（点击由 message-fullscreen 的 document 委托处理，无需此处绑定）
+    footer.appendChild(createFullscreenButton());
     
     const exportMenuContainer = document.createElement('div');
     exportMenuContainer.className = 'export-menu-container';

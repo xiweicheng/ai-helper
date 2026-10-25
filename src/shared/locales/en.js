@@ -402,6 +402,7 @@ export default {
     closeSession: 'Close current session',
     closeCurrentSession: 'Close current session',
     editLastMessage: 'Edit last user message',
+    messageFullscreen: 'View answer fullscreen / exit',
   },
 
   // Version info modal

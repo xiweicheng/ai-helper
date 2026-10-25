@@ -179,8 +179,13 @@ export function showMessageToc(messageDiv, headings) {
     </div>
   `;
   
-  // 添加到入口轨道的目录槽位（槽位常驻，避免目录创建/销毁时其他入口跳动）
-  getSideRailSlot('toc').appendChild(container);
+  // 挂载点：全屏中的消息挂到覆盖层内的 rail —— 覆盖层 fixed 铺满视口并盖住 side-rail，
+  // 若仍挂 side-rail 会被遮挡（表现为全屏里"目录导航没了"）；普通列表仍挂入口轨道 toc 槽位
+  const fsOverlay = messageDiv.closest('.message-fullscreen-overlay');
+  const mountHost = fsOverlay
+    ? (fsOverlay.querySelector('.message-fullscreen-rail') || getSideRailSlot('toc'))
+    : getSideRailSlot('toc');
+  mountHost.appendChild(container);
   state.messageTocContainer = container;
 
   // 容器已入轨，垂直位置由轨道均分；hover 桥接由 800ms 延迟隐藏 + 面板 mouseenter 保证
