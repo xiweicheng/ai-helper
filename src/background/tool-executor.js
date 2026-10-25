@@ -3161,10 +3161,24 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
   throw lastError;
 }
 
+// fetch_url 的 timeout 参数契约：单位毫秒。模型常按"秒"理解，传 30 这类值按毫秒执行等于秒挂
+// （实测在控制台留下 "请求超时 (30ms)"）。schema 已声明 minimum/maximum，但 schema 不参与执行，
+// 执行侧必须再钳一次，两端共同兜住。
+export const FETCH_URL_TIMEOUT_DEFAULT_MS = 15000;
+export const FETCH_URL_TIMEOUT_MIN_MS = 1000;
+export const FETCH_URL_TIMEOUT_MAX_MS = 120000;
+
+export function normalizeFetchUrlTimeout(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return FETCH_URL_TIMEOUT_DEFAULT_MS;
+  return Math.min(FETCH_URL_TIMEOUT_MAX_MS, Math.max(FETCH_URL_TIMEOUT_MIN_MS, Math.floor(ms)));
+}
+
 export async function executeFetchUrl(args, toolCallId) {
-  const { url, method = 'GET', headers = {}, body, timeout = 15000 } = args;
+  const { url, method = 'GET', headers = {}, body, timeout = FETCH_URL_TIMEOUT_DEFAULT_MS } = args;
+  const effectiveTimeout = normalizeFetchUrlTimeout(timeout);
   
-  console.log('[Background] exec  HTTP request:', 'method=', method, 'url=', url, 'timeout=', timeout);
+  console.log('[Background] exec  HTTP request:', 'method=', method, 'url=', url, 'timeout=', effectiveTimeout);
   
   // 验证 URL 格式
   if (!url) {
@@ -3233,7 +3247,7 @@ export async function executeFetchUrl(args, toolCallId) {
   console.log('[Background] fetch options:', JSON.stringify(fetchOptions));
   
   try {
-    const response = await fetchWithRetry(url, fetchOptions, timeout, 1);
+    const response = await fetchWithRetry(url, fetchOptions, effectiveTimeout, 1);
     console.log('[Background] HTTP response status:', response.status, response.statusText);
     
     try {
@@ -3261,8 +3275,8 @@ export async function executeFetchUrl(args, toolCallId) {
     let errorMessage = error.message;
     
     if (error.name === 'AbortError') {
-      console.warn('[Background] HTTP request timed out:', url, `(${timeout}ms)`);
-      errorMessage = t('toolExec.requestTimeout', { timeout });
+      console.warn('[Background] HTTP request timed out:', url, `(${effectiveTimeout}ms)`);
+      errorMessage = t('toolExec.requestTimeout', { timeout: effectiveTimeout });
     } else {
       console.error('[Background] HTTP request failed:', error.name, error.message);
       if (error.message === 'Failed to fetch') {

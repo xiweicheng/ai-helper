@@ -4,6 +4,15 @@
 
 ## 2026-10-25
 
+### fetch_url 超时参数契约：毫秒语义写进 schema + 执行侧双向钳制
+> 来源：控制台出现 `[Background] HTTP request failed: Error 请求超时 (30ms)`，用户追问「这个超时正常吗」。顺链路取证：该文案唯一出口是 `tool-executor.js` 的 `executeFetchUrl` → `fetchWithTimeout` 内部超时分支，`safeTimeoutMs` 就是模型传进来的 `timeout`。30ms 连一次公网 HTTP 往返都不可能完成，属参数误用而非网络抖动。
+
+- **根因是 schema 契约缺失**：`fetch_url` 的 `timeout` 在 `storage-tools.js` 里原为裸的 `{ type: 'integer' }` —— 无单位、无下限、无描述。模型按「秒」理解而传 `30`，代码按毫秒执行即秒挂；`fetchWithRetry(..., 1)` 再退避约 1s 重试一次，两次都是 30ms，最终只留下一条控制台 error 与一条被浪费的工具调用。对照组是 `agent_exec` 的 `timeoutMs`（`minimum: 5000` + 延长语义说明）。
+- **schema 侧**：补 `minimum: 1000` / `maximum: 120000` / `description`（明写毫秒、默认 15000、越界被钳制，并说明该预算只覆盖等响应头、不覆盖整包下载，慢接口应调大而不是盲目重试），让模型在传参前就知道契约边界。
+- **执行侧**：新增 `normalizeFetchUrlTimeout()`（附 `FETCH_URL_TIMEOUT_DEFAULT_MS/MIN_MS/MAX_MS` 三个导出常量），`executeFetchUrl` 先归一再用 —— 0/负数/非数字回落 15000，小数向下取整，越界钳到 `[1000, 120000]`；执行日志与 `toolExec.requestTimeout` 文案统一改用生效值，不再回显模型给的裸数字（否则「请求超时 (30ms)」会继续误导排查）。schema 不参与执行，只靠它挡不住，两层必须同时有（与 `agent_exec` 那次教训同源）。
+- **验证**：`fetch-url-network-scope.unit.test.js` 新增 `timeout 参数契约` 一组 —— 9 条归一化边界（含 `30`/`'30'`/`0`/负数/非数字/越界）、两条 `AbortSignal.timeout` 断言（真正下发 1000ms 与 15000ms，不是只测纯函数）、一条 schema 边界守卫（防止 `minimum`/单位描述被后来者抹掉）；全量单测 **168 文件 / 2511 例全绿**，`eslint` 三个改动文件无输出，`build:silent` → BUILD_SUCCESS。
+- **未跟进（同类隐患，不在本批）**：`manage_tab` 的 `loadTimeout` 同样是裸 `{ type: 'integer' }`，与本次完全同一误用模式（模型传小值即加载超时），待并入下批处理。
+
 ### 真机探针收尾批次：取消作用域对齐 + 防重放进度不被误清 + 「已跳过重放」可见 + checkpoint 尾随落盘
 > 来源：为「子任务中断现场续用」搭的真机端到端探针（Playwright 加载 dist + OpenAI 兼容假流）。前一轮它报过「假绿灯」，本轮重建后才第一次真正测到链路，随即暴露 5 项缺陷（前两项同属取消链路）。逐项回 HEAD 取证确认均为存量问题（非本批引入），再按 TDD 修复。
 

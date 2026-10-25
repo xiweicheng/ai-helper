@@ -67,7 +67,14 @@ export const STORAGE_TOOLS = [
           method: { type: 'string', enum: ['GET', 'POST'] },
           headers: { type: 'object' },
           body: { type: 'string' },
-          timeout: { type: 'integer' }
+          // 单位必须显式写死：模型会按"秒"理解 timeout 而传 30，按毫秒执行等于秒挂。
+          // schema 声明边界不参与执行，执行侧另有一层钳制（normalizeFetchUrlTimeout）。
+          timeout: {
+            type: 'integer',
+            minimum: 1000,
+            maximum: 120000,
+            description: 'Timeout in milliseconds (default 15000, range 1000-120000; out-of-range values are clamped). Covers waiting for response headers per attempt, not the whole body download: raise it for slow APIs instead of retrying blindly'
+          }
         },
         required: ['url']
       }

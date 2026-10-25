@@ -71,6 +71,7 @@ vi.mock('../../src/background/stream-controller.js', () => ({
 }));
 
 let executeFetchUrl;
+let normalizeFetchUrlTimeout;
 let configModule;
 let fetchCalls;
 
@@ -103,6 +104,7 @@ const setNetworkConfig = ({ enabled, hosts }) => {
 beforeAll(async () => {
   const mod = await import('../../src/background/tool-executor.js');
   executeFetchUrl = mod.executeFetchUrl;
+  normalizeFetchUrlTimeout = mod.normalizeFetchUrlTimeout;
   configModule = await import('../../src/background/config.js');
 });
 
@@ -223,5 +225,56 @@ describe('协议限制', () => {
     setNetworkConfig({ enabled: false, hosts: [] });
     expect((await executeFetchUrl({}, 'call-no-url')).error).toContain('URL');
     expect((await executeFetchUrl({ url: 'not a url' }, 'call-bad-url')).error).toContain('not a url');
+  });
+});
+
+// 回归背景：fetch_url 的 timeout 在 schema 里曾是裸的 { type: 'integer' }，没有单位说明也没有
+// 下限，模型把 timeout 当"秒"传 30，代码按毫秒执行，于是控制台出现 "请求超时 (30ms)"。
+// 约定：timeout 语义固定为毫秒，执行侧钳到 [1000, 120000]，缺省/非法值回落 15000。
+describe('timeout 参数契约：毫秒语义 + 执行侧钳制', () => {
+  test.each([
+    ['模型按秒传的 30', 30, 1000],
+    ['字符串形式的 30', '30', 1000],
+    ['恰好等于下限', 1000, 1000],
+    ['合法中间值', 60000, 60000],
+    ['超出上限', 999999, 120000],
+    ['0 视为未提供', 0, 15000],
+    ['负数视为未提供', -5, 15000],
+    ['未提供', undefined, 15000],
+    ['非数字字符串', 'abc', 15000],
+  ])('%s → 生效 %sms', (_name, input, expected) => {
+    expect(normalizeFetchUrlTimeout(input)).toBe(expected);
+  });
+
+  test('timeout=30 时真正下发给请求的预算被抬到 1000ms（不再秒挂）', async () => {
+    setNetworkConfig({ enabled: false, hosts: [] });
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      const r = await executeFetchUrl({ url: 'https://example.com/api', timeout: 30 }, 'call-clamp');
+      expect(r.success).toBe(true);
+      expect(timeoutSpy).toHaveBeenCalledWith(1000);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  test('未传 timeout 时按默认 15000ms 下发', async () => {
+    setNetworkConfig({ enabled: false, hosts: [] });
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    try {
+      await executeFetchUrl({ url: 'https://example.com/api' }, 'call-default');
+      expect(timeoutSpy).toHaveBeenCalledWith(15000);
+    } finally {
+      timeoutSpy.mockRestore();
+    }
+  });
+
+  test('schema 声明了单位与边界（否则模型仍会传 30）', async () => {
+    const { STORAGE_TOOLS } = await import('../../src/background/tools/storage-tools.js');
+    const fetchTool = STORAGE_TOOLS.find((t) => t.function?.name === 'fetch_url');
+    const timeout = fetchTool.function.parameters.properties.timeout;
+    expect(timeout.minimum).toBe(1000);
+    expect(timeout.maximum).toBe(120000);
+    expect(timeout.description).toMatch(/milliseconds/i);
   });
 });
