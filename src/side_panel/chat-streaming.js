@@ -2164,6 +2164,11 @@ export function finalizeCancelledStream(element) {
     }
   });
 
+  // 取消后不该再显示「正在执行」：摘掉卡片活动态（节点旋转环/呼吸底随之静止），
+  // 并把节点状态位还原成静态 ○——否则被取消的节点会一直转圈，看起来还在跑
+  element.querySelectorAll('.subtask-progress-active').forEach(el => el.classList.remove('subtask-progress-active'));
+  element.querySelectorAll('.subtask-node-spinner').forEach(el => el.replaceWith('○'));
+
   // 移除所有 spinner 动画
   element.querySelectorAll('.subtask-spinner, .thinking-spinner, .loading-dots').forEach(el => el.remove());
 

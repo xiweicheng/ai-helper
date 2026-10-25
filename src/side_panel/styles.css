@@ -4108,6 +4108,67 @@ body {
 .subtask-node.done .subtask-node-status { color: var(--success-500); }
 .subtask-node.failed .subtask-node-status { color: var(--danger-500); }
 .subtask-node.processing .subtask-node-status { color: var(--warning-500); }
+/* 当前执行节点强调：几十上百条节点里只有一条在跑，静态 ○ 分不出来，
+   故在「前面的图标状态」上加动效——状态位换旋转环、节点图标脉冲、整行呼吸底 + 左侧光条。
+   全部限定在 .subtask-progress-active（卡片运行态）内：完成后/取消后自动静止，
+   取消链路（finalizeCancelledStream）还会摘掉活动态并还原静态 ○ */
+.subtask-node-spinner {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(var(--brand-violet-rgb), 0.25);
+  border-top-color: var(--brand-violet-600);
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.subtask-progress-active .subtask-node-spinner {
+  animation: subtask-spin 0.7s linear infinite;
+}
+/* 负 margin 抵消内边距：只把呼吸底撑宽，文字横向位置与其他行保持对齐 */
+.subtask-node.processing {
+  position: relative;
+  border-radius: 4px;
+  margin: 0 -6px;
+  padding: 3px 6px;
+}
+.subtask-progress-active .subtask-node.processing {
+  animation: subtaskNodeBreathe 1.8s ease-in-out infinite;
+}
+@keyframes subtaskNodeBreathe {
+  0%, 100% {
+    background: rgba(var(--brand-violet-rgb), 0.05);
+    box-shadow: inset 2px 0 0 rgba(var(--brand-violet-rgb), 0.3);
+  }
+  50% {
+    background: rgba(var(--brand-violet-rgb), 0.16);
+    box-shadow: inset 2px 0 0 rgba(var(--brand-violet-rgb), 0.85);
+  }
+}
+.subtask-progress-active .subtask-node.processing .subtask-node-icon {
+  animation: subtaskNodeIconPulse 1.4s ease-in-out infinite;
+}
+@keyframes subtaskNodeIconPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+.subtask-progress-active .subtask-node.processing .subtask-node-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 呼吸底/图标脉冲关掉，退化为常亮高亮；旋转环放慢而非停止（仍需表达「进行中」） */
+  .subtask-progress-active .subtask-node.processing,
+  .subtask-progress-active .subtask-node.processing .subtask-node-icon {
+    animation: none;
+  }
+  .subtask-progress-active .subtask-node.processing {
+    background: rgba(var(--brand-violet-rgb), 0.12);
+    box-shadow: inset 2px 0 0 rgba(var(--brand-violet-rgb), 0.7);
+  }
+  .subtask-progress-active .subtask-node-spinner {
+    animation-duration: 2.4s;
+  }
+}
 .subtask-node-name {
   flex: 1;
   overflow: hidden;

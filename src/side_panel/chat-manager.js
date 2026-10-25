@@ -3691,7 +3691,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 } else if (filteredNodes.length > 0) {
                   nodesHtml = filteredNodes.map(node => {
                     const icon = node.nodeType === 'tool_exec' ? '🔧' : node.nodeType === 'api_call' ? '📡' : node.nodeType === 'reflection' ? '🎯' : node.nodeType === 'preselect' ? '🔍' : '○';
-                    const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗' : '○';
+                    // 状态位：执行中不放静态 ○——几十上百条节点里读不出「哪条还在跑」，改放旋转环；
+                    // 卡片已结束（取消/中断留下的未完成节点）回落成静态 ○，不装作还在加载
+                    const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗'
+                      : (isRunning ? '<span class="subtask-node-spinner"></span>' : '○');
                     const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
                     const dur = node.duration ? formatDuration(node.duration) : '';
                     const name = escapeHtml(node.nodeName || t('chatMsg.unknownNode'));
