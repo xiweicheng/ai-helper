@@ -91,9 +91,17 @@ registerTranslations('en', {
 
 /**
  * 规范化路径
+ * 末位斜杠一并去除：产物路径常带目录尾斜杠（git status --short 的未跟踪目录
+ * `?? tool-results/`、mkdir/cp 的尾斜杠参数、ls -F 输出等），尾斜杠会让
+ * getFileName 只能取到空串，最终渲染成「没有名称的目录行」。
+ * 根路径 '/' 与 Windows 盘符根 'X:/' 保留，避免把路径削成空串。
  */
 function normalizePath(p) {
-  return (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
+  const norm = (p || '').replace(/\\/g, '/').replace(/\/+/g, '/');
+  const trimmed = norm.replace(/\/+$/, '');
+  if (!trimmed) return norm ? '/' : '';
+  if (/^[A-Za-z]:$/.test(trimmed)) return trimmed + '/';
+  return trimmed;
 }
 
 /**
@@ -101,7 +109,7 @@ function normalizePath(p) {
  */
 function getFileName(filePath) {
   if (!filePath) return '';
-  const normalized = normalizePath(filePath);
+  const normalized = normalizePath(filePath).replace(/\/+$/, '');
   const parts = normalized.split('/');
   return parts[parts.length - 1] || '';
 }
@@ -1261,7 +1269,8 @@ export function extractArtifactsFromExecutionLog(executionLog) {
     }
   }
 
-  return artifacts;
+  // 空文件名产物（如路径只剩根 '/'）无法展示也无法定位，直接丢弃
+  return artifacts.filter(a => a && a.fileName);
 }
 
 /**
@@ -1311,6 +1320,9 @@ export function mergeDeclaredArtifacts(artifacts, declared) {
   for (const d of (declared || [])) {
     const norm = declaredDedupKey(d.path);
     if (!norm) continue;
+    // 声明路径末尾带斜杠时同样取不到文件名（如 [[artifact:dist/]]），仍归一化为目录名
+    const declaredName = getFileName(d.path);
+    if (!declaredName) continue;
     // 完全相同，或声明的相对路径与某静态绝对路径尾段一致 → 判为同一文件（把说明补到已有项，不新增重复行）
     let hitIdx = normKeys.indexOf(norm);
     if (hitIdx === -1) hitIdx = normKeys.findIndex(k => k.endsWith('/' + norm));
@@ -1322,7 +1334,7 @@ export function mergeDeclaredArtifacts(artifacts, declared) {
     normKeys.push(norm);
     merged.push({
       path: d.path,
-      fileName: getFileName(d.path),
+      fileName: declaredName,
       toolName: 'declared',
       action: 'typeCreate',
       size: 0,

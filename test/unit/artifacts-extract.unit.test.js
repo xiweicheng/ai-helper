@@ -512,6 +512,62 @@ describe('extractArtifactsFromExecutionLog', () => {
     expect(extractArtifactsFromExecutionLog(log)).toEqual([]);
   });
 
+  // ── 尾斜杠路径：git status 的未跟踪目录记法 / mkdir / cp 尾斜杠参数 ──
+  test('git status --short 的未跟踪目录记法（?? tool-results/）不产生空文件名产物', () => {
+    const base = '/Users/u/proj';
+    const command = 'cd /Users/u/proj && git log origin/main --oneline -3 && git status -sb';
+    const observation = [
+      '443d13a chore(release): 版本号升至 1.2 —— Info.plist 1.0.0/1 → 1.2/2；README 下载表新增 v1.2 行并同步校验命令',
+      '## main...origin/main',
+      '?? tool-results/',
+    ].join('\n');
+    const log = [
+      // 前置写操作：真实链路中 20:39:40 先写过 README.md，
+      // 观察输出兜底解析据此把工作目录纳入已创建根集合（只读任务不采信）
+      {
+        id: 'log_write', iteration: 1, timestamp: '2026-10-25T12:39:40.000Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_file',
+        action: { name: 'agent_file', params: { action: 'write', path: base + '/README.md', content: '# demo' } },
+        observation: null, duration: 20,
+      },
+      {
+        id: 'log_git', iteration: 1, timestamp: '2026-10-25T12:40:46.648Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command, cwd: base } },
+        observation, duration: 30,
+      },
+    ];
+    const artifacts = extractArtifactsFromExecutionLog(log);
+    // 不允许出现空文件名（否则渲染成没有名称的目录行）
+    expect(artifacts.every(a => a.fileName)).toBe(true);
+    const dir = artifacts.find(a => a.path === base + '/tool-results');
+    expect(dir).toBeTruthy();
+    expect(dir.fileName).toBe('tool-results');
+    expect(dir.type).toBe('directory');
+  });
+
+  test('mkdir / cp 参数带尾斜杠时产物路径被规范化且文件名非空', () => {
+    const log = [
+      {
+        id: 'log_mkdir', iteration: 1, timestamp: '2026-01-01T00:00:00Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'mkdir -p tool-results/', cwd: '/w' } },
+        observation: null, duration: 20,
+      },
+      {
+        id: 'log_cp', iteration: 1, timestamp: '2026-01-01T00:00:01Z', status: 'success',
+        nodeType: 'tool_exec', nodeName: '工具执行: agent_exec',
+        action: { name: 'agent_exec', params: { command: 'cp -R src/ dist/', cwd: '/w' } },
+        observation: null, duration: 20,
+      },
+    ];
+    const artifacts = extractArtifactsFromExecutionLog(log);
+    expect(artifacts.every(a => a.fileName)).toBe(true);
+    expect(artifacts.map(a => a.path)).toEqual(['/w/tool-results', '/w/dist']);
+    expect(artifacts[0].type).toBe('directory');
+    expect(artifacts[1].fileName).toBe('dist');
+  });
+
   // ── 观察输出解析：grep path:line 不误报 ──
   test('grep path:line 格式观察输出不会被误识别为产物', () => {
     const command = 'grep -r TODO .';
