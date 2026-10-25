@@ -661,12 +661,16 @@ function renderSingleEntry(entry, index, totalCount) {
   const isApiCall = entry.nodeType === 'api_call';
   const isPreselect = entry.nodeType === 'preselect';
   const isReflection = entry.nodeType === 'reflection';
+  const isUserInjection = entry.nodeType === 'user_injection';
   const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
   
   let indentClass = '';
   let nodeIcon = '';
   
-  if (isReflection) {
+  if (isUserInjection) {
+    // 与 renderExecutionTimeline 保持一致：插话必须能和模型自己的步骤区分开
+    nodeIcon = '💬';
+  } else if (isReflection) {
     indentClass = 'reflection-level';
     nodeIcon = '🎯';
   } else if (isPreselect) {
@@ -742,6 +746,13 @@ function renderSingleEntry(entry, index, totalCount) {
         </div>
         
         <div class="timeline-details">
+          ${isUserInjection && entry.content ? `
+          <div class="timeline-section">
+            <div class="section-title">${t('execLog.sectionUserInjection')}</div>
+            <div class="section-content">${escapeHtml(entry.content)}</div>
+          </div>
+          ` : ''}
+          
           ${entry.thought && entry.thought.trim() ? `
           <div class="timeline-section">
             <div class="section-title">${t('execLog.sectionThought')}</div>
@@ -879,6 +890,7 @@ function renderExecutionLogOriginal(sortedLog) {
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
     const isReflection = entry.nodeType === 'reflection';
+    const isUserInjection = entry.nodeType === 'user_injection';
     const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
@@ -888,7 +900,9 @@ function renderExecutionLogOriginal(sortedLog) {
     let indentClass = '';
     let nodeIcon = '';
     
-    if (isReflection) {
+    if (isUserInjection) {
+      nodeIcon = '💬';
+    } else if (isReflection) {
       nodeIcon = '🎯';
     } else if (isPreselect) {
       nodeIcon = '🔍';
@@ -965,6 +979,13 @@ function renderExecutionLogOriginal(sortedLog) {
           </div>
           
           <div class="timeline-details">
+            ${isUserInjection && entry.content ? `
+            <div class="timeline-section">
+              <div class="section-title">${t('execLog.sectionUserInjection')}</div>
+              <div class="section-content">${escapeHtml(entry.content)}</div>
+            </div>
+            ` : ''}
+            
             ${entry.thought && entry.thought.trim() ? `
             <div class="timeline-section">
               <div class="section-title">${t('execLog.sectionThought')}</div>
