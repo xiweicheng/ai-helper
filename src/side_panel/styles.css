@@ -4201,6 +4201,17 @@ body {
   color: var(--warning-500);
 }
 /* 中断原因（真实终止异常文本）：弱化灰色小字，单行省略 */
+/* 防重放跳过标记：弱化中性胶囊，与右侧状态文字分层——状态说明「完成」，
+   这个标记说明「本轮没重做」。颜色全走主题 token，暗色模式自动跟随 */
+.subtask-replay-skipped {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .subtask-fail-reason {
   color: var(--text-tertiary);
   font-size: 11px;
@@ -4265,20 +4276,29 @@ body {
   font-size: 11px;
 }
 .subtask-stat-total {
-  color: var(--text-tertiary);
+  /* 原 --text-tertiary 在气泡底上只有 2.64:1（11px 正文按 AA 需 4.5:1） */
+  color: var(--text-secondary);
 }
 .subtask-stat-total::before {
   content: '节点 ';
 }
+/* 三个统计数字都是可点击的过滤控件且承载完成度语义，一律取「文字档」token：
+   --*-500 是亮色下偏浅的状态色（✓ 仅 2.11:1），--*-strong 才是给文字用的档 */
 .subtask-stat-done {
-  color: var(--success-500);
+  color: var(--success-strong);
 }
 .subtask-stat-fail {
-  color: var(--danger-500);
+  color: var(--danger-strong);
+}
+/* 其他桶（已取消 / 终止时未完成）：弱化灰，区别于红绿两态。
+   仍比红绿弱一档，但 --text-tertiary 在浅底上不足 AA，故取 --text-secondary */
+.subtask-stat-other {
+  color: var(--text-secondary);
 }
 /* 统计数字可点击过滤节点列表：悬停/选中反馈 */
 .subtask-stat-done[data-node-filter],
-.subtask-stat-fail[data-node-filter] {
+.subtask-stat-fail[data-node-filter],
+.subtask-stat-other[data-node-filter] {
   cursor: pointer;
   user-select: none;
   padding: 1px 4px;
@@ -4286,7 +4306,8 @@ body {
   transition: background 0.15s;
 }
 .subtask-stat-done[data-node-filter]:hover,
-.subtask-stat-fail[data-node-filter]:hover {
+.subtask-stat-fail[data-node-filter]:hover,
+.subtask-stat-other[data-node-filter]:hover {
   background: rgba(var(--overlay-rgb), 0.12);
 }
 .subtask-stat-active {

@@ -90,9 +90,21 @@ describe('classifySubtaskOutcome 部分完成分类', () => {
 // ==================== 方案2：失败上报的已完成产出摘要（纯函数） ====================
 
 describe('buildSubtaskPartialSummary 已完成产出摘要', () => {
+  // 形状契约锁：以下字段名逐一对齐 react-loop.js 中 tool_exec 节点的真实落定形态
+  // （processing 初始 push + 成功时就地更新），生产代码不写 result 字段而把产出
+  // 正文写进 observation —— 此前 fixture 自造 result，导致整条回灌链路绿而空转。
   const node = (over = {}) => ({
     id: Math.random().toString(36).slice(2),
-    nodeName: '工具节点', nodeType: 'tool_exec', status: 'success', result: 'OK', ...over,
+    iteration: 1,
+    timestamp: '2026-01-01T00:00:00.000Z',
+    duration: 12,
+    status: 'success',
+    nodeType: 'tool_exec',
+    nodeName: '工具节点',
+    action: { name: 'page_content', params: {} },
+    observation: 'OK',
+    prototypeId: null,
+    ...over,
   });
 
   test('空日志 / 非数组 → 空串（失败原因保持原样，不追加空摘要）', () => {
@@ -101,23 +113,36 @@ describe('buildSubtaskPartialSummary 已完成产出摘要', () => {
     expect(buildSubtaskPartialSummary(undefined)).toBe('');
   });
 
-  test('只提取成功且有产出的节点：failed / processing / 无 result 全部排除', () => {
+  test('真实落定的 tool_exec 成功节点 → 摘要带 observation 正文', () => {
     const summary = buildSubtaskPartialSummary([
-      node({ nodeName: '读文件A', result: '内容A' }),
-      node({ nodeName: '坏节点', status: 'failed', result: '报错' }),
-      node({ nodeName: '挂起节点', status: 'processing' }),
-      node({ nodeName: '无产出节点', result: '' }),
-      node({ nodeName: '写文件B', result: '内容B' }),
+      node({ nodeName: '执行工具: page_content', observation: '页面正文-ABC' }),
+    ]);
+    expect(summary).toContain('执行工具: page_content');
+    expect(summary).toContain('页面正文-ABC');
+  });
+
+  test('只提取成功且有产出的工具节点：failed / processing / 无产出 / 非工具节点全部排除', () => {
+    const summary = buildSubtaskPartialSummary([
+      node({ nodeName: '读文件A', observation: '内容A' }),
+      node({ nodeName: '坏节点', status: 'failed', observation: '报错', error: 'boom' }),
+      node({ nodeName: '挂起节点', status: 'processing', observation: undefined }),
+      node({ nodeName: '无产出节点', observation: '' }),
+      // 成功落定的 api_call 节点带 thought/action/apiRequest/apiResponse，无 observation
+      node({ nodeName: 'API调用', nodeType: 'api_call', thought: '模型思考', apiResponse: { content: 'x' }, observation: undefined }),
+      node({ nodeName: '反思', nodeType: 'reflection', observation: '反思正文' }),
+      node({ nodeName: '写文件B', observation: '内容B' }),
     ]);
     expect(summary).toContain('读文件A');
     expect(summary).toContain('写文件B');
     expect(summary).not.toContain('坏节点');
     expect(summary).not.toContain('挂起节点');
     expect(summary).not.toContain('无产出节点');
+    expect(summary).not.toContain('API调用');
+    expect(summary).not.toContain('反思');
   });
 
   test('最多取最近 5 个成功产出节点（防摘要过大挤占父模型上下文）', () => {
-    const log = Array.from({ length: 8 }, (_, i) => node({ nodeName: `N${i}`, result: `R${i}` }));
+    const log = Array.from({ length: 8 }, (_, i) => node({ nodeName: `N${i}`, observation: `R${i}` }));
     const summary = buildSubtaskPartialSummary(log);
     expect(summary).toContain('N7');
     expect(summary).toContain('N3');
@@ -126,11 +151,11 @@ describe('buildSubtaskPartialSummary 已完成产出摘要', () => {
     expect(summary).not.toContain('N0');
   });
 
-  test('超长产出截断（单节点上限内），对象 result 可序列化', () => {
+  test('超长产出截断（单节点上限内），对象 observation 可序列化', () => {
     const long = 'x'.repeat(2000);
     const summary = buildSubtaskPartialSummary([
-      node({ nodeName: '大输出', result: long }),
-      node({ nodeName: '对象输出', result: { ok: 1, data: 'y' } }),
+      node({ nodeName: '大输出', observation: long }),
+      node({ nodeName: '对象输出', observation: { ok: 1, data: 'y' } }),
     ]);
     expect(summary.length).toBeLessThan(2500); // 5 节点 × 300 + 框架文本
     expect(summary).toContain('大输出');
@@ -176,8 +201,10 @@ describe('接线守卫：方案1 UI', () => {
 describe('接线守卫：方案2 失败上报', () => {
   test('react-loop 失败 return 的 Result 附加已完成摘要（父模型不再盲续）', () => {
     expect(REACT_LOOP_SRC).toMatch(/export function buildSubtaskPartialSummary/);
-    expect(REACT_LOOP_SRC).toMatch(/buildSubtaskPartialSummary\(error\.executionLog\)/);
-    // 失败返回的 result 由纯 error.message 升级为"原因 + 部分产出"组合
-    expect(REACT_LOOP_SRC).toMatch(/result:\s*partialSummary\s*\?[\s\S]{0,200}: error\.message/);
+    // 组装已从内联三元上提到 seam（并顺带回写进度表，见 subtask-progress-wiring 专测），
+    // 本守卫只锁"失败上报确实经过带摘要的 seam"，不再锁内联拼接形状
+    expect(REACT_LOOP_SRC).toMatch(/buildSubtaskPartialSummary\(errorLog,/);
+    expect(REACT_LOOP_SRC).toMatch(/result: failureResult,/);
+    expect(REACT_LOOP_SRC).toMatch(/const failureResult = buildSubtaskFailureResult\(/);
   });
 });

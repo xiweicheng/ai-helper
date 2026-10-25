@@ -48,6 +48,29 @@ export function getDialogApiCallCount(sessionId) {
 // ========== 取消控制（按 sessionId 隔离） ==========
 
 /**
+ * 收集一次取消应覆盖的会话 key：根会话自身 + 其全部派生会话。
+ *
+ * plan_task 子任务的在途 LLM 请求注册在 `${root}_subtask_${i}` 上，dispatch_task
+ * 子代理注册在 `${root}_sub_${agentId}` 上，只 abort 根 key 会全部漏掉：父循环
+ * 正 await 在 executeSubtasks 上永不返回，而 isCancelled 的检查点全在轮次之间，
+ * 永远轮不到 → 用户点了停止后台其实还在跑，外层 catch 的中断现场也落不了盘。
+ * 判定口径与 isCancelled 保持一致（派生 key 以 `${root}_` 开头），不另造一套规则。
+ * @param {string} sessionId 根会话 id
+ * @param {Iterable<string>} knownKeys 当前已登记的会话 key
+ * @returns {string[]} 应被中断的 key（根在前，其余按 key 长度递增）
+ */
+export function collectSessionCancelKeys(sessionId, knownKeys) {
+  if (!sessionId || typeof sessionId !== 'string') return [];
+  const keys = [];
+  for (const k of knownKeys || []) {
+    if (k === sessionId || (typeof k === 'string' && k.startsWith(sessionId + '_'))) {
+      keys.push(k);
+    }
+  }
+  return keys.sort((a, b) => (a === sessionId ? -1 : b === sessionId ? 1 : a.length - b.length));
+}
+
+/**
  * 取消指定会话的 ReAct 循环
  * @param {string|null} sessionIdOrTabId - 会话ID 或 标签页ID
  */
@@ -72,18 +95,33 @@ export function cancelReactLoop(sessionIdOrTabId) {
     logger.debug('[Background] all has session  ReAct loop cancelled');
   } else {
     cancelledSessions.set(sessionIdOrTabId, true);
-    // 立即中断该会话正在进行的 fetch 请求
-    const controller = sessionAbortControllers.get(sessionIdOrTabId);
-    if (controller) {
-      controller.abort();
-      logger.debug('[Background] cancelledsession  fetch requested ,sessionId:', sessionIdOrTabId);
+    // 立即中断该会话正在进行的 fetch 请求（含其派生子任务/子代理会话，
+    // 否则取消停不住在途请求，中断现场也无法落盘）
+    // 取消范围为空时也要打出来：真机上出现过「点停止后一个 key 都没命中」，
+    // 不打这条就分不清是「没登记」还是「登记在别的 key 上」
+    const fetchKeys = collectSessionCancelKeys(sessionIdOrTabId, sessionAbortControllers.keys());
+    logger.debug('[Background] cancel scope, sessionId:', sessionIdOrTabId, 'fetchKeys:', fetchKeys.join(',') || '(none)');
+    for (const key of fetchKeys) {
+      sessionAbortControllers.get(key).abort();
+      logger.debug('[Background] cancelled session fetch requested, sessionId:', key);
+    }
+    // 子任务/子代理正卡在工具等待（含敏感操作确认弹窗）时，停止也应把等待终止
+    for (const key of collectSessionCancelKeys(sessionIdOrTabId, toolAbortControllers.keys())) {
+      const controller = toolAbortControllers.get(key);
+      if (controller && !controller.signal.aborted) controller.abort();
+      toolAbortControllers.delete(key);
     }
     logger.debug('[Background] ReAct loop cancelled,sessionId:', sessionIdOrTabId);
   }
 }
 
 /**
- * 重置指定会话的取消状态
+ * 重置指定会话的取消标志。
+ * 只清标志，不动 sessionAbortControllers 里的登记：两个调用点（reactLoopImpl 开工前
+ * 与主循环前）的语义都是「去掉上一个请求残留的取消标记」，而主循环前那次发生在
+ * getOrCreateAbortController 之后 —— 顺手删登记会把即将用于 fetch 的 controller 抹掉，
+ * 导致取消时扫不到任何 key，在途请求中断不了、中断现场也落不了盘。
+ * 条目由下次同会话 getOrCreateAbortController 覆盖，全局取消时整体清空。
  */
 export function resetReactCancel(sessionIdOrTabId) {
   if (typeof sessionIdOrTabId === 'number') {
@@ -93,8 +131,7 @@ export function resetReactCancel(sessionIdOrTabId) {
 
   if (sessionIdOrTabId !== undefined && sessionIdOrTabId !== null) {
     cancelledSessions.delete(sessionIdOrTabId);
-    sessionAbortControllers.delete(sessionIdOrTabId);
-    logger.debug('[Background] sessioncancelstatereset,sessionId:', sessionIdOrTabId);
+    logger.debug('[Background] session cancel state reset, sessionId:', sessionIdOrTabId);
   }
 }
 

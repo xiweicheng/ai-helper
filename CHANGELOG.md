@@ -2,6 +2,38 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-25
+
+### 真机探针收尾批次：取消作用域对齐 + 防重放进度不被误清 + 「已跳过重放」可见 + checkpoint 尾随落盘
+> 来源：为「子任务中断现场续用」搭的真机端到端探针（Playwright 加载 dist + OpenAI 兼容假流）。前一轮它报过「假绿灯」，本轮重建后才第一次真正测到链路，随即暴露 5 项缺陷（前两项同属取消链路）。逐项回 HEAD 取证确认均为存量问题（非本批引入），再按 TDD 修复。
+
+- **探针自身的两次误判先清算**（属仪器错误，如实留档）：① 断言「续跑 system 里没出现 marker」被当成回灌失败 —— 实际 marker 造在 `take_note` 的**入参**，而现场摘要按契约只取工具**结果** `observation`（`take_note` 的结果固定为「Note #N saved…」），结构上永不可能含 marker，属探针造法错误的**假红灯**；改断言口径为「落盘 `partialSummary` 原文是否被回灌」，并加 `!!sunkSummary` 前置防 `includes('')` 恒真变成新的假绿灯。② Node 侧假流曾以 `req.on('close')` 判客户端断开 —— `req` 是入站消息，请求体读完即 close，与断开无关，必须用 `res.on('close')`。
+- **缺陷① 取消作用域只认根 key**（`state.js`）：同一模块两套口径 —— `isCancelled` 早已认派生 key（`startsWith(cancelledSession + '_')`），而 `cancelReactLoop` 只 `sessionAbortControllers.get(根key)`。子任务/子代理的在途请求登记在 `${root}_subtask_${i}` 上，点「停止」中断不了它们，中断现场也落不了盘。新增 `collectSessionCancelKeys(sessionId, knownKeys)`（根 key 优先、短 key 在前）统一两处作用域，并打出取消范围日志 —— 真机出现过「点停止后一个 key 都没命中」，不打这条就分不清是「没登记」还是「登记在别的 key 上」。
+- **缺陷② 重置取消态顺手抹掉 fetch 登记**（`state.js`）：`resetReactCancel` 原本还 `sessionAbortControllers.delete(...)`，而它的两个调用点语义都是「去掉上一请求残留的取消标记」，其中主循环前那次发生在 `getOrCreateAbortController` **之后** —— 等于把即将用于本次 fetch 的 controller 抹掉，取消时必然扫不到任何 key（缺陷①的另一半）。改为只清标志；条目由下次同会话 `getOrCreateAbortController` 覆盖、全局取消时整体清空。
+- **缺陷③ 取消那一轮把防重放进度一起清掉**（`react-loop.js`）：HEAD 里 `subtaskProgress.clear()` 排在取消判定**之前** —— 用户取消时整张进度表被清空，续跑即全量重放已完成子任务的写操作，而这正是防重放要防的事。抽出 `finalizePlanRound(progress, { cancelled, taskState, subtaskResults })`：取消时仍回写 `taskState` 各子任务状态，但保留进度不清空。
+- **缺陷④ 「中断前已完成，跳过重放」对用户完全不可见**（`chat-manager.js` + `styles.css`）：三层取证给出决定性分工 —— SW 发出含跳过 2 条 / 面板收到含跳过 2 条 / DOM 零文案，且清单行被正常渲染成成功行。即消息通路和渲染都正常，缺口在渲染层**从来不读** `skippedReplay`（行标题按设计取 `message.subtaskName`，带跳过语义的 `nodeName` 不参与渲染）—— 回 HEAD 取证：`react-loop.js` 里 `skippedReplay` 已有 2 处，`chat-manager.js` 里 0 处，即字段一直在传、UI 一直未消费，属存量而非本批引入。新增纯函数 `isSubtaskReplaySkipped(entries, index)` + 清单行「已跳过重放」标记（悬停说明写清「写操作不会二次生效」、双语、颜色走主题 token）。**必须扫描而不是「取第一条」**：resume 场景同一 `subtaskIndex` 在 `executionLog` 里必然两条 `nodeType==='subtask'`，中断前那条排在前面。**刻意没改 `subtaskMainLog` 取法**（写方案时自查掉的回归）：跳过节点没有 `result`，让它顶掉中断前那条会把行里的「产出摘要」一起抹掉；这条约束反向钉进测试，防止日后改回顺手写法。
+- **缺陷⑤ checkpoint 节流把带新数据的写直接丢弃**（`react-loop.js`）：HEAD 的节流分支就是「窗口内直接 return、什么也不补」（`throttlestreamskip`），真机一轮实录 6 次节流跳过，其中 2 次是 `subtask_partial_progress`（间隔 31ms/45ms）。危害不是「丢 1.5s」：`createSubtaskPartialProgressWriter` 只在**摘要内容真的变了**才回调，被挡下的那次携带的是新现场，而它要等下一次保存尝试才落盘 —— 下一次可能是整个子任务结束，SW 在此期间被硬杀就整段丢失。抽 `createCheckpointThrottle({throttleMs, persist, now, schedule, unschedule})`：窗口内的请求合并成**一次**尾随落盘（只更新原因、不重挂定时器，避免连续调用下永远推后的饿死）。三处 cancel 接线各自防一个新高危 bug：`force` 落盘撤尾随（同一现场不写两遍）、正常完成 `clearCheckpoint` 后撤尾随、`finally` 兜底撤尾随 —— 否则尾随定时器会把「已完成/已取消任务」的现场写回去，而 `final_answer` 不在 `TERMINAL_REASONS` 里，alarms 会据此自动重跑已完成任务。
+- **两条守卫被变异实验验出是空转的**（写完后自己逼红才发现）：① 渲染接线守卫原用 `toContain('isSubtaskReplaySkipped(executionLog, si)')`，改成 `false && isSubtaskReplaySkipped(...)`（接线废掉）照样命中 → 改正则钉住「标记的唯一条件就是该判定」的三元结构；② 两处 cancel 接线守卫用不限长的 `indexOf(needle, anchor)`，撤掉近处那处会匹配到远处另一处，且「全文第一个 `} finally {`」基准根本不在本次循环上（文件里有四处）→ 改锚唯一语句 + 距离限窗（实测 141/100，跳走是 2029/1988）。教训：**源码结构守卫也必须过变异，否则只是把写错的断言固化成契约**。
+- **真机结果**：探针从 17 项 1 红走到 **18 项 0 红**，无降级断言。关键读数 `progressKeys:["s1","s2","s3"]`、`progressSuccess:["s1:ok","s2:ok","s3:no"]`、续跑增量 `SUB1+0 SUB2+0 SUB3+2`、SW `skipping replay` ×2、回灌命中 `true,true`、清单行标记期望行 `[0,1]`/实得行 `[0,1]`、完成后本轮残留 checkpoint `[]`。
+- **已知不足（不拿调低阈值装成已达标）**：① 尾随 flush「硬杀时少丢多少现场」未量化，只有单测证调度语义（真机 4 次排定中 1 次到期补齐、其余被 force 覆盖，两者都是正确行为，故不做成断言）；② 缺陷② 的代价（不再删登记后 Map 条目只增到下次覆盖/全局清空）仅静态分析，未做泄漏量化测试；③ 假流的 plan_task 计划形态简单，真实多策略（parallel/dependency）组合下的跳过语义未覆盖。
+- **文档同步**：docsite 源与 repowiki 的 ReAct 页各三处 —— 「checkpoint 节流保存」补上尾随落盘语义、「防重放」补两条（跳过可见标记 + 取消不清进度）、「检查点保存」补尾随合并与三处必须撤下尾随的后果；重跑 `npm run build:docsite` → 通过 7 项校验、索引 136 页（产物 `docs/wiki` 为资产哈希联动：138 M / 57 D / 62 ??，与上一批同形态，无意外删除）。README/DOCUMENTATION 无新增功能项，未动特性计数；`.wiki/` 里没有节流/防重放相关表述，无需同步。
+- **当日收口（全部实测）**：全量单测 **160 文件 / 2406 例全绿**（本批 +2 文件 / +24 例）、`npm run lint` exit 0、`build:silent` BUILD_SUCCESS；变异复验本批 **12/12 被逼红**（可见性 M4–M7 四例、节流 N1–N8 八例，脚本 `test-results-probes/_mutation-check-skip-visible.py`、`_mutation-check-throttle.py`），每个变异跑完即还原且 `md5` 与备份逐一相符；真机探针 exit 0。
+
+### 收尾批次：L-b / L-d / L-e 三项「择机」遗留 + 对比度改真实渲染态实测
+> 来源：上批商定「择机」的三项。开工前先逐条对源码/真值复核，结果两项与评审（以及我此前的转述）说法不一致。
+
+- **L-b 原表述不成立（我此前未核对就写进了变更记录）**：所谓「`120min` 与设置页『2 小时』不同形」不存在 —— `options.html` 的 `reactLoopTimeout` 是 `type="number" max="120"` 输入框，单位标签就是「分钟 (min)」，`config-manager.js` 按 `/60000` 换算，页面上从来只有「120 分钟」。`formatDurationMs(7200000) === '120min'` 与设置页 **同形**。教训：评审转述的结论也必须核到源码，不能当作已知事实传播。
+- **L-b 真正要修的是亚秒谎报**：`formatDurationMs` 对 <1s 向下取整，999ms 显示 `0s`，文案会读成「已用 0s，预算 120min」，用户据此判定一秒都没跑就被杀。现改为非零亚秒显示 `<1s`，真零（及负数/NaN）仍显示 `0s`（把 0 也写成 `<1s` 是另一种谎报）。另新增一条可执行的「单位对齐」守卫：从 `options.html` 解析 `max` 与 `unitMinute` 标签，断言满额配置读出来必须是 `Nmin` 形态 —— 设置页单位一旦改小时/秒而文案不改，本例必须红。
+- **L-d 窗口取法有两个方向的错**：旧写法把窗口右界取成「下一个 `async function`」。① 函数体内先出现 async 辅助函数时窗口被截短 → **响亮地假失败**；② 更严的是反向：若紧随其后的是非 async 的 `function`，`indexOf('async function')` 会一路越过真实边界，把后一个函数的内容也算进来 —— 把 `onDone` 搬出 `executeSingleSubtask` 仍全绿（**静默假通过**）；③ header 改名后 `fnStart === -1`，`slice(-1, n)` 取到文件尾巴仍可能凑出命中。改为花括号配平取真函数体（扫描时跳过 行注释/块注释/字符串/模板串），并补 `expect(body).not.toBeNull()` 与「体内不得出现下一个顶层函数声明」两道验伪。另写 3 例合成源码用例作为窗口取法本身的拟合记录，其中一例直接跑旧公式并断言它越界 —— 证明新守卫不是空转。
+- **L-e 实测比评审说的严重得多**：评审只说「⊘ 约 2.8:1」。新建浏览器探针 `test-results-probes/_subtask-stat-contrast.mjs`：在真实扩展 origin 加载 `side_panel.html`，按渲染实际结构搭祖先链（`.message.assistant` 气泡底 > `.subtask-progress` 6% 半透明紫底），读 computed color 并逐层合成底色，按 WCAG §4.2 实算。结果：**亮色主题下四个统计全部不达标** —— 总数 2.64、✓ 2.11、✗ 3.83、⊘ 2.64（暗色均达标）。即 ⊘ 不是孤例，✓ 比它更差一倍。
+- **修复（全部用现有 token，不自造色号）**：`.subtask-stat-total` / `.subtask-stat-other` → `--text-secondary`；`.subtask-stat-done` → `--success-strong`；`.subtask-stat-fail` → `--danger-strong`（`--*-500` 是偏浅状态色档，`--*-strong` 才是项目给文字用的档）。浏览器复测：亮色 5.33 / 4.21 / 5.07 / 5.33，暗色 7.90 / 10.08 / 5.33 / 7.90。
+- **已知不足（不拿调低阈值装成已达标）**：✓ 取 `--success-strong` 后在**没被紫底污染的纯 `--bg-surface`** 上是 4.54:1（达 AA），被 `.subtask-progress` 的 6% 紫底合成拉到 **4.21:1**，仍短 0.29。再往上压需要改 `--success-strong` 本身（全仓 37 处共用，含作背景/描边的用法），属设计系统级改动，不在本批。守卫对该项卡 4.0（断掉「改回 `--success-500` → 2.11」的回归），并单独断它在纯 `--bg-surface` 上≥ 4.5，把「差在哪」写进注释与探针输出。
+- **守卫不重复评审的错**：旧的单测断的是 token **名字**（`toMatch(/var\(--text-tertiary\)/)`），恰好把缺陷锁成契约。新守卫从仓库真值实算：styles.css 取 token 名 → theme.css 取亮/暗真值 → 统计行落点从 `.subtask-progress` 的 `rgba(var(--x-rgb), a)` 与 `--bg-surface` 解析并合成 → 算对比度，不写死任何色号。实测值与浏览器探针逐位一致（5.33/4.21/5.07），两条通道互相校验。
+- **顺带发现（未修，需拍板）**：项目自带的 `scripts/theme-contrast-check.py` **只对暗色 token 算对比度**，亮色文本档无门禁 —— 这是 `#999` 的 `--text-tertiary`（紫底上 2.64:1）长期无人发现的根因。补亮色分支会带出全仓一批存量违规，属独立批次。
+- **文档**：本批不改动架构叙述（repowiki/docsite 无 `120min`/`⊘`/超时单位相关失效表述），故未重跑 `build:docsite`（避免无内容变更的哈希抖动）。
+- **验证**：全量单测 **157 文件 / 2369 例全绿**（+5）、`npm run lint` exit 0 无输出、`build:silent` 通过；浏览器对比度探针 exit 0（亮/暗各 4 项）；**L 批次变异复验 7/7 被逼红**（还原后 RESTORE_OK + 34 例绿，脚本 `test-results-probes/_mutate-verify-le.sh`）：删亚秒分支 → 1、零也显示 <1s → 1、⊘ 改回 tertiary → 1、✓ 改回 500 → 1、✗ 改回 500 → 1、三桶共用 token → 2、分钟改小时 → 2。
+- **真机端到端仍未做（没找替代糊弄）**：「长子任务被中断 → checkpoint 落盘 → SW 回收 → alarms 自动续跑 → `[Partial progress before failure]` 回灌进 prompt」这条链需要真模型端。核查 `test/e2e/` 只有内容脚本/UI 级 fixture，**没mock LLM 的 SSE harness**；e2e helpers 里也没。搭它需要起一个 OpenAI 兼容假流 + 写入扩展配置 + 驱动 plan_task，而子任务预算下限 60s / 预留下限 30s 意味着至少 60s 真实计时，属独立工程。本轮只完成了可在浏览器里定的那部分（渲染态配色/构造）。
+
 ## 2026-10-24
 
 ### 代码评审修复批次：read_image 安全闸门 + 流式收口欠账清算 + 6 项局部缺陷
@@ -16,6 +48,50 @@
 - **侧边栏拖拽**：`drop` 入口恢复无条件 `preventDefault`，未识别拖拽形态不再放行浏览器默认投放（可能导航/替换侧栏页面）；视觉深读失败也携带后端正文（与压缩链路口径一致）。
 - **验证**：全量单测 153 文件 / 2280 例、ESLint 0 告警、`build:silent` 通过；UTF-8 跨块用例做旧写法负向对照验证有效。
 - **二次评审跟进**（安全/健壮性收口）：① `read_image` 抽出 `guardDownloadedImageBase64` 让来源二（`file+image` 落盘路径）与来源一（`path`）同过「5MB 体积闸门 + magic bytes」，堵住来源二只判类型不判大小的漏挡（新增回归）；② SSE 空闲超时单一来源化——`stream-controller.js` 的 `STREAM_IDLE_TIMEOUT_MS` 改为从 `shared/chat-client.js` 的 `DEFAULT_STREAM_IDLE_TIMEOUT_MS` 导入再导出，消除两处 `120000` 硬编码漂移风险；③ 移除划词工具栏 `unbindInteractingReset` 死代码（复位监听按设计随 content script 生命周期常驻，无拆除调用点）。跟进后全量单测 154 文件 / 2288 例、ESLint 0 告警、`build:silent` 通过。
+
+### 子任务时长与中断现场：放开 15 分钟硬封顶 + 节点三桶计数 + 已完成节点摘要回灌
+> 背景：侧边栏子任务清单出现「ReAct 循环总超时 (900000ms)」中断，且面板报「80/83 完成，1 个节点失败」这种 80 + 1 ≠ 83 的对不上号。逐条对源码核验后按 TDD 修复（新增 2 个测试文件 + 同步 2 个旧契约文件）。
+
+- **A 超时预算放开**（`react-loop.js`）：子任务曾被 `SUBTASK_LOOP_TIMEOUT_MS = 900000` 硬封顶，设置页「整体循环超时」（默认 2h）对子任务完全无效——用户把预算调到最大仍会在 15 分钟被杀。删除该常数，`computeSubtaskLoopTimeoutMs(parentRemainMs, configLoopTimeoutMs)` 改为 `min(配置上限, 父实时剩余 - 10s)`（保留 60s 下限）；两处调用（首跑 / 完成度校验重跑）都把配置上限传进去，未注入父预算的 `dispatch_task` 子代理回退配置值而非分钟数。
+- **B 节点统计三桶**（`chat-manager.js` + `styles.css`）：旧口径 `totalNodes` 收所有节点，而 ✓ 只数 `success`、✗ 只数 `failed`，用户拒绝敏感操作确认（cancelled）、被取消的 API 调用、终止时残留的 processing 节点计入总数却两头不算。新增 `classifySubtaskNodeStats` 保证恒等式 `success + failed + other === total`（脏条目并 other），面板补可点击的 ⊘ 统计（含中英文提示与独立配色），`toggleNodeFilter` / `applyNodeFilter` 接 `other` 过滤。
+- **C 已完成节点摘要回灌**：核验发现 `buildSubtaskPartialSummary` 本就存在，但**唯一调用点**在重试耗尽的最终失败返回（只给父模型看）；子任务进度表 `subtaskProgress` 只记「整子任务成功」终态，既不落盘已完成节点现场，也不回灌给子任务自身——重跑/恢复对自己的上次零知情，等于从零重做。新增 `recordSubtaskPartialProgress`（实时日志回调按新增成功工具节点数节流写入，不降级覆盖成功记录）+ `buildSubtaskResumeContext`（重试与自动续跑注入「不要重做」续跑段落），随父 checkpoint 落盘；`shouldSkipSubtaskReplay` 保持只认 `success === true`，防止被中断的长子任务被误当已完成而静默丢失。
+- **D 中断原因文案**：超时文案原来只报预算毫秒数不报实际耗时，且「不含澄清等待时间」漏了「敏感操作确认等待」（两者都走 `pauseLoopTimer` 豁免）。改为 `已用 {elapsed}，预算 {timeout}`（新增 `formatDurationMs`：整分钟不带小数、非整分钟一位小数、不足一分钟按秒）+ 豁免项写全，中英文同步。
+- **旧契约同步**：`react-loop-upgrade-wiring` 中明文断言「超时仍 15 分钟封顶 / `SUBTASK_LOOP_TIMEOUT_MS = 900000` 存在」的 4 例按新契约重写（本次要改的行为本身，非回归）；`subtask-checkpoint-replay` 的函数体窗口断言取 12000 魔法长度，因函数体合法增长假失败，改为按「下一个 `async function`」取真实边界。
+- **文档同步**：repowiki 与 docsite 的「子任务整体超时上限 15 分钟」表述改为只由设置页决定，补「中断现场续用」条目；源码残留注释「各享满额 15 分钟」同步修正。
+- **验证**：全量单测 156 文件 / 2318 例全绿、ESLint 0 告警、`build:silent` 通过。
+- **RED 实录更正**：新增 29 例中 28 例失败（「父剩余过小时仍保留 60s 下限」一例旧实现即满足，作为回归护栏保留），此前记作「10/10 与 19/19 失败」属过度声明。
+
+### 代码评审跟进批次：子任务中断现场的接线补强
+> 来源：对本批 4 项改动的整体评审（含两轮变异实验：故意摘除接线再跑全量）。评审判定「需修后合并」，无 Critical、3 High。
+
+- **High①「假绿灯」清算**：评审用变异实验证明，摘除 C 项的两处接线调用（实时写入 + 续跑注入）后全量 2318 例仍全绿——`toMatch(/recordSubtaskPartialProgress\(/)` 命中的是函数**定义行**。据此新增可测 seam 与 `test/unit/subtask-progress-wiring.unit.test.js`（26 例），接线守卫从「存在性 toMatch」改为**精确计数**（定义 + 唯一调用 + 结果真的进 prompt / 上报字段）。二轮变异复验：摘除注入、摘除耗尽回写、摘除两处落盘触发、摘除首跑写入 —— 四种变异逐一被逼红（此前三种完全无红）。
+- **High② 超时读数自相矛盾**：`elapsedTime` 是含暂停的墙钟，而豁免靠「加长预算」实现，于是「已用 100min，预算 120min（等待不计入）」必然自证矛盾。新增 `computeLoopTimeoutReport` 一次算清墙钟/等待/有效已用/是否超阈，展示改取 `usedMs`，文案补 `{paused}`（中英文）；`getRemainingTime()` 同源改走该读数，消除三处重复算式。
+- **High③ 现场不落盘**：`subtaskProgress` 此前只由「整子任务成功」等 6 个既有时机间接带走，而 C 的目标场景（长子任务全部未成功即被打断）恰好一次都碰不到 → 内存摘要随 SW 回收丢失。`progressHooks` 新增 `onPartial`，写入器返回「本次是否真的写入」，只在现场变化时触发 `saveCheckpointNow('subtask_partial_progress')`（不传 force，复用既有 1500ms 节流）。
+- **Medium② 尾量与耗尽路径**：每 5 个成功节点一写 → 中断点前最后 0~4 个必漏；且重试耗尽时那份**最完整**的摘要只拼进给父模型的字符串、不回写进度表，子任务自身重跑仍零知情。新增 `buildSubtaskFailureResult`（回写完整现场 + 复用同一份摘要上报，顺带去掉双份序列化）；完成度校验重跑的回调也接同一写入器，二次尝试的新进展不再白烧。
+- **Medium① 三桶渲染守卫**：`toMatch(/subtask-stat-other/)` 单次命中即过，删掉 failed 分支的 ⊘ 仍全绿 → 改为按出现次数锁定「三个分支各一处 + 均为 `otherNodes > 0` 条件渲染」。
+- **Low① 旧正则失去约束力**：`/recorded\s*&&\s*recorded\.success/` 现在只命中纯函数体，把跳过判定改回 `if (recorded)`（会误跳过进行中记录）也不会红 → 改锚 `if (shouldSkipSubtaskReplay(recorded))` 并补该纯函数的行为断言。
+- **Low② 文档产物未重跑**：`docs/wiki` 是 git 跟踪的构建产物，只改了 `.docsite-src` 会留下线上 wiki 仍写「子任务整体超时上限 15 分钟」→ 补跑 `npm run build:docsite`（138 页为资产哈希引用联动、57 个 pagefind 分块重排，内容变更仅 ReAct 页）。
+- **搬移引发的既有守卫同步**：`subtask-partial-outcome`（失败上报内联三元上提到 seam）与 `take-note-scratchpad`（便签段组装移入 seam）两条源形状守卫按新位置改写；seam 内保持 `parentBudget?.notes` 原写法，使便签不变量的表达不被放宽。
+- **评审确认为正确设计（未改动）**：预算三重保护纯函数化、逐子任务实时读父剩余、`shouldSkipSubtaskReplay` 严格 `success === true` 不被进行中记录稀释、写入不降级覆盖成功记录、B 项未改动成功率分母（≥80% 判定与改前逐位等价）。
+- **未做（已知遗留）**：M3 父预算 10s 收尾缓冲过薄 + parallel 下各子任务近乎各享满额父剩余；L3 repowiki 33 处源码行号引用漂移（建议改符号锚点）；L4 续跑段落注入上一尝试不可信工具输出未做包裹；L5 `formatDurationMs` 亚秒显示 `0s`、2h 显示 `120min`。
+- **验证**：全量单测 157 文件 / 2346 例全绿、`npm run lint` 0 告警、`build:silent` 通过；变异复验记录见 `test-results-probes/`。
+
+### 第二轮整体评审修复批次：C1 字段契约致命缺陷 + H1/H2 + M1~M5
+> 来源：对上一批全部改动再做整体评审（恰好派发 1 个 CodeReview 子代理），评审判定 **1 Critical**；逐条对源码复核并先用临时探针测试取得运行证据后确认。范围经人工确认为「C1+M4+M5 一批，H1+H2 紧随」，与 C1 同根的 M1/M2/M3 一并处理。
+
+- **Critical C1 现场摘要读错字段（整条链路在生产中从未生效）**：`buildSubtaskPartialSummary` 的准入是 `e.result != null`，而内层循环成功落定的 `tool_exec` 节点把产出正文写在 **`observation`**（全部 4 处 `executionLog.push` 与 2 处就地更新都不写 `result`；旁证：`react-reflection.js` 读 `e.observation` 并注释为 "result summary"）。于是摘要恒为 `''` → 进度表零写入 → `onWritten`/`onPartial` 从不触发 → `[Partial progress before failure]` 段永不出现 → 续跑段落永不注入。上一轮「四种变异逐一被逼红」的记录**是真的但没有意义**：变异只摘接线，对字段契约零抵抗力；测试 fixture 又自造了生产不存在的 `result` 字段，所以「进度表真的写进去了」这类行为断言全绿。取证：临时探针测试逐字段照抄生产节点，跑出 `expected '' to contain '页面正文-ABC'`（文件已删）。修法为改读 `observation`（保留 `result` 兜底），并把 `subtask-partial-outcome` / `subtask-progress-wiring` 的 fixture 全部改成逐字段照抄生产形状。
+- **M2 节点口径**：摘要不再只看 `status === 'success'`，同时限定 `nodeType === 'tool_exec'`，与「工具产出」这一语义口径对齐（避免 api_call 的响应体被当作产出回灌）。
+- **M1 写入节流永久哑火**：原按「成功工具节点计数增量 ≥ 5」节流，但 `trimExecutionLogMemory`（窗口 1000）先裁剪、回调后触发，窗口滑满后计数会回落，`done - counted < every` 恒成立 → 长子任务跑到窗口上限之后**一次都不再写**。改为以「现场内容变化」为条件（`createSubtaskPartialProgressWriter` 缓存上次摘要做差异判定），删除 `countSuccessfulToolNodes` 与 `PARTIAL_PROGRESS_EVERY_NODES`。
+- **M3 重试趟覆盖现场**：重试趟的执行日志从零重建，直接整条替换会让落盘现场只剩最后一次尝试的尾部。新增 `mergePartialSummaryLines` 做有界按行去重合并（keep-first + 尾部保留 `maxNodes` 行）。
+- **M4 不可信内容注入面**：C1 修好后回灌摘要成为活口——上一尝试的工具输出（网页正文等）会未经包裹拼进 system prompt。`buildSubtaskResumeContext(record, sessionKey)` 复用模块内已导入的 `wrapUntrusted('subtask_previous_attempt', ...)`，并显式声明该块是数据而非指令；`composeSubtaskInheritedContext` 新增 `sessionKey` 形参并在调用点透传 `sessionId`（nonce 与 tool 消息同源）。
+- **H1 父预算超售**：硬封顶移除后每个子任务都按「取快照那一刻的满额父剩余」领取预算，parallel 首波即可吃干父预算，超时从子任务层转移到父任务层（父任务在汇总前被杀）。`computeSubtaskLoopTimeoutMs(parentRemainMs, configLoopTimeoutMs, pendingSubtaskCount)` 新增分摊：并行按并发池波次数、顺序按剩余个数；并留出比例化收尾预留（剩余的 5%，夹在 30s~5min）；`Math.min(..., hardCap)` 确保预算**绝不超过**父实际剩余——原先的 60s 固定下限在父剩余仅 30s 时会越权。
+- **H2 重跑那一拍恒被红线拒绝**：`onDone` 在完成度取证**之前**就写 `success: true`，而 `recordSubtaskPartialProgress` 的红线是 `existing.success === true → return ''`，于是二次尝试的新进展既不落表也不落盘。新增 `appendAfterSuccess` 追加模式（只追加 `partialSummary`，不动 `success`/`result`/`retryCount`，防重放红线不破），重跑回调走 `writePartialProgress(rerunLog, { appendAfterSuccess: true })`。
+- **M5 集成范式落地方式**：评审建议「真 `executeSubtasks` + mock `reactLoop`」。核查后未照抄——`subtask-checkpoint-replay` 实际绕开 `reactLoop`（只测 skip 路径，注释明写「避开真实 reactLoop 网络路径」），仓库无全链路 harness；`executeSubtasks` 直接调用同模块导出的 `reactLoop`，ESM 绑定不可从外部 rebind；搭建需打桩 SSE 流/工具执行/checkpoint DB，成本与脆性均高。改为新增闭环组合测试（写入器 → 进度表 → 继承上下文 → prompt，另含「无现场不得凭空出现 previous attempt」与「JSON 反序列化为普通对象后仍能读出现场」两条可逆用例），并保留少量精确计数守卫；已在测试文件头注释中如实声明未做全链路 harness 及原因，本轮撤掉 1 条冗余存在性正则。
+- **单一来源化**：`react-loop-upgrade-wiring` 的 P1-8 曾把同一组预算毫秒再写一遍，新契约下触发 4 例真实回归（`expected 6900000 to be 7190000` 等）。该文件收敛为只锁方向性关系（`budget <= remain`、`budget < plenty`）与接线正则，具体数值归 `subtask-timeout-budget`。
+- **文档同步**：repowiki 与 docsite 的「超时与预算」改为分摊+比例预留+不越权口径，「中断现场续用」补 observation 字段来源/内容差异节流/去重合并/不可信包裹四条；重跑 `npm run build:docsite`。
+- **验证**：RED 批次合并 16 例失败（其中 `subtask-timeout-budget` 整文件因正则字面量触发 rolldown 解析歧义而加载失败，改 `new RegExp` 后正常）；GREEN 后全量单测 **157 文件 / 2364 例 0 失败**、`npm run lint` exit 0 无输出、`build:silent` 通过。**变异复验 8/8 被逼红**（还原后 RESTORE_OK，脚本 `test-results-probes/_mutate-verify.sh`）：回退 C1 → 18 红、M2 → 2、M1 → 8、M3 → 1、M4 → 4、H2 → 2、H1 越权下限 → 1、H1 不分摊 → 1。首轮脚本 8 行只印标签不印结果，根因是 vitest 输出含 ANSI 码使 `grep -E "^ +Tests "` 行首锚定失效，加 `sed 's/\x1b\[[0-9;]*m//g'` 后正常。
+- **实施过程中的自我纠错**：M3 用例原写 `expect(merged).toContain('产出-1')`，而 `'产出-1'` 是 `'产出-11'` 的子串——绿得没有意义；改为整行同时匹配 `工具3`+`产出-3` 与 `工具11`+`产出-11`。
+- **未做（本轮商定「择机」）**：L-b `formatDurationMs(7200000) === '120min'` 与设置页「2 小时」不同形；L-d `indexOf('async function')` 取函数体窗口右界可被一个 async 辅助函数悄悄截短；L-e ⊘ 统计用 `--text-tertiary` 对比约 2.8:1。真机（Chrome）验证未做。（→ 已在上方的「收尾批次」处理完；其中 **L-b 的「2 小时」表述经核对不成立**，见该节第一条）
 
 ## 2026-10-23
 

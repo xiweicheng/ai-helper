@@ -147,8 +147,11 @@ registerTranslations('zh', {
     subtaskDescLabel: '任务描述：',
     subtaskResultLabel: '产出摘要：',
     subtaskAllDone: '✓ 全部完成',
+    subtaskReplaySkipped: '已跳过重放',
+    subtaskReplaySkippedHint: '中断前已成功完成，本轮未重复执行，写操作不会二次生效',
     subtaskFilterEmpty: '当前过滤下无匹配节点',
     subtaskFilterHint: '点击按此状态过滤节点，再点取消',
+    subtaskStatOtherHint: '已取消 / 未完成节点（用户拒绝确认、任务终止时仍在执行等），点击过滤',
     subtaskPartialFail: '✗ {success}/{total} 完成，{fail} 个节点失败',
     unknownNode: '未知',
     stopGeneration: '停止生成',
@@ -221,8 +224,11 @@ registerTranslations('en', {
     subtaskDescLabel: 'Description: ',
     subtaskResultLabel: 'Output summary: ',
     subtaskAllDone: '✓ All done',
+    subtaskReplaySkipped: 'replay skipped',
+    subtaskReplaySkippedHint: 'Already completed before the interruption; not re-run this round, so side effects do not apply twice',
     subtaskFilterEmpty: 'No nodes match this filter',
     subtaskFilterHint: 'Click to filter nodes by this status, click again to clear',
+    subtaskStatOtherHint: 'Cancelled / unfinished nodes (denied confirmations, still running when the task ended). Click to filter',
     subtaskPartialFail: '✗ {success}/{total} done, {fail} nodes failed',
     unknownNode: 'Unknown',
     stopGeneration: 'Stop generation',
@@ -757,21 +763,60 @@ export function classifySubtaskOutcome(status, succeedNodes, totalNodes, thresho
 }
 
 /**
- * 节点过滤点击语义（纯函数，可单测）：点击 ✓N/✗N 统计切换过滤状态——
+ * 子任务节点三桶计数（纯函数，可单测）：✓ 成功 / ✗ 失败 / ⊘ 其他。
+ * 曾经只数两桶，被用户拒绝确认（cancelled）、被取消的 API 调用、任务终止时残留的
+ * processing 节点计入总数却两头不算，面板出现「80/83 完成，1 个节点失败」这种
+ * 80 + 1 ≠ 83 的对不上号，用户必然误解为"有 3 个结果丢了"。
+ * 恒等式 success + failed + other === total 由本函数保证（脏条目并入 other）。
+ */
+export function classifySubtaskNodeStats(nodes) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  let success = 0;
+  let failed = 0;
+  for (const n of list) {
+    if (n && n.status === 'success') success++;
+    else if (n && n.status === 'failed') failed++;
+  }
+  return { total: list.length, success, failed, other: list.length - success - failed };
+}
+
+/**
+ * 该子任务本轮是否因防重放而跳过执行（纯函数，可单测）：扫描其主日志条目的
+ * skippedReplay 标记。
+ * 必须扫描而不是"取第一条"：resume 场景下面板的 executionLog 里同一 subtaskIndex
+ * 有两条 nodeType==='subtask' 条目——中断前那轮完成时写的排在前、本轮跳过节点排在后，
+ * 只读第一条永远看不到跳过标记，于是「已完成、本轮未重做」的子任务与真跑完的在 UI 上
+ * 长得一模一样（真机三层取证：SW 发出 2 条含跳过、UI 收到 2 条、DOM 零文案）。
+ * 只认布尔 true：该字段经 IndexedDB checkpoint 往返，'true'/1 一律不算——给普通
+ * 「完成」误挂「已跳过重放」比不显示更糟，用户正是据此判断写操作有无二次生效。
+ * @param {Array} entries 面板累积的执行日志
+ * @param {number} subtaskIndex
+ * @returns {boolean}
+ */
+export function isSubtaskReplaySkipped(entries, subtaskIndex) {
+  return (Array.isArray(entries) ? entries : []).some(e =>
+    !!e && e.nodeType === 'subtask' && e.subtaskIndex === subtaskIndex && e.skippedReplay === true
+  );
+}
+
+/**
+ * 节点过滤点击语义（纯函数，可单测）：点击 ✓N/✗N/⊘N 统计切换过滤状态——
  * 同一状态再点一次取消过滤，点击另一状态切换过滤，非过滤目标维持原状。
  */
 export function toggleNodeFilter(current, clicked) {
-  if (clicked !== 'success' && clicked !== 'failed') return current || null;
+  if (clicked !== 'success' && clicked !== 'failed' && clicked !== 'other') return current || null;
   return current === clicked ? null : clicked;
 }
 
 /**
- * 按过滤状态筛选执行节点列表（纯函数）：'success'/'failed' 只留对应状态节点
- * （processing 不属于任一过滤），无效/空过滤返回原列表。
+ * 按过滤状态筛选执行节点列表（纯函数）：'success'/'failed' 只留对应状态节点，
+ * 'other' 留既非成功也非失败的（cancelled / processing / rolledback 等），
+ * 无效或空过滤返回原列表。
  */
 export function applyNodeFilter(nodes, filter) {
   const list = Array.isArray(nodes) ? nodes : [];
-  if (filter !== 'success' && filter !== 'failed') return list;
+  if (filter !== 'success' && filter !== 'failed' && filter !== 'other') return list;
+  if (filter === 'other') return list.filter((n) => !n || (n.status !== 'success' && n.status !== 'failed'));
   return list.filter((n) => n && n.status === filter);
 }
 
@@ -3517,9 +3562,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               
               // 计算节点统计 & 当前执行节点（状态判定前需要：「部分完成」分类依据）
               const allSubtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
-              const totalNodes = allSubtaskNodes.length;
-              const succeedNodes = allSubtaskNodes.filter(n => n.status === 'success').length;
-              const failedNodes = allSubtaskNodes.filter(n => n.status === 'failed').length;
+              // 三桶口径（classifySubtaskNodeStats）：success + failed + other === total 恒成立
+              const stats = classifySubtaskNodeStats(allSubtaskNodes);
+              const totalNodes = stats.total;
+              const succeedNodes = stats.success;
+              const failedNodes = stats.failed;
+              const otherNodes = stats.other;
               const currentNode = allSubtaskNodes.find(n => n.status === 'processing');
               // 展示三态分类：内层循环抛异常判 failed，但节点多数成功 → 「部分完成」（橙）
               const outcome = classifySubtaskOutcome(message.status, succeedNodes, totalNodes);
@@ -3527,6 +3575,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               const planItem = subtaskPlan ? subtaskPlan.items.find((it) => it.index === si) : null;
               const planDescText = planItem && planItem.description ? String(planItem.description).replace(/\s+/g, ' ').trim() : '';
               const subtaskMainLog = executionLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');
+              // 跳过重放标记：中断前已完成、本轮未执行的子任务必须与真跑完的区分开，
+              // 否则两种情况在行里长得完全一样（都是「完成 ✓ 全部完成」），用户无从
+              // 知道写操作有没有被二次执行——而这正是防重放唯一的用户价值
+              const skipMarkHtml = isSubtaskReplaySkipped(executionLog, si)
+                ? `<span class="subtask-replay-skipped" title="${escapeAttr(t('chatMsg.subtaskReplaySkippedHint'))}">${t('chatMsg.subtaskReplaySkipped')}</span>`
+                : '';
               // 行被真正渲染即脱离「待执行」态（补齐时打的是 pending 样式类）
               progressEl.classList.remove('subtask-progress-pending');
               
@@ -3566,6 +3620,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     <span class="subtask-stat-total">${totalNodes}</span>
                     <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓${succeedNodes}</span>
                     ${failedNodes > 0 ? `<span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗${failedNodes}</span>` : ''}
+                    ${otherNodes > 0 ? `<span class="subtask-stat-other${progressEl._nodeFilter === 'other' ? ' subtask-stat-active' : ''}" data-node-filter="other" title="${t('chatMsg.subtaskStatOtherHint')}">⊘${otherNodes}</span>` : ''}
                   </span>
                 </div>`;
               } else if (!isRunning) {
@@ -3576,6 +3631,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     <span class="subtask-node-stats">
                       <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓ ${succeedNodes}</span>
                       <span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗ ${failedNodes}</span>
+                      ${otherNodes > 0 ? `<span class="subtask-stat-other${progressEl._nodeFilter === 'other' ? ' subtask-stat-active' : ''}" data-node-filter="other" title="${t('chatMsg.subtaskStatOtherHint')}">⊘ ${otherNodes}</span>` : ''}
                     </span>
                   </div>`;
                 } else if (message.status === 'failed') {
@@ -3588,6 +3644,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                     <span class="subtask-node-stats">
                       <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓ ${succeedNodes}</span>
                       <span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗ ${failedNodes}</span>
+                      ${otherNodes > 0 ? `<span class="subtask-stat-other${progressEl._nodeFilter === 'other' ? ' subtask-stat-active' : ''}" data-node-filter="other" title="${t('chatMsg.subtaskStatOtherHint')}">⊘ ${otherNodes}</span>` : ''}
                     </span>${failReasonHtml}
                   </div>`;
                 }
@@ -3596,7 +3653,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               // 渲染折叠头部 + 进度行
               progressEl.innerHTML = `
                 <div class="subtask-header">
-                  ${chevron}${taskIcon}${badge}<span class="subtask-name" title="${escapeAttr(planDescText)}">${name}</span>${statusHtml}
+                  ${chevron}${taskIcon}${badge}<span class="subtask-name" title="${escapeAttr(planDescText)}">${name}</span>${skipMarkHtml}${statusHtml}
                 </div>
                 ${progressLineHtml}
                 <div class="subtask-detail-body"></div>
