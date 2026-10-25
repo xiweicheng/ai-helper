@@ -137,7 +137,8 @@ export function adjustInputHeight() {
   userInput.style.height = 'auto';
   const scrollH = userInput.scrollHeight;
   // 单行内容时移除 inline height，让 CSS min-height 统一处理，避免中英文 scrollHeight 差异导致抖动
-  if (scrollH <= 50) {
+  // （单行 scrollHeight ≈ 8×2 padding + 18 行高 ≈ 34，阈值 40 留余量，与 min-height:34px 匹配）
+  if (scrollH <= 40) {
     userInput.style.height = '';
   } else {
     userInput.style.height = Math.min(scrollH, 100) + 'px';
