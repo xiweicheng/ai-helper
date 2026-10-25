@@ -68,7 +68,8 @@ export function getChatConfig() {
     chrome.storage.local.get([
       'chatMaxMemoryMessages', 'enableExecutionLog', 'customModels',
       'streamExpandTools', 'showMessageTimestamp',
-      'chatAutoCompaction', 'chatAutoCompactionThreshold', 'chatPersistSummaryToMemory'
+      'chatAutoCompaction', 'chatAutoCompactionThreshold', 'chatPersistSummaryToMemory',
+      'queueAutoCarry', 'queueAutoCarryEveryNIterations'
     ], (result) => {
       resolve({
         maxMemoryMessages: result.chatMaxMemoryMessages !== undefined ? result.chatMaxMemoryMessages : DEFAULT_CHAT_CONFIG.maxMemoryMessages,
@@ -82,7 +83,14 @@ export function getChatConfig() {
           && result.chatAutoCompactionThreshold > 0 && result.chatAutoCompactionThreshold <= 1
           ? result.chatAutoCompactionThreshold
           : DEFAULT_CHAT_CONFIG.autoCompactionThreshold,
-        persistSummaryToMemory: result.chatPersistSummaryToMemory !== false
+        persistSummaryToMemory: result.chatPersistSummaryToMemory !== false,
+        // 自动顺带：开关默认开（undefined 视为 true）；间隔轮数只做"是不是正数"的初筛，
+        // 夹取区间交给面板侧 queue-auto-carry.js 的 normalizeEveryN（真源单一）
+        queueAutoCarry: result.queueAutoCarry !== false,
+        queueAutoCarryEveryNIterations: typeof result.queueAutoCarryEveryNIterations === 'number'
+          && result.queueAutoCarryEveryNIterations > 0
+          ? result.queueAutoCarryEveryNIterations
+          : DEFAULT_CHAT_CONFIG.queueAutoCarryEveryNIterations
       });
     });
   });

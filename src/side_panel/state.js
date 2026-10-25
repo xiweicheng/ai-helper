@@ -65,7 +65,10 @@ export let chatConfig = {
   // 上下文压缩：自动压缩默认关（额外调用），摘要沉淀默认开
   autoCompaction: false,
   autoCompactionThreshold: 0.85,
-  persistSummaryToMemory: true
+  persistSummaryToMemory: true,
+  // 队列「自动顺带」：开关默认开，至少间隔 3 轮才再带一条
+  queueAutoCarry: true,
+  queueAutoCarryEveryNIterations: 3
 };
 
 // 温度设置

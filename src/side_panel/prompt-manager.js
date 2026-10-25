@@ -3,6 +3,7 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { addToInputHistory } from './input-history.js';
 import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText, renderKnowledgeContextBubbles } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
+import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { compressQuotedContext, getMessageBudget } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { runCompaction, computeCurrentUsage } from './context-indicator.js';
@@ -920,10 +921,8 @@ export async function sendPromptByCode(code) {
   } catch (error) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
   } finally {
-    state.generatingSessionIds.delete(mySessionId);
-    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
-    markSessionCompleted(mySessionId);
-    document.dispatchEvent(new CustomEvent('generating-state-changed'));
+    // 统一收尾：清生成态 + 标记完成 + 广播事件 + 通知队列接力
+    notifyGenerationEnded(mySessionId);
     userInput.focus();
     state.attachedImages = [];
   }

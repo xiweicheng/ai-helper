@@ -481,11 +481,12 @@ export function initSkillTabEvents() {
  * 多技能时各段以空行连接（顺序与选择顺序一致）。
  * @returns {Promise<string>}
  */
-export async function getSkillContextText() {
-  if (state.selectedSkills.length === 0) return '';
+export async function getSkillContextText(skills) {
+  const selected = skills || state.selectedSkills || [];
+  if (selected.length === 0) return '';
 
   const parts = [];
-  for (const skill of state.selectedSkills) {
+  for (const skill of selected) {
     const isAgent = skill.type === 'agent';
 
     let text = t('skillSelector.selectedSkillStart', { name: skill.name });
@@ -729,11 +730,12 @@ export function clearMcpService() {
  * 获取 MCP 服务上下文文本（注入到用户消息中，支持多服务连续注入）
  * @returns {string}
  */
-export function getMcpContextText() {
-  if (state.selectedMcpServices.length === 0) return '';
+export function getMcpContextText(services) {
+  const selected = services || state.selectedMcpServices || [];
+  if (selected.length === 0) return '';
 
   // 多服务各注入一段（段间空行），逐服务提示模型使用对应 MCP 服务
-  return state.selectedMcpServices
+  return selected
     .map(svc => t('skillSelector.selectedMcpContext', { name: svc.serverName }))
     .join('\n');
 }

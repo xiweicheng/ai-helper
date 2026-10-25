@@ -74,6 +74,7 @@ registerTranslations('zh', {
     labelSubtask: '子任务',
     expandAll: '展开全部节点',
     collapseAll: '收起全部节点',
+    sectionUserInjection: '💬 插话内容',
   },
 });
 
@@ -140,6 +141,7 @@ registerTranslations('en', {
     labelSubtask: 'Subtask',
     expandAll: 'Expand all nodes',
     collapseAll: 'Collapse all nodes',
+    sectionUserInjection: '💬 Your interjection',
   },
 });
 
@@ -281,6 +283,7 @@ export function renderExecutionTimeline(executionLog) {
     const isApiCall = entry.nodeType === 'api_call';
     const isPreselect = entry.nodeType === 'preselect';
     const isReflection = entry.nodeType === 'reflection';
+    const isUserInjection = entry.nodeType === 'user_injection';
     const isPlanTask = isToolExec && entry.action?.name === 'plan_task';
     
     if (isSubtask) {
@@ -290,7 +293,10 @@ export function renderExecutionTimeline(executionLog) {
     let indentClass = '';
     let nodeIcon = '';
     
-    if (isReflection) {
+    if (isUserInjection) {
+      // 插话是用户亲手塞进这一轮的，必须和模型自己的思考/工具调用区分开
+      nodeIcon = '💬';
+    } else if (isReflection) {
       nodeIcon = '🎯';
     } else if (isPreselect) {
       nodeIcon = '🔍';
@@ -369,6 +375,13 @@ export function renderExecutionTimeline(executionLog) {
           </div>
           
           <div class="timeline-details">
+            ${isUserInjection && entry.content ? `
+            <div class="timeline-section">
+              <div class="section-title">${t('execLog.sectionUserInjection')}</div>
+              <div class="section-content">${escapeHtml(entry.content)}</div>
+            </div>
+            ` : ''}
+            
             ${entry.thought && entry.thought.trim() ? `
             <div class="timeline-section">
               <div class="section-title">${t('execLog.sectionThought')}</div>

@@ -146,18 +146,7 @@ export async function saveCurrentSession() {
   // 上下文压缩记录（会话级；undefined 时 JSON 序列化自动省略字段）
   currentSession.contextCompaction = state.activeCompaction || undefined;
 
-  currentSession.messageHistory = state.messageHistory.map((msg) => ({
-    role: msg.role,
-    content: msg.content || '',
-    executionLog: msg.executionLog || [],
-    reflectionScore: msg.reflectionScore,
-    wasRevised: msg.wasRevised || false,
-    htmlContent: msg.htmlContent || undefined,
-    messageId: msg.messageId || undefined,
-    timestamp: msg.timestamp || undefined,
-    contextBubbles: msg.contextBubbles || undefined,
-    resumable: msg.resumable || false,
-  }));
+  currentSession.messageHistory = serializeMessageHistory(state.messageHistory);
 
   currentSession.updatedAt = new Date().toISOString();
 
@@ -177,6 +166,57 @@ export async function saveCurrentSession() {
     return false;
   }
   return true;
+}
+
+/**
+ * 只保留消息历史里需要持久化的字段（当前会话与跨会话两条写盘路径共用）
+ */
+export function serializeMessageHistory(list) {
+  return (list || []).map((msg) => ({
+    role: msg.role,
+    content: msg.content || '',
+    executionLog: msg.executionLog || [],
+    reflectionScore: msg.reflectionScore,
+    wasRevised: msg.wasRevised || false,
+    htmlContent: msg.htmlContent || undefined,
+    messageId: msg.messageId || undefined,
+    timestamp: msg.timestamp || undefined,
+    contextBubbles: msg.contextBubbles || undefined,
+    resumable: msg.resumable || false,
+  }));
+}
+
+/**
+ * 把一份会话态写回指定会话（不依赖 state.activeSessionId）。
+ * 队列跨会话接力时目标会话并不显示在面板上，不能走 saveCurrentSession；
+ * 只写显式传入的字段，其余保持磁盘原值，避免把当前会话的模型/帮手串过去。
+ * @param {string} sessionId 目标会话
+ * @param {{messageHistory?: Array, model?: string, useTools?: boolean, enabledTools?: Array,
+ *          agentId?: string|null, temperature?: number, topP?: number,
+ *          activeCompaction?: object|null}} snapshot
+ * @returns {Promise<boolean>} 是否写盘成功
+ */
+export async function persistSessionState(sessionId, snapshot = {}) {
+  if (!sessionId) return false;
+  await init();
+  const target = await idb.getSession(sessionId);
+  if (!target) {
+    logger.warn('[SessionStore] persistSessionState cannot find session:', sessionId);
+    return false;
+  }
+
+  const { messageHistory, model, useTools, enabledTools, agentId, temperature, topP, activeCompaction } = snapshot;
+  if (model !== undefined) target.model = model;
+  if (useTools !== undefined) target.useTools = useTools;
+  if (enabledTools !== undefined) target.enabledTools = [...enabledTools];
+  if (agentId !== undefined) target.agentId = agentId || null;
+  if (temperature !== undefined) target.temperature = temperature;
+  if (topP !== undefined) target.topP = topP;
+  if (activeCompaction !== undefined) target.contextCompaction = activeCompaction || undefined;
+  if (messageHistory !== undefined) target.messageHistory = serializeMessageHistory(messageHistory);
+
+  target.updatedAt = new Date().toISOString();
+  return idb.putSession(target);
 }
 
 /**

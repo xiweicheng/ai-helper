@@ -18,6 +18,7 @@ import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
 import { weightTrimFallback } from './trim-fallback.js';
 import { createRoutingEvidenceCollector, annotateOneSubtaskCompletion } from './completion-verifier.js';
+import { drainPendingInjections, dropPendingInjections, buildInjectionContent } from './injection.js';
 
 // 注册 reactLoop 命名空间翻译
 registerTranslations('zh', {
@@ -57,6 +58,7 @@ registerTranslations('zh', {
     toolAborted: '工具执行已被用户终止: {tool}',
     jsonParseFailed: 'JSON 解析失败 (HTTP {status}): {error}。响应前100字符: {preview}',
     streamIdleTimeout: '流式响应空闲超时（{seconds} 秒未收到任何数据），已自动中断。可能是网络或服务提供商暂时不稳定，请重试。',
+    userInjection: '用户插话',
   },
 });
 
@@ -96,6 +98,7 @@ registerTranslations('en', {
     toolAborted: 'Tool execution was aborted by user: {tool}',
     jsonParseFailed: 'JSON parse failed (HTTP {status}): {error}. First 100 chars: {preview}',
     streamIdleTimeout: 'Stream idle timeout (no data received for {seconds}s), automatically interrupted. This may be caused by an unstable network or provider, please retry.',
+    userInjection: 'User interjection',
   },
 });
 import { summarizeRoundsBatch, extractAllRounds } from './context-summarizer.js';
@@ -1049,6 +1052,24 @@ export async function reactLoop(...args) {
 }
 
 /**
+ * 告知面板：插话确实已并入 currentMessages。
+ * 这是队列条目"出队"的唯一凭据（两段式提交的第二段），没收到就一律回退队列。
+ */
+function notifyInjectionsAbsorbed(sessionId, injections, iteration, callId) {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'INJECT_ABSORBED',
+      sessionId,
+      callId: callId || null,
+      iteration,
+      items: injections.map((inj) => inj.itemId),
+    }).catch(() => {});
+  } catch {
+    // 面板已关闭：条目会由面板侧的 15s 超时 / 下次加载的 injecting 降级兜底退回队列
+  }
+}
+
+/**
  * ReAct 推理循环实现体
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
@@ -1493,6 +1514,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       if (sessionId) {
         msg.sessionId = sessionId;
       }
+      // 子任务用的是自己的迭代号，但插话缓冲只有顶层循环会在迭代边界取走。
+      // 面板靠这个标记避免“子任务期间自动顺带 → 干等到超时回退”。
+      if (isSubtask) msg.isSubtask = true;
       
       chrome.runtime.sendMessage(msg).catch(err => {
         logger.debug('[Background] sendexecution statusupdate failed:', err.message);
@@ -1657,6 +1681,36 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         }
       }
       
+      // 见缝插针：把面板投递的插话并入本轮请求。
+      // 位置是本功能最脆的三条约束的交点，改之前请读完：
+      // ① 取消/超时检查之后 —— drain 成功即意味着下面紧跟一次真实 API 请求，
+      //    面板收到 INJECT_ABSORBED 才算数，不能出现“已回执、但这一轮根本没发出去”；
+      // ② 上下文压力裁剪之后 —— critical 分支会用 filterApiMessages 重建 filteredMessages，
+      //    在它之前注入会被整段吞掉（与 buildPlanAnchorMessage 同一个坑）；
+      // ③ 迭代边界本身 —— 上一轮 assistant(tool_calls) 与其全部 tool 结果已配对完整，
+      //    此处追加 user 消息不会破坏配对（绝不能在工具调用中途 splice currentMessages）。
+      // 写入 currentMessages = 持久：随 checkpoint 落盘，压缩 / 恢复后仍在上下文里。
+      if (!isSubtask && sessionId) {
+        const injections = drainPendingInjections(sessionId);
+        for (const inj of injections) {
+          const injContent = buildInjectionContent(inj);
+          currentMessages.push({ role: 'user', content: injContent });
+          filteredMessages = [...filteredMessages, { role: 'user', content: injContent }];
+          executionLog.push({
+            id: crypto.randomUUID(),
+            iteration,
+            timestamp: new Date().toISOString(),
+            nodeType: 'user_injection',
+            nodeName: t('reactLoop.userInjection'),
+            content: inj.text,
+            status: 'success',
+          });
+        }
+        if (injections.length > 0) {
+          notifyInjectionsAbsorbed(sessionId, injections, iteration, callId);
+        }
+      }
+
       // 任务状态锚点与收敛提示：瞬态注入到 filteredMessages 末尾（append 在最后不破坏
       // assistant(tool_calls)+tool 配对）。必须在上下文压力裁剪块之后注入，否则 pressure
       // critical 分支的 filterApiMessages 重建会覆盖掉注入（恰好在最需要保留进度的轮次失效）
@@ -2704,6 +2758,21 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 清除"当前任务放行"状态：连同本会话派生出的子任务树一并清，
       // 避免任务结束后同一会话的下一轮任务静默放行敏感命令
       revokeTaskLoopApproval(sessionId);
+      // 插话缓冲里没来得及注入的，必须当场退回队列。只清顶层循环：
+      // 子任务退出时父任务还在跑，那些条目后面仍有迭代边界可用。
+      if (!isSubtask) {
+        const dropped = dropPendingInjections(sessionId);
+        if (dropped.length > 0) {
+          try {
+            chrome.runtime.sendMessage({
+              type: 'INJECT_REJECTED',
+              sessionId,
+              reason: 'task_ended',
+              items: dropped.map((it) => it.itemId),
+            }).catch(() => {});
+          } catch { /* 面板已关闭：下次加载由 injecting 降级兜底 */ }
+        }
+      }
     }
     // 注意：不在 finally 中清理 checkpoint！
     // 原因：页面刷新后 SW 中的 reactLoop 可能继续运行并正常完成，

@@ -6,6 +6,7 @@ import state from './state.js';
 import { formatDuration } from './utils.js';
 import { renderMessageMermaid } from './markdown-render.js';
 import { appendMessageToSession, markSessionCompleted } from './session-manager.js';
+import { notifyGenerationEnded } from './generation-lifecycle.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -402,11 +403,8 @@ export async function resumeTask(sessionId, userGuidance = '') {
     saveChatHistory();
     return false;
   } finally {
-    // 无论成功/失败/取消，都重置生成状态，恢复发送按钮
-    state.generatingSessionIds.delete(mySessionId);
-    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
-    markSessionCompleted(mySessionId);
-    document.dispatchEvent(new CustomEvent('generating-state-changed'));
+    // 无论成功/失败/取消，都重置生成状态，恢复发送按钮（并通知队列接力）
+    notifyGenerationEnded(mySessionId);
   }
 
   // 恢复成功：SW 已清理 checkpoint，前端同步移除所有"继续执行"按钮

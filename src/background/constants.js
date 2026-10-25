@@ -81,7 +81,10 @@ export const DEFAULT_CHAT_CONFIG = {
   enableExecutionLog: true,   // 执行日志默认开启
   autoCompaction: false,      // 阈值驱动的自动压缩默认关闭（会额外产生一次摘要调用）
   autoCompactionThreshold: 0.85, // 上下文占用达到 85% 时发送前自动压缩一次
-  persistSummaryToMemory: true   // 压缩摘要自动沉淀为长期记忆（不新增 LLM 调用）
+  persistSummaryToMemory: true,  // 压缩摘要自动沉淀为长期记忆（不新增 LLM 调用）
+  // 队列「自动顺带」：运行中的任务在迭代边界自动带上队首一条（不打断原任务）
+  queueAutoCarry: true,               // 总开关，默认开；关掉只剩手动 ⚡
+  queueAutoCarryEveryNIterations: 3   // 至少间隔 N 轮才再带一条（防一口气把队列倒进上下文）
 };
 
 // ==================== 工具定义（按类别拆分到 tools/ 目录） ====================

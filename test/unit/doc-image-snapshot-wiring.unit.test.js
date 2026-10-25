@@ -33,7 +33,8 @@ const CHAT_SRC = readFileSync(join(process.cwd(), 'src/side_panel/chat-manager.j
 const PROMPT_SRC = readFileSync(join(process.cwd(), 'src/side_panel/prompt-manager.js'), 'utf8');
 
 describe('发送链路快照写入（双链路对齐守卫）', () => {
-  const callRe = /await saveDocImageSnapshot\((\w+)\.activeSessionId, attachedFilesSnapshot\)/;
+  // 会话标识形如 state.activeSessionId（prompt-manager 链路）或 mySessionId（chat-manager 支持跨会话派发）
+  const callRe = /await saveDocImageSnapshot\(([\w.]+), attachedFilesSnapshot\)/;
 
   it('chat-manager 附件注入段调用 saveDocImageSnapshot', () => {
     expect(CHAT_SRC).toContain('import { buildFileContentText');

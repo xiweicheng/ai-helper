@@ -1,7 +1,7 @@
 // config-io.js - 配置导入/导出模块
 
 import { loadConfig } from './config-manager.js';
-import { loadToolbarTools, loadBlockedDomainsUI } from './toolbar-config.js';
+import { loadToolbarTools, loadBlockedDomainsUI, renderToolbarToolsList } from './toolbar-config.js';
 import logger from '../shared/logger.js';
 import { t, getLanguage } from '../shared/i18n.js';
 import { ensureProfilesMigrated, updateActiveProfile, normalizeModels, stripProfileSecrets, mergeProfiles, getState, DEFAULT_API_BASE, DEFAULT_MODEL_NAME } from '../shared/model-profiles.js';
@@ -27,6 +27,8 @@ const EXPORT_KEYS = [
   'completionNotificationEnabled', 'scheduledNotificationEnabled', 'interactionNotificationEnabled',
   // 消息时间戳显示开关
   'showMessageTimestamp',
+  // 队列「自动顺带」（运行中任务自动带入队首一条）
+  'queueAutoCarry', 'queueAutoCarryEveryNIterations',
   // 侧边栏作用域模式
   'sidePanelScope',
   // 自动分组开关
@@ -344,11 +346,9 @@ export async function confirmImport() {
     setTimeout(() => {
       loadConfig(() => {
         // 刷新工具栏
-        loadToolbarTools().then(() => {
-          // 如果有 renderToolbarToolsList 函数，调用它
-          if (typeof updateToolbarUI === 'function') {
-            updateToolbarUI();
-          }
+        loadToolbarTools().then((tools) => {
+          // 导入后按新的 toolbarTools 重绘列表（原先调用的 updateToolbarUI 并不存在，等于没刷新）
+          renderToolbarToolsList(tools);
         });
         loadBlockedDomainsUI();
       });

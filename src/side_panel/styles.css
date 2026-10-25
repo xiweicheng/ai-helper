@@ -3013,6 +3013,21 @@ body {
   box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.18);
 }
 
+/* 有排队任务的会话（队列是会话维度的，切走也会继续接力）：条数徽标 */
+.session-tab-queue-badge {
+  flex-shrink: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--brand-500);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .session-tab-close {
   display: inline-flex;
   align-items: center;
@@ -3298,6 +3313,22 @@ body {
   flex-shrink: 0;
   margin-right: 6px;
   box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.18);
+}
+
+/* 下拉列表项的“有排队任务”条数徽标 */
+.session-dropdown-item-queue {
+  flex-shrink: 0;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  margin-right: 6px;
+  border-radius: 7px;
+  background: var(--brand-500);
+  color: #fff;
+  font-size: 9px;
+  line-height: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 当前会话打勾标记 */
@@ -5940,6 +5971,335 @@ body {
 .context-usage-compacting-modal .modal-message {
   margin-bottom: 4px;
 }
+/* ============ 排队条（会话维度，位于输入区上方） ============ */
+.queue-strip {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-subtle);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.queue-strip.queue-flash {
+  animation: queue-strip-flash 0.6s ease-out;
+}
+@keyframes queue-strip-flash {
+  0% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.45); }
+  100% { box-shadow: 0 0 0 8px rgba(var(--brand-rgb), 0); }
+}
+.queue-strip.paused {
+  border-color: var(--warning-soft-border);
+  background: var(--warning-soft-bg);
+}
+/* 队列空了但还有失败任务待处理：只留一行极简提醒，降低视觉权重 */
+.queue-strip.empty {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.85;
+}
+.queue-strip.empty .queue-strip-summary {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+/* 失败提醒要能从空态的低调配色里跳出来（这里是失败任务唯一的重试入口） */
+.queue-strip.empty .queue-strip-summary.failed {
+  color: var(--warning-strong);
+  font-weight: 600;
+}
+.queue-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+/* 有排队项时整行标题都是折叠开关：右侧 ▲▼ 只有 11px，只让它可点太难命中 */
+.queue-strip:not(.empty) .queue-strip-head {
+  cursor: pointer;
+}
+.queue-strip-icon {
+  color: var(--brand-500);
+  font-size: 13px;
+  line-height: 1;
+}
+.queue-strip-summary {
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  /* 失败提醒文案比“排队 N 条”长，窄侧边栏下要能省略而不是把按钮挤没 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-strip-paused {
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--warning-strong);
+  background: var(--warning-soft-border);
+  white-space: nowrap;
+}
+.queue-strip-action {
+  border: none;
+  background: transparent;
+  color: var(--brand-600);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.queue-strip-action:hover {
+  background: var(--bg-active);
+}
+.queue-strip-action.active {
+  background: var(--bg-active);
+}
+/* 停止并发送：会牺牲当前这一轮，用危险色提醒它不是“继续”类操作 */
+.queue-strip-action.danger {
+  color: var(--danger-500);
+}
+.queue-strip-action.danger:hover {
+  background: rgba(var(--danger-rgb), 0.1);
+}
+.queue-strip-toggle {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.queue-strip-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 6px 6px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.queue-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  cursor: grab;
+  /* 拖拽反馈要“跟手”：高亮线、半透明、轻微缩放都靠这一处过渡，
+     否则拖动时整条列表会瞬移，看不出自己插到了哪里 */
+  transition: box-shadow 0.12s ease, opacity 0.12s ease, transform 0.12s ease, background 0.15s ease;
+}
+.queue-chip:active {
+  cursor: grabbing;
+}
+.queue-chip.dragging {
+  opacity: 0.45;
+  transform: scale(0.985);
+}
+.queue-chip.drag-over-top {
+  box-shadow: inset 0 2px 0 0 var(--brand-500);
+}
+.queue-chip.drag-over-bottom {
+  box-shadow: inset 0 -2px 0 0 var(--brand-500);
+}
+.queue-chip[data-status="dispatching"],
+.queue-chip[data-status="injecting"] {
+  border-color: var(--brand-soft-border);
+  background: var(--brand-soft-bg);
+}
+.queue-chip-index {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.queue-chip-main {
+  flex: 1;
+  min-width: 0;
+}
+.queue-chip-text {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-chip-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text-tertiary);
+  flex-wrap: wrap;
+}
+.queue-chip-ctx {
+  color: var(--brand-600);
+}
+.queue-chip-status {
+  color: var(--text-tertiary);
+}
+/* 执行中：这条不是在“等”，它已经在对话里跑了。
+   drainOnce 要 await 整轮生成（含工具调用）才出队，所以它会在这里停留一会儿。 */
+.queue-chip-status.running {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand-600);
+  font-weight: 500;
+}
+.queue-chip-status.running::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand-500);
+  animation: queueChipPulse 1.4s ease-in-out infinite;
+}
+@keyframes queueChipPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(1.4); }
+}
+.queue-chip-status.warning {
+  color: var(--warning-strong);
+}
+/* 正在执行的那条整条描边，和“还在等”的条目一眼区分 */
+.queue-chip[data-status="dispatching"] {
+  border-color: var(--brand-500);
+}
+.queue-chip-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.queue-chip-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.queue-chip-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--brand-600);
+}
+.queue-chip-btn.danger:hover:not(:disabled) {
+  background: var(--danger-soft-bg);
+  color: var(--danger-strong);
+}
+.queue-chip-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* 插话按钮：任务在跑时亮品牌色（这是本条唯一能“插队”的入口），
+   空闲时只弱化不置灰 —— 置灰会让人以为功能没了，点一下能拿到原因。 */
+.queue-chip-btn.inject {
+  color: var(--brand-600);
+}
+.queue-chip-btn.inject.muted {
+  color: var(--text-tertiary);
+  opacity: 0.55;
+}
+
+.queue-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px 6px;
+  border-top: 1px dashed var(--divider);
+  max-height: 150px;
+  overflow-y: auto;
+}
+.queue-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  padding: 2px 2px 2px 4px;
+  border-radius: 6px;
+}
+.queue-recent-item:hover {
+  background: var(--bg-hover);
+}
+.queue-recent-status {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.queue-recent-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-recent-empty {
+  padding: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* 生成中且输入非空时的第三态：主按钮变"加入队列"，停止入口交给伴随按钮 */
+.send-inner-btn.queue-mode {
+  background: var(--brand-soft-bg);
+  color: var(--brand-600);
+  border: 1px solid var(--brand-soft-border);
+  box-shadow: none;
+}
+.send-inner-btn.queue-mode:hover:not(:disabled) {
+  background: var(--brand-soft-border);
+  box-shadow: none;
+}
+.stop-companion-btn {
+  background: var(--fill-danger, var(--danger-500));
+  color: var(--text-inverse);
+  width: 26px;
+  height: 26px;
+  box-shadow: none;
+  order: -1;
+}
+.stop-companion-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  background: var(--danger-strong);
+}
+.stop-companion-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .input-wrapper {
   position: relative;
   display: flex;

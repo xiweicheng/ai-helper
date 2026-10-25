@@ -8,7 +8,7 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents, applyFilePathLinks, bindFileLinkDelegate, stripArtifactMarkers } from './markdown-render.js';
-import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted } from './session-manager.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted, persistSessionState } from './session-manager.js';
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
@@ -18,6 +18,8 @@ import { renderCompactionDivider, runCompaction, computeCurrentUsage } from './c
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
+import { notifyGenerationEnded } from './generation-lifecycle.js';
+import { enqueueFromInput } from './queue-runner.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
@@ -288,7 +290,7 @@ function extractTextContent(content) {
   return content;
 }
 
-function setQuoteContext(content) {
+export function setQuoteContext(content) {
   const textContent = extractTextContent(content);
   state.quotedContextText = textContent;
   const indicator = document.getElementById('selectionIndicator');
@@ -913,95 +915,166 @@ export function mapApiErrorToUserMessage(errMsg) {
   return t('chat.requestFailed', { message: msg });
 }
 
-export async function sendMessage() {
+/**
+ * 输入区上下文的空快照（跨会话派发且调用方没给快照时用）。
+ * 显式给空数组而不是 undefined：那三个 buildXxxContextText 在收到 undefined 时会回落到
+ * state（= 面板当前会话），后台会话就会莫名带上别人的技能/文件。
+ */
+const EMPTY_INPUT_CONTEXT = Object.freeze({
+  quotedContextText: '',
+  selectedContextText: '',
+  selectedSkills: [],
+  selectedMcpServices: [],
+  knowledgeRefs: [],
+  selectedPage: null,
+  attachedFiles: [],
+  attachedImages: [],
+});
+
+/**
+ * 读取当前输入区已挂载的上下文。
+ * 字段与队列条目的 contextSnapshot 同构，跨会话接力时由调用方直接传快照。
+ */
+function readInputContextSnapshot() {
+  return {
+    quotedContextText: state.quotedContextText || '',
+    selectedContextText: state.selectedContextText || '',
+    selectedSkills: (state.selectedSkills || []).slice(),
+    selectedMcpServices: (state.selectedMcpServices || []).slice(),
+    knowledgeRefs: (state.knowledgeRefs || []).slice(),
+    selectedPage: state.selectedPage || null,
+    attachedFiles: (state.attachedFiles || []).slice(),
+    attachedImages: (state.attachedImages || []).slice(),
+  };
+}
+
+/**
+ * 发送一轮消息。
+ * @param {Object} [opts]
+ * @param {string} [opts.text] 文本；缺省读输入框
+ * @param {string} [opts.sessionId] 目标会话；缺省 = 面板当前会话。队列跨会话接力时显式传入
+ * @param {Object} [opts.context] 输入区上下文快照（跨会话派发必传，否则不碰 state 也装配不出上下文）
+ * @param {Object} [opts.sessionState] 目标会话快照（messageHistory/model/useTools/enabledTools/agentId/
+ *   temperature/topP/contextCompaction），仅非激活会话使用
+ * @param {boolean} [opts.fromQueue] 队列派发：不清空输入框草稿
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export async function sendMessage(opts = {}) {
   // 等待聊天历史加载完成，确保 activeSessionId 就绪，保存会话不会静默失败
   await chatHistoryReady;
   const userInput = document.getElementById('userInput');
   const chatContainer = document.getElementById('chatContainer');
-  
-  const text = userInput.value.trim();
-  if (!text || state.isGenerating) return;
-  
+
+  // ── 目标会话与视图归属 ──────────────────────────────────────────
+  // 队列接力可显式指定会话（跨会话派发）；其余调用方沿用面板当前会话
+  const mySessionId = opts.sessionId || state.activeSessionId;
+  const isActive = mySessionId === state.activeSessionId;
+  // 非激活会话的会话态只能从调用方给的快照读，绝不回写 state（否则串改面板上的会话）
+  const sess = isActive ? null : (opts.sessionState || {});
+  const history = isActive ? state.messageHistory : (sess.messageHistory || []);
+  // 输入区上下文：激活会话读 state；非激活直接用调用方给的快照，不碰 state
+  const inputCtx = opts.context || (isActive ? readInputContextSnapshot() : EMPTY_INPUT_CONTEXT);
+  // 会话级配置：非激活时取目标会话自己的取值，避免误用面板会话的模型/工具/采样参数
+  const currentModelForSend = isActive ? state.currentModel : (sess.model || state.currentModel);
+  const useToolsForSend = isActive ? state.useTools : (sess.useTools !== undefined ? sess.useTools : state.useTools);
+  const enabledToolsForSend = isActive ? state.enabledTools : (sess.enabledTools || state.enabledTools);
+  const activeCompactionForSend = isActive ? state.activeCompaction : (sess.contextCompaction || null);
+
+  // 队列接力复用同一发送管线：文本由调用方给定，其余（上下文装配、气泡、历史落盘）完全一致
+  const text = String(opts.text != null ? opts.text : (userInput?.value || '')).trim();
+  if (!text) return { ok: false, reason: 'empty' };
+  // 生成中的早退保留：入队路径不经过这里，防的是其它调用方绕过状态检查
+  if (state.generatingSessionIds.has(mySessionId)) return { ok: false, reason: 'generating' };
+
   // 清除旧的恢复卡片和后台 checkpoint
   // 新任务开始意味着用户放弃之前的中断恢复
-  _clearResumableFlagsForSession(state.activeSessionId);
+  _clearResumableFlagsForSession(mySessionId);
   // 同时删除后台存储的 checkpoint（IndexedDB + chrome.storage.local）
-  chrome.runtime.sendMessage({ type: 'DELETE_CHECKPOINT', sessionId: state.activeSessionId });
+  chrome.runtime.sendMessage({ type: 'DELETE_CHECKPOINT', sessionId: mySessionId });
 
   // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
-  await runAutoCompactionBeforeSend({
-    state,
-    getRatio: () => computeCurrentUsage().usage?.ratio ?? 0,
-    compact: runCompaction,
-  });
-  
-  const welcomeMessage = chatContainer.querySelector('.welcome-message');
-  if (welcomeMessage) {
-    welcomeMessage.remove();
+  // 压缩改的是面板当前会话的 state.activeCompaction，跨会话派发直接跳过
+  if (isActive) {
+    await runAutoCompactionBeforeSend({
+      state,
+      getRatio: () => computeCurrentUsage().usage?.ratio ?? 0,
+      compact: runCompaction,
+    });
+  }
+
+  if (isActive) {
+    const welcomeMessage = chatContainer?.querySelector('.welcome-message');
+    if (welcomeMessage) {
+      welcomeMessage.remove();
+    }
   }
 
   let finalText = text;
-  const hasSelectedContext = state.selectedContextText && state.selectedContextText.trim();
-  const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
-  
+  const hasSelectedContext = inputCtx.selectedContextText && inputCtx.selectedContextText.trim();
+  const hasQuotedContext = inputCtx.quotedContextText && inputCtx.quotedContextText.trim();
+
   // 收集上下文气泡信息，用于持久化保存和刷新恢复
   const contextBubbles = [];
-  
+
   if (hasQuotedContext) {
-    const ctx = state.quotedContextText.trim();
+    const quotedText = inputCtx.quotedContextText.trim();
     // 压缩大段引用内容，防止永久占据上下文空间
-    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(quotedText);
     finalText = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     // 先添加独立引用内容气泡
-    addContextBubble('quoted', ctx, false);
-    contextBubbles.push({ type: 'quoted', text: ctx });
-    state.quotedContextText = '';
+    if (isActive) addContextBubble('quoted', quotedText, false);
+    contextBubbles.push({ type: 'quoted', text: quotedText });
+    if (isActive) state.quotedContextText = '';
   } else if (hasSelectedContext) {
-    const ctx = state.selectedContextText.trim();
-    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
+    const selectedText = inputCtx.selectedContextText.trim();
+    const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
     finalText = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${text}`;
     // 先添加独立选中内容气泡
-    addContextBubble('selected', ctx, false);
-    contextBubbles.push({ type: 'selected', text: ctx });
-    state.selectedContextText = '';
+    if (isActive) addContextBubble('selected', selectedText, false);
+    contextBubbles.push({ type: 'selected', text: selectedText });
+    if (isActive) state.selectedContextText = '';
   }
 
   // 注入技能上下文（如果已选中技能，支持多技能）
-  const skillContext = await getSkillContextText();
+  const skillContext = await getSkillContextText(inputCtx.selectedSkills);
   if (skillContext) {
     finalText = skillContext + finalText;
     // 添加技能上下文气泡（用户可见，每个技能一个气泡）
-    for (const skill of state.selectedSkills) {
-      addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
+    for (const skill of (inputCtx.selectedSkills || [])) {
+      if (isActive) {
+        addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
+      }
       contextBubbles.push({ type: 'skill', name: skill.name, description: skill.description || '' });
     }
     // 清除技能指示器（技能信息已注入消息和气泡，编辑时可恢复）
-    clearSkillSelection();
+    if (isActive) clearSkillSelection();
   }
 
   // 注入 MCP 服务上下文（如果已选中 MCP 服务，支持多服务）
   // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
   let forcedMcpServerIds = null;
-  const mcpContext = getMcpContextText();
+  const mcpContext = getMcpContextText(inputCtx.selectedMcpServices);
   if (mcpContext) {
-    const forcedIds = state.selectedMcpServices.map(s => s.serverId).filter(Boolean);
+    const forcedIds = (inputCtx.selectedMcpServices || []).map(s => s.serverId).filter(Boolean);
     forcedMcpServerIds = forcedIds.length > 0 ? forcedIds : null;
     finalText = mcpContext + finalText;
     // 添加 MCP 上下文气泡（每个服务一个气泡，serverId 供重发时强制下发）
-    for (const svc of state.selectedMcpServices) {
-      addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
+    for (const svc of (inputCtx.selectedMcpServices || [])) {
+      if (isActive) addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
       contextBubbles.push({ type: 'mcp', serverName: svc.serverName, serverId: svc.serverId || '' });
     }
     // 清除 MCP 指示器
-    clearMcpService();
+    if (isActive) clearMcpService();
   }
 
   // 注入知识库检索上下文（如果已引用知识库）
-  if (state.knowledgeRefs.length > 0) {
-    const refsSnapshot = state.knowledgeRefs.slice();
-    // 检索期间锁定发送，防止重复提交
-    state.isGenerating = true;
-    const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), true);
+  if ((inputCtx.knowledgeRefs || []).length > 0) {
+    const refsSnapshot = inputCtx.knowledgeRefs.slice();
+    // 检索期间锁定发送，防止重复提交（只锁面板当前会话）
+    if (isActive) state.isGenerating = true;
+    const searchingBubble = isActive
+      ? addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), true)
+      : null;
     let kbPayload = null;
     try {
       kbPayload = await buildKnowledgeContextText(text, refsSnapshot);
@@ -1011,33 +1084,33 @@ export async function sendMessage() {
     if (searchingBubble && searchingBubble.parentNode) searchingBubble.remove();
     if (kbPayload) {
       finalText = kbPayload.text + finalText;
-      renderKnowledgeContextBubbles(kbPayload.refs, kbPayload.failed === true);
+      if (isActive) renderKnowledgeContextBubbles(kbPayload.refs, kbPayload.failed === true);
       contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs, failed: kbPayload.failed || undefined });
     }
-    clearKnowledgeRefs();
+    if (isActive) clearKnowledgeRefs();
   }
 
   // 注入网页上下文（如果已选中网页）
-  if (state.selectedPage) {
-    const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
+  if (inputCtx.selectedPage) {
+    const page = inputCtx.selectedPage;
+    const pageCtx = `[网页上下文]\n标题: ${page.title}\nURL: ${page.url}\ntabId: ${page.id}\n`;
     finalText = pageCtx + finalText;
     // 添加网页上下文气泡
-    addContextBubble('page', t('contextBubble.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
-    contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
+    if (isActive) addContextBubble('page', t('contextBubble.bubblePage', { title: page.title, url: page.url }), false);
+    contextBubbles.push({ type: 'page', title: page.title, url: page.url });
     // 清除网页指示器
-    clearPageSelection();
+    if (isActive) clearPageSelection();
   }
-  
 
   // 注入文件内容（发送给模型，但不显示在用户消息气泡中）
-  const attachedFilesSnapshot = state.attachedFiles.slice();
+  const attachedFilesSnapshot = (inputCtx.attachedFiles || []).slice();
   if (attachedFilesSnapshot.length > 0) {
-    const fileContent = buildFileContentText();
+    const fileContent = buildFileContentText(attachedFilesSnapshot);
     if (fileContent) {
       finalText += fileContent;
     }
     // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
-    try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot); }
+    try { await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot); }
     catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
@@ -1047,37 +1120,46 @@ export async function sendMessage() {
     });
   }
 
-  // 显示用户消息（仅展示用户输入的文字+文件标签，上下文内容已通过上方独立气泡展示）
-  // rawTextContent 参数传入完整上下文格式，供编辑时恢复
-  // attachedFilesSnapshot 用于渲染文件标签
-  const { messageId: userMsgId, timestamp: userMsgTimestamp } = addMessage('user', buildUserContent(text), true, [], null, false, finalText, null, attachedFilesSnapshot);
-  
-  // 消息历史存储拼接后的完整上下文内容（附带上下文气泡信息）
-  state.messageHistory.push({ role: 'user', content: buildUserContent(finalText), messageId: userMsgId, timestamp: userMsgTimestamp, contextBubbles });
-  
-  saveChatHistory();
-  
-  addToInputHistory(text);
-  state.inputHistoryIndex = -1;
+  // 用户消息：激活会话走 DOM + 内存历史；非激活只登记到目标会话的独立历史（由 finally 统一落盘）
+  const userMsgId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  const userMsgTimestamp = new Date().toISOString();
+  // 消息历史存的是拼接后的完整上下文内容（附带上下文气泡信息）
+  const userMsgEntry = { role: 'user', content: buildUserContent(finalText), messageId: userMsgId, timestamp: userMsgTimestamp, contextBubbles };
+  if (isActive) {
+    // 显示用户消息（仅展示用户输入的文字+文件标签，上下文内容已通过上方独立气泡展示）
+    // rawTextContent 参数传入完整上下文格式，供编辑时恢复
+    // attachedFilesSnapshot 用于渲染文件标签
+    addMessage('user', buildUserContent(text), true, [], null, false, finalText, userMsgId, attachedFilesSnapshot, false, userMsgTimestamp);
+    state.messageHistory.push(userMsgEntry);
+    saveChatHistory();
+    addToInputHistory(text);
+    state.inputHistoryIndex = -1;
+  } else {
+    history.push(userMsgEntry);
+  }
 
-  userInput.value = '';
-  userInput.style.height = 'auto';
-  
-  if (hasSelectedContext || hasQuotedContext) {
+  if (isActive && !opts.fromQueue) {
+    // 队列派发时输入框里可能还有用户新写的草稿，不能清掉
+    userInput.value = '';
+    userInput.style.height = 'auto';
+  }
+
+  if (isActive && (hasSelectedContext || hasQuotedContext)) {
     clearSelectedContext();
   }
 
-  state.isGenerating = true;
+  // 标记该会话正在生成：跨会话派发同样要登记，接力调度据此判断"该会话忙"
+  state.generatingSessionIds.add(mySessionId);
+  document.dispatchEvent(new CustomEvent('generating-state-changed'));
 
-  const mySessionId = state.activeSessionId;
-  const loadingId = addLoadingMessage();
+  const loadingId = isActive ? addLoadingMessage() : null;
 
-  const model = state.enableImageInput && state.attachedImages.length > 0
-    ? (state.imageModelName || state.currentModel)
-    : state.currentModel;
+  const model = state.enableImageInput && (inputCtx.attachedImages || []).length > 0
+    ? (state.imageModelName || currentModelForSend)
+    : currentModelForSend;
 
-  // 图片数据已包含在 userContent 中，立即清除并隐藏预览栏 DOM
-  if (state.attachedImages.length > 0) {
+  if (isActive && state.attachedImages.length > 0) {
+    // 图片数据已包含在 userContent 中，立即清除并隐藏预览栏 DOM
     const previewBar = document.getElementById('imagePreviewBar');
     if (previewBar) {
       previewBar.innerHTML = '';
@@ -1086,36 +1168,52 @@ export async function sendMessage() {
   }
 
   // 文件内容已注入到消息中，清除文件附件
-  if (state.attachedFiles.length > 0) {
+  if (isActive && state.attachedFiles.length > 0) {
     clearFiles();
   }
 
+  // 助手回复落到正确的位置：后台会话进它自己的历史，前台走内存 + DOM
+  const commitAssistantEntry = (entry) => {
+    if (!isActive) {
+      history.push(entry);
+      return;
+    }
+    // 生成期间用户切走了会话：内存历史此刻已属于新会话，不能 push，直接写回目标记录
+    if (state.activeSessionId !== mySessionId) {
+      appendMessageToSession(mySessionId, entry);
+      return;
+    }
+    state.messageHistory.push(entry);
+  };
+
   try {
     await ensureChatConfigLoaded();
-    
-    // 获取当前 Agent 及其工具/技能配置
-    const currentAgent = await getCurrentAgentPrompt();
+
+    // 获取当前 Agent 及其工具/技能配置（跨会话取目标会话自己的助手）
+    const currentAgent = await getCurrentAgentPrompt(isActive ? state.activeAgentId : (sess.agentId || null));
     const agentToolIds = getCurrentAgentToolIds(currentAgent);
     const agentSkillIds = currentAgent?.skillIds ?? null;
-    state.activeAgentToolIds = agentToolIds;
-    state.activeAgentSkillIds = agentSkillIds;
-    // 同步当前助手的 MCP 服务排除列表（随请求下发给 background 做服务级过滤）
-    state.activeAgentMcpExcludedServerIds = currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null;
-    
+    if (isActive) {
+      state.activeAgentToolIds = agentToolIds;
+      state.activeAgentSkillIds = agentSkillIds;
+      // 同步当前助手的 MCP 服务排除列表（随请求下发给 background 做服务级过滤）
+      state.activeAgentMcpExcludedServerIds = currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null;
+    }
+
     logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - agent:', currentAgent ? currentAgent.name : 'default assistant');
     logger.debug('  - agentToolIds:', agentToolIds);
     logger.debug('  - isolateChat:', state.isolateChat);
     logger.debug('  - chatConfig:', state.chatConfig);
-    logger.debug('  - messageHistory.length:', state.messageHistory.length);
-    
+    logger.debug('  - messageHistory.length:', history.length);
+
     let messages = [
       {
         role: 'system',
         content: await getSystemPrompt(currentAgent)
       }
     ];
-    
+
     if (state.isolateChat) {
       // Token 预算驱动：使用实际系统提示词 token 数而非固定估算值
       const configuredWindow = 0;
@@ -1127,22 +1225,21 @@ export async function sendMessage() {
       const historyBudget = Math.floor(messageBudget * 0.7);
 
       // 记忆层 / 窗口层 / 压缩层 / 预算层统一由共享函数处理（与指示器预览同源）
-      const currentMsg = state.messageHistory[state.messageHistory.length - 1];
-      const selection = selectHistoryForSend(state.messageHistory.slice(0, -1), {
+      const currentMsg = history[history.length - 1];
+      const selection = selectHistoryForSend(history.slice(0, -1), {
         isolateChat: true,
         maxMemoryMessages: state.chatConfig.maxMemoryMessages,
-        compaction: state.activeCompaction,
-        historyBudget,
+        compaction: activeCompactionForSend,
         currentMessage: currentMsg,
       });
 
       // 压缩摘要注入 system prompt（S 受 preserveSystem 保护，不会被自动裁剪丢弃）
-      applyCompactionInjection(messages, selection, state.activeCompaction, logger);
+      applyCompactionInjection(messages, selection, activeCompactionForSend, logger);
       // 被预算裁剪消息的规则摘要注入 system prompt（现有兜底逻辑保留）
       if (selection.historySummaryText) {
         messages[0] = { ...messages[0], content: messages[0].content + '\n\n' + selection.historySummaryText };
       }
-      logger.debug(`[SidePanel] history selection: keep ${selection.keptHistory.length}/${state.messageHistory.length - 1}, trimmed ${selection.trimmedCount}, compactionApplied: ${selection.compactionApplied}`);
+      logger.debug(`[SidePanel] history selection: keep ${selection.keptHistory.length}/${history.length - 1}, trimmed ${selection.trimmedCount}, compactionApplied: ${selection.compactionApplied}`);
 
       messages = [...messages, ...selection.messages];
       // 剥离历史消息中的旧图片数据，只保留当前最新消息的图片
@@ -1155,8 +1252,8 @@ export async function sendMessage() {
       messages.push({ role: 'user', content: userContent });
     }
 
-    const apiParams = await getApiParams();
-    apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
+    const apiParams = await getApiParams(isActive ? null : { temperature: sess.temperature, topP: sess.topP });
+    if (isActive) apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
 
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = 0;
@@ -1164,14 +1261,14 @@ export async function sendMessage() {
     const contextWindow = getContextWindow(model, configuredWindow, state.customModelMap);
     const pressure = assessContextPressure(msgTokens, contextWindow);
     logger.debug(`[SidePanel] send context: ${msgTokens} tokens (message: ${messages.length} ), pressure: ${pressure.level}(${Math.round(pressure.ratio * 100)}%)`);
-    
+
     if (pressure.level === 'critical') {
       logger.warn('[SidePanel] context pressure too high,maindynamictrimming...');
       // 使用实际系统提示词 + 工具定义 token，而非固定估算值
       const actualSysTokens = estimateTokens(messages[0]?.content || '');
       // MCP 已改为服务级下发：按「本次生效的 MCP 工具数」补充工具 token 预算
       const openMcpToolCount = await countEffectiveMcpTools(forcedMcpServerIds);
-      const actualToolTokens = (state.enabledTools.length + openMcpToolCount) * 200;
+      const actualToolTokens = (enabledToolsForSend.length + openMcpToolCount) * 200;
       const budget = contextWindow - actualSysTokens - actualToolTokens - 4096 - 2000;
       const trimResult = trimMessagesByBudget(messages, Math.max(budget, 2000), { generateSummary: false });
       messages = trimResult.messages;
@@ -1182,9 +1279,9 @@ export async function sendMessage() {
     let streamingHtml = null;
     let streamingConnected = true;
     let streamingMsgId = null;
-    
+
     try {
-      const result = await callApi(messages, model, state.useTools, apiParams, { forcedMcpServerIds });
+      const result = await callApi(messages, model, useToolsForSend, apiParams, { forcedMcpServerIds, sessionId: mySessionId });
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -1194,29 +1291,26 @@ export async function sendMessage() {
       streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
       streamingMsgId = result.streamingMsgId || null;
     } catch (errorResult) {
-      // 检查是否已切换到其他会话
-      if (state.activeSessionId !== mySessionId) {
-        // 保存结果到原会话的历史中，不修改当前 DOM
+      // 不在前台（本来就是后台派发，或生成期间用户切走了会话）
+      if (!isActive || state.activeSessionId !== mySessionId) {
+        // 保存结果到目标会话的历史中，不修改当前 DOM
         // 中断的任务标记 resumable，供切回时显示"继续执行"按钮
         const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
                           errorResult.message === t('chatMsg.errTaskStopped');
-        if (errorResult.message === t('chatMsg.errTaskStopped')) {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable });
-        } else if (errorResult.swRestarted) {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: t('chat.taskInterruptedSwRestart'), executionLog: errorResult.executionLog || [], resumable });
-        } else {
-          appendMessageToSession(mySessionId, { role: 'assistant', content: mapApiErrorToUserMessage(errorResult.message), executionLog: errorResult.executionLog || [], resumable });
-        }
+        const entryContent = errorResult.message === t('chatMsg.errTaskStopped')
+          ? t('chatResume.taskCancelled')
+          : (errorResult.swRestarted ? t('chat.taskInterruptedSwRestart') : mapApiErrorToUserMessage(errorResult.message));
+        commitAssistantEntry({ role: 'assistant', content: entryContent, executionLog: errorResult.executionLog || [], resumable });
         // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
-        removeLoadingMessage(loadingId);
+        if (loadingId) removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         return;
       }
 
       // 用户主动取消：显示取消记录，但不作为错误
       if (errorResult.message === t('chatMsg.errTaskStopped')) {
-        removeLoadingMessage(loadingId);
+        if (loadingId) removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || [], null, false, null, null, [], true);
         state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true });
@@ -1226,7 +1320,7 @@ export async function sendMessage() {
 
       // SW 重启：后台服务异常，但 checkpoint 可能存在
       if (errorResult.swRestarted) {
-        removeLoadingMessage(loadingId);
+        if (loadingId) removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
         const resumable = !!errorResult.checkpoint;
         const { messageId } = addMessage('assistant', t('chat.taskInterruptedSwRestart'), false, errorResult.executionLog || [], null, false, null, null, [], resumable);
@@ -1237,7 +1331,7 @@ export async function sendMessage() {
         return;
       }
 
-      removeLoadingMessage(loadingId);
+      if (loadingId) removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
 
       // 网络/超时错误给用户更友好的提示（覆盖 Chrome "Failed to fetch" 等浏览器网络错误文案）
@@ -1245,7 +1339,7 @@ export async function sendMessage() {
       executionLog = errorResult.executionLog || [];
 
       // 普通错误也可能存在 checkpoint（reactLoop catch 块会保存）
-      const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, false, null, null, [], true);
+      const { messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, false, null, null, [], true);
 
       state.messageHistory.push({ role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, messageId, resumable: true });
 
@@ -1253,34 +1347,34 @@ export async function sendMessage() {
       playFailureFeedback(mySessionId, content, text);
       return;
     }
-    
-    // 检查是否已切换到其他会话（成功路径）
-    if (state.activeSessionId !== mySessionId) {
+
+    // 不在前台（成功路径）：结果写回目标会话，不碰 DOM
+    if (!isActive || state.activeSessionId !== mySessionId) {
       const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: streamingMsgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)) };
       if (wasStreamed && streamingHtml) {
         msgEntry.htmlContent = streamingHtml;
       }
-      appendMessageToSession(mySessionId, msgEntry);
+      commitAssistantEntry(msgEntry);
       // 后台写入后清除该会话的 DOM 缓存，确保切回时能看到最新消息
       document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
-      removeLoadingMessage(loadingId);
+      if (loadingId) removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
       return;
     }
-    
+
     let assistantMsgId = null;
-    
+
     // 流式输出已渲染消息，跳过 removeLoadingMessage 和 addMessage
     // 但如果 streamingHtml 为 null（流式输出中断），降级为非流式渲染
     if (!wasStreamed || !streamingHtml) {
-      removeLoadingMessage(loadingId);
+      if (loadingId) removeLoadingMessage(loadingId);
 
       // 清理切回会话时创建的替代加载指示器
       if (state.substituteLoadingIds.has(mySessionId)) {
         removeLoadingMessage(state.substituteLoadingIds.get(mySessionId));
         state.substituteLoadingIds.delete(mySessionId);
       }
-      
+
       if (!wasStreamed) {
         const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
         assistantMsgId = messageId;
@@ -1299,7 +1393,7 @@ export async function sendMessage() {
       // 流式模式且 streamingHtml 存在，使用流式消息的 messageId
       assistantMsgId = streamingMsgId;
     }
-    
+
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
     const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: assistantMsgId };
     if (wasStreamed && streamingHtml) {
@@ -1312,30 +1406,47 @@ export async function sendMessage() {
           restoreMessageFromHtml(streamingHtml);
           bindExecutionLogDelegate();
           bindReflectionBadgeDelegate();
-          const chatContainer = document.getElementById('chatContainer');
-          if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+          const chatContainerEl = document.getElementById('chatContainer');
+          if (chatContainerEl) chatContainerEl.scrollTop = chatContainerEl.scrollHeight;
         }
       }
     }
-    
+
     state.messageHistory.push(msgEntry);
 
     // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
     playCompletionFeedback(mySessionId, text);
+    return { ok: true };
 
   } catch (error) {
     logger.error('[SidePanel] sendMessage exception:', error?.message || error);
+    return { ok: false, reason: error?.message || 'exception' };
   } finally {
-    // 合并在此处统一保存，减少 IndexedDB 写入次数
-    saveChatHistory();
-    state.generatingSessionIds.delete(mySessionId);
-    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
-    markSessionCompleted(mySessionId);
-    document.dispatchEvent(new CustomEvent('generating-state-changed'));
-    userInput.focus();
-    state.attachedImages = [];
-    const previewBar = document.getElementById('imagePreviewBar');
-    if (previewBar) previewBar.style.display = 'none';
+    if (isActive) {
+      // 合并在此处统一保存，减少 IndexedDB 写入次数
+      saveChatHistory();
+    } else {
+      // 后台派发：把本轮新增的消息整批写回目标会话（不碰 state / 当前会话）
+      await persistSessionState(mySessionId, {
+        messageHistory: history,
+        model: sess.model,
+        useTools: sess.useTools,
+        enabledTools: sess.enabledTools,
+        agentId: sess.agentId,
+        temperature: sess.temperature,
+        topP: sess.topP,
+        activeCompaction: sess.contextCompaction,
+      });
+      document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
+    }
+    // 统一收尾：清生成态 + 标记完成 + 广播事件 + 通知队列接力
+    notifyGenerationEnded(mySessionId);
+    if (isActive) {
+      userInput.focus();
+      state.attachedImages = [];
+      const previewBar = document.getElementById('imagePreviewBar');
+      if (previewBar) previewBar.style.display = 'none';
+    }
   }
 }
 
@@ -1377,12 +1488,20 @@ export async function directSend(text, selectedText = '') {
   // 与 pending 恢复路径竞争时由下方 isGenerating 检查防止重复发送
   await chatHistoryReady;
   const userInput = document.getElementById('userInput');
-  if (!userInput || !text || state.isGenerating) return;
+  if (!userInput || !text) return;
   
   // 设置选中内容上下文
   if (selectedText) {
     state.selectedContextText = selectedText;
     state.quotedContextText = '';
+  }
+
+  // 生成中：不再静默丢弃，改为入队（连同刚设置的选中上下文一起快照）
+  if (state.isGenerating) {
+    userInput.value = text;
+    userInput.dispatchEvent(new Event('input'));
+    await enqueueFromInput();
+    return;
   }
   
   userInput.value = text;
@@ -3253,7 +3372,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // options.userGuidance: 恢复时用户追加的任务描述（可选）
   // options.loadingId: 外部传入的 loading 消息 ID（resumeTask 复用 callApi 时使用）
   // options.forcedMcpServerIds: 本次请求强制下发的 MCP 服务 ID 列表（/ 选择器选中，绕过关闭/排除列表）
-  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null } = options;
+  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null, sessionId: explicitSessionId = null } = options;
 
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -3265,7 +3384,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   });
   
   // 捕获当前会话 ID，切换会话后仍能正确过滤本会话的响应
-  const mySessionId = state.activeSessionId;
+  // 显式传入 sessionId = 队列跨会话接力（目标会话可能不是面板当前显示的那个）
+  const mySessionId = explicitSessionId || state.activeSessionId;
 
   // 生成唯一的请求 ID，用于隔离新旧请求的流式消息，防止旧任务残留输出
   // 恢复模式使用 resume_ 前缀，便于日志区分

@@ -938,11 +938,15 @@ async function fetchPermanentNotes() {
  * 获取API参数（包含temperature和top_p）
  * 定义为全局函数，避免作用域问题
  * 直接从 storage 获取最新值，避免异步加载未完成时获取到默认值
+ * @param {{temperature?: number, topP?: number}|null} [overrides] 跨会话接力时传目标会话的取值，
+ *   缺省（或字段为 undefined）读面板当前会话的 state
  */
-export function getApiParams() {
+export function getApiParams(overrides = null) {
+  const temperature = overrides && overrides.temperature != null ? overrides.temperature : state.temperature;
+  const topP = overrides && overrides.topP != null ? overrides.topP : state.topP;
   return Promise.resolve({
-    temperature: parseFloat(state.temperature.toFixed(2)),
-    top_p: parseFloat(state.topP.toFixed(2))
+    temperature: parseFloat(temperature.toFixed(2)),
+    top_p: parseFloat(topP.toFixed(2))
   });
 }
 

@@ -531,10 +531,11 @@ export function renderFilePreviews() {
 
 /**
  * 构建文件内容注入文本（用于发送给模型）
+ * @param {Array} [files] 附件列表；跨会话接力时传队列条目快照，缺省读当前输入区
  * @returns {string} 文件内容文本
  */
-export function buildFileContentText() {
-  const doneFiles = state.attachedFiles.filter(f => f.status === 'done');
+export function buildFileContentText(files) {
+  const doneFiles = (files || state.attachedFiles || []).filter(f => f.status === 'done');
   if (doneFiles.length === 0) return '';
 
   const parts = [];

@@ -29,9 +29,13 @@ import { initProviderSelector } from './provider-selector.js';
 import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
+import { resolveHistoryNav } from './input-history-nav.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 import { decodeSecret } from '../shared/secret.js';
 import { debounce } from '../shared/utils.js';
+import { initQueuePanel, refreshQueueUI, editQueueTail } from './queue-panel.js';
+import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, markStopAndSend, hasQueuedItems, currentInputHasContext } from './queue-runner.js';
+import { notifyGenerationEnded } from './generation-lifecycle.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -239,7 +243,7 @@ import {
   rebindAllMessages, editAndResendMessage,
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement,
-  _checkForAbandonedCheckpoint,
+  _checkForAbandonedCheckpoint, setQuoteContext,
   setMessageTimestampVisible
 } from './chat-manager.js';
 import {
@@ -248,7 +252,8 @@ import {
   insertPromptToInputByCode, updatePromptSelection, initPromptEvents
 } from './prompt-manager.js';
 import {
-  showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab
+  showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab,
+  clearKnowledgeRefs, renderKnowledgeIndicator
 } from './agent-at-selector.js';
 import {
   showFileAtSelector, hideFileAtSelector, updateFileAtSelection, isFileAtSelectorVisible
@@ -257,7 +262,7 @@ import {
   initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
   switchDropdownTab, getSkillContextText, clearSkillSelection,
   updateMcpSelection, renderMcpList, selectMcpService, getMcpServices,
-  initMcpIndicatorEvents
+  initMcpIndicatorEvents, clearMcpService, renderMcpIndicator, renderSkillIndicator
 } from './skill-selector.js';
 import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
@@ -266,9 +271,9 @@ import {
   setVisibleMcpServicesOpen,
   refreshToolPopupIfOpen, applyRagToolIntroduction, getValidToolIdUniverse
 } from './tool-panel.js';
-import { initPageIndicatorEvents, updatePageSelection } from './page-selector.js';
+import { initPageIndicatorEvents, updatePageSelection, clearPageSelection, selectPage } from './page-selector.js';
 import { initTokenStatsPanel } from './token-stats-panel.js';
-import { attachFiles, clearFiles } from './file-extract.js';
+import { attachFiles, clearFiles, renderFilePreviews } from './file-extract.js';
 // 图片辅助函数已拆分到 image-helpers.js
 import {
   updateImagePreviewVisibility, updateTextareaPadding, updateFileInputVisibility,
@@ -295,6 +300,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     state.chatConfig.maxMemoryMessages = changes.chatMaxMemoryMessages.newValue;
     updateMemoryLimitLabel();
     logger.debug('[SidePanel] memory limitconfiguration updated:', state.chatConfig.maxMemoryMessages);
+  }
+  // 队列「自动顺带」：设置页改完立即生效，不用面板重载 ——
+  // 否则用户在设置里关掉了开关，手上这个面板还在偷偷往任务里塞话
+  if (areaName === 'local' && changes.queueAutoCarry) {
+    state.chatConfig.queueAutoCarry = changes.queueAutoCarry.newValue !== false;
+    logger.debug('[SidePanel] queue auto-carry updated:', state.chatConfig.queueAutoCarry);
+  }
+  if (areaName === 'local' && changes.queueAutoCarryEveryNIterations) {
+    state.chatConfig.queueAutoCarryEveryNIterations = changes.queueAutoCarryEveryNIterations.newValue;
+    logger.debug('[SidePanel] queue auto-carry interval updated:', state.chatConfig.queueAutoCarryEveryNIterations);
   }
 });
 
@@ -955,10 +970,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
   } catch (error) {
   } finally {
-    state.generatingSessionIds.delete(mySessionId);
-    // 若用户已切走到其他会话，标记此会话任务已完成，等待查看
-    markSessionCompleted(mySessionId);
-    document.dispatchEvent(new CustomEvent('generating-state-changed'));
+    // 统一收尾：清生成态 + 标记完成 + 广播事件 + 通知队列接力
+    notifyGenerationEnded(mySessionId);
     const userInput = document.getElementById('userInput');
     userInput.focus();
   }
@@ -1320,7 +1333,7 @@ async function refreshAgentPlatformInfo(agent) {
 
     // 回退：无认证 /api/status（已包含 platformName）
     try {
-      const controller = new abortController();
+      const controller = new AbortController();
       setTimeout(() => controller.abort(), 3000);
       const res = await fetch(`${agentData.url}/api/status`, { signal: controller.signal });
       if (res.ok) {
@@ -2330,6 +2343,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 加载保存的对话历史（必须 await：后续 pending 任务恢复依赖 activeSessionId 就绪，
   // 否则 sendMessage/saveCurrentSession 在会话未加载时会静默失败，刷新即丢消息）
   await loadChatHistory();
+  // 会话（activeSessionId）就绪后再渲染排队条：否则首次加载会读到空会话而整条隐藏
+  await refreshQueueUI();
 
   // 一次性读取所有待处理任务（合并 3 次 session.get 为 1 次，减少 IPC 开销）
   const pendingTasks = await chrome.storage.session.get([
@@ -2569,41 +2584,131 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 发送/停止按钮共用：根据生成状态切换图标和行为
+  // 发送/停止/入队 三态共用一颗主按钮：
+  //   空闲            → 发送
+  //   生成中 + 无草稿 → 停止（现有行为不变）
+  //   生成中 + 有草稿 → 加入队列（停止入口交给左侧伴随按钮，绝不丢失停止能力）
   const SEND_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>';
   const STOP_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>';
+  const QUEUE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11"/><path d="M3 12h11"/><path d="M3 18h7"/><path d="M17.5 10v8"/><path d="M14.5 15.5L17.5 18.5l3-3"/></svg>';
+  const stopCompanionBtn = document.getElementById('stopCompanionBtn');
 
   function updateSendBtnState() {
-    if (state.isGenerating) {
-      // 切换为停止按钮
-      sendBtn.classList.add('stop-mode');
+    const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
+    const generating = state.isGenerating;
+    const queueMode = generating && hasDraft;
+
+    sendBtn.classList.toggle('queue-mode', queueMode);
+    sendBtn.classList.toggle('stop-mode', generating && !queueMode);
+    if (queueMode) {
+      sendBtn.innerHTML = QUEUE_ICON;
+      sendBtn.title = t('queue.enqueueBtn');
+    } else if (generating) {
       sendBtn.innerHTML = STOP_ICON;
       sendBtn.title = t('sidePanel.sendBtnStop');
-      sendBtn.disabled = false;
     } else {
-      // 恢复为发送按钮
-      sendBtn.classList.remove('stop-mode');
       sendBtn.innerHTML = SEND_ICON;
       sendBtn.title = t('sidePanel.sendBtnSend');
-      sendBtn.disabled = false;
-      sendBtn.style.opacity = '';
-      sendBtn.style.cursor = '';
+    }
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = '';
+    sendBtn.style.cursor = '';
+
+    if (stopCompanionBtn) {
+      // 仅在第三态出现；出现时它就是唯一的停止入口，必须保持可点
+      stopCompanionBtn.style.display = queueMode ? '' : 'none';
+      stopCompanionBtn.disabled = false;
+      stopCompanionBtn.style.opacity = '';
+      stopCompanionBtn.style.cursor = '';
     }
   }
 
-  // 发送/停止按钮点击事件
+  // 发送/停止/入队按钮点击事件
   sendBtn.addEventListener('click', () => {
-    if (state.isGenerating) {
-      // 停止模式：触发取消
-      cancelStreamingTask(sendBtn);
-    } else {
-      // 发送模式
+    if (!state.isGenerating) {
       sendMessage();
+      return;
+    }
+    const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
+    if (hasDraft) {
+      // 生成中带内容：入队，内容不再被静默吞掉
+      void enqueueFromInput();
+    } else {
+      cancelStreamingTask(sendBtn);
     }
   });
 
-  // 监听生成状态变化，自动切换按钮
+  // 第三态下的伴随停止按钮
+  stopCompanionBtn?.addEventListener('click', () => cancelStreamingTask(stopCompanionBtn));
+
+  // ==================== 停止并发送（队列不等当前任务跑完） ====================
+  /**
+   * 放弃当前这一轮，立刻让队列开跑。
+   * 与普通“停止”的唯一区别：队列不被暂停 —— 否则用户刚下的决心会被
+   * cancelStreamingTask 广播的 task-stop-requested 当场作废。
+   * @param {HTMLElement} [btn] 传给 cancelStreamingTask 的按钮（它需要设 disabled）
+   * @returns {boolean} 是否真的发起了
+   */
+  function stopTaskAndRunQueue(btn) {
+    if (!state.isGenerating) return false;
+    const sid = state.activeSessionId;
+    if (!sid) return false;
+    // 队列里没有待执行的条目：牺牲当前进度毫无收益，直接说清楚
+    if (!hasQueuedItems(sid)) {
+      showToast(t('queue.stopAndSendEmpty'), 'warning', 3000);
+      return false;
+    }
+    markStopAndSend(sid);
+    // 第三态下主按钮是“加入队列”，把 disabled/变灰打在它身上会让人以为入队坏了；
+    // 有伴随停止按钮时优先用它
+    const visibleCompanion = stopCompanionBtn && stopCompanionBtn.style.display !== 'none';
+    cancelStreamingTask(visibleCompanion ? stopCompanionBtn : (btn || sendBtn));
+    showToast(t('queue.stopAndSendStarted'), 'success', 2500);
+    return true;
+  }
+
+  // 入口一：停止按钮上的右键 / 长按（主按钮停止态 + 第三态的伴随停止按钮）
+  const STOP_AND_SEND_LONG_PRESS_MS = 600;
+  function bindStopAndSendTrigger(btn) {
+    if (!btn) return;
+    btn.addEventListener('contextmenu', (e) => {
+      // 没在跑 / 队列空时保留浏览器原生菜单，不抢右键
+      if (!state.isGenerating || !hasQueuedItems(state.activeSessionId)) return;
+      e.preventDefault();
+      stopTaskAndRunQueue(btn);
+    });
+    let holdTimer = null;
+    const clearHold = () => {
+      if (!holdTimer) return;
+      clearTimeout(holdTimer);
+      holdTimer = null;
+    };
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (!state.isGenerating || !hasQueuedItems(state.activeSessionId)) return;
+      clearHold();
+      holdTimer = setTimeout(() => {
+        holdTimer = null;
+        // 长按命中后会 disabled 按钮，随之而来的 click 不会再触发（不会停两次）
+        stopTaskAndRunQueue(btn);
+      }, STOP_AND_SEND_LONG_PRESS_MS);
+    });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
+      btn.addEventListener(type, clearHold);
+    }
+  }
+  bindStopAndSendTrigger(sendBtn);
+  bindStopAndSendTrigger(stopCompanionBtn);
+
+  // 入口二：队列条上的“停止并发送”（队列模块广播意图，动作在这里执行，避免成环依赖）
+  document.addEventListener('queue-stop-and-send', () => {
+    const visibleCompanion = stopCompanionBtn && stopCompanionBtn.style.display !== 'none';
+    stopTaskAndRunQueue(visibleCompanion ? stopCompanionBtn : sendBtn);
+  });
+
+  // 监听生成状态变化与草稿变化，自动切换按钮形态
   document.addEventListener('generating-state-changed', updateSendBtnState);
+  userInput.addEventListener('input', updateSendBtnState);
 
   // 提示词菜单项（promptTriggerBtn）的点击行为已迁移至 input-add-menu.js——
   // 与其余选择器菜单项统一处理：打开弹窗并直达对应 Tab
@@ -3114,35 +3219,34 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isPromptSelectorVisible = promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show');
     const isAgentAtSelectorVisible = agentAtSelector.style.display !== 'none' && agentAtDropdown.classList.contains('show');
     const isFileAtSelectorVisible = fileAtSelector.style.display !== 'none' && fileAtDropdown.classList.contains('show');
-    if (!isPromptSelectorVisible && !isAgentAtSelectorVisible && !isFileAtSelectorVisible && !state.isGenerating) {
-      if (e.key === 'ArrowUp') {
+    // ↑ 编辑队尾：输入框空着、没挂任何上下文时，把队列最后一条取回来改。
+    // 为什么优先于历史：队列是“这一刻还没说的话”，时效性强；历史长存，
+    // 取回后那条就出队了，下一次 ↑ 自然又回到历史。
+    if (e.key === 'ArrowUp' && state.inputHistoryIndex === -1 && !userInput.value.trim()
+      && !currentInputHasContext()) {
+      if (editQueueTail()) {
         e.preventDefault();
-        if (state.inputHistoryIndex === -1) {
-          state.inputHistoryIndex = state.inputHistory.length - 1;
-        } else if (state.inputHistoryIndex > 0) {
-          state.inputHistoryIndex--;
-        }
-        if (state.inputHistoryIndex < 0) {
-          state.inputHistoryIndex = 0;
-        }
-        if (state.inputHistoryIndex >= 0 && state.inputHistory.length > 0) {
-          userInput.value = state.inputHistory[state.inputHistoryIndex];
-          userInput.dispatchEvent(new Event('input'));
-        }
         return;
       }
+    }
 
-      if (e.key === 'ArrowDown') {
+    // 上下键翻历史：不再排除生成中 —— 任务执行时输入框照样能写草稿，翻历史同样要能用。
+    // 何时接管交给 resolveHistoryNav（首行/末行/是否已在浏览），多行草稿里移动光标不被抢走。
+    if (!isPromptSelectorVisible && !isAgentAtSelectorVisible && !isFileAtSelectorVisible) {
+      const nav = resolveHistoryNav({
+        key: e.key,
+        value: userInput.value,
+        caret: userInput.selectionStart,
+        history: state.inputHistory,
+        index: state.inputHistoryIndex,
+      });
+      if (nav.handled) {
         e.preventDefault();
-        if (state.inputHistoryIndex >= 0 && state.inputHistoryIndex < state.inputHistory.length - 1) {
-          state.inputHistoryIndex++;
-          userInput.value = state.inputHistory[state.inputHistoryIndex];
-          userInput.dispatchEvent(new Event('input'));
-        } else {
-          state.inputHistoryIndex = -1;
-          userInput.value = '';
-          userInput.dispatchEvent(new Event('input'));
-        }
+        state.inputHistoryIndex = nav.index;
+        userInput.value = nav.value;
+        userInput.dispatchEvent(new Event('input'));
+        // 光标落到末尾：多行历史停在中段时，下一次 ↑ 会像“没反应”
+        userInput.setSelectionRange(nav.value.length, nav.value.length);
         return;
       }
     }
@@ -3151,6 +3255,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (state.isComposing) return;
       e.preventDefault();
       hideFileAtSelector();
+      if (state.isGenerating) {
+        // Alt+Enter：生成中直接把这段话插进**正在跑的任务**（走插话通道，不入队）
+        if (e.altKey) {
+          void injectAdHocText(userInput.value);
+          return;
+        }
+        // 生成中按 Enter 不再被吞掉：内容进队列，想法立刻落地
+        void enqueueFromInput();
+        return;
+      }
       sendMessage();
     }
   });
@@ -3739,7 +3853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ==================== 审计日志 END ====================
 
   // 初始化 Token 统计面板
-  initTokenStatsPanel(() => state.activeSessionId, showCustomConfirm);
+  initTokenStatsPanel(() => state.activeSessionId, window.showCustomConfirm);
 
   // 隔离对话开关（记忆对话）
   const isolateChatBtn = document.getElementById('isolateChatBtn');
@@ -4075,7 +4189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toolStatsClearBtn = document.getElementById('toolStatsClearBtn');
   if (toolStatsClearBtn) {
     toolStatsClearBtn.addEventListener('click', async () => {
-      const confirmed = await showCustomConfirm(t('sidePanel.clearStatsConfirm'), t('sidePanel.clearStatsTitle'));
+      const confirmed = await window.showCustomConfirm(t('sidePanel.clearStatsConfirm'), t('sidePanel.clearStatsTitle'));
       if (!confirmed) return;
       await chrome.storage.local.remove(['toolUsageStats']);
       loadToolStats();
@@ -4313,6 +4427,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateBookmarkButtons();
   updateBookmarkBadge();
 });
+document.addEventListener('DOMContentLoaded', async () => {
+  // 队列：先注入唯一发送入口（sendMessage），再初始化接力与排队条 UI
+  bindDispatcher((opts) => sendMessage(opts));
+  await initQueueRunner();
+  await initQueuePanel();
+});
+// ==================== 队列上下文 UI 同步 ====================
+//
+// 入队 / 派发时队列会接管输入区上下文（state 由 queue-runner 直接改写），
+// 但各个指示器 DOM 由各自模块维护。queue-runner 不能直接 import 这些模块
+// （page-selector → chat-manager → queue-runner 会成环），因此由入口层按事件对齐 UI。
+// 少了这层，界面会显示"技能还选着"而 state 已空，是典型的静默丢上下文。
+
+/** 上下文被队列接管 / 复位：让所有指示器回到空态 */
+function clearInputContextIndicators() {
+  clearSelectedContext();
+  clearSkillSelection();
+  clearMcpService();
+  clearKnowledgeRefs();
+  clearPageSelection();
+  clearFiles();
+  const previewBar = document.getElementById('imagePreviewBar');
+  if (previewBar) {
+    previewBar.innerHTML = '';
+    previewBar.style.display = 'none';
+  }
+}
+
+/** 上下文被还原（✎ 回填）：按快照重绘各指示器 */
+function restoreInputContextIndicators(snapshot) {
+  const snap = snapshot || {};
+  if (snap.quotedContextText) setQuoteContext(snap.quotedContextText);
+  if (snap.selectedPage) selectPage(snap.selectedPage);
+  renderSkillIndicator();
+  renderMcpIndicator();
+  renderKnowledgeIndicator();
+  renderImagePreviews();
+  renderFilePreviews();
+}
+
+document.addEventListener('queue-context-cleared', clearInputContextIndicators);
+document.addEventListener('queue-context-restored', (e) => {
+  restoreInputContextIndicators(e && e.detail ? e.detail.snapshot : null);
+});
+
 document.addEventListener('DOMContentLoaded', initPromptEvents);
 document.addEventListener('DOMContentLoaded', initSkillIndicatorEvents);
 document.addEventListener('DOMContentLoaded', initSkillTabEvents);

@@ -11,6 +11,7 @@ import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
 import { restoreDetachWindowId } from './detach-window.js';
 import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResumeExhausted, shouldNotifyPanelDetached } from './notifier.js';
 import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
+import { enqueueInjection } from './injection.js';
 import * as AgentClient from './local-agent-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
@@ -914,6 +915,7 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | OPEN_LOCAL_PROTOTYPE          | side_panel  | 本地浏览器打开原型文件        | 是   |
 // | DELETE_LOCAL_PROTOTYPE        | side_panel  | 删除本地原型文件             | 是   |
 // | COMPACT_CONTEXT_SUMMARY       | side_panel  | 手动压缩上下文摘要生成       | 是   |
+// | INJECT_MESSAGE                | side_panel  | 见缝插针：插话并入运行中任务 | 否   |
 //
 // ==================== 消息监听 ====================
 
@@ -1028,6 +1030,39 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       sendResponse({ success: false });
     }
     return true;
+  }
+
+  // 查询指定会话是否有正在运行的 ReAct 循环
+  // 面板侧用它决定两件事：① 能否把手动插话投递给当前任务；② 启动时能不能安全地接力排队任务
+  // （面板刚打开时自身的 generatingSessionIds 是空的，与后台真实状态可能不一致，必须以后台为准）
+  if (message.type === 'QUERY_SESSION_RUNNING') {
+    const { sessionId } = message;
+    sendResponse({
+      running: !!(sessionId && activeReactLoops.has(sessionId)),
+      activeSessionIds: Array.from(activeReactLoops),
+    });
+    return false;
+  }
+
+  // 见缝插针（steer）：把排队条目并入**正在运行**的任务。
+  // 两段式提交的第一段 —— accepted 只表示“已收进缓冲”，不代表已注入；
+  // 真正的凭据是 react-loop 在迭代边界回的 INJECT_ABSORBED。
+  // 没有运行中的循环必须当场拒绝，否则条目会挂在 injecting 上白等 15s 才回退。
+  if (message.type === 'INJECT_MESSAGE') {
+    const { sessionId, itemId, text } = message;
+    if (!sessionId || !itemId) {
+      sendResponse({ accepted: false, reason: 'missing_fields' });
+      return false;
+    }
+    if (!activeReactLoops.has(sessionId)) {
+      sendResponse({ accepted: false, reason: 'no_running_task' });
+      return false;
+    }
+    const res = enqueueInjection(sessionId, { itemId, text, callId: message.callId || null });
+    sendResponse(res.ok
+      ? { accepted: true, pending: res.pending, duplicate: !!res.duplicate }
+      : { accepted: false, reason: res.error });
+    return false;
   }
 
   // 从 checkpoint 恢复 ReAct 循环

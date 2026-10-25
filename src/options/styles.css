@@ -126,6 +126,18 @@ textarea:focus {
   border-color: var(--brand-500);
   box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.15);
 }
+
+/* 行内紧凑数字框：夹在一句短话里只填 1~2 位数。
+   默认的 12px 内边距会把它撑到 44px 高，和旁边的 13px 文字完全不协调。 */
+input[type="number"].input-number-compact {
+  width: 58px;
+  padding: 3px 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+  text-align: center;
+  border-radius: 6px;
+}
 select {
   width: 100%;
   padding: 12px 40px 12px 12px;

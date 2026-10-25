@@ -95,6 +95,13 @@ export async function saveCurrentSession() {
 }
 
 /**
+ * 把一份会话态写回指定会话（跨会话接力用，不依赖 activeSessionId）
+ */
+export async function persistSessionState(sessionId, snapshot) {
+  return store.persistSessionState(sessionId, snapshot);
+}
+
+/**
  * 创建一个新会话
  */
 export async function createSession() {

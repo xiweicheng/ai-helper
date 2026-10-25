@@ -931,6 +931,16 @@ export function updateImageApiBaseSelection(url) {
   });
 }
 
+// 「自动顺带」的间隔轮数只在开关开启时才会被读到（面板侧 evaluateAutoCarry 第一道
+// 门槛就是开关），关掉后这个数字无论填多少都不生效。所以关掉时整行藏起来，
+// 但**不碰它的值** —— 用户再开回来时要看到上次填的轮数，而不是被重置成 3。
+export function syncQueueAutoCarryFields() {
+  const toggle = document.getElementById('queueAutoCarry');
+  const row = document.getElementById('queueAutoCarryIntervalRow');
+  if (!toggle || !row) return;
+  row.style.display = toggle.checked ? '' : 'none';
+}
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([
@@ -947,7 +957,8 @@ export function loadConfig() {
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
     'completionNotificationEnabled', 'scheduledNotificationEnabled', 'interactionNotificationEnabled',
-    'showMessageTimestamp', 'sidePanelScope', 'autoGroupTabs'
+    'showMessageTimestamp', 'sidePanelScope', 'autoGroupTabs',
+    'queueAutoCarry', 'queueAutoCarryEveryNIterations'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1093,6 +1104,20 @@ export function loadConfig() {
     // 加载消息时间戳开关（默认开启，undefined 视为 true）
     const showMessageTimestampEl = document.getElementById('showMessageTimestamp');
     if (showMessageTimestampEl) showMessageTimestampEl.checked = result.showMessageTimestamp !== false;
+
+    // 加载队列「自动顺带」（默认开启 + 间隔 3 轮）
+    const queueAutoCarryEl = document.getElementById('queueAutoCarry');
+    if (queueAutoCarryEl) queueAutoCarryEl.checked = result.queueAutoCarry !== false;
+    const queueAutoCarryEveryNEl = document.getElementById('queueAutoCarryEveryNIterations');
+    if (queueAutoCarryEveryNEl) {
+      queueAutoCarryEveryNEl.value = String(
+        typeof result.queueAutoCarryEveryNIterations === 'number' && result.queueAutoCarryEveryNIterations > 0
+          ? result.queueAutoCarryEveryNIterations
+          : DEFAULT_CHAT_CONFIG.queueAutoCarryEveryNIterations
+      );
+    }
+    // 开关与间隔是主从关系：开关关着时，把「至少间隔 N 轮」整行藏掉
+    syncQueueAutoCarryFields();
 
     // 加载侧边栏作用域模式（默认 global）
     const scopeValue = result.sidePanelScope === 'tab-specific' ? 'tab-specific' : 'global';

@@ -18,6 +18,7 @@ import {
   duplicateSession,
   clearSessionCompleted
 } from './session-manager.js';
+import { getQueuedCount } from './queue-store.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -222,6 +223,16 @@ export async function renderSessionTabs(prefetchedData = null) {
       completedIndicator.className = 'session-tab-completed-indicator';
       completedIndicator.title = t('session.taskCompleted');
       tab.appendChild(completedIndicator);
+    }
+
+    // 有排队任务的会话（队列是会话维度的，切走也能继续接力）：显示条数徽标
+    const queuedCount = getQueuedCount(session.id);
+    if (queuedCount > 0) {
+      const queueBadge = document.createElement('span');
+      queueBadge.className = 'session-tab-queue-badge';
+      queueBadge.textContent = String(queuedCount > 99 ? '99+' : queuedCount);
+      queueBadge.title = t('queue.badgeTitle', { count: queuedCount });
+      tab.appendChild(queueBadge);
     }
 
     tab.addEventListener('click', async (e) => {
@@ -606,6 +617,16 @@ function renderDropdownList() {
       completedDot.className = 'session-dropdown-item-completed';
       completedDot.title = t('session.taskCompleted');
       item.appendChild(completedDot);
+    }
+
+    // 有排队任务的会话：在标题前显示条数徽标
+    const queuedCount = getQueuedCount(session.id);
+    if (queuedCount > 0) {
+      const queueDot = document.createElement('span');
+      queueDot.className = 'session-dropdown-item-queue';
+      queueDot.textContent = String(queuedCount > 99 ? '99+' : queuedCount);
+      queueDot.title = t('queue.badgeTitle', { count: queuedCount });
+      item.appendChild(queueDot);
     }
 
     // 会话图标（聊天气泡）

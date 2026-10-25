@@ -1508,10 +1508,11 @@ export async function deleteAgentWithConfirm(agentId) {
 
 /**
  * 获取当前 Agent 的提示词（供 chat-manager 使用）
- * 返回 { agent, systemPrompt }
+ * @param {string|null} [agentId] 显式指定（跨会话接力时传目标会话的 agentId），缺省读面板当前会话
+ * @returns {Promise<Object|null>}
  */
-export async function getCurrentAgentPrompt() {
-  const agent = state.activeAgentId ? await getAgent(state.activeAgentId) : null;
+export async function getCurrentAgentPrompt(agentId = state.activeAgentId) {
+  const agent = agentId ? await getAgent(agentId) : null;
   // getSystemPrompt 现在在 utils.js 中，不再需要重复 import
   return agent;
 }

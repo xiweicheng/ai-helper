@@ -2104,6 +2104,12 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
 export function cancelStreamingTask(stopBtn) {
   if (!stopBtn || stopBtn.disabled) return;
 
+  // 通知队列：这是用户的"停"意图，本会话的自动接力必须暂停，
+  // 否则下一条排队任务会立刻把刚停下来的任务重新拉起来
+  try {
+    document.dispatchEvent(new CustomEvent('task-stop-requested', { detail: { sessionId: state.activeSessionId } }));
+  } catch { /* 非浏览器环境忽略 */ }
+
   stopBtn.disabled = true;
   stopBtn.style.opacity = '0.4';
   stopBtn.style.cursor = 'not-allowed';

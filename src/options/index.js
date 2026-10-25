@@ -1,7 +1,7 @@
 // options/index.js - 选项页面入口
 
 import { initTheme, getTheme, setTheme, subscribeTheme } from '../shared/theme.js';
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast, syncQueueAutoCarryFields } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection, commitImageModelContextWindow } from './config-manager.js';
@@ -1393,6 +1393,26 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (showMessageTimestampEl) {
     showMessageTimestampEl.addEventListener('change', function() {
       chrome.storage.local.set({ showMessageTimestamp: this.checked });
+    });
+  }
+
+  // 队列「自动顺带」：开关与间隔轮数都是切换即写 storage（同上，不用点保存）
+  const queueAutoCarryEl = document.getElementById('queueAutoCarry');
+  if (queueAutoCarryEl) {
+    queueAutoCarryEl.addEventListener('change', function() {
+      chrome.storage.local.set({ queueAutoCarry: this.checked });
+      // 只控制显隐，不清值：关掉再开回来，上次填的轮数得还在
+      syncQueueAutoCarryFields();
+    });
+  }
+  const queueAutoCarryEveryNEl = document.getElementById('queueAutoCarryEveryNIterations');
+  if (queueAutoCarryEveryNEl) {
+    queueAutoCarryEveryNEl.addEventListener('change', function() {
+      // 夹在 1..20：这不是格式校验，是防手滑打出 0 或 999 ——
+      // 0 会变成「一条都不带」，999 会变成「几乎不带」，用户只会以为功能坏了
+      const n = Math.min(20, Math.max(1, Math.round(Number(this.value) || 3)));
+      this.value = String(n);
+      chrome.storage.local.set({ queueAutoCarryEveryNIterations: n });
     });
   }
 

@@ -683,6 +683,9 @@
             </div>
           </div>
         </div>
+        <button class="input-inner-btn stop-companion-btn" id="stopCompanionBtn" type="button" style="display:none;" data-i18n-title="queue.stopNow" title="停止当前任务">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></svg>
+        </button>
         <button class="input-inner-btn send-inner-btn" id="sendBtn" data-i18n-title="input.send" title="发送">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8-8-8z"/></svg>
         </button>
@@ -755,6 +758,19 @@
     </button>
     <button id="currentModelTag" class="current-model-tag" type="button"></button>
     <div class="input-disclaimer" data-i18n="input.aiDisclaimer">内容由 AI 生成，仅供参考</div>
+    <div class="queue-strip" id="queueStrip" style="display:none;">
+      <div class="queue-strip-head">
+        <span class="queue-strip-icon" aria-hidden="true">⇥</span>
+        <span class="queue-strip-summary" id="queueSummary"></span>
+        <span class="queue-strip-paused" id="queuePausedTag" style="display:none;" data-i18n="queue.pausedTag">已暂停</span>
+        <button class="queue-strip-action danger" id="queueStopSendBtn" type="button" style="display:none;" data-i18n="queue.stopAndSend" data-i18n-title="queue.stopAndSendTitle" title="放弃当前这一轮，立刻开始执行队列">停止并发送</button>
+        <button class="queue-strip-action" id="queueResumeBtn" type="button" style="display:none;" data-i18n="queue.resumeQueue">继续队列</button>
+        <button class="queue-strip-action" id="queueRecentBtn" type="button" data-i18n="queue.recentTitle">最近处理</button>
+        <button class="queue-strip-toggle" id="queueToggleBtn" type="button" aria-expanded="false">▼</button>
+      </div>
+      <div class="queue-list" id="queueList" style="display:none;"></div>
+      <div class="queue-recent" id="queueRecent" style="display:none;"></div>
+    </div>
     <div class="input-wrapper">
       <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.ico,.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf" style="display:none;">
       <textarea id="userInput" data-i18n-placeholder="input.placeholder" placeholder="输入'/'快捷提示、'@'切换助手或网页、'$'选择工作目录文件、'↑↓'切换历史输入、Esc清空" rows="1"></textarea>
@@ -1014,6 +1030,9 @@
             <tr><td><kbd>Enter</kbd></td><td data-i18n="shortcuts.sendMessage">发送消息</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.newLine">换行</td><td>Win / Mac</td></tr>
             <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td data-i18n="shortcuts.inputHistory">输入历史（输入框内）</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>↑</kbd></td><td data-i18n="shortcuts.editQueueTail">编辑队尾排队任务（输入框为空时）</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.injectAdHoc">插入到正在执行的任务（不入队）</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>右键 / 长按</kbd> 停止</td><td data-i18n="shortcuts.stopAndSend">停止当前任务并立即执行队列</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Esc</kbd></td><td data-i18n="shortcuts.clearInput">清空输入框</td><td>Win / Mac</td></tr>
           </tbody>
         </table>
