@@ -316,6 +316,14 @@ export async function removeAllowedPath(path) {
 }
 
 /**
+ * 弹出 Agent 端系统原生目录选择框（仅本机代理支持，远端/无桌面环境返回 available:false）
+ * @returns {Promise<{success: boolean, path?: string|null, available?: boolean, error?: string}>}
+ */
+export async function pickDirectory() {
+  return agentRequest('/api/config/pick-directory', {});
+}
+
+/**
  * 直接向 Agent 发送请求
  */
 async function agentRequest(path, body = {}) {

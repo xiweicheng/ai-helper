@@ -9,7 +9,7 @@ import {
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getPreviewType, getMimeType,
-  switchWorkspace, removeAllowedPath
+  switchWorkspace, removeAllowedPath, pickDirectory
 } from './workspace-manager.js';
 import logger from '../shared/logger.js';
 import { showToast, copyToClipboard, clampPanelToViewport, releasePanelClamp } from './utils.js';
@@ -202,6 +202,10 @@ registerTranslations('zh', {
     selectFromAllowed: '从允许的目录中选择（非当前目录可移除）',
     orInputPath: '或输入绝对路径',
     manualPathPlaceholder: '/Users/you/path 或 ~/path',
+    browseBtn: '浏览…',
+    browseUnavailable: '当前代理端环境不支持目录选择，请手动输入路径',
+    browseFailedWithError: '目录选择失败: {error}',
+    picking: '等待选择…',
     switchBtn: '切换',
     noAllowedPaths: '暂无允许的目录',
     currentTag: '当前',
@@ -427,6 +431,10 @@ registerTranslations('en', {
     selectFromAllowed: 'Select from allowed directories (non-current can be removed)',
     orInputPath: 'Or enter an absolute path',
     manualPathPlaceholder: '/Users/you/path or ~/path',
+    browseBtn: 'Browse…',
+    browseUnavailable: 'The agent environment does not support directory selection. Please enter the path manually.',
+    browseFailedWithError: 'Directory selection failed: {error}',
+    picking: 'Waiting…',
     switchBtn: 'Switch',
     noAllowedPaths: 'No allowed directories',
     currentTag: 'Current',
@@ -6056,6 +6064,17 @@ async function showSwitchWorkdirDialog() {
   const currentWorkdir = detail.workdir || '';
   let allowedPaths = Array.isArray(detail.allowedPaths) ? [...detail.allowedPaths] : [];
 
+  // 浏览按钮仅在回环本机代理时展示：原生目录选择框弹在代理端所在机器，
+  // 远端机器可能无桌面环境（弹窗用户也看不到），且工作目录语义本就是代理端机器的路径
+  let browseAvailable = false;
+  try {
+    const agentCfg = await getAgentConfig();
+    const hostname = agentCfg && agentCfg.url ? new URL(agentCfg.url).hostname : '';
+    browseAvailable = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  } catch (err) {
+    logger.debug('[WorkspacePanel] detect local agent failed:', err);
+  }
+
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay show';
@@ -6067,7 +6086,10 @@ async function showSwitchWorkdirDialog() {
         <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
         <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:8px;margin-bottom:10px;"></div>
         <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.orInputPath')}</div>
-        <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="width:100%;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;margin-bottom:12px;" autofocus>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="flex:1;min-width:0;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;" autofocus>
+          ${browseAvailable ? `<button class="switch-workdir-browse" title="${t('workspace.browseBtn')}" style="flex-shrink:0;padding:6px 14px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap;">${t('workspace.browseBtn')}</button>` : ''}
+        </div>
         <div style="display:flex;justify-content:flex-end;gap:8px;">
           <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.cancel')}</button>
           <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--info-500);color:var(--text-inverse);cursor:pointer;">${t('workspace.switchBtn')}</button>
@@ -6080,6 +6102,34 @@ async function showSwitchWorkdirDialog() {
     const cancelBtn = overlay.querySelector('.switch-workdir-cancel');
     const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
     const closeBtn = overlay.querySelector('.switch-workdir-close');
+    const browseBtn = overlay.querySelector('.switch-workdir-browse');
+
+    // 浏览：弹出代理端系统原生目录选择框，选中后填入输入框（仍由用户点击 Switch 确认）
+    if (browseBtn) {
+      browseBtn.addEventListener('click', async () => {
+        const originalText = browseBtn.textContent;
+        browseBtn.disabled = true;
+        browseBtn.textContent = t('workspace.picking');
+        try {
+          const result = await pickDirectory();
+          if (result.success && result.path) {
+            manualInput.value = result.path;
+            manualInput.focus();
+          } else if (result.success) {
+            // 用户取消选择：静默
+          } else if (result.available === false) {
+            showToast(t('workspace.browseUnavailable'), 'info');
+          } else {
+            showToast(t('workspace.browseFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
+          }
+        } catch (err) {
+          showToast(t('workspace.browseFailedWithError', { error: err.message || err }), 'error');
+        } finally {
+          browseBtn.disabled = false;
+          browseBtn.textContent = originalText;
+        }
+      });
+    }
 
     let closed = false;
     const cleanup = () => {

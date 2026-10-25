@@ -54,6 +54,7 @@ import { setSkillExecutorLang } from './skill/executor.js';
 import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
 import { setMcpClientLang } from './mcp/client.js';
 import { getRequestI18n, t, parseAcceptLanguage } from './i18n.js';
+import { pickDirectoryNative } from './directory-picker.js';
 import { extractImagesHandler } from './documents/routes.js';
 
 // Server-level i18n helper (uses env/CLI language)
@@ -980,6 +981,29 @@ export function startServer() {
         } catch (err) {
           logError('config', 'allowed_path_remove_error', { path: resolvedPath, error: err.message });
           return jsonResponse(res, 500, { success: false, error: t('error.removeAllowedPathFailed', { message: err.message }) });
+        }
+      }
+
+      // === 弹出系统原生目录选择框（仅限本机来源） ===
+      // 仅本机（loopback）代理有意义：远端机器可能无桌面环境，弹窗用户也看不到；
+      // 且工作目录本就是代理端机器的路径，浏览器侧选择框语义上也不成立。
+      if (pathname === '/api/config/pick-directory' && req.method === 'POST') {
+        const remoteIp = req.socket.remoteAddress || '';
+        const isLocal = remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1' || remoteIp === 'localhost';
+        if (!isLocal) {
+          // 不抛 403/404：以 available:false 降级返回，扩展端据此隐藏浏览按钮
+          logSecurity('pick_directory_remote_blocked', { remote: remoteIp, extId });
+          return jsonResponse(res, 200, { success: false, path: null, available: false, error: 'remote-source' });
+        }
+        try {
+          const result = await pickDirectoryNative(typeof body.title === 'string' ? body.title : '');
+          if (result.success && result.path) {
+            logSystem('directory_picked', { path: result.path, extId });
+          }
+          return jsonResponse(res, 200, result);
+        } catch (err) {
+          logError('config', 'pick_directory_error', { error: err.message });
+          return jsonResponse(res, 500, { success: false, path: null, available: true, error: err.message });
         }
       }
 
