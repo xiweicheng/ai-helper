@@ -13,6 +13,7 @@ import { triggerScreenshotDownload } from './tool-screenshot.js';
 import { tryParseToolArgs } from './tool-helpers.js';
 import { appendAuditLog, recordToolStats } from './activity-store.js';
 import { decideNetworkAccess } from '../shared/network-scope.js';
+import { clampTimeoutMs, TOOL_TIMEOUT_BOUNDS } from '../shared/tool-timeout.js';
 import { executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './state.js';
@@ -3163,15 +3164,13 @@ export async function fetchWithRetry(url, options, timeoutMs, maxRetries = 3, ba
 
 // fetch_url 的 timeout 参数契约：单位毫秒。模型常按"秒"理解，传 30 这类值按毫秒执行等于秒挂
 // （实测在控制台留下 "请求超时 (30ms)"）。schema 已声明 minimum/maximum，但 schema 不参与执行，
-// 执行侧必须再钳一次，两端共同兜住。
-export const FETCH_URL_TIMEOUT_DEFAULT_MS = 15000;
-export const FETCH_URL_TIMEOUT_MIN_MS = 1000;
-export const FETCH_URL_TIMEOUT_MAX_MS = 120000;
+// 执行侧必须再钳一次，两端共同兜住。边界与其它工具共用 shared/tool-timeout.js 的同一张表。
+export const FETCH_URL_TIMEOUT_DEFAULT_MS = TOOL_TIMEOUT_BOUNDS.fetchUrl.fallback;
+export const FETCH_URL_TIMEOUT_MIN_MS = TOOL_TIMEOUT_BOUNDS.fetchUrl.min;
+export const FETCH_URL_TIMEOUT_MAX_MS = TOOL_TIMEOUT_BOUNDS.fetchUrl.max;
 
 export function normalizeFetchUrlTimeout(value) {
-  const ms = Number(value);
-  if (!Number.isFinite(ms) || ms <= 0) return FETCH_URL_TIMEOUT_DEFAULT_MS;
-  return Math.min(FETCH_URL_TIMEOUT_MAX_MS, Math.max(FETCH_URL_TIMEOUT_MIN_MS, Math.floor(ms)));
+  return clampTimeoutMs(value, TOOL_TIMEOUT_BOUNDS.fetchUrl);
 }
 
 export async function executeFetchUrl(args, toolCallId) {
@@ -3402,7 +3401,9 @@ export function executeDownloadFile(args, toolCallId) {
  * 支持 waitForLoad 参数：等待页面加载完成再返回，避免后续工具因页面未就绪而失败
  */
 export async function executeOpenTab(args, toolCallId, sessionId) {
-  const { url, active: rawActive = true, waitForLoad = false, loadTimeout = 15000 } = args;
+  const { url, active: rawActive = true, waitForLoad = false, loadTimeout } = args;
+  // loadTimeout 单位毫秒；模型按"秒"传 30 时若不归一，页面只会得到 1s 以内的加载预算
+  const safeLoadTimeout = clampTimeoutMs(loadTimeout, TOOL_TIMEOUT_BOUNDS.tabLoad);
   const active = typeof rawActive === 'boolean' ? rawActive : String(rawActive).toLowerCase() === 'true';
 
   // SEC-03 残余闸门：开 tab 带用户 cookie、在用户浏览器里执行 JS，比 fetch_url 更强打击面。
@@ -3432,7 +3433,7 @@ export async function executeOpenTab(args, toolCallId, sessionId) {
     };
   }
 
-  console.log('[Background] opennewlabelpage:', 'url=', url, 'active=', active, 'waitForLoad=', waitForLoad, 'loadTimeout=', loadTimeout);
+  console.log('[Background] opennewlabelpage:', 'url=', url, 'active=', active, 'waitForLoad=', waitForLoad, 'loadTimeout=', safeLoadTimeout);
 
   return new Promise((resolve) => {
     chrome.tabs.create({ url: url, active: active }, (tab) => {
@@ -3463,22 +3464,21 @@ export async function executeOpenTab(args, toolCallId, sessionId) {
 
       // 等待页面加载完成（或超时）
       let resolved = false;
-      const safeTimeout = Math.max(1000, Math.floor(Number(loadTimeout) || 15000));
 
       const timeoutId = setTimeout(() => {
         if (resolved) return;
         resolved = true;
         chrome.tabs.onUpdated.removeListener(listener);
-        console.warn('[Background] page loadtimeout:', url, `(${safeTimeout}ms)`);
+        console.warn('[Background] page loadtimeout:', url, `(${safeLoadTimeout}ms)`);
         resolve({
           success: true,
-          message: t('toolExec.tabOpenTimeout', { timeout: safeTimeout, hint }),
+          message: t('toolExec.tabOpenTimeout', { timeout: safeLoadTimeout, hint }),
           tabId: tab.id,
           url: tab.url,
           loadTimedOut: true,
           tool_call_id: toolCallId
         });
-      }, safeTimeout);
+      }, safeLoadTimeout);
 
       const listener = (updatedTabId, changeInfo, updatedTab) => {
         if (updatedTabId === tab.id && changeInfo.status === 'complete') {
@@ -4217,14 +4217,16 @@ async function executeAgentReadFile(args, toolCallId) {
  * 监听 tab 更新事件，等待页面加载到指定状态
  */
 async function executeWaitForNavigation(args, toolCallId, sessionId) {
-  const { timeout = 30000, waitUntil = 'load', tabId: argsTabId } = args;
+  // timeout 单位毫秒；不归一时模型按"秒"传 30 会让监听在 30ms 后就判超时
+  const safeTimeout = clampTimeoutMs(args.timeout, TOOL_TIMEOUT_BOUNDS.navigation);
+  const { waitUntil = 'load', tabId: argsTabId } = args;
 
   try {
     const lastOperatedTab = sessionId ? getLastOperatedTab(sessionId) : null;
     const tabId = argsTabId || lastOperatedTab || await getActiveTabId();
     if (!tabId) return { success: false, error: t('toolExec.noTabAvailable'), tool_call_id: toolCallId };
 
-    console.log('[Background] waitingpage navigationcomplete: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', timeout);
+    console.log('[Background] waitingpage navigationcomplete: tabId=', tabId, 'waitUntil=', waitUntil, 'timeout=', safeTimeout);
 
     return new Promise((resolve) => {
       let resolved = false;
@@ -4232,10 +4234,10 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
         if (!resolved) {
           resolved = true;
           chrome.tabs.onUpdated.removeListener(listener);
-          console.warn('[Background] waitingnavigatetimeout:', timeout + 'ms');
-          resolve({ success: false, error: t('toolExec.navWaitTimeout', { timeout }), tool_call_id: toolCallId });
+          console.warn('[Background] waitingnavigatetimeout:', safeTimeout + 'ms');
+          resolve({ success: false, error: t('toolExec.navWaitTimeout', { timeout: safeTimeout }), tool_call_id: toolCallId });
         }
-      }, timeout);
+      }, safeTimeout);
 
       // 立刻检查一次：如果当前 tab 已经是 complete 状态则立即返回
       chrome.tabs.get(tabId, (tab) => {

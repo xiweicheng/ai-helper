@@ -4,6 +4,17 @@
 
 ## 2026-10-25
 
+### 工具超时参数横向收口：5 个裸 timeout 参数 + 统一归一边界表
+> 来源：上一批修 `fetch_url.timeout` 时，我把 `manage_tab.loadTimeout` 记为「同一误用模式，待并入下批」。本轮先取证再动手，结果与原表述有两处出入，一并纠正。
+
+- **纠正上批的记录**：`executeOpenTab` 里原本就有 `Math.max(1000, Math.floor(Number(loadTimeout) || 15000))`，即执行侧早有 1000ms 下限，并非「完全裸奔」。真正的缺口是 schema 无单位无描述（模型传 30 → 加载预算被压到 1s 必判超时）以及缺上限。
+- **顺查反而揪出 4 个更严重的同族项**（执行侧连下限都没有，30 会直接变成「只等 30ms」）：`wait_navigation.timeout`、`wait_element.timeout`、`select_dropdown.timeout`、`interact_element.timeout`；另 `interact_element.waitTime` 也是裸声明。
+- **统一归一源**（`src/shared/tool-timeout.js`）：`TOOL_TIMEOUT_BOUNDS` 集中 7 组边界 + `clampTimeoutMs()` —— 非数字/0/负数回落 fallback，越界钳到 `[min, max]`，小数取整。`normalizeFetchUrlTimeout` 改为委托同一张表，消除重复实现。`waitTime` 与 `timeout` 默认值不同（300 vs 2000），刻意分两组边界，避免共用时 `waitTime` 被抬到 2000。
+- **执行侧接线位置是刻意选的**：background 三个（`executeFetchUrl` / `executeOpenTab` / `executeWaitForNavigation`）+ content 五个（`waitForElement` / `selectDropdown` / `clickElement` / `clickByText` / `interactByRef`）。内容脚本工具只能落在真正消费参数的函数里——`CONTENT_PAYLOADS` 透传与跨帧路由（`routeSingleRefTool`）是两条下发路径，只在 background 钳制会漏掉后者。
+- **schema 侧**：5 个 timeout + `waitTime` + `waitForLoad` 补 `minimum`/`maximum`/`description`（明写 ms、默认值、越界钳制、语义边界：settle 预算 ≠ 请求超时）。
+- **验证**：新增 `tool-timeout-params.unit.test.js` —— 19 条归一化边界 + 边界表自洽（fallback 必在区间内）+ 全工具模块 schema 契约扫描（任何新出现的名字含 timeout 的参数都必须有 `minimum` 与毫秒描述，防止同一坑再引入）；`content/interaction-tools` 补 3 条真实行为断言（`waitForElement`/`selectDropdown` 错误文案回显生效值 200ms 而非 30ms、`clickElement` 的 `waitedMs` 不被压到 30ms）。全量单测 **170 文件 / 2555 例全绿**（+2 文件 / +44 例），`eslint` 8 个改动文件无输出，`build:silent` → BUILD_SUCCESS。
+- **未验证（如实标注）**：`executeWaitForNavigation` / `executeOpenTab` 的归一只有单测层的边界与 schema 保证，没有在真扩展里用 `timeout:30` 跑一次端到端（需真页面导航计时，属独立探针）。
+
 ### fetch_url 超时参数契约：毫秒语义写进 schema + 执行侧双向钳制
 > 来源：控制台出现 `[Background] HTTP request failed: Error 请求超时 (30ms)`，用户追问「这个超时正常吗」。顺链路取证：该文案唯一出口是 `tool-executor.js` 的 `executeFetchUrl` → `fetchWithTimeout` 内部超时分支，`safeTimeoutMs` 就是模型传进来的 `timeout`。30ms 连一次公网 HTTP 往返都不可能完成，属参数误用而非网络抖动。
 

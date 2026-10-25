@@ -9,6 +9,7 @@ import {
   selectDropdown,
   manageStorage,
   clickElement,
+  waitForElement,
 } from '../../../src/content/interaction-tools.js';
 import { queryInteractiveElements } from '../../../src/content/page-interaction.js';
 
@@ -324,5 +325,31 @@ describe('scrollToPosition - 无进展静态判定（moved:false）', () => {
     expect('moved' in r).toBe(false);
     delete document.scrollingElement; // 删除即恢复初始态（jsdom 本无该属性，经 || 兜底行为等价）
     delete document.body.scrollHeight; // 恢复原型 getter
+  });
+});
+
+// 回归：模型的 timeout 会按"秒"传 30，内容脚本若不归一，首轮 100ms 轮询就已越过预算。
+// 这里断的是错误文案里的生效值——裸传时是 30ms，归一后必须是边界下限 200ms。
+describe('超时参数归一（ms 语义，执行侧兜底）', () => {
+  test('waitForElement 传 30 时实际按 200ms 轮询（文案回显生效值）', async () => {
+    document.body.innerHTML = '';
+    const r = await waitForElement('#never-appears', 'appeared', 30);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('200ms');
+    expect(r.error).not.toContain('30ms');
+  });
+
+  test('selectDropdown 传 30 时按 200ms 等待选项（文案回显生效值）', async () => {
+    document.body.innerHTML = '<div id="trigger">choose</div><ul id="list"></ul>';
+    const r = await selectDropdown('#trigger', 'not-there', '#list', 30);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain('200ms');
+  });
+
+  test('clickElement 传 30 时自动等待不被压到 30ms（仍给出可感知的页面响应窗口）', async () => {
+    document.body.innerHTML = '<button id="b">go</button>';
+    const r = await clickElement('#b', 30, 30);
+    expect(r.success).toBe(true);
+    expect(r.waitedMs).toBeGreaterThanOrEqual(150);
   });
 });

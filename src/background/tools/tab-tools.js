@@ -19,8 +19,15 @@ export const TAB_TOOLS = [
           url: { type: 'string', description: 'Required when action=open' },
           tabId: { type: 'integer', description: 'Required for switch/close/reload; omit for open' },
           active: { type: 'boolean' },
-          waitForLoad: { type: 'boolean' },
-          loadTimeout: { type: 'integer' },
+          waitForLoad: { type: 'boolean', description: 'Wait until the page finishes loading before returning (see loadTimeout)' },
+          // 单位必须显式写死：模型会按"秒"理解而传 30，等待预算只剩 1s 必判加载超时。
+          // schema 声明边界不参与执行，执行侧另有一层钳制（clampTimeoutMs/tabLoad）。
+          loadTimeout: {
+            type: 'integer',
+            minimum: 1000,
+            maximum: 120000,
+            description: 'Load-wait budget in milliseconds, used only when waitForLoad=true (default 15000, range 1000-120000; out-of-range values are clamped). Raise it for heavy pages instead of assuming the page failed to load'
+          },
           bypassCache: { type: 'boolean' },
           direction: { type: 'string', enum: ['back', 'forward'], description: 'Required when action=navigate' }
         },

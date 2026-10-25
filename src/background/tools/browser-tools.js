@@ -23,8 +23,18 @@ export const BROWSER_TOOLS = [
           text: { type: 'string', description: 'Match element by text (e.g. "Login"), click on first match' },
           tag: { type: 'string', description: 'Restrict tag with text, e.g. button/a' },
           selector: { type: 'string', description: 'CSS selector (used when neither ref nor text provided); avoid long nth-child chains' },
-          waitTime: { type: 'integer' },
-          timeout: { type: 'integer' }
+          waitTime: {
+            type: 'integer',
+            minimum: 200,
+            maximum: 5000,
+            description: 'Minimum wait in milliseconds after the action, giving the page time to react (default 300, range 200-5000; out-of-range values are clamped). Must not exceed timeout'
+          },
+          timeout: {
+            type: 'integer',
+            minimum: 200,
+            maximum: 30000,
+            description: 'Upper bound in milliseconds for the post-action auto-wait, covering both waitTime and DOM/URL settle detection (default 2000, range 200-30000; out-of-range values are clamped). This is a settle budget, not a request timeout'
+          }
         },
         required: ['action']
       }
@@ -74,7 +84,12 @@ export const BROWSER_TOOLS = [
           tabId: { type: 'integer', description: 'Omit to use active tab' },
           selector: { type: 'string' },
           state: { type: 'string', enum: ['appeared', 'disappeared', 'visible', 'hidden'] },
-          timeout: { type: 'integer' }
+          timeout: {
+            type: 'integer',
+            minimum: 200,
+            maximum: 60000,
+            description: 'How long to keep polling in milliseconds (default 10000, range 200-60000; out-of-range values are clamped). Polling interval is 100ms, so values below ~200 are pointless'
+          }
         },
         required: ['selector']
       }
@@ -96,7 +111,12 @@ export const BROWSER_TOOLS = [
         type: 'object',
         properties: {
           tabId: { type: 'integer', description: 'Omit to use active tab' },
-          timeout: { type: 'integer' },
+          timeout: {
+            type: 'integer',
+            minimum: 1000,
+            maximum: 120000,
+            description: 'How long to wait for the navigation to reach the requested state, in milliseconds (default 30000, range 1000-120000; out-of-range values are clamped)'
+          },
           waitUntil: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'] }
         },
         required: []
@@ -221,7 +241,12 @@ export const BROWSER_TOOLS = [
           triggerSelector: { type: 'string' },
           optionText: { type: 'string' },
           optionSelector: { type: 'string' },
-          timeout: { type: 'integer' }
+          timeout: {
+            type: 'integer',
+            minimum: 200,
+            maximum: 60000,
+            description: 'How long to wait for the option list to appear, in milliseconds (default 5000, range 200-60000; out-of-range values are clamped). Custom widgets often need a few hundred ms to render'
+          }
         },
         required: ['optionText']
       }

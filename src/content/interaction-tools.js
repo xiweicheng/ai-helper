@@ -4,6 +4,7 @@ import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
 import { getElementByRef } from './page-interaction.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { clampTimeoutMs, TOOL_TIMEOUT_BOUNDS } from '../shared/tool-timeout.js';
 
 registerTranslations('zh', {
   interactionTools: {
@@ -104,6 +105,9 @@ registerTranslations('en', {
  * - timeout: 最大等待 ms（检测到变化时的等待上限，默认 2000）
  */
 export async function clickElement(selector, waitTime = 300, timeout = 2000) {
+  // 模型常把超时当"秒"传（如 30）；不归一则自动等待在几十毫秒内就放弃
+  const safeWaitTime = clampTimeoutMs(waitTime, TOOL_TIMEOUT_BOUNDS.actionMinWait);
+  const safeTimeout = clampTimeoutMs(timeout, TOOL_TIMEOUT_BOUNDS.actionWait);
   try {
     if (!selector) {
       return { success: false, error: t('interactionTools.selectorRequired') };
@@ -132,7 +136,7 @@ export async function clickElement(selector, waitTime = 300, timeout = 2000) {
     // 记录点击前状态，点击后自动等待页面稳定
     const sigBefore = getDomSignature();
     element.click();
-    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+    const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
 
     const changeHint = wait.changed
       ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
@@ -320,6 +324,8 @@ function isElementTrulyVisible(el) {
  * 等待元素出现/消失/可见状态变化
  */
 export function waitForElement(selector, state = 'appeared', timeout = 10000) {
+  // 归一后再进轮询：否则模型传 30 时首个 setTimeout(100) 就已越过预算，元素必然判"未出现"
+  const safeTimeout = clampTimeoutMs(timeout, TOOL_TIMEOUT_BOUNDS.waitElement);
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
     
@@ -346,8 +352,8 @@ export function waitForElement(selector, state = 'appeared', timeout = 10000) {
         return;
       }
       
-      if (Date.now() - startTime > timeout) {
-        resolve({ success: false, error: t('interactionTools.waitTimeout', { timeout, selector, state }) });
+      if (Date.now() - startTime > safeTimeout) {
+        resolve({ success: false, error: t('interactionTools.waitTimeout', { timeout: safeTimeout, selector, state }) });
         return;
       }
       
@@ -533,6 +539,8 @@ export function fileUpload(selector, fileName, fileContent, fileType = 'applicat
  */
 export async function clickByText(text, options = {}) {
   const { tag, action = 'click', waitTime = 300, timeout = 2000 } = options;
+  const safeWaitTime = clampTimeoutMs(waitTime, TOOL_TIMEOUT_BOUNDS.actionMinWait);
+  const safeTimeout = clampTimeoutMs(timeout, TOOL_TIMEOUT_BOUNDS.actionWait);
 
   if (!text) {
     return { success: false, error: t('interactionTools.textRequired') };
@@ -585,7 +593,7 @@ export async function clickByText(text, options = {}) {
         if (action === 'hover') {
           el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
           el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
-          const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+          const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
           const changeHint = wait.changed
             ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
             : '';
@@ -598,7 +606,7 @@ export async function clickByText(text, options = {}) {
           };
         }
         el.click();
-        const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+        const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
 
         const changeHint = wait.changed
           ? t(wait.urlChanged ? 'interactionTools.navChangeHint' : 'interactionTools.domChangeHint', { ms: wait.waitedMs })
@@ -664,6 +672,8 @@ export async function clickByText(text, options = {}) {
  * 流程：点击触发器 → 等待 → 匹配文本 → 点击选项
  */
 export function selectDropdown(triggerSelector, optionText, optionSelector = null, timeout = 5000) {
+  // 归一后再轮询：否则模型传 30 时选项容器刚弹出就已超时
+  const safeTimeout = clampTimeoutMs(timeout, TOOL_TIMEOUT_BOUNDS.selectOption);
   return new Promise(async (resolve) => {
     try {
       const trigger = deepQuerySelector(triggerSelector);
@@ -704,7 +714,7 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
       }
 
       let matchedOption = null;
-      while (Date.now() - startTime < timeout) {
+      while (Date.now() - startTime < safeTimeout) {
         const candidates = deepQuerySelectorAll(
           'li, [role="option"], [role="menuitem"], .option, .dropdown-item, .select-item, [data-value], div',
           optionContainer
@@ -725,7 +735,7 @@ export function selectDropdown(triggerSelector, optionText, optionSelector = nul
       }
 
       if (!matchedOption) {
-        resolve({ success: false, error: t('interactionTools.optionMatchTimeout', { timeout, option: optionText }) });
+        resolve({ success: false, error: t('interactionTools.optionMatchTimeout', { timeout: safeTimeout, option: optionText }) });
         return;
       }
 

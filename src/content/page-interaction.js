@@ -5,6 +5,7 @@ import { deepQuerySelector, deepQuerySelectorAll } from './shadow-dom-utils.js';
 import { generateUniqueSelector, getDomSignature, autoWaitAfterAction, isContentEditableElement, setNativeValue, fillContentEditable } from './page-utils.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { renderSnapshot } from '../shared/page-snapshot-renderer.js';
+import { clampTimeoutMs, TOOL_TIMEOUT_BOUNDS } from '../shared/tool-timeout.js';
 
 // 快照展示类 i18n 键已迁入 page-snapshot-renderer.js（Task 1），此处不得重复注册
 registerTranslations('zh', {
@@ -792,6 +793,9 @@ export function scrollAndCollect(args = {}) {
  */
 export async function interactByRef(ref, action = 'click', options = {}) {
   const { waitTime = 300, timeout = 2000 } = options;
+  // 模型常把超时当"秒"传（如 30）；不归一则点击后的自动等待几乎立即结束，漏摸页面响应
+  const safeWaitTime = clampTimeoutMs(waitTime, TOOL_TIMEOUT_BOUNDS.actionMinWait);
+  const safeTimeout = clampTimeoutMs(timeout, TOOL_TIMEOUT_BOUNDS.actionWait);
 
   const refNum = parseInt(ref, 10);
   const resolved = resolveByRef(refNum);
@@ -819,7 +823,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     if (!typeResult.success) {
       return { success: false, error: typeResult.error };
     }
-    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+    const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
     const changeHint = wait.changed
       ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
       : '';
@@ -834,7 +838,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
     const sigBefore = getDomSignature();
     element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
     element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
-    const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+    const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
     const changeHint = wait.changed
       ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
       : '';
@@ -844,7 +848,7 @@ export async function interactByRef(ref, action = 'click', options = {}) {
   // 默认 click
   const sigBefore = getDomSignature();
   element.click();
-  const wait = await autoWaitAfterAction(sigBefore, waitTime, timeout);
+  const wait = await autoWaitAfterAction(sigBefore, safeWaitTime, safeTimeout);
 
   const changeHint = wait.changed
     ? t(wait.urlChanged ? 'pageInteraction.navChangeHint' : 'pageInteraction.domChangeHint', { ms: wait.waitedMs })
