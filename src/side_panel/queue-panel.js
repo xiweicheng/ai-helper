@@ -129,6 +129,9 @@ function renderRecent(recent) {
  */
 export function renderQueue(options = {}) {
   if (!stripEl) return;
+  // 拖拽重排进行中：重建 innerHTML 会让 draggingId 指向的节点脱离 DOM，
+  // drop 目标丢失、排序静默失败。挂起渲染，dragend 时补一次。
+  if (draggingId) return;
   const sessionId = currentSessionId();
   if (!sessionId) {
     stripEl.style.display = 'none';
@@ -374,6 +377,8 @@ function bindDragEvents() {
     listEl.querySelectorAll('.drag-over-top, .drag-over-bottom').forEach((el) => {
       el.classList.remove('drag-over-top', 'drag-over-bottom');
     });
+    // 拖拽期间被挂起的渲染在这里补上（可能已累积多次 store 变更）
+    renderQueue();
   });
 
   listEl.addEventListener('dragover', (e) => {

@@ -12,6 +12,7 @@ import {
   createAutoCarryTracker,
   peakIteration,
   evaluateAutoCarry,
+  commitAutoCarry,
 } from '../../src/side_panel/queue-auto-carry.js';
 
 describe('peakIteration：一轮里多条更新取最大迭代号', () => {
@@ -64,11 +65,14 @@ describe('evaluateAutoCarry：四条门槛', () => {
     expect(r.tracker.lastIteration).toBe(null);
   });
 
-  test('第 2 轮首次携带', () => {
+  test('第 2 轮首次携带（判定不计配额，投递成功后才记账）', () => {
     const r = evaluateAutoCarry({ iteration: AUTO_CARRY_MIN_ITERATION, everyN: 3 });
     expect(r.carry).toBe(true);
-    expect(r.tracker.carried).toBe(1);
+    // 判定不 +1：判定与真正投递之间还隔着一次可能失败的跨进程投递
+    expect(r.tracker.carried).toBe(0);
     expect(r.tracker.lastIteration).toBe(2);
+    // 投递成功后由调用方 commit 记账
+    expect(commitAutoCarry(r.tracker, { callId: null }).carried).toBe(1);
   });
 
   test('距上次携带不足 N 轮不携带（interval_not_reached）', () => {
@@ -117,14 +121,14 @@ describe('evaluateAutoCarry：换轮清零', () => {
     const tracker = { callId: 'old', carried: AUTO_CARRY_MAX_PER_CALL, lastIteration: 40 };
     const r = evaluateAutoCarry({ tracker, iteration: 2, everyN: 3, callId: 'new' });
     expect(r.carry).toBe(true);
-    expect(r.tracker).toEqual({ callId: 'new', carried: 1, lastIteration: 2 });
+    expect(r.tracker).toEqual({ callId: 'new', carried: 0, lastIteration: 2 });
   });
 
   test('迭代号倒退（同一 callId 重新数）也当成新任务', () => {
     const tracker = { callId: 'c1', carried: 3, lastIteration: 30 };
     const r = evaluateAutoCarry({ tracker, iteration: 2, everyN: 3, callId: 'c1' });
     expect(r.carry).toBe(true);
-    expect(r.tracker.carried).toBe(1);
+    expect(r.tracker.carried).toBe(0);
   });
 
   test('消息没带 callId 时不清零（不能凭空重置配额）', () => {
@@ -144,14 +148,44 @@ describe('evaluateAutoCarry：不改入参（纯函数）', () => {
   });
 });
 
+describe('commitAutoCarry：投递成功后记账（判定不乐观自增）', () => {
+  test('成功一次 +1，且不改入参（纯函数）', () => {
+    const tracker = { callId: 'c1', carried: 0, lastIteration: 2 };
+    const snapshot = { ...tracker };
+    const next = commitAutoCarry(tracker, { callId: 'c1' });
+    expect(next.carried).toBe(1);
+    expect(tracker).toEqual(snapshot);
+  });
+
+  test('投递期间换轮（callId 已变）→ 这次携带不再计入新轮配额', () => {
+    const tracker = { callId: 'new', carried: 0, lastIteration: 2 };
+    expect(commitAutoCarry(tracker, { callId: 'old' })).toBe(tracker);
+  });
+
+  test('连续投递失败时不 commit：每个间隔轮次都能重试，而不是 3 次失败就吃光配额', () => {
+    let tracker = createAutoCarryTracker();
+    const attemptedAt = [];
+    for (let iteration = 1; iteration <= 11; iteration++) {
+      const r = evaluateAutoCarry({ tracker, iteration, everyN: 3, callId: 'c1' });
+      tracker = r.tracker;
+      if (r.carry) attemptedAt.push(iteration); // 模拟：投递全部失败，一次都不 commit
+    }
+    // 旧实现（判定即自增）在第 3 次之后就 call_limit 静默放弃
+    expect(attemptedAt).toEqual([2, 5, 8, 11]);
+  });
+});
+
 describe('整段任务模拟：默认每 3 轮一条，最多 3 条', () => {
-  test('12 轮里只在第 2/5/8 轮携带，之后不再带', () => {
+  test('12 轮里只在第 2/5/8 轮携带，之后不再带（投递成功即记账）', () => {
     const carriedAt = [];
     let tracker = createAutoCarryTracker();
     for (let iteration = 1; iteration <= 12; iteration++) {
       const r = evaluateAutoCarry({ tracker, iteration, everyN: 3, callId: 'call_1' });
       tracker = r.tracker;
-      if (r.carry) carriedAt.push(iteration);
+      if (r.carry) {
+        carriedAt.push(iteration);
+        tracker = commitAutoCarry(tracker, { callId: 'call_1' }); // 模拟投递成功
+      }
     }
     expect(carriedAt).toEqual([2, 5, 8]);
     expect(carriedAt.length).toBe(AUTO_CARRY_MAX_PER_CALL);

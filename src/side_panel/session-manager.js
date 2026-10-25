@@ -4,6 +4,8 @@
 import state from './state.js';
 import * as store from '../storage/session-store.js';
 import logger from '../shared/logger.js';
+import * as queueStore from './queue-store.js';
+import * as queueAttachments from './queue-attachment-store.js';
 
 // chrome.storage.local 中存储已完成会话 ID 列表的键名
 const COMPLETED_SESSIONS_KEY = 'completedSessionIds';
@@ -116,9 +118,18 @@ export async function switchToSession(sessionId) {
 }
 
 /**
- * 删除指定会话
+ * 删除指定会话。
+ *
+ * 队列条目必须随会话一并清理：面板只渲染激活会话的队列，会话删除后
+ * 留在存储里的条目用户再也看不见、删不掉（历史上它们进 orphans，同样无处可查）。
+ * 这正是“沉默的僵尸数据”：既占着存储，又永远等不到派发。
+ * 附件跟条目同生命周期，一并清理（失败也不阻塞删除，只多占磁盘）。
  */
 export async function deleteSession(sessionId) {
+  const jobCount = await queueStore.dropSession(sessionId);
+  if (jobCount > 0) {
+    void queueAttachments.deleteSessionAttachments(sessionId);
+  }
   const result = await store.deleteStoreSession(sessionId);
   // 同步清理该会话的"完成待查看"标记，避免脏数据残留
   if (state.completedSessionIds.has(sessionId)) {

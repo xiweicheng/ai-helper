@@ -1103,6 +1103,11 @@ export async function sendMessage(opts = {}) {
   }
 
   // 注入文件内容（发送给模型，但不显示在用户消息气泡中）
+  // 是否已投递：用户消息一落进会话历史就置 true。
+  // 之后的任何失败都不能让调用方重新投递，否则同一条用户消息会在会话里出现两次。
+  // 队列接力据此分流：未投递 -> 回队重试；已投递 -> 结算 failed 进归档（可手动重新入队）。
+  let delivered = false;
+
   const attachedFilesSnapshot = (inputCtx.attachedFiles || []).slice();
   if (attachedFilesSnapshot.length > 0) {
     const fileContent = buildFileContentText(attachedFilesSnapshot);
@@ -1137,6 +1142,7 @@ export async function sendMessage(opts = {}) {
   } else {
     history.push(userMsgEntry);
   }
+  delivered = true;
 
   if (isActive && !opts.fromQueue) {
     // 队列派发时输入框里可能还有用户新写的草稿，不能清掉
@@ -1305,7 +1311,7 @@ export async function sendMessage(opts = {}) {
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
         if (loadingId) removeLoadingMessage(loadingId);
         state.substituteLoadingIds.delete(mySessionId);
-        return;
+        return { ok: false, delivered: true, reason: 'inactive' };
       }
 
       // 用户主动取消：显示取消记录，但不作为错误
@@ -1315,7 +1321,7 @@ export async function sendMessage(opts = {}) {
         const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || [], null, false, null, null, [], true);
         state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true });
         saveChatHistory();
-        return;
+        return { ok: false, delivered: true, reason: 'cancelled' };
       }
 
       // SW 重启：后台服务异常，但 checkpoint 可能存在
@@ -1328,7 +1334,7 @@ export async function sendMessage(opts = {}) {
         saveChatHistory();
         // SW 重启视为失败：播放失败音效 + 桌面通知（用户主动取消已在上一分支处理）
         playFailureFeedback(mySessionId, t('chat.taskInterruptedSwRestart'), text);
-        return;
+        return { ok: false, delivered: true, reason: 'sw_restarted' };
       }
 
       if (loadingId) removeLoadingMessage(loadingId);
@@ -1345,7 +1351,7 @@ export async function sendMessage(opts = {}) {
 
       // 一般错误（网络/超时/API 错误）：播放失败音效 + 桌面通知；用户主动取消已在前面分支 return，不会到达此处
       playFailureFeedback(mySessionId, content, text);
-      return;
+      return { ok: false, delivered: true, reason: 'error' };
     }
 
     // 不在前台（成功路径）：结果写回目标会话，不碰 DOM
@@ -1359,7 +1365,7 @@ export async function sendMessage(opts = {}) {
       document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
       if (loadingId) removeLoadingMessage(loadingId);
       state.substituteLoadingIds.delete(mySessionId);
-      return;
+      return { ok: true, delivered: true };
     }
 
     let assistantMsgId = null;
@@ -1416,11 +1422,12 @@ export async function sendMessage(opts = {}) {
 
     // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
     playCompletionFeedback(mySessionId, text);
-    return { ok: true };
+    return { ok: true, delivered: true };
 
   } catch (error) {
     logger.error('[SidePanel] sendMessage exception:', error?.message || error);
-    return { ok: false, reason: error?.message || 'exception' };
+    // 异常发生在用户消息落地之前 -> delivered=false，调用方回队重试；否则按已投递处理
+    return { ok: false, delivered, reason: error?.message || 'exception' };
   } finally {
     if (isActive) {
       // 合并在此处统一保存，减少 IndexedDB 写入次数

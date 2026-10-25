@@ -18,7 +18,7 @@ import { showToast } from './utils.js';
 import * as store from './queue-store.js';
 import { QUEUE_STATUS, MAX_DISPATCH_ATTEMPTS, INJECT_DEADLINE_MS } from './queue-store.js';
 import { onGenerationEnded } from './generation-lifecycle.js';
-import { evaluateAutoCarry, peakIteration } from './queue-auto-carry.js';
+import { evaluateAutoCarry, peakIteration, commitAutoCarry } from './queue-auto-carry.js';
 import * as attachmentStore from './queue-attachment-store.js';
 import { loadSessions } from './session-manager.js';
 
@@ -417,8 +417,9 @@ async function drainOnce(sid) {
   } else {
     sessionState = await loadSessionStateForDispatch(sid);
     if (!sessionState) {
-      // 会话已被删除：条目整体转孤儿（不静默丢），后面用户的队列面板能看到并迁回
-      await store.moveSessionToOrphans(sid);
+      // 会话已被删除：队列随会话一起清掉（正常情况下删会话时已经清过，这里兜底）
+      const dropped = await store.dropSession(sid);
+      if (dropped) logger.warn('[QueueRunner] dropped queue of deleted session:', sid, dropped);
       return;
     }
   }
@@ -442,10 +443,22 @@ async function drainOnce(sid) {
     // 派发期间被用户删除（或会话已转移）：结果丢弃即可，**绝不复活**
     logger.debug('[QueueRunner] item removed during dispatch, drop result:', item.id);
   } else if (result.ok === false) {
-    // 派发没真正发出去（例如会话刚好又开始生成）：回队并置顶，绝不静默丢弃
-    await store.rollbackInjecting(sid, item.id, 'dispatch_failed', result.reason || 'dispatch_failed');
-    // 附件已经还原到 state，但这条没发出去 → 清掉，避免下一次手动发送误带别的条目的附件
-    if (onActiveSession) resetInputContext();
+    if (result.delivered) {
+      // 已真正投递（用户消息已落进会话历史）但本轮执行失败：API 报错 / 被取消 / SW 重启。
+      // 不能回队 —— 回队重发会让同一条用户消息在会话里出现两条。
+      // 结算 failed 进归档：既不重复，也不丢失，用户可从「最近处理」重新入队。
+      await store.settle(sid, item.id, { status: QUEUE_STATUS.FAILED, note: result.reason || 'failed' });
+      await attachmentStore.deleteAttachments(item.id);
+    } else {
+      // 派发没真正发出去（例如会话刚好又开始生成）：回队并置顶，绝不静默丢弃
+      await store.rollbackInjecting(sid, item.id, 'dispatch_failed', result.reason || 'dispatch_failed');
+      // 附件已经还原到 state，但这条没发出去 → 清掉，避免下一次手动发送误带别的条目的附件
+      if (onActiveSession) resetInputContext();
+      // 且不能在同 tick 重试：撞车的真相是“会话正忙”，立刻重来只会连撞 MAX_DISPATCH_ATTEMPTS 次，
+      // 除了把同一段话重复塞进会话外没有任何收益。作废本轮已置位的重跑标记，
+      // 真正的接力时机是 generation-ended（或用户下一次显式操作）。
+      rerunRequested.delete(sid);
+    }
   } else {
     // 不看当前 status：不管它被外部同步改成了什么都不重要，**执行过就必须出队**。
     // （旧实现在 status 不是 dispatching 时什么都不做，这正是“同一任务无限重跑”的帮凶）
@@ -481,6 +494,26 @@ export function markStopAndSend(sessionId) {
 export function hasQueuedItems(sessionId) {
   const sid = sessionId || state.activeSessionId;
   return !!(sid && store.peekNext(sid));
+}
+
+/**
+ * M3 补偿路径：停止请求没能发出去时（例如按钮已在停止中），
+ * 清掉「下一次停止是停止并发送」的脏标记，并当场兜现队列接力。
+ * 为什么必须清标记：task-stop-requested 不会广播，initQueueRunner 里消费
+ * 该标记的监听器永远不会触发，标记会留到下一次普通停止——那次停止会被
+ * 改写成“恢复队列并开跑”，用户明明只想停。
+ */
+export async function runQueueNow(sessionId) {
+  const sid = sessionId || state.activeSessionId;
+  if (!sid) return;
+  drainAfterStop.delete(sid);
+  await store.resumeSession(sid);
+  await drainQueue(sid);
+}
+
+/** 仅供测试：查询「停止并发送」脏标记是否还在 */
+export function __hasStopAndSendForTest(sessionId) {
+  return drainAfterStop.has(sessionId || state.activeSessionId);
 }
 
 /** 会话空闲时自动接力（由 generation-lifecycle 统一回调触发） */
@@ -773,7 +806,13 @@ function handleAutoCarryOnExecutionUpdate(message) {
 
   if (!result.carry) return;
   logger.debug('[QueueRunner] auto carry item', candidate.id, 'at iteration', iteration, 'session', sid);
-  void injectQueueItem(candidate.id, sid, { auto: true, iteration });
+  const carriedCallId = message.callId || null;
+  // 配额在投递成功后记账：硬失败（条目已被删 / 后台拒收）不消耗携带上限，
+  // 否则 3 次失败就把配额吃光，后面的迭代边界再也不带（队列白等到任务结束）
+  void injectQueueItem(candidate.id, sid, { auto: true, iteration }).then((res) => {
+    if (!res || res.ok !== true) return;
+    autoCarryTrackers.set(sid, commitAutoCarry(autoCarryTrackers.get(sid), { callId: carriedCallId }));
+  });
 }
 
 /** 面板侧接收后台的插话回执 */
@@ -790,6 +829,12 @@ function handleInjectionMessage(message) {
  */
 async function pruneAttachmentOrphans() {
   try {
+    // 读盘失败时队列内存是空的，alive 集为空 → 会把所有附件当孤儿删光。
+    // 降级态下磁盘内容未知，除数据清理一律不做。
+    if (store.isDegraded()) {
+      logger.warn('[QueueRunner] skip attachment prune in degraded mode');
+      return;
+    }
     const alive = new Set();
     for (const sid of store.listSessionIdsWithItems()) {
       for (const item of store.getItems(sid)) alive.add(item.id);

@@ -7,7 +7,7 @@
 //   3. 任何终态都进 recent 归档，容量受控但条目可找回
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import * as store from '../../src/side_panel/queue-store.js';
-import { QUEUE_STATUS, MAX_RECENT } from '../../src/side_panel/queue-store.js';
+import { QUEUE_STATUS, MAX_RECENT, MAX_ITEMS_PER_SESSION } from '../../src/side_panel/queue-store.js';
 
 function makeMemoryAdapter() {
   const disk = {};
@@ -191,5 +191,74 @@ describe('回声回灌防护（任务不会无限重跑、删掉的不会复活�
     expect(recovered.id).toBe(id);
     expect(recovered.status).toBe(QUEUE_STATUS.QUEUED);
     expect(recovered.interrupted).toBe(true);
+  });
+});
+
+// ============================================================
+// 读盘失败：绝不能把"读不出来"当成"没有数据"
+// ============================================================
+// 反面场景很隐蔽也很致命：
+//   get 抛错 → raw = null → 内存置空 → loaded = true
+//   → prune 把附件当孤儿删光
+//   → 下一次入队用空快照覆盖写 → 所有会话的队列清零、不可恢复
+// 因此失败时必须进降级态：不落盘、不清理，等下次重试。
+describe('queue 读盘失败的降级', () => {
+  test('读盘失败时不得用空快照覆盖磁盘（否则全部队列被抹掉）', async () => {
+    await store.enqueue({ sessionId: 's1', text: '不能被抹掉的想法' });
+    const before = JSON.parse(JSON.stringify(adapter.disk.promptQueues));
+
+    // 模拟 chrome.storage.local.get 抛错（上下文失效 / 配额异常等）
+    adapter.get = async () => { throw new Error('storage_unavailable'); };
+    store.__resetStoreForTest();
+    store.__setStorageAdapter(adapter);
+    await store.init();
+
+    expect(store.isDegraded()).toBe(true);
+    // 关键断言：降级期间任何写入都不能落地
+    const res = await store.enqueue({ sessionId: 's1', text: '新的' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('storage_unavailable');
+    expect(adapter.disk.promptQueues).toEqual(before);
+  });
+
+  test('存储恢复后重试 init 能读回原数据并解除降级', async () => {
+    await store.enqueue({ sessionId: 's1', text: '原数据' });
+    const realGet = adapter.get;
+
+    adapter.get = async () => { throw new Error('boom'); };
+    store.__resetStoreForTest();
+    store.__setStorageAdapter(adapter);
+    await store.init();
+    expect(store.isDegraded()).toBe(true);
+
+    adapter.get = realGet;
+    await store.init();
+    expect(store.isDegraded()).toBe(false);
+    expect(store.getItems('s1').map((i) => i.text)).toEqual(['原数据']);
+  });
+});
+
+// ============================================================
+// 超限截断：容量控制不能变成"静默丢条目"
+// ============================================================
+describe('queue 超限截断', () => {
+  test('读盘时超出上限的条目降级进归档，不凭空消失', async () => {
+    const many = [];
+    for (let i = 0; i < MAX_ITEMS_PER_SESSION + 3; i++) {
+      many.push({ id: 'x' + i, sessionId: 's1', text: 't' + i, status: 'queued', order: i + 1, attempts: 0 });
+    }
+    adapter.disk.promptQueues = {
+      version: 1,
+      sessions: { s1: { items: many, recent: [], paused: false, pausedReason: null } },
+    };
+
+    store.__resetStoreForTest();
+    store.__setStorageAdapter(adapter);
+    await store.init();
+
+    expect(store.getItems('s1')).toHaveLength(MAX_ITEMS_PER_SESSION);
+    const recent = store.getRecent('s1');
+    expect(recent.map((r) => r.text).sort()).toEqual(['t20', 't21', 't22']);
+    expect(recent.every((r) => r.status === QUEUE_STATUS.FAILED)).toBe(true);
   });
 });

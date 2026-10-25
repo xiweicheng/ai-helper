@@ -39,6 +39,62 @@ beforeEach(async () => {
 });
 
 describe('queue-runner 接力', () => {
+  test('派发已投递但执行失败：结算 failed 进归档（可重新入队），绝不回队重发', async () => {
+    await store.enqueue({ sessionId: 's1', text: 'API 会报错的任务' });
+    // chat-manager 的失败契约：用户消息已落进会话历史 → delivered=true
+    runner.bindDispatcher(async () => ({ ok: false, delivered: true, reason: 'error' }));
+
+    await runner.drainQueue('s1');
+
+    expect(store.getItems('s1')).toHaveLength(0);
+    const recent = store.getRecent('s1');
+    expect(recent).toHaveLength(1);
+    // 修复前：内层 catch 返回 undefined → 被当成 ok → 记为 done（用户以为跑完了）
+    expect(recent[0].status).toBe(QUEUE_STATUS.FAILED);
+    expect(recent[0].settleNote).toBe('error');
+  });
+
+  test('未投递的失败仍回队置顶（原语义不回归）', async () => {
+    await store.enqueue({ sessionId: 's1', text: '没发出去的任务' });
+    runner.bindDispatcher(async () => ({ ok: false, reason: 'empty' }));
+
+    await runner.drainQueue('s1');
+
+    expect(store.getItems('s1')).toHaveLength(1);
+    expect(store.getItems('s1')[0].status).toBe(QUEUE_STATUS.QUEUED);
+    expect(store.getRecent('s1')).toHaveLength(0);
+  });
+
+  test('“正在生成”撞车不在同 tick 重跑：只尝试一次，等下次信号再接力', async () => {
+    await store.enqueue({ sessionId: 's1', text: 't1' });
+    let calls = 0;
+    runner.bindDispatcher(async () => {
+      calls += 1;
+      // 执行期间事件触发了一次接力检查（真实场景：generating-state-changed 监听）
+      if (calls === 1) await runner.drainQueue('s1');
+      return { ok: false, reason: 'generating' };
+    });
+
+    await runner.drainQueue('s1');
+
+    // 修复前：回队后 do-while 立即再跑，一路撞到 MAX_DISPATCH_ATTEMPTS
+    expect(calls).toBe(1);
+    expect(store.getItems('s1')).toHaveLength(1);
+  });
+
+  test('runQueueNow：兑现队列接力并清掉未消费的“停止并发送”标记', async () => {
+    await store.enqueue({ sessionId: 's1', text: 't1' });
+    await store.pauseSession('s1', 'user_stopped');
+    runner.markStopAndSend('s1');
+    expect(runner.__hasStopAndSendForTest('s1')).toBe(true);
+
+    await runner.runQueueNow('s1');
+
+    // 脏标记若残留，会把下一次普通停止改写成“恢复队列并开跑”
+    expect(runner.__hasStopAndSendForTest('s1')).toBe(false);
+    expect(store.isPaused('s1')).toBe(false);
+  });
+
   test('会话空闲时派发队首并结算到 recent', async () => {
     await store.enqueue({ sessionId: 's1', text: '第一条' });
     const seen = [];
@@ -562,6 +618,22 @@ describe('自动顺带：运行中的任务自动带入队首一条', () => {
 
     expect(sentMessages).toHaveLength(3);
     expect(store.getItems('s1').map((it) => it.text)).toEqual(['四', '五']);
+  });
+
+  test('投递硬失败不消耗携带配额（后台一直拒也每轮照试，不静默放弃）', async () => {
+    // 旧实现：判定时就乐观自增，3 次失败后 call_limit 永久闭麦，
+    // 队列只能白等到任务结束——一次 SW 冷启动就能触发
+    installChrome({ accepted: false, reason: 'no_running_task' });
+    await seedItems(['一', '二', '三', '四', '五']);
+
+    for (const iteration of [2, 5, 8, 11]) {
+      update(iteration);
+      await flush();
+    }
+
+    expect(sentMessages).toHaveLength(4);
+    // 失败后条目已回退队首（两段式提交不变）
+    expect(store.getItems('s1')[0].status).toBe(QUEUE_STATUS.QUEUED);
   });
 
   test('换 callId（新一轮任务）后配额清零', async () => {

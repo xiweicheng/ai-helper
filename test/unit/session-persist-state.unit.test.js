@@ -150,6 +150,56 @@ describe('persistSessionState', () => {
     expect(saved).not.toHaveProperty('rawHtml');
   });
 
+  it('生成期间被其他路径追加的消息不被吞掉（磁盘独有段保留在本轮新段之前）', async () => {
+    seed('s2', {
+      messageHistory: [
+        { role: 'user', content: 'm1', messageId: 'm1' },
+        { role: 'assistant', content: 'm2', messageId: 'm2' },
+      ],
+    });
+    // 快照 = dispatch 时读到的版本 + 本轮新增（u3 / a3）
+    const snapshot = [
+      { role: 'user', content: 'm1', messageId: 'm1' },
+      { role: 'assistant', content: 'm2', messageId: 'm2' },
+      { role: 'user', content: 'u3', messageId: 'u3' },
+      { role: 'assistant', content: 'a3', messageId: 'a3' },
+    ];
+    // 模拟并发：生成期间另一条路径（任务恢复结果回写）往该会话追加了一条
+    SESSIONS.get('s2').messageHistory = [...SESSIONS.get('s2').messageHistory, { role: 'assistant', content: 'resume-x' }];
+
+    await persistSessionState('s2', { messageHistory: snapshot });
+
+    expect(SESSIONS.get('s2').messageHistory.map((m) => m.content))
+      .toEqual(['m1', 'm2', 'resume-x', 'u3', 'a3']);
+  });
+
+  it('无并发时快照尾部新段照常落盘（不因合并而重复旧消息）', async () => {
+    seed('s2', {
+      messageHistory: [
+        { role: 'user', content: 'm1', messageId: 'm1' },
+        { role: 'assistant', content: 'm2', messageId: 'm2' },
+      ],
+    });
+    await persistSessionState('s2', {
+      messageHistory: [
+        { role: 'user', content: 'm1', messageId: 'm1' },
+        { role: 'assistant', content: 'm2', messageId: 'm2' },
+        { role: 'user', content: 'u3', messageId: 'u3' },
+      ],
+    });
+
+    expect(SESSIONS.get('s2').messageHistory.map((m) => m.content)).toEqual(['m1', 'm2', 'u3']);
+  });
+
+  it('历史被整体替换时退回以快照为准（首条就对不上，不保留旧段）', async () => {
+    seed('s2', { messageHistory: [{ role: 'user', content: 'legacy', messageId: 'old1' }] });
+    await persistSessionState('s2', {
+      messageHistory: [{ role: 'user', content: 'brand-new', messageId: 'n1' }],
+    });
+
+    expect(SESSIONS.get('s2').messageHistory.map((m) => m.content)).toEqual(['brand-new']);
+  });
+
   it('目标会话不存在时返回 false 且不写盘', async () => {
     const ok = await persistSessionState('missing', { model: 'x' });
     expect(ok).toBe(false);

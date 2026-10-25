@@ -4,7 +4,7 @@
 // 核心保证：
 //   - 队列是会话维度的，面板停在 B 时 A 的队列也要能跑完
 //   - 非激活会话派发：上下文与会话态随载荷传入，绝不读写面板 state
-//   - 目标会话已被删除：条目转孤儿，不静默丢
+//   - 目标会话已被删除：队列随会话清掉，不留看不见的僵尸
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 
 vi.mock('../../src/side_panel/session-manager.js', () => ({
@@ -29,10 +29,13 @@ function makeMemoryAdapter() {
   };
 }
 
+let adapter;
+
 beforeEach(async () => {
   store.__resetStoreForTest();
   runner.__resetRunnerForTest();
-  store.__setStorageAdapter(makeMemoryAdapter());
+  adapter = makeMemoryAdapter();
+  store.__setStorageAdapter(adapter);
   state.activeSessionId = 's1';
   state.generatingSessionIds.clear();
   state.quotedContextText = '';
@@ -113,7 +116,7 @@ describe('非激活会话派发', () => {
     expect(loadSessions).not.toHaveBeenCalled();
   });
 
-  test('目标会话已被删除：条目转孤儿，不静默丢', async () => {
+  test('目标会话已被删除：队列随会话清掉，不留在存储里当僵尸', async () => {
     await store.enqueue({ sessionId: 's9', text: '老会话的任务' });
     loadSessions.mockResolvedValue({ list: [], activeSessionId: 's1' });
 
@@ -124,9 +127,10 @@ describe('非激活会话派发', () => {
 
     expect(called).toBe(0);
     expect(store.getItems('s9')).toHaveLength(0);
-    const orphans = store.getOrphans();
-    expect(orphans).toHaveLength(1);
-    expect(orphans[0].text).toBe('老会话的任务');
+    expect(store.getRecent('s9')).toHaveLength(0);
+    // 关键：旧实现把条目倒进 orphans。面板没有任何孤儿入口 —— 那等于永久留在存储里。
+    // 因此断言"存储里不该再出现这条文本"，而不是只看内存查询结果。
+    expect(JSON.stringify(adapter.disk.promptQueues || {})).not.toContain('老会话的任务');
   });
 
   test('非激活派发失败：回队置顶，不误清面板输入区', async () => {

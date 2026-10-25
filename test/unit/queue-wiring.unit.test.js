@@ -51,7 +51,9 @@ describe('发送按钮三态', () => {
 
   test('生成中 + 有草稿 → 入队形态；无草稿 → 停止形态', () => {
     const src = indexSrc();
-    expect(src).toContain('const queueMode = generating && hasDraft;');
+    // 第三态由 isQueueMode() 单一真相源判定，按钮形态与手势让位共用同一判定
+    expect(src).toContain('const queueMode = isQueueMode();');
+    expect(src).toContain('return state.isGenerating && hasDraft;');
     expect(src).toContain("sendBtn.classList.toggle('queue-mode', queueMode)");
     expect(src).toContain("sendBtn.classList.toggle('stop-mode', generating && !queueMode)");
   });
@@ -306,10 +308,12 @@ describe('自动顺带（Phase 4）接线：少一环就是静默不工作', () 
 
   test('runner 听执行日志更新并走纯函数判定', () => {
     const src = runnerSrc();
-    expect(src).toContain("import { evaluateAutoCarry, peakIteration } from './queue-auto-carry.js'");
+    expect(src).toContain("import { evaluateAutoCarry, peakIteration, commitAutoCarry } from './queue-auto-carry.js'");
     expect(src).toContain("else if (message.type === 'EXECUTION_STATUS_UPDATE') handleAutoCarryOnExecutionUpdate(message);");
     expect(src).toContain('hasCandidate: !!candidate');
-    expect(src).toContain('void injectQueueItem(candidate.id, sid, { auto: true, iteration });');
+    expect(src).toContain('void injectQueueItem(candidate.id, sid, { auto: true, iteration }).then((res) => {');
+    // 配额在投递成功后记账：硬失败不消耗携带上限，否则 3 次失败就吃光配额
+    expect(src).toContain('autoCarryTrackers.set(sid, commitAutoCarry(autoCarryTrackers.get(sid), { callId: carriedCallId }));');
   });
 
   test('子任务期间不自动顺带（插话只有顶层循环会取走）', () => {
@@ -410,8 +414,9 @@ describe('自动顺带（Phase 4）接线：少一环就是静默不工作', () 
 describe('Phase 5 增强：停止并发送 / ↑ 编辑队尾 / 拖拽反馈', () => {
   test('「停止并发送」两个入口都在：主按钮右键长按 + 队列条按钮', () => {
     const src = read('src/side_panel/index.js');
-    expect(src).toContain('bindStopAndSendTrigger(sendBtn)');
-    expect(src).toContain('bindStopAndSendTrigger(stopCompanionBtn)');
+    // 主按钮必须带着 isPrimarySend 标记绑定：第三态它要主动让位
+    expect(src).toContain('bindStopAndSendTrigger(sendBtn, { isPrimarySend: true })');
+    expect(src).toContain('bindStopAndSendTrigger(stopCompanionBtn);');
     expect(src).toContain("document.addEventListener('queue-stop-and-send'");
     expect(read('side_panel.html')).toContain('id="queueStopSendBtn"');
     expect(read('src/side_panel/queue-panel.js')).toContain("document.dispatchEvent(new CustomEvent('queue-stop-and-send'))");
@@ -436,6 +441,24 @@ describe('Phase 5 增强：停止并发送 / ↑ 编辑队尾 / 拖拽反馈', (
     expect(cancelIdx).toBeGreaterThan(markIdx);
     expect(src).toContain("t('queue.stopAndSendEmpty')");
     expect(src).toContain("t('queue.stopAndSendStarted')");
+  });
+
+  test('第三态主按钮不吃停止并发送手势：它是入队按钮', () => {
+    const src = read('src/side_panel/index.js');
+    // 第三态（生成中 + 有草稿）时用户按主按钮的意图是入队，
+    // 长按/右键若照旧触发停止并发送，就会眼睁睁看着当前任务被放弃
+    expect(src).toContain('const blockedByQueueMode = () => isPrimarySend && isQueueMode();');
+    expect(src).toContain('if (blockedByQueueMode()) return;');
+  });
+
+  test('停止请求没发出去时不留脏标记：当场兑现队列接力', () => {
+    const src = read('src/side_panel/index.js');
+    // cancelStreamingTask 会在"按钮已 disabled"时早退（不发 task-stop-requested）
+    expect(read('src/side_panel/chat-streaming.js')).toContain('if (!stopBtn || stopBtn.disabled) return false;');
+    // 此时若留着 drainAfterStop 标记，下一次普通停止会被改写成"恢复队列并开跑"
+    expect(src).toContain('const started = cancelStreamingTask(');
+    expect(src).toContain('void runQueueNow(sid);');
+    expect(read('src/side_panel/queue-runner.js')).toContain('export async function runQueueNow(sessionId)');
   });
 
   test('上限提示有出口：store 拒绝 → runner 把上限数字告诉用户', () => {

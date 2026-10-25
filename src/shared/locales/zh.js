@@ -1512,5 +1512,6 @@ export default {
     stopNow: '停止当前任务',
     tooManyAttempts: '这条已连续自动执行 {count} 次仍未成功，已停止重试并移入「最近处理」，可手动重新入队',
     badgeTitle: '该会话有 {count} 条排队任务',
+    sessionDropped: '该会话还有 {count} 条排队任务，已随会话一并删除',
   },
 };

@@ -1058,7 +1058,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       sendResponse({ accepted: false, reason: 'no_running_task' });
       return false;
     }
-    const res = enqueueInjection(sessionId, { itemId, text, callId: message.callId || null });
+    const res = enqueueInjection(sessionId, { itemId, text });
     sendResponse(res.ok
       ? { accepted: true, pending: res.pending, duplicate: !!res.duplicate }
       : { accepted: false, reason: res.error });

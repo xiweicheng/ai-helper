@@ -9,7 +9,6 @@ import {
   enqueueInjection,
   drainPendingInjections,
   dropPendingInjections,
-  pendingInjectionCount,
   buildInjectionContent,
   __resetInjectionForTest,
   MAX_PENDING_PER_SESSION,
@@ -32,7 +31,6 @@ describe('待注入缓冲', () => {
 
     // 第二次取必须是空的：重复注入等于让模型做两遍
     expect(drainPendingInjections('s1')).toEqual([]);
-    expect(pendingInjectionCount('s1')).toBe(0);
   });
 
   test('同 itemId 重复登记是幂等的（连点 ⚡ 不会灌出两条）', () => {
@@ -40,8 +38,8 @@ describe('待注入缓冲', () => {
     const b = enqueueInjection('s1', { itemId: 'q1', text: '改标题' });
 
     expect(a.ok).toBe(true);
-    expect(b).toMatchObject({ ok: true, duplicate: true });
-    expect(pendingInjectionCount('s1')).toBe(1);
+    // pending 由返回值观测（不再读内部计数）：幂等登记没有让缓冲变长
+    expect(b).toMatchObject({ ok: true, duplicate: true, pending: 1 });
   });
 
   test('单会话挂起有上限（防一口气把上下文塞爆）', () => {
@@ -60,7 +58,6 @@ describe('待注入缓冲', () => {
 
     const first = drainPendingInjections('s1');
     expect(first).toHaveLength(MAX_CARRY_PER_ITERATION);
-    expect(pendingInjectionCount('s1')).toBe(2);
 
     const second = drainPendingInjections('s1');
     expect(second).toHaveLength(2);
@@ -73,7 +70,7 @@ describe('待注入缓冲', () => {
     enqueueInjection('s2', { itemId: 'q2', text: 'B 会话的' });
 
     expect(drainPendingInjections('s1').map((it) => it.itemId)).toEqual(['q1']);
-    expect(pendingInjectionCount('s2')).toBe(1);
+    // s2 的条目原样留着：A 会话取走不影响 B 会话（由 s2 自己取出的结果证明）
     expect(drainPendingInjections('s2').map((it) => it.itemId)).toEqual(['q2']);
   });
 
@@ -83,8 +80,7 @@ describe('待注入缓冲', () => {
 
     const dropped = dropPendingInjections('s1');
     expect(dropped.map((it) => it.itemId)).toEqual(['q1', 'q2']);
-    expect(pendingInjectionCount('s1')).toBe(0);
-    // 再 drop 不应报错/返回对象
+    // 再 drop 不应报错/返回对象（缓冲已空由返回值证明）
     expect(dropPendingInjections('s1')).toEqual([]);
   });
 
@@ -92,6 +88,14 @@ describe('待注入缓冲', () => {
     expect(enqueueInjection('', { itemId: 'q1', text: 'x' })).toMatchObject({ ok: false, error: 'missing_fields' });
     expect(enqueueInjection('s1', { text: 'x' })).toMatchObject({ ok: false, error: 'missing_fields' });
     expect(enqueueInjection('s1', { itemId: 'q1', text: '   ' })).toMatchObject({ ok: false, error: 'empty' });
+  });
+
+  test('插话条目不再携带形同虚设的 callId（面板从未发送，后台从未读取）', () => {
+    enqueueInjection('s1', { itemId: 'q1', text: '改标题' });
+    const [item] = drainPendingInjections('s1');
+    // 曾经的 callId 字段恒为 null：投递方（queue-runner）从不发它，
+    // 消费方（react-loop）只读 itemId/text —— 留着只会诱使后人以为它能过滤迭代
+    expect(item).not.toHaveProperty('callId');
   });
 });
 
@@ -118,5 +122,12 @@ describe('注入文案', () => {
   test('时间取登记时刻，而不是渲染时刻', () => {
     const a = buildInjectionContent({ text: 'a', requestedAt: at14h32 }, new Date(2026, 9, 25, 23, 59, 0));
     expect(a).toContain('· 14:32');
+  });
+});
+
+describe('injection 已移除的死接口', () => {
+  test('pendingInjectionCount 产品代码零调用，已移除（观测改用返回值）', async () => {
+    const mod = await import('../../src/background/injection.js');
+    expect(mod.pendingInjectionCount).toBeUndefined();
   });
 });

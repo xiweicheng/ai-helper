@@ -4,7 +4,8 @@
 // 1. 队列按 sessionId 隔离：sessionId 就是队列主键，会话之间互不共享、互不聚合。
 // 2. 状态转换同步落盘（不等去抖），只有纯文本编辑做短合并 —— 崩溃最多丢掉"正在改的措辞"，
 //    绝不会丢条目本身。这是用户明确提出的硬要求（想法收集起来不容易，丢了没法回想）。
-// 3. 任何"从队列消失"的路径都必须先落进 recent 归档或 orphans，保证条目永远可找回、可重新入队。
+// 3. 任何"从队列消失"的路径都必须先落进 recent 归档，保证条目永远可找回、可重新入队。
+//    唯一的例外是会话被删除：队列随会话一并丢弃（与消息历史同语义），不留看不见的僵尸。
 // 4. 多面板实例共享同一份存储，靠 storage.onChanged 同步 + 派发租约（leaseUntil）防双发。
 
 import logger from '../shared/logger.js';
@@ -14,7 +15,6 @@ const SCHEMA_VERSION = 1;
 
 export const MAX_ITEMS_PER_SESSION = 20;
 export const MAX_RECENT = 30;
-export const MAX_ORPHANS = 50;
 /** 派发租约时长：抢到租约的实例在窗口内独占该条目的派发权 */
 export const LEASE_MS = 30 * 1000;
 /** 插话等待后台确认吸收的最长时间，超时即回退队列（防呆） */
@@ -78,6 +78,7 @@ export function __resetStoreForTest() {
   memory = emptyState();
   loaded = false;
   loadingPromise = null;
+  degraded = false;
   lastSerialized = '';
   localEchoes.clear();
   listeners.clear();
@@ -90,12 +91,17 @@ export function __resetStoreForTest() {
 // ============================================================
 
 function emptyState() {
-  return { version: SCHEMA_VERSION, sessions: {}, orphans: [] };
+  return { version: SCHEMA_VERSION, sessions: {} };
 }
 
 let memory = emptyState();
 let loaded = false;
 let loadingPromise = null;
+/**
+ * 降级态：读盘失败时为 true。
+ * 语义是"磁盘上的内容未知"，因此任何写入都必须禁止（否则空快照会覆盖真数据）。
+ */
+let degraded = false;
 let lastSerialized = '';
 const localEchoes = new Set(); // 本实例写过的序列化值（防回声回灌）
 const listeners = new Set();
@@ -167,6 +173,11 @@ function sortByOrder(items) {
  * @param {string} reason - 触发原因，用于日志与订阅通知
  */
 async function persistNow(reason) {
+  if (degraded) {
+    // 降级态禁止落盘：磁盘上的真实内容未知，写出去就是销毁用户数据
+    logger.error('[QueueStore] persist skipped in degraded mode:', reason);
+    return false;
+  }
   const payload = serialize();
   lastSerialized = payload;
   rememberLocalEcho(payload);
@@ -238,20 +249,31 @@ function normalizeLoaded(raw, { recoverInterrupted = true } = {}) {
       rebuilt.splice(0, rebuilt.length, ...interruptedItems, ...rest);
     }
     renumber(rebuilt);
+    // 超限截断不能让条目凭空消失：溢出的降级进归档，用户仍可从「最近处理」重新入队
+    const kept = rebuilt.slice(0, MAX_ITEMS_PER_SESSION);
+    const overflow = rebuilt.slice(MAX_ITEMS_PER_SESSION);
+    for (const item of overflow.reverse()) {
+      recent.unshift(stripForArchive({ ...item, status: QUEUE_STATUS.FAILED, lastError: 'over_limit' }));
+    }
     next.sessions[sessionId] = {
-      items: rebuilt.slice(0, MAX_ITEMS_PER_SESSION),
-      recent,
+      items: kept,
+      recent: recent.slice(0, MAX_RECENT),
       paused: bucket?.paused === true,
       pausedReason: bucket?.pausedReason || null,
     };
   }
 
-  next.orphans = Array.isArray(raw.orphans) ? raw.orphans.slice(0, MAX_ORPHANS) : [];
   return next;
+}
+
+/** 当前是否处于"读盘失败"降级态（供 runner 决定是否跳过附件清理） */
+export function isDegraded() {
+  return degraded;
 }
 
 /**
  * 初始化：从存储加载 + 恢复治理。多次调用只加载一次。
+ * 读盘失败时进入降级态并允许重试 —— 绝不把"读不出来"当成"没有数据"。
  */
 export async function init() {
   if (loaded) return memory;
@@ -261,11 +283,16 @@ export async function init() {
     try {
       raw = await adapter.get(STORAGE_KEY);
     } catch (err) {
-      logger.error('[QueueStore] load failed:', err?.message);
-      raw = null;
+      // 不能把失败降级成"空数据"：那会让下一次 persistNow 用空快照覆盖磁盘，
+      // 而 prune 也会把附件全当孤儿删掉 —— 所有会话的队列一起消失且不可恢复。
+      degraded = true;
+      loadingPromise = null; // 允许下一次 init 重试
+      logger.error('[QueueStore] load failed, enter degraded mode:', err?.message);
+      return memory;
     }
     memory = normalizeLoaded(raw);
     loaded = true;
+    degraded = false;
     lastSerialized = serialize();
     return memory;
   })();
@@ -302,7 +329,12 @@ export function subscribe(fn) {
 // 读取
 // ============================================================
 
-/** 指定会话的队列条目（按 order 升序），不含 recent */
+/**
+ * 指定会话的队列条目（按 order 升序），不含 recent。
+ * 注意：返回的是元素为**内存引用**的新数组（排序副本）——runner/panel 依赖
+ * 拿到的条目做状态流转（就地读 status/attempts 等）。消费方把它当只读快照用，
+ * 想改字段必须走本模块的写接口（markInjecting / settle / reorder），改引用不会落盘。
+ */
 export function getItems(sessionId) {
   const bucket = memory.sessions[sessionId];
   if (!bucket) return [];
@@ -348,6 +380,11 @@ export function peekTailForEdit(sessionId) {
   return null;
 }
 
+/**
+ * 按 id 找一条。
+ * 注意：返回**内存引用**（不是拷贝）——调用方常常接着调 settle / rollbackInjecting，
+ * 以这里的引用为操作凭据；不要就地改字段（不会落盘），也不要假定每次拿到新对象。
+ */
 export function findItem(sessionId, itemId) {
   const bucket = memory.sessions[sessionId];
   if (!bucket) return null;
@@ -357,10 +394,6 @@ export function findItem(sessionId, itemId) {
 /** 有队列的会话 ID 列表（供会话列表徽标） */
 export function listSessionIdsWithItems() {
   return Object.keys(memory.sessions).filter((sid) => (memory.sessions[sid]?.items?.length || 0) > 0);
-}
-
-export function getOrphans() {
-  return memory.orphans.slice();
 }
 
 export function isPaused(sessionId) {
@@ -381,6 +414,7 @@ export async function enqueue({ sessionId, text, contextSnapshot = null, hasCont
   if (!content) return { ok: false, error: 'empty' };
 
   await init();
+  if (degraded) return { ok: false, error: 'storage_unavailable' };
   const bucket = ensureSession(sessionId);
   if (bucket.items.length >= MAX_ITEMS_PER_SESSION) {
     return { ok: false, error: 'queue_full', limit: MAX_ITEMS_PER_SESSION };
@@ -655,74 +689,21 @@ export async function releaseLease(sessionId, itemId, ownerId) {
 }
 
 // ============================================================
-// 会话删除 / 孤儿队列
+// 会话删除
 // ============================================================
 
-/** 会话被删除：其条目整体转入 orphans（不静默丢弃） */
-export async function moveSessionToOrphans(sessionId) {
+/**
+ * 会话被删除：队列与归档随会话一并丢弃。
+ * 语义与消息历史一致 —— 用户放弃这个会话时，未发出的草稿也一并放弃。
+ * 历史上这里曾把条目转入 orphans，但面板没有任何孤儿入口：
+ * 留下的条目用户永远看不见、删不掉，只是永久占着存储。
+ * 返回被丢弃的条数，供调用方如实告知用户。
+ */
+export async function dropSession(sessionId) {
   const bucket = memory.sessions[sessionId];
   if (!bucket) return 0;
-  const moved = [...bucket.items, ...bucket.recent];
+  const count = bucket.items.length + bucket.recent.length;
   delete memory.sessions[sessionId];
-  if (moved.length > 0) {
-    memory.orphans = [...moved, ...memory.orphans].slice(0, MAX_ORPHANS);
-    await persistNow('orphan');
-  }
-  return moved.length;
-}
-
-/** 把孤儿条目迁移到指定会话（用户在面板上点"迁移到当前会话"） */
-export async function migrateOrphansTo(sessionId) {
-  if (!sessionId || memory.orphans.length === 0) return { ok: true, moved: 0 };
-  await init();
-  const bucket = ensureSession(sessionId);
-  const capacity = Math.max(0, MAX_ITEMS_PER_SESSION - bucket.items.length);
-  if (capacity === 0) return { ok: false, error: 'queue_full', limit: MAX_ITEMS_PER_SESSION };
-  const slice = memory.orphans.splice(0, capacity);
-  for (const orphan of slice) {
-    bucket.items.push({
-      ...orphan,
-      id: newId(),
-      sessionId,
-      status: QUEUE_STATUS.QUEUED,
-      order: nextOrder(bucket.items),
-      leaseOwner: null,
-      leaseUntil: 0,
-      injectDeadlineAt: 0,
-      updatedAt: Date.now(),
-    });
-  }
-  renumber(bucket.items);
-  await persistNow('orphan:migrate');
-  return { ok: true, moved: slice.length };
-}
-
-export async function discardOrphans() {
-  const count = memory.orphans.length;
-  memory.orphans = [];
-  await persistNow('orphan:discard');
+  if (count > 0) await persistNow('drop-session');
   return count;
-}
-
-// ============================================================
-// 导入 / 导出
-// ============================================================
-
-export function exportJSON() {
-  return JSON.stringify(memory, null, 2);
-}
-
-export async function importJSON(text) {
-  let parsed;
-  try {
-    parsed = typeof text === 'string' ? JSON.parse(text) : text;
-  } catch (err) {
-    return { ok: false, error: 'invalid_json' };
-  }
-  if (!parsed || typeof parsed !== 'object' || !parsed.sessions) {
-    return { ok: false, error: 'invalid_shape' };
-  }
-  memory = normalizeLoaded(parsed);
-  await persistNow('import');
-  return { ok: true };
 }

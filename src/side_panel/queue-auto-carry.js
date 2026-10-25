@@ -7,7 +7,7 @@
 // 四条门槛（缺一条就会变成"把队列搬空进上下文"或"一条都不带"）：
 //   1. 迭代号 >= 2：第 1 轮还在准备请求，此时塞话等于插在开场白里；
 //   2. 距上次携带已过 N 轮（N 可配，默认 3）：带得太密会把队列一口气倒进上下文；
-//   3. 同一个 callId 最多 3 条：长任务里次数再多也只会挤掉原任务；
+//   3. 同一个 callId 最多 3 条（且只在投递成功后记账）：长任务里次数再多也只会挤掉原任务；
 //   4. 必须真的有条目可带（且不是带附件的——插话只能插文本）。
 //
 // 换轮清零靠两条信号：callId 变了，或迭代号倒退（新任务从 1 重新数）。
@@ -108,8 +108,27 @@ export function evaluateAutoCarry(input) {
     reason: 'carry',
     tracker: {
       callId: next.callId || callId || null,
-      carried: next.carried + 1,
+      // 判定不消耗配额（投递成功后由 commitAutoCarry 记账）：
+      // 判定与真正投递之间隔着一次可能失败的跨进程投递
+      carried: next.carried,
+      // 轮次照常推进：防止同一轮的多条更新重复投递
       lastIteration: iter,
     },
   };
+}
+
+/**
+ * 投递成功后记账：把这次携带计入配额（每个 callId 最多 AUTO_CARRY_MAX_PER_CALL 条）。
+ * 为什么不在 evaluateAutoCarry 里直接 +1：判定与投递之间隔着一次可能失败的
+ * 跨进程投递（后台拒收 / 条目已被用户删掉），乐观自增会让 3 次失败就吃光配额，
+ * 后面的迭代边界再也不携带 —— 队列只能白等到任务结束。
+ * 换轮保护：投递期间 callId 可能已变（新一轮任务），这次携带不再计入新轮。
+ * @param {{callId: string|null, carried: number, lastIteration: number|null}} tracker
+ * @param {{callId?: string|null}} [ctx] 投递时那轮消息的 callId
+ * @returns {Object} 新的 tracker（不改入参）
+ */
+export function commitAutoCarry(tracker, { callId = null } = {}) {
+  const next = tracker && typeof tracker === 'object' ? tracker : createAutoCarryTracker();
+  if (callId && next.callId && callId !== next.callId) return next;
+  return { ...next, carried: (Number(next.carried) || 0) + 1 };
 }

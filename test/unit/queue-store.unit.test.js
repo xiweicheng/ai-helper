@@ -68,19 +68,17 @@ describe('queue-store 会话隔离', () => {
     expect(store.listSessionIdsWithItems().sort()).toEqual(['A', 'B']);
   });
 
-  test('会话删除后条目转入 orphans 且可迁移回新会话', async () => {
+  test('会话删除后队列与归档一并清掉（不留看不见的僵尸）', async () => {
     await store.enqueue({ sessionId: 'A', text: 'a1' });
     await store.enqueue({ sessionId: 'A', text: 'a2' });
 
-    const moved = await store.moveSessionToOrphans('A');
-    expect(moved).toBe(2);
+    const dropped = await store.dropSession('A');
+    expect(dropped).toBe(2);
     expect(store.getItems('A')).toHaveLength(0);
-    expect(store.getOrphans()).toHaveLength(2);
-
-    const res = await store.migrateOrphansTo('B');
-    expect(res.moved).toBe(2);
-    expect(store.getItems('B').map((i) => i.text)).toEqual(['a1', 'a2']);
-    expect(store.getOrphans()).toHaveLength(0);
+    expect(store.getRecent('A')).toHaveLength(0);
+    expect(store.listSessionIdsWithItems()).toEqual([]);
+    // 磁盘上也不能残留：面板只渲染激活会话，留下来的条目用户再也看不见、删不掉
+    expect(adapter.disk.promptQueues.sessions.A).toBeUndefined();
   });
 });
 
@@ -234,24 +232,16 @@ describe('queue-store 恢复治理', () => {
   });
 });
 
-describe('queue-store 导出/导入', () => {
-  test('import 后能看到导出时的条目', async () => {
-    await store.enqueue({ sessionId: 's1', text: 't1' });
-    const json = store.exportJSON();
-
-    store.__resetStoreForTest();
-    store.__setStorageAdapter(makeMemoryAdapter());
-    await store.init();
-    expect(store.getItems('s1')).toHaveLength(0);
-
-    const res = await store.importJSON(json);
-    expect(res.ok).toBe(true);
-    expect(store.getItems('s1')).toHaveLength(1);
-  });
-
-  test('非法 JSON 与错误结构被拒绝', async () => {
-    expect((await store.importJSON('not json')).error).toBe('invalid_json');
-    expect((await store.importJSON('{"a":1}')).error).toBe('invalid_shape');
+describe('queue-store 已移除的死接口', () => {
+  test('导入 / 导出 / 孤儿迁移没有任何调用方，界面也不提供入口', () => {
+    // 这些接口曾导出过但产品代码零调用。留着最坏的影响是误导：
+    // 读代码的人会以为"孤儿条目有地方能看到、能迁回"，于是放心地把条目倒进 orphans。
+    expect(store.exportJSON).toBeUndefined();
+    expect(store.importJSON).toBeUndefined();
+    expect(store.getOrphans).toBeUndefined();
+    expect(store.migrateOrphansTo).toBeUndefined();
+    expect(store.discardOrphans).toBeUndefined();
+    expect(store.moveSessionToOrphans).toBeUndefined();
   });
 });
 

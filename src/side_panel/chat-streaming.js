@@ -2102,7 +2102,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
  * @param {HTMLElement} stopBtn - 被点击的停止按钮元素
  */
 export function cancelStreamingTask(stopBtn) {
-  if (!stopBtn || stopBtn.disabled) return;
+  if (!stopBtn || stopBtn.disabled) return false;
 
   // 通知队列：这是用户的"停"意图，本会话的自动接力必须暂停，
   // 否则下一条排队任务会立刻把刚停下来的任务重新拉起来
@@ -2138,6 +2138,9 @@ export function cancelStreamingTask(stopBtn) {
       executionLog: state.currentExecutionStatus?.executionLog || []
     });
   }
+
+  // 返回是否真的发出了停止请求：调用方（停止并发送）据此决定是否需要补偿
+  return true;
 }
 
 /**

@@ -130,6 +130,10 @@ describe('整条链路的接线（少一环就是静默失败）', () => {
     expect(bg).toContain('if (!activeReactLoops.has(sessionId))');
     expect(bg).toContain("reason: 'no_running_task'");
     expect(bg).toContain('enqueueInjection(');
+    // 输入契约只认 itemId/text：曾经兜传的 message.callId 恒为 null（面板从未发送），
+    // 已随死字段一并清理——重新引入会误导“插话能按迭代 callId 过滤”
+    expect(bg).toContain('enqueueInjection(sessionId, { itemId, text });');
+    expect(bg).not.toContain('message.callId');
   });
 
   test('面板监听两种回执（少了监听，条目会挂在 injecting 直到超时）', () => {

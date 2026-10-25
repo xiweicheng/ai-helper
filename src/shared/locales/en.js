@@ -1512,5 +1512,6 @@ export default {
     stopNow: 'Stop current task',
     tooManyAttempts: 'This item failed {count} automatic attempts in a row; retries stopped and it was moved to Recent so you can requeue it manually',
     badgeTitle: 'This session has {count} queued task(s)',
+    sessionDropped: 'This session had {count} queued task(s); they were removed along with the session',
   },
 };

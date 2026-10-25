@@ -34,7 +34,7 @@ import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } f
 import { decodeSecret } from '../shared/secret.js';
 import { debounce } from '../shared/utils.js';
 import { initQueuePanel, refreshQueueUI, editQueueTail } from './queue-panel.js';
-import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, markStopAndSend, hasQueuedItems, currentInputHasContext } from './queue-runner.js';
+import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, markStopAndSend, hasQueuedItems, currentInputHasContext, runQueueNow } from './queue-runner.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
@@ -2593,10 +2593,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const QUEUE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11"/><path d="M3 12h11"/><path d="M3 18h7"/><path d="M17.5 10v8"/><path d="M14.5 15.5L17.5 18.5l3-3"/></svg>';
   const stopCompanionBtn = document.getElementById('stopCompanionBtn');
 
+  /** 第三态：生成中 + 输入框有草稿 -> 主按钮的语义是「加入队列」（单一真相源） */
+  function isQueueMode() {
+    const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
+    return state.isGenerating && hasDraft;
+  }
+
   function updateSendBtnState() {
     const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
     const generating = state.isGenerating;
-    const queueMode = generating && hasDraft;
+    const queueMode = isQueueMode();
 
     sendBtn.classList.toggle('queue-mode', queueMode);
     sendBtn.classList.toggle('stop-mode', generating && !queueMode);
@@ -2662,17 +2668,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 第三态下主按钮是“加入队列”，把 disabled/变灰打在它身上会让人以为入队坏了；
     // 有伴随停止按钮时优先用它
     const visibleCompanion = stopCompanionBtn && stopCompanionBtn.style.display !== 'none';
-    cancelStreamingTask(visibleCompanion ? stopCompanionBtn : (btn || sendBtn));
+    const started = cancelStreamingTask(visibleCompanion ? stopCompanionBtn : (btn || sendBtn));
+    if (!started) {
+      // 停止请求没能发出去（按钮已在停止中，例如用户刚点过一次停止）：
+      // 此时「任务停下」已经在途，只需把用户意图（让队列接上）当场兑现。
+      // 不留「下一次停止是停止并发送」的脏标记——它会污染下一次普通停止。
+      void runQueueNow(sid);
+      return true;
+    }
     showToast(t('queue.stopAndSendStarted'), 'success', 2500);
     return true;
   }
 
   // 入口一：停止按钮上的右键 / 长按（主按钮停止态 + 第三态的伴随停止按钮）
   const STOP_AND_SEND_LONG_PRESS_MS = 600;
-  function bindStopAndSendTrigger(btn) {
+  function bindStopAndSendTrigger(btn, { isPrimarySend = false } = {}) {
     if (!btn) return;
+    // 第三态下主按钮是「加入队列」，长按/右键不能再是「停止并发送」：
+    // 用户此刻的意图是入队，放弃当前任务必须由伴随停止按钮承担
+    const blockedByQueueMode = () => isPrimarySend && isQueueMode();
     btn.addEventListener('contextmenu', (e) => {
       // 没在跑 / 队列空时保留浏览器原生菜单，不抢右键
+      if (blockedByQueueMode()) return;
       if (!state.isGenerating || !hasQueuedItems(state.activeSessionId)) return;
       e.preventDefault();
       stopTaskAndRunQueue(btn);
@@ -2685,6 +2702,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     btn.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (blockedByQueueMode()) return;
       if (!state.isGenerating || !hasQueuedItems(state.activeSessionId)) return;
       clearHold();
       holdTimer = setTimeout(() => {
@@ -2697,7 +2715,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener(type, clearHold);
     }
   }
-  bindStopAndSendTrigger(sendBtn);
+  bindStopAndSendTrigger(sendBtn, { isPrimarySend: true });
   bindStopAndSendTrigger(stopCompanionBtn);
 
   // 入口二：队列条上的“停止并发送”（队列模块广播意图，动作在这里执行，避免成环依赖）

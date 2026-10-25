@@ -18,17 +18,17 @@ export const MAX_CARRY_PER_ITERATION = 3;
 /** 单条插话正文上限（字符）：超长粘贴在插话场景里没有价值，只会挤爆上下文 */
 export const MAX_INJECT_TEXT_CHARS = 4000;
 
-/** sessionId -> Array<{itemId, text, callId, requestedAt}> */
+/** sessionId -> Array<{itemId, text, requestedAt}> */
 const pendingBySession = new Map();
 
 /**
  * 登记一条待注入插话。
  * 同 itemId 幂等：面板重复点击 / 重发不会灌出两条一样的插话。
  * @param {string} sessionId
- * @param {{itemId: string, text: string, callId?: string|null}} entry
+ * @param {{itemId: string, text: string}} entry
  * @returns {{ok: boolean, error?: string, duplicate?: boolean, pending?: number}}
  */
-export function enqueueInjection(sessionId, { itemId, text, callId = null } = {}) {
+export function enqueueInjection(sessionId, { itemId, text } = {}) {
   if (!sessionId || !itemId) return { ok: false, error: 'missing_fields' };
   const content = String(text || '').trim();
   if (!content) return { ok: false, error: 'empty' };
@@ -40,7 +40,7 @@ export function enqueueInjection(sessionId, { itemId, text, callId = null } = {}
   if (list.length >= MAX_PENDING_PER_SESSION) {
     return { ok: false, error: 'too_many_pending' };
   }
-  list.push({ itemId, text: content, callId, requestedAt: Date.now() });
+  list.push({ itemId, text: content, requestedAt: Date.now() });
   pendingBySession.set(sessionId, list);
   return { ok: true, pending: list.length };
 }
@@ -49,7 +49,7 @@ export function enqueueInjection(sessionId, { itemId, text, callId = null } = {}
  * 在迭代边界取走待注入项（取走即出缓冲，不重复注入）。
  * @param {string} sessionId
  * @param {number} [limit]
- * @returns {Array<{itemId: string, text: string, callId: string|null, requestedAt: number}>}
+ * @returns {Array<{itemId: string, text: string, requestedAt: number}>}
  */
 export function drainPendingInjections(sessionId, limit = MAX_CARRY_PER_ITERATION) {
   const list = pendingBySession.get(sessionId);
@@ -70,11 +70,6 @@ export function dropPendingInjections(sessionId) {
   if (!list || list.length === 0) return [];
   pendingBySession.delete(sessionId);
   return list;
-}
-
-/** 当前挂起条数（观测用） */
-export function pendingInjectionCount(sessionId) {
-  return (pendingBySession.get(sessionId) || []).length;
 }
 
 /** 仅供测试：清空缓冲 */

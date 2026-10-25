@@ -132,12 +132,6 @@ export function bytesOf(value) {
   return 0;
 }
 
-/** 快照里是否带有图片或文件 */
-export function hasHeavyContext(snapshot) {
-  if (!snapshot) return false;
-  return (snapshot.attachedImages || []).length > 0 || (snapshot.attachedFiles || []).length > 0;
-}
-
 /**
  * 生成 chip 上展示用的附件摘要（轻量、可随队列状态落盘）。
  * @param {Object} snapshot 完整的上下文快照

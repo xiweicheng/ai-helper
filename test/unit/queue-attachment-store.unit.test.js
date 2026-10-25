@@ -53,17 +53,16 @@ describe('附件摘要', () => {
     expect(summary).toEqual({ imageCount: 2, fileCount: 1, fileNames: ['需求.md'] });
   });
 
-  test('hasHeavyContext 只认图片/文件', () => {
-    expect(attachments.hasHeavyContext({ attachedImages: [imageA] })).toBe(true);
-    expect(attachments.hasHeavyContext({ attachedFiles: [fileA] })).toBe(true);
-    expect(attachments.hasHeavyContext({ quotedContextText: '选中文字' })).toBe(false);
-    expect(attachments.hasHeavyContext(null)).toBe(false);
-  });
-
   test('bytesOf 按字符数估算，能反映嵌套结构体量', () => {
     expect(attachments.bytesOf('abcd')).toBe(4);
     expect(attachments.bytesOf([{ a: 'xx' }, { b: 'yyy' }])).toBe(5);
     expect(attachments.bytesOf(null)).toBe(0);
+  });
+});
+
+describe('已移除的死接口', () => {
+  test('hasHeavyContext 产品代码零调用，已移除（重活判定已在 runner 内联）', () => {
+    expect(attachments.hasHeavyContext).toBeUndefined();
   });
 });
 

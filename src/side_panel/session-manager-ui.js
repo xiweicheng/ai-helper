@@ -18,7 +18,7 @@ import {
   duplicateSession,
   clearSessionCompleted
 } from './session-manager.js';
-import { getQueuedCount } from './queue-store.js';
+import { getQueuedCount, getRecent } from './queue-store.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -203,7 +203,7 @@ export async function renderSessionTabs(prefetchedData = null) {
         : (session.messageHistory?.length || 0);
       // 空会话直接关闭，无需弹框确认
       if (msgCount === 0) {
-        await deleteSession(session.id);
+        notifyDroppedJobs(await deleteSessionCountingJobs(session.id));
         await reloadAfterDelete();
         return;
       }
@@ -265,7 +265,7 @@ export async function renderSessionTabs(prefetchedData = null) {
       if (e.button !== 1) return;
       e.preventDefault();
       e.stopPropagation();
-      await deleteSession(session.id);
+      notifyDroppedJobs(await deleteSessionCountingJobs(session.id));
       await reloadAfterDelete();
     });
 
@@ -735,6 +735,22 @@ async function handleDropdownSelectSession(sessionId) {
   await handleSessionSwitch(sessionId);
 }
 
+/**
+ * 删除会话并统计被一并丢弃的队列 / 归档条数。
+ * 队列条目随会话一起删除（与消息历史同语义），但必须是"说过"的删除：
+ * 调用方拿到条数后用 notifyDroppedJobs 如实告知用户。
+ */
+async function deleteSessionCountingJobs(sessionId) {
+  const count = getQueuedCount(sessionId) + getRecent(sessionId).length;
+  await deleteSession(sessionId);
+  return count;
+}
+
+function notifyDroppedJobs(count) {
+  if (count <= 0) return;
+  showToast(t('queue.sessionDropped', { count }), 'info', 3000);
+}
+
 async function handleDropdownCloseSession(sessionId) {
   // 找到会话标题用于确认弹窗
   const allSessions = state.sessions || [];
@@ -754,7 +770,7 @@ async function handleDropdownCloseSession(sessionId) {
     if (!confirmed) return;
   }
 
-  await deleteSession(sessionId);
+  notifyDroppedJobs(await deleteSessionCountingJobs(sessionId));
   await reloadAfterDelete();
   // 刷新下拉列表（重新过滤 + 排序）
   filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
@@ -771,9 +787,11 @@ async function handleCloseAllSessions() {
   if (!confirmed) return;
 
   // 逐个删除所有会话
+  let droppedTotal = 0;
   for (const session of sessions) {
-    await deleteSession(session.id);
+    droppedTotal += await deleteSessionCountingJobs(session.id);
   }
+  notifyDroppedJobs(droppedTotal);
   await reloadAfterDelete();
   // 刷新下拉列表
   filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
@@ -791,9 +809,11 @@ async function handleGroupCloseAll(groupKey, groupLabel) {
   );
   if (!confirmed) return;
 
+  let droppedTotal = 0;
   for (const session of groupSessions) {
-    await deleteSession(session.id);
+    droppedTotal += await deleteSessionCountingJobs(session.id);
   }
+  notifyDroppedJobs(droppedTotal);
   await reloadAfterDelete();
   // 刷新下拉列表
   filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
@@ -1154,7 +1174,7 @@ function showDeleteModal(session, onDeleted) {
   };
 
   const onConfirm = async () => {
-    await deleteSession(session.id);
+    notifyDroppedJobs(await deleteSessionCountingJobs(session.id));
     if (onDeleted) await onDeleted();
     cleanup();
   };
@@ -1207,7 +1227,7 @@ function showTabContextMenu(event, session) {
       : (session.messageHistory?.length || 0);
     // 空会话直接关闭，无需弹框确认
     if (msgCount === 0) {
-      await deleteSession(session.id);
+      notifyDroppedJobs(await deleteSessionCountingJobs(session.id));
       await reloadAfterDelete();
       return;
     }
@@ -1290,7 +1310,7 @@ export async function closeCurrentSession() {
   // 与 Tab 关闭按钮一致：空会话直接关闭，非空会话弹确认
   const msgCount = state.messageHistory?.length || 0;
   if (msgCount === 0) {
-    await deleteSession(sid);
+    notifyDroppedJobs(await deleteSessionCountingJobs(sid));
     await reloadAfterDelete();
     return;
   }

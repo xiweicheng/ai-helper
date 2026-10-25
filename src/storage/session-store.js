@@ -186,6 +186,32 @@ export function serializeMessageHistory(list) {
   }));
 }
 
+/** 消息身份：优先 messageId，老数据没有 id 时退回 role+content */
+function sameMessage(a, b) {
+  if (!a || !b) return false;
+  if (a.messageId && b.messageId) return a.messageId === b.messageId;
+  return a.role === b.role && (a.content || '') === (b.content || '');
+}
+
+/**
+ * 合并消息历史（并发写保护）。
+ * persistSessionState 的快照是 dispatch 时读的，而写回发生在生成结束时刻 ——
+ * 期间别的路径（任务恢复结果 append、切走消息落盘）可能往该会话追加消息，
+ * 整段覆盖会把它们吞掉。策略：以两侧最长共同前缀为底盘，磁盘独有段
+ * （并发追加）保留在本轮新段之前；首条就对不上（历史被整体替换）退回快照。
+ * @param {Array} onDisk 磁盘现值
+ * @param {Array} snapshot 快照序列化后的历史
+ * @returns {Array}
+ */
+function mergeMessageHistory(onDisk, snapshot) {
+  const max = Math.min(onDisk.length, snapshot.length);
+  let common = 0;
+  while (common < max && sameMessage(onDisk[common], snapshot[common])) common++;
+  if (common === 0) return snapshot;
+  if (common === onDisk.length) return snapshot;
+  return [...snapshot.slice(0, common), ...onDisk.slice(common), ...snapshot.slice(common)];
+}
+
 /**
  * 把一份会话态写回指定会话（不依赖 state.activeSessionId）。
  * 队列跨会话接力时目标会话并不显示在面板上，不能走 saveCurrentSession；
@@ -213,7 +239,10 @@ export async function persistSessionState(sessionId, snapshot = {}) {
   if (temperature !== undefined) target.temperature = temperature;
   if (topP !== undefined) target.topP = topP;
   if (activeCompaction !== undefined) target.contextCompaction = activeCompaction || undefined;
-  if (messageHistory !== undefined) target.messageHistory = serializeMessageHistory(messageHistory);
+  if (messageHistory !== undefined) target.messageHistory = mergeMessageHistory(
+    Array.isArray(target.messageHistory) ? target.messageHistory : [],
+    serializeMessageHistory(messageHistory),
+  );
 
   target.updatedAt = new Date().toISOString();
   return idb.putSession(target);

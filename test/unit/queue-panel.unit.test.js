@@ -544,3 +544,31 @@ describe('↑ 编辑队尾', () => {
     expect(h.calls.removeItem.length).toBe(1);
   });
 });
+
+describe('拖拽重排期间的渲染挂起', () => {
+  test('拖拽期间 store 变更不重建 DOM（drop 目标不丢），dragend 后补渲染', async () => {
+    await loadPanel({ items: [item('a', '第一条'), item('b', '第二条')] });
+
+    const chip = $('queueList').querySelector('.queue-chip[data-id="a"]');
+    expect(chip).toBeTruthy();
+    chip.dispatchEvent(new Event('dragstart', { bubbles: true }));
+
+    // 拖拽期间 store 落盘（派发状态更新 / 租约续期都触发订阅回调）：
+    // 旧实现此刻会重建 innerHTML，draggingId 指向的节点脱离 DOM，drop 目标丢失、排序静默失败
+    h.listeners.forEach((fn) => fn('dispatch'));
+    expect($('queueList').querySelector('.queue-chip[data-id="a"]')).toBe(chip);
+
+    // dragend：挂起的渲染必须补上，否则拖拽期间累积的变更永远不显示
+    chip.dispatchEvent(new Event('dragend', { bubbles: true }));
+    expect($('queueList').querySelector('.queue-chip[data-id="a"]')).not.toBe(chip);
+  });
+
+  test('非拖拽状态下 store 变更照常实时重绘', async () => {
+    await loadPanel({ items: [item('a', '第一条')] });
+    const chip = $('queueList').querySelector('.queue-chip[data-id="a"]');
+
+    h.listeners.forEach((fn) => fn('dispatch'));
+
+    expect($('queueList').querySelector('.queue-chip[data-id="a"]')).not.toBe(chip);
+  });
+});
