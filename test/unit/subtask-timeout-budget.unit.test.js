@@ -52,8 +52,21 @@ describe('A 子任务超时预算：取消硬封顶且不透支父预算', () =>
     const four = computeSubtaskLoopTimeoutMs(2 * HOUR, 2 * HOUR, 4);
     expect(four).toBeLessThan(one);
     // 同刻快照下 N 份预算之和不得超过父可用份额：否则首波吃干父预算，
-    // 本轮结果拿不到综合答复（旧 15min 硬顶下几乎不会发生）
+    // 本轮结果拿不到综合答复（旧 15min 硬顶下几乎不会发生）。
+    // 注意该不变量仅在 60s 下限未接管时成立，大 N 的例外见下一条。
     expect(four * 4).toBeLessThanOrEqual(one);
+  });
+
+  test('pendingCount 极大时 60s 下限接管：总和可超父剩余（设计取舍，非 bug）', () => {
+    // N≥116 时 perChild < 60000，SUBTASK_TIMEOUT_MIN_BUDGET 下限接管，总和突破上一条
+    // 的不变量——实现刻意「宁超不饿死」（防刚起步即被杀）。钉住行为，防止被误判为
+    // 越权 bug，也防止有人在不动注释口径的情况下悄然加码下限。
+    expect(computeSubtaskLoopTimeoutMs(2 * HOUR, 2 * HOUR, 200)).toBe(60000);
+  });
+
+  test('父剩余为零/为负（父已超时）：预算归零，不得凭 60s 下限起死回生', () => {
+    expect(computeSubtaskLoopTimeoutMs(0, 2 * HOUR, 1)).toBe(0);
+    expect(computeSubtaskLoopTimeoutMs(-1, 2 * HOUR, 1)).toBe(0);
   });
 
   test('H1 下限不越权：父只剩 5s 时不能给子任务 60s 预算', () => {
@@ -102,8 +115,11 @@ describe('A 子任务超时预算：取消硬封顶且不透支父预算', () =>
   });
 
   test('接线：pendingSubtaskCount 按策略取值（并发池按向上取整的波次数）', () => {
-    // 用 new RegExp 而非字面量：模式里带引号与 === 时字面量解析歧义
-    expect(new RegExp("const pendingSubtaskCount = strategy === 'parallel'[\\s\\S]*Math\\.ceil").test(REACT_LOOP_SRC)).toBe(true);
+    // 间隔有界（实际距离约 50 字符，200 留余量）：无界 [\s\S]* 会越过本处三元、
+    // 命中文件更后方任何无关 Math.ceil，导致删掉波次计算守卫仍绿
+    expect(REACT_LOOP_SRC).toMatch(
+      /const pendingSubtaskCount = strategy === 'parallel'[\s\S]{0,200}Math\.ceil/
+    );
     // 顺序/依赖用「含本子在内的剩余个数」，后启动的子任务不能再按满额算
     expect(REACT_LOOP_SRC).toMatch(/sortedSubtasks\.length - subtaskIndex/);
   });
@@ -114,9 +130,8 @@ describe('A 子任务超时预算：取消硬封顶且不透支父预算', () =>
 describe('D 超时文案：实际耗时 + 预算 + 澄清与确认双豁免', () => {
   test('formatDurationMs：整分钟不带小数，非整分钟保留一位小数', () => {
     expect(formatDurationMs(900000)).toBe('15min');
-    expect(formatDurationMs(7200000)).toBe('120min');
     expect(formatDurationMs(90000)).toBe('1.5min');
-    expect(formatDurationMs(2 * HOUR)).toBe('120min');
+    expect(formatDurationMs(2 * HOUR)).toBe('120min'); // 2*HOUR 即 7200000，不再重复写字面量断言
   });
 
   test('formatDurationMs：不足一分钟按秒显示，亚秒不得谎报为 0s', () => {
@@ -147,8 +162,10 @@ describe('D 超时文案：实际耗时 + 预算 + 澄清与确认双豁免', ()
     expect(maxMatch).not.toBeNull();
     const maxMinutes = Number(maxMatch[1]);
     expect(maxMinutes).toBeGreaterThan(15); // 硬封顶放开后上限必须真的高于旧 15min
-    // 输入框同行单位标签必须是分钟
-    const unitLabel = optionsSrc.slice(inputMatch.index, inputMatch.index + 400);
+    // 输入框同行单位标签必须是分钟。窗口 400 只为覆盖「input 起始 → 同块单位标签」
+    // 的实际距离（当前约 160 字符）；结构大改时按块边界（下一个 <input）重写，勿调大窗口
+    const UNIT_LABEL_WINDOW = 400;
+    const unitLabel = optionsSrc.slice(inputMatch.index, inputMatch.index + UNIT_LABEL_WINDOW);
     expect(unitLabel).toMatch(/unitMinute/);
     // 满额配置读出来必须是「Nmin」形态（与用户输入的那个 N 同单位）
     expect(formatDurationMs(maxMinutes * MIN)).toBe(`${maxMinutes}min`);
@@ -184,14 +201,23 @@ describe('C 子任务进行中进度：摘要回灌与防重放边界', () => {
     ...over,
   });
 
-  test('recordSubtaskPartialProgress：把成功产出节点写进进度 Map 的 partialSummary', () => {
+  test('recordSubtaskPartialProgress：把成功产出节点写进进度 Map 的 partialSummary（生产字段 observation）', () => {
     const progress = new Map();
-    recordSubtaskPartialProgress(progress, 's1', [node({ result: 'created package.json' })], { subtaskName: '初始化' });
+    // 生产 tool_exec 节点的产出正文写 observation（读数口径 observation 优先、result 兜底），
+    // fixture 必须照抄生产形态；此前全用 result 曾造成主路径回归假绿灯
+    recordSubtaskPartialProgress(progress, 's1', [node({ observation: 'created package.json' })], { subtaskName: '初始化' });
     const rec = progress.get('s1');
     expect(rec).toBeTruthy();
     expect(rec.success).toBe(false);
     expect(rec.subtaskName).toBe('初始化');
     expect(rec.partialSummary).toContain('created package.json');
+  });
+
+  test('recordSubtaskPartialProgress：result 仅为兜底路径契约（observation 缺失时仍可读）', () => {
+    // 该兜底分支是历史兼容层：清理它属于显式契约变更，本用例变红即为提醒
+    const progress = new Map();
+    recordSubtaskPartialProgress(progress, 's1', [node({ observation: null, result: 'legacy output' })]);
+    expect(progress.get('s1').partialSummary).toContain('legacy output');
   });
 
   test('recordSubtaskPartialProgress：无有效产出时不写入空记录（避免污染进度）', () => {
@@ -223,10 +249,8 @@ describe('C 子任务进行中进度：摘要回灌与防重放边界', () => {
     expect(buildSubtaskResumeContext(undefined)).toBe('');
   });
 
-  // 注：本测试原为三条源码正则，其中两条命中的是函数定义行（删空调用点仍绿）。
-  // 写入与注入的接线已改为行为 seam，覆盖在 subtask-progress-wiring.unit.test.js；
-  // 此处只保留真正有约束力的一条（跳过判定必须走纯函数）。
-  test('接线：防重放跳过判定走 shouldSkipSubtaskReplay 纯函数', () => {
-    expect(REACT_LOOP_SRC).toMatch(/if \(shouldSkipSubtaskReplay\(recorded\)\)/);
-  });
+  // 注：本 describe 原为三条源码正则，其中两条命中的是函数定义行（删空调用点仍绿），
+  // 已改为行为 seam 覆盖在 subtask-progress-wiring.unit.test.js；第三条
+  // `if (shouldSkipSubtaskReplay(recorded))` 接线守卫的单一来源收敛到
+  // subtask-checkpoint-replay.unit.test.js（连同 progress?.get 与 skippedReplay 一起锁）。
 });

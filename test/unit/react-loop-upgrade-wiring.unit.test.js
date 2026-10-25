@@ -447,12 +447,10 @@ describe('P1-8 #7 修复回归：子任务超时受父任务实时剩余时间�
   });
 
   test('react-loop 接线：loopTimeout 纳入 subtaskLoopTimeoutMs，父传实时 getter', () => {
-    expect(REACT_LOOP_SRC).toMatch(/Math\.min\(reactConfig\.loopTimeout, apiParams\.subtaskLoopTimeoutMs \|\| reactConfig\.loopTimeout\)/);
+    // 预算接线三条正则（Math.min(...) 与 computeSubtaskLoopTimeoutMs 两处调用点）的单一来源
+    // 在 subtask-timeout-budget.unit.test.js，此处不重复，只锁本文件独有的断言
     expect(REACT_LOOP_SRC).toMatch(/getRemainingTimeMs: \(\) => getRemainingTime\(\)/);
     expect(REACT_LOOP_SRC).toMatch(/\{ \.\.\.apiParams, subtaskLoopTimeoutMs \}/);
-    // 两处预算计算都必须把设置页上限一并传入，否则配置仍对子任务无效
-    expect(REACT_LOOP_SRC).toMatch(/computeSubtaskLoopTimeoutMs\(parentRemainMs, config\?\.reactConfig\?\.loopTimeout, pendingSubtaskCount\)/);
-    expect(REACT_LOOP_SRC).toMatch(/computeSubtaskLoopTimeoutMs\(rerunRemainMs, config\?\.reactConfig\?\.loopTimeout, 1\)/);
     // 旧的静态快照字段已移除（改为 getter）
     expect(REACT_LOOP_SRC).not.toMatch(/remainingTimeMs: getRemainingTime\(\)/);
   });
