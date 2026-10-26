@@ -1288,6 +1288,16 @@ export async function sendMessage(opts = {}) {
       state.activeAgentMcpExcludedServerIds = currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null;
     }
 
+    // 本次请求要下发的助手配置：提示词、工具白名单、技能、MCP 排除列表必须同源。
+    // 跨会话派发时面板 state 上是另一个会话的助手，只读 state 就会出现
+    // “提示词是目标助手的、工具集是面板助手的”这种半截错配。
+    const agentForSend = {
+      agentId: isActive ? state.activeAgentId : (sess.agentId || null),
+      agentToolIds,
+      agentSkillIds,
+      agentMcpExcludedServerIds: currentAgent ? (currentAgent.mcpExcludedServerIds ?? null) : null,
+    };
+
     logger.debug('[SidePanel] sendmessagedebuginfo:');
     logger.debug('  - agent:', currentAgent ? currentAgent.name : 'default assistant');
     logger.debug('  - agentToolIds:', agentToolIds);
@@ -1369,7 +1379,7 @@ export async function sendMessage(opts = {}) {
     let streamingMsgId = null;
 
     try {
-      const result = await callApi(messages, model, useToolsForSend, apiParams, { forcedMcpServerIds, sessionId: mySessionId });
+      const result = await callApi(messages, model, useToolsForSend, apiParams, { forcedMcpServerIds, sessionId: mySessionId, agent: agentForSend });
       content = result.content;
       executionLog = result.executionLog || [];
       reflectionScore = result.reflectionScore;
@@ -3460,7 +3470,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // options.userGuidance: 恢复时用户追加的任务描述（可选）
   // options.loadingId: 外部传入的 loading 消息 ID（resumeTask 复用 callApi 时使用）
   // options.forcedMcpServerIds: 本次请求强制下发的 MCP 服务 ID 列表（/ 选择器选中，绕过关闭/排除列表）
-  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null, sessionId: explicitSessionId = null } = options;
+  const { resumeFromCheckpoint = false, userGuidance = '', loadingId: externalLoadingId = null, forcedMcpServerIds = null, sessionId: explicitSessionId = null, agent: agentOverride = null } = options;
+
+  // 助手配置与 sessionId 同理：调用方给了就用调用方的。跨会话派发时 state.activeAgent*
+  // 还是面板当前会话的助手，直接下发会串味（提示词按目标助手取、工具集按面板助手发）。
+  const sentAgentId = agentOverride ? agentOverride.agentId : state.activeAgentId;
+  const sentAgentToolIds = agentOverride ? agentOverride.agentToolIds : state.activeAgentToolIds;
+  const sentAgentSkillIds = agentOverride ? agentOverride.agentSkillIds : state.activeAgentSkillIds;
+  const sentAgentMcpExcludedServerIds = agentOverride ? agentOverride.agentMcpExcludedServerIds : state.activeAgentMcpExcludedServerIds;
 
   const reactConfig = await getReactConfig();
   const timeoutMs = reactConfig.loopTimeout;
@@ -4257,12 +4274,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         useTools: useTools,
         tabId: state.currentTabId,
         apiParams: apiParams,
-        agentId: state.activeAgentId,
-        agentToolIds: state.activeAgentToolIds,
-        agentSkillIds: state.activeAgentSkillIds,
+        agentId: sentAgentId,
+        agentToolIds: sentAgentToolIds,
+        agentSkillIds: sentAgentSkillIds,
         // MCP 服务级下发控制：forced 为 / 选择器强制指定，excluded 为助手编辑器排除列表
         forcedMcpServerIds: Array.isArray(forcedMcpServerIds) && forcedMcpServerIds.length > 0 ? forcedMcpServerIds : null,
-        agentMcpExcludedServerIds: state.activeAgentMcpExcludedServerIds ?? null,
+        agentMcpExcludedServerIds: sentAgentMcpExcludedServerIds ?? null,
         callId: myCallId,
         // 图片识别独立配置（按本次实际载荷探测，而非 state：state 可能已被消费或被用户新挂）
         imageApiBase: state.enableImageInput && hasImagesInPayload ? (state.imageApiBase || '') : '',

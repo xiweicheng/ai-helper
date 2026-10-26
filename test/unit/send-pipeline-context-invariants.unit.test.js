@@ -111,6 +111,32 @@ describe('W2 · 回填/回滚后提示条按 state 重绘', () => {
   });
 });
 
+describe('x2 · 跨会话派发：助手配置与会话身份同源', () => {
+  test('CALL_API 的 agentId/工具/技能/排除列表不再直接读面板 state', () => {
+    const src = read('src/side_panel/chat-manager.js');
+    const start = src.indexOf('export async function callApi');
+    const body = src.slice(start);
+    expect(body).not.toContain('agentId: state.activeAgentId,');
+    expect(body).not.toContain('agentToolIds: state.activeAgentToolIds,');
+    expect(body).not.toContain('agentSkillIds: state.activeAgentSkillIds,');
+    expect(body).toContain('agentId: sentAgentId,');
+    expect(body).toContain('agentToolIds: sentAgentToolIds,');
+    expect(body).toContain('agentMcpExcludedServerIds: sentAgentMcpExcludedServerIds ?? null,');
+  });
+
+  test('sendMessage 把目标会话的助手配置随请求一起传下去', () => {
+    // 提示词已经按目标会话的 agentId 取，工具/技能/排除列表必须同源，
+    // 否则跨会话派发会出现“提示词是 A 助手的、工具集是 B 助手的”半截错配
+    const src = read('src/side_panel/chat-manager.js');
+    const start = src.indexOf('export async function sendMessage');
+    const end = src.indexOf('export async function callApi', start);
+    const body = src.slice(start, end);
+    expect(body).toContain('const agentForSend = {');
+    expect(body).toContain('agentId: isActive ? state.activeAgentId : (sess.agentId || null),');
+    expect(body).toContain('agent: agentForSend }');
+  });
+});
+
 describe('S5 · 提示词直发不抹掉等待期间的新草稿', () => {
   test('入口记草稿快照，收尾只清"发送前就存在的那份"', () => {
     const body = promptByCodeBody();
