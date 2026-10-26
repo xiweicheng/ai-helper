@@ -121,6 +121,14 @@ describe('top layer 迁移（Popover API）', () => {
     expect(css).toMatch(/#aih-selection-toolbar\s*\{[^}]*background:\s*var\(--tb-panel\)/);
     expect(css).toMatch(/#aih-selection-toolbar\s*\{[^}]*padding:\s*4px 6px/);
   });
+
+  test('四个 popover 浮层基础规则均置 margin:0（抵消 UA margin:auto 居中，否则无视 left/top）', () => {
+    injectStyles();
+    const css = document.getElementById('aih-selection-toolbar-styles').textContent;
+    for (const sel of ['#aih-selection-toolbar', '.aih-overflow-dropdown', '#aih-selection-result', '.aih-token-popup']) {
+      expect(css).toMatch(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*margin:\\s*0'));
+    }
+  });
 });
 
 describe('elementFromPoint 遮挡探测', () => {

@@ -71,6 +71,9 @@ const TOOLBAR_RULES = `
     #aih-selection-toolbar {
       position: fixed;
       z-index: 2147483647;
+      /* popover 进入 top layer 后 UA 默认 margin:auto 会把浮层居中、
+         无视我们内联的 left/top（导致工具栏跑到选区右下方），必须置 0 */
+      margin: 0;
       overflow: visible;
       display: none;
       align-items: center;
@@ -168,6 +171,7 @@ const TOOLBAR_RULES = `
     .aih-overflow-dropdown {
       position: fixed;
       z-index: 2147483646;
+      margin: 0;
       overflow: visible;
       background: var(--tb-panel);
       backdrop-filter: blur(16px);
@@ -286,6 +290,7 @@ const TOOLBAR_RULES = `
     #aih-selection-result {
       position: fixed;
       z-index: 2147483647;
+      margin: 0;
       display: none;
       flex-direction: column;
       width: 420px;
@@ -536,6 +541,7 @@ const TOOLBAR_RULES = `
     .aih-token-popup {
       position: fixed;
       z-index: 2147483647;
+      margin: 0;
       overflow: visible;
       background: var(--bg-elevated);
       border-radius: 12px;
