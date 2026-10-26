@@ -53,10 +53,54 @@ const EMOJI_FONT_NAME = /Mac|iPhone|iPad|iPod/i.test(
 
 /** emoji 字符序列：默认 emoji 呈现字符，或带变体选择符（FE0F）的图形字符；含 ZWJ 组合与肤色修饰符 */
 const EMOJI_SEQUENCE_REGEX = new RegExp(
-  '(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)'
+  // 国旗由两个「区域指示符」组成，必须整体匹配，拆开会丢失连字（显示成两个字母）
+  '(?:\\p{Regional_Indicator}{2})'
+  + '|(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F)'
   + '(?:[\\u{1F3FB}-\\u{1F3FF}]|\\u200D(?:\\p{Emoji_Presentation}|\\p{Extended_Pictographic}\\uFE0F))*',
   'gu'
 );
+
+// XML 1.0 不允许的控制字符（制表符、换行、回车合法）。文本里混进这些字符时，
+// word/document.xml 会变成非良构 XML，微软 Word 报「文件内容有问题」直接拒开。
+const XML_ILLEGAL_CHARS_REGEX = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+// 孤立代理项（半个 surrogate pair）无法编码成合法 UTF-8，同样破坏 XML
+const LONE_SURROGATE_REGEX = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * 清洗导出文本：剔除 XML 1.0 非法字符与孤立代理项
+ * @param {string} text - 原始文本（可能来自模型输出、页面上下文、粘贴内容）
+ * @returns {string} 可安全写入 w:t 的文本
+ */
+export function sanitizeDocxText(text) {
+  if (text === undefined || text === null || text === '') return text;
+  return String(text)
+    .replace(XML_ILLEGAL_CHARS_REGEX, '')
+    .replace(LONE_SURROGATE_REGEX, '\uFFFD');
+}
+
+// docx 9.x 的 DocProperties 每个实例自带 id 生成器（都从 1 开始），同一文档里
+// 多张图片会写出重复的 wp:docPr id；Word 要求该 id 在文档内唯一，重复会报
+// 「文件内容有问题」。通过 altText.id 显式传入自增 id 兜住。
+let docxImageIdSeq = 0;
+
+/** 取下一个图片 docPr id（同一文档内唯一） */
+export function nextDocxImageId() {
+  docxImageIdSeq += 1;
+  return docxImageIdSeq;
+}
+
+// docx 只为准许的位图格式声明 content type。webp/avif 等格式的数据会被写成
+// word/media/xxx.webp 却没有对应声明，微软 Word 判定包损坏直接拒开。
+const DOCX_EMBEDDABLE_IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp']);
+
+/**
+ * 判断图片格式能否安全嵌入 docx
+ * @param {string} type - 图片类型（如 png/jpeg/webp）
+ * @returns {boolean} 可在 Word 中正常打开
+ */
+export function isDocxEmbeddableImageType(type) {
+  return DOCX_EMBEDDABLE_IMAGE_TYPES.has(String(type || '').toLowerCase());
+}
 
 /**
  * 将纯文本转换为 TextRun 数组；emoji 段单独成 run 并指定 emoji 字体，
@@ -68,17 +112,22 @@ const EMOJI_SEQUENCE_REGEX = new RegExp(
 export function createTextRuns(text, options = {}) {
   if (!text) return [];
   const runs = [];
-  let lastIndex = 0;
-  for (const match of text.matchAll(EMOJI_SEQUENCE_REGEX)) {
-    if (match.index > lastIndex) {
-      runs.push(new TextRun({ ...options, text: text.slice(lastIndex, match.index) }));
+  // 段内换行必须写成 w:br；直接塞进 w:t 的换行符会被 Word 当空白折叠掉（多行并成一行）
+  const lines = String(text).split(/\r?\n/);
+  lines.forEach((line, lineIdx) => {
+    if (lineIdx > 0) runs.push(new TextRun({ ...options, break: 1 }));
+    let lastIndex = 0;
+    for (const match of line.matchAll(EMOJI_SEQUENCE_REGEX)) {
+      if (match.index > lastIndex) {
+        runs.push(new TextRun({ ...options, text: line.slice(lastIndex, match.index) }));
+      }
+      runs.push(new TextRun({ ...options, text: match[0], font: { name: EMOJI_FONT_NAME } }));
+      lastIndex = match.index + match[0].length;
     }
-    runs.push(new TextRun({ ...options, text: match[0], font: { name: EMOJI_FONT_NAME } }));
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    runs.push(new TextRun({ ...options, text: text.slice(lastIndex) }));
-  }
+    if (lastIndex < line.length) {
+      runs.push(new TextRun({ ...options, text: line.slice(lastIndex) }));
+    }
+  });
   return runs;
 }
 
@@ -140,7 +189,7 @@ export function parseInlineMarkdown(text) {
         try {
           const [header, base64] = imgUrl.split(',');
           const mimeMatch = header.match(/data:(image\/(\w+))/);
-          if (mimeMatch && base64) {
+          if (mimeMatch && base64 && isDocxEmbeddableImageType(mimeMatch[2])) {
             // 解码 base64
             const binary = atob(base64);
             const bytes = new Uint8Array(binary.length);
@@ -165,8 +214,13 @@ export function parseInlineMarkdown(text) {
             result.push(new ImageRun({
               data: bytes,
               transformation: { width: wPx, height: hPx },
-              type: imgType
+              type: imgType,
+              // id 必须全文档唯一，否则 Word 判定文件损坏
+              altText: { id: nextDocxImageId(), name: match[9] || 'image' }
             }));
+          } else {
+            // 非 png/jpeg/gif/bmp：嵌进去会让 Word 报文件损坏，退化为文字占位
+            result.push(new TextRun({ text: t('chatExport.imagePlaceholder', { name: match[9] || 'image' }), italics: true, color: '999999' }));
           }
         } catch (e) {
           logger.warn('[ChatExport] ImageRun create failed:', e.message);
@@ -237,7 +291,8 @@ export async function parseMarkdownToDocxChildren(markdown) {
   }
 
   const children = [];
-  let content = markdown;
+  // 先剔除 XML 非法字符，避免整份 document.xml 变成非良构 XML
+  let content = sanitizeDocxText(markdown);
 
   // Step 1: 提取所有代码块，用占位符替换
   const codeBlocks = [];
@@ -444,6 +499,8 @@ function createDocxTable(rows) {
   if (rows.length === 0) return new Paragraph({ children: [] });
 
   const colCount = Math.max(...rows.map(r => r.length));
+  // 百分比保留两位小数：Word 自身只写短小数，17 位浮点没有必要也不够稳妥
+  const cellWidthPct = Math.round((100 / colCount) * 100) / 100;
   const tableRows = rows.map((row, rowIdx) => {
     const cells = [];
     for (let i = 0; i < colCount; i++) {
@@ -454,7 +511,7 @@ function createDocxTable(rows) {
           spacing: { before: 40, after: 40 }
         })],
         shading: rowIdx === 0 ? { fill: 'F2F2F2' } : undefined,
-        width: { size: 100 / colCount, type: WidthType.PERCENTAGE }
+        width: { size: cellWidthPct, type: WidthType.PERCENTAGE }
       }));
     }
     return new TableRow({ children: cells });

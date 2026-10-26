@@ -3441,14 +3441,15 @@ async function exportWorkspaceDocx(fileName) {
 
 async function parseMarkdownToDocxChildrenLocal(markdown) {
   const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip } = await import('docx');
-  const { createTextRuns } = await import('./chat-export.js');
+  const { createTextRuns, sanitizeDocxText, nextDocxImageId, isDocxEmbeddableImageType } = await import('./chat-export.js');
   
   if (!markdown || !markdown.trim()) {
     return [new Paragraph({ children: [new TextRun({ text: '' })] })];
   }
 
   const children = [];
-  let content = markdown;
+  // 先剔除 XML 非法字符，避免整份 document.xml 变成非良构 XML
+  let content = sanitizeDocxText(markdown);
 
   // 提取代码块
   const codeBlocks = [];
@@ -3499,11 +3500,13 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
           try {
             const [header, base64] = imgUrl.split(',');
             const mimeMatch = header.match(/data:(image\/(\w+))/);
-            if (mimeMatch && base64) {
+            if (mimeMatch && base64 && isDocxEmbeddableImageType(mimeMatch[2])) {
               const binary = atob(base64);
               const bytes = new Uint8Array(binary.length);
               for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-              result.push(new ImageRun({ data: bytes, transformation: { width: 400, height: 300 }, type: mimeMatch[2] }));
+              result.push(new ImageRun({ data: bytes, transformation: { width: 400, height: 300 }, type: mimeMatch[2], altText: { id: nextDocxImageId(), name: match[9] || 'image' } }));
+            } else {
+              result.push(new TextRun({ text: '[Image: ' + (match[9] || 'image') + ']', italics: true, color: '999999' }));
             }
           } catch { result.push(new TextRun({ text: '[Image]', italics: true, color: '999999' })); }
         } else {
@@ -3549,7 +3552,7 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
         cells.push(new TableCell({
           children: [new Paragraph({ children: parseInline(cellText), spacing: { before: 40, after: 40 } })],
           shading: rowIdx === 0 ? { fill: 'F2F2F2' } : undefined,
-          width: { size: 100 / colCount, type: WidthType.PERCENTAGE }
+          width: { size: Math.round((100 / colCount) * 100) / 100, type: WidthType.PERCENTAGE }
         }));
       }
       return new TableRow({ children: cells });
