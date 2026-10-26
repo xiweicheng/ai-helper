@@ -71,9 +71,11 @@ const TOOLBAR_RULES = `
     #aih-selection-toolbar {
       position: fixed;
       z-index: 2147483647;
-      /* popover 进入 top layer 后 UA 默认 margin:auto 会把浮层居中、
-         无视我们内联的 left/top（导致工具栏跑到选区右下方），必须置 0 */
+      /* popover 进入 top layer 后 UA 默认 margin:auto + inset:0 会把浮层居中、
+         无视我们内联的 left/top（导致工具栏跑到选区右下方）；margin:0 + inset:auto
+         彻底交还定位控制权，不依赖具体 Chrome 版本的 popover 居中实现 */
       margin: 0;
+      inset: auto;
       overflow: visible;
       display: none;
       align-items: center;
@@ -172,6 +174,7 @@ const TOOLBAR_RULES = `
       position: fixed;
       z-index: 2147483646;
       margin: 0;
+      inset: auto;
       overflow: visible;
       background: var(--tb-panel);
       backdrop-filter: blur(16px);
@@ -291,6 +294,7 @@ const TOOLBAR_RULES = `
       position: fixed;
       z-index: 2147483647;
       margin: 0;
+      inset: auto;
       display: none;
       flex-direction: column;
       width: 420px;
@@ -542,6 +546,7 @@ const TOOLBAR_RULES = `
       position: fixed;
       z-index: 2147483647;
       margin: 0;
+      inset: auto;
       overflow: visible;
       background: var(--bg-elevated);
       border-radius: 12px;
