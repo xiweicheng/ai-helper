@@ -995,15 +995,42 @@ export function startServer() {
           logSecurity('pick_directory_remote_blocked', { remote: remoteIp, extId });
           return jsonResponse(res, 200, { success: false, path: null, available: false, error: 'remote-source' });
         }
-        try {
-          const result = await pickDirectoryNative(typeof body.title === 'string' ? body.title : '');
-          if (result.success && result.path) {
-            logSystem('directory_picked', { path: result.path, extId });
+        // 这是全服务里唯一可能耗时数分钟的端点（等用户选目录）：客户端很可能在此期间
+        // 关闭侧边栏/断开。向已销毁的 res 写入会触发流错误，因此统一走安全响应。
+        const respond = (payload) => {
+          if (res.writableEnded || res.destroyed) return;
+          try {
+            jsonResponse(res, 200, payload);
+          } catch (err) {
+            try { logError('config', 'pick_directory_respond_failed', { error: err.message }); } catch { /* 日志失败不影响进程 */ }
           }
-          return jsonResponse(res, 200, result);
+        };
+        try {
+          const title = typeof body.title === 'string' ? body.title.slice(0, 120) : '';
+          // pickDirectoryNative 内部已做多后端兜底、超时强杀与异常吸收，此处只会拿到结果对象
+          const result = await pickDirectoryNative(title);
+          if (result.success && result.path) {
+            logSystem('directory_picked', { path: result.path, backend: result.backend || '', extId });
+          } else if (!result.success && result.error !== 'busy') {
+            // busy 是并发保护的正常分支（已有窗口在等），不算失败
+            // 其余记录各后端真实失败原因（无桌面会话 / 被安全策略拦截 / 超时等），
+            // 用户端只看得到摘要，完整 attempts 落到日志里备查
+            logError('config', 'pick_directory_failed', {
+              error: result.error,
+              backend: result.backend || '',
+              exitCode: result.exitCode,
+              available: result.available,
+              attempts: Array.isArray(result.attempts) ? result.attempts : [],
+              extId,
+            });
+          }
+          respond(result);
+          return;
         } catch (err) {
-          logError('config', 'pick_directory_error', { error: err.message });
-          return jsonResponse(res, 500, { success: false, path: null, available: true, error: err.message });
+          // 兜底：即便 picker 自身出意外，也只返回结构化错误，不影响 agent 其它接口
+          try { logError('config', 'pick_directory_error', { error: err.message }); } catch { /* 日志失败不影响进程 */ }
+          respond({ success: false, path: null, available: true, error: err.message });
+          return;
         }
       }
 

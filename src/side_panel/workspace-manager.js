@@ -315,12 +315,47 @@ export async function removeAllowedPath(path) {
   return agentRequest('/api/config/allowed-paths/remove', { path });
 }
 
+// 目录选择要等用户操作：agent 端最多等 120s，扩展端留出更长的窗口，
+// 避免 agent 端超时返回时扩展端早已放弃；两者都配超时，按钮不会永远停在“等待选择…”
+const PICK_DIRECTORY_CLIENT_TIMEOUT_MS = 150 * 1000;
+
 /**
  * 弹出 Agent 端系统原生目录选择框（仅本机代理支持，远端/无桌面环境返回 available:false）
- * @returns {Promise<{success: boolean, path?: string|null, available?: boolean, error?: string}>}
+ * 显式捕获 HTTP 状态：旧版代理端无此端点会返回 404，需区分“版本过旧”与“弹窗失败”
+ * @returns {Promise<{success: boolean, path?: string|null, available?: boolean, outdated?: boolean,
+ *   error?: string, backend?: string, attempts?: Array<object>, diagnostics?: string}>}
  */
 export async function pickDirectory() {
-  return agentRequest('/api/config/pick-directory', {});
+  const config = await getAgentConfig();
+  if (!config) return { success: false, available: false, error: t('workspaceMgr.agentNotPairedDetail') };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PICK_DIRECTORY_CLIENT_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${config.url}/api/config/pick-directory`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.token}`
+      },
+      body: JSON.stringify({}),
+      signal: controller.signal
+    });
+    if (resp.status === 404) {
+      return { success: false, path: null, available: false, outdated: true };
+    }
+    const data = await resp.json();
+    return data && typeof data === 'object'
+      ? data
+      : { success: false, path: null, available: true, error: 'bad-response' };
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      // agent 端整体失去响应（例如弹窗进程卡死且兜底未生效）：交给 UI 提示后重试
+      return { success: false, path: null, available: true, error: 'client-timeout' };
+    }
+    return { success: false, path: null, error: t('workspaceMgr.requestFailed', { message: err.message }) };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
