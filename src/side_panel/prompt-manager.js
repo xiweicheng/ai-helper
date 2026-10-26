@@ -634,6 +634,10 @@ export async function sendPromptByCode(code) {
     return;
   }
 
+  // 输入框草稿：收尾只清“发送前就存在的那份”。提示词直发的正文来自 prompt.content，
+  // 与输入框无关；等压缩/检索的这段时间用户可能已经为下一条敲好草稿，不能抹掉。
+  const draftAtEntry = document.getElementById('userInput')?.value || '';
+
   // 上下文快照：必须在第一个 await 之前取。
   // 后面要等自动压缩、知识库检索、图片快照写入——等完再读 state，
   // 就会把用户这段时间新挂的上下文当成"本条消息的"一起发走并消费掉。
@@ -819,10 +823,12 @@ export async function sendPromptByCode(code) {
   // 添加到输入历史
   addToInputHistory(prompt.content);
 
-  // 清空输入框并保持焦点
+  // 清空输入框并保持焦点（只清发送前就存在的那份：等待期间用户新敲的草稿不能抹掉）
   const userInput = document.getElementById('userInput');
-  userInput.value = '';
-  userInput.style.height = 'auto';
+  if (userInput.value === draftAtEntry) {
+    userInput.value = '';
+    userInput.style.height = 'auto';
+  }
 
   // 设置生成状态（按钮切换由 generating-state-changed 事件处理）
   state.isGenerating = true;

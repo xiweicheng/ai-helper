@@ -156,6 +156,23 @@ describe('编辑并重发：不得静默清空用户正在为下一条挂的上�
   });
 });
 
+describe('编辑并重发：引用与选中分属两条消息时不互相误伤', () => {
+  test('编辑带引用的旧消息：用户为下一条划的词必须留下', () => {
+    // 旧实现把 quoted/selected 一起清零，match 分支只回填本条那一类，另一类被静默丢弃
+    state.quotedContextText = '';
+    state.selectedContextText = '用户为下一条划的词';
+
+    const messageDiv = document.createElement('div');
+    messageDiv.dataset.textContent_ = '[引用内容]\n旧消息引用的原文\n\n[用户问题]\n旧问题';
+    document.getElementById('messageList').appendChild(messageDiv);
+
+    chatManager.editAndResendMessage(messageDiv);
+
+    expect(state.quotedContextText).toBe('旧消息引用的原文');
+    expect(state.selectedContextText).toBe('用户为下一条划的词');
+  });
+});
+
 describe('引用/选中同时挂载：指示器按“还剩什么”重绘', () => {
   test('引用被本条消费后，指示器切到仍然挂着的选中内容', () => {
     state.quotedContextText = '';

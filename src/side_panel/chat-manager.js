@@ -1006,6 +1006,9 @@ export async function sendMessage(opts = {}) {
   const history = isActive ? state.messageHistory : (sess.messageHistory || []);
   // 输入区上下文：激活会话读 state；非激活直接用调用方给的快照，不碰 state
   const inputCtx = opts.context || (isActive ? readInputContextSnapshot() : EMPTY_INPUT_CONTEXT);
+  // 快照来源决定能不能写 state：opts.context 是队列载荷（数据包，从没属于过输入区），
+  // 只有取自输入区的快照才谈得上“本条消费了它”，否则值相等也不能拿它去清 state
+  const ctxFromInput = !opts.context;
   // 会话级配置：非激活时取目标会话自己的取值，避免误用面板会话的模型/工具/采样参数
   const currentModelForSend = isActive ? state.currentModel : (sess.model || state.currentModel);
   const useToolsForSend = isActive ? state.useTools : (sess.useTools !== undefined ? sess.useTools : state.useTools);
@@ -1057,7 +1060,7 @@ export async function sendMessage(opts = {}) {
     if (isActive) addContextBubble('quoted', quotedText, false);
     contextBubbles.push({ type: 'quoted', text: quotedText });
     // 批次消费：只清"本条快照携带的那份"（发送期间用户新挂的引用属于下一条消息）
-    if (isActive && state.quotedContextText === inputCtx.quotedContextText) state.quotedContextText = '';
+    if (isActive && ctxFromInput && state.quotedContextText === inputCtx.quotedContextText) state.quotedContextText = '';
   } else if (hasSelectedContext) {
     const selectedText = inputCtx.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(selectedText);
@@ -1066,7 +1069,7 @@ export async function sendMessage(opts = {}) {
     if (isActive) addContextBubble('selected', selectedText, false);
     contextBubbles.push({ type: 'selected', text: selectedText });
     // 批次消费：只清"本条快照携带的那份"（发送期间用户新挂的选中内容属于下一条消息）
-    if (isActive && state.selectedContextText === inputCtx.selectedContextText) state.selectedContextText = '';
+    if (isActive && ctxFromInput && state.selectedContextText === inputCtx.selectedContextText) state.selectedContextText = '';
   }
 
   // 注入技能上下文（如果已选中技能，支持多技能）
@@ -4477,11 +4480,14 @@ export function editAndResendMessage(messageDiv) {
           displayText = contextText;
         }
         
+        // 只整条替换“本条消息带走的那一类”：另一类属于用户为下一条挂的，必须原样还回去
         if (type === 'quoted') {
           state.quotedContextText = contextText;
+          state.selectedContextText = existingSelectedContext;
           selectionTextEl.textContent = t('chatMsg.quotedContextLabel', { text: displayText });
         } else {
           state.selectedContextText = contextText;
+          state.quotedContextText = existingQuotedContext;
           selectionTextEl.textContent = t('chatMsg.selectedContextLabel', { text: displayText });
         }
         indicator.classList.add('show');

@@ -244,7 +244,7 @@ import {
   compressAndAttachImage, openImagePreview, initImagePreviewOverlay,
   cancelStreamingTask, reconnectStreamingElement,
   _checkForAbandonedCheckpoint, setQuoteContext,
-  setMessageTimestampVisible
+  setMessageTimestampVisible, refreshSelectionIndicatorFromState
 } from './chat-manager.js';
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
@@ -4478,6 +4478,9 @@ function restoreInputContextIndicators(snapshot) {
   const snap = snapshot || {};
   if (snap.quotedContextText) setQuoteContext(snap.quotedContextText);
   if (snap.selectedPage) selectPage(snap.selectedPage);
+  // 只挂了划词选中（没有引用）时提示条也得回来：state 已还原，按 state 重绘即可。
+  // 入队失败回滚与 ✎ 回填都走这里，否则内容其实还在、界面却显示“什么都没有”。
+  if (!snap.quotedContextText && state.selectedContextText) refreshSelectionIndicatorFromState();
   renderSkillIndicator();
   renderMcpIndicator();
   renderKnowledgeIndicator();
