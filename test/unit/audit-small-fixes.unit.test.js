@@ -109,7 +109,8 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
   const REFerrERS = [
     ['chat-manager.js', CHAT_MANAGER, 12],
     ['chat-streaming.js', CHAT_STREAMING, 4],
-    ['workspace-panel.js', WORKSPACE_PANEL, 3],
+    // 4 处：createTextRuns、createDocxDocument（Document 工厂，含有序列表编号定义）、mermaid/图片等
+    ['workspace-panel.js', WORKSPACE_PANEL, 4],
   ];
 
   test('三个引用方都不再静态 import chat-export', () => {

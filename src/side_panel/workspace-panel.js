@@ -205,6 +205,9 @@ registerTranslations('zh', {
     browseBtn: '浏览…',
     browseUnavailable: '当前代理端环境不支持目录选择，请手动输入路径',
     browseFailedWithError: '目录选择失败: {error}',
+    browseAgentOutdated: '当前代理端版本过旧，不支持目录选择，请更新代理端后重试',
+    browseBusy: '已有一个目录选择窗口在等待，请先完成或关闭它',
+    browseTimeout: '目录选择窗口未响应（可能被系统安全策略拦截或窗口不可见），请手动输入路径',
     picking: '等待选择…',
     switchBtn: '切换',
     noAllowedPaths: '暂无允许的目录',
@@ -434,6 +437,9 @@ registerTranslations('en', {
     browseBtn: 'Browse…',
     browseUnavailable: 'The agent environment does not support directory selection. Please enter the path manually.',
     browseFailedWithError: 'Directory selection failed: {error}',
+    browseAgentOutdated: 'The agent version is outdated and does not support directory selection. Please update the agent and try again.',
+    browseBusy: 'A directory picker is already open. Please finish or close it first.',
+    browseTimeout: 'The directory picker did not respond (it may be blocked by security policy or not visible). Please enter the path manually.',
     picking: 'Waiting…',
     switchBtn: 'Switch',
     noAllowedPaths: 'No allowed directories',
@@ -3410,7 +3416,8 @@ async function renderMermaidBlocksToImagesLocal(markdownContent) {
 }
 
 async function exportWorkspaceDocx(fileName) {
-  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip } = await import('docx');
+  const { Packer } = await import('docx');
+  const { createDocxDocument } = await import('./chat-export.js');
   
   let markdownContent = getExportMarkdownContent();
   if (!markdownContent) {
@@ -3423,20 +3430,7 @@ async function exportWorkspaceDocx(fileName) {
 
   const children = await parseMarkdownToDocxChildrenLocal(markdownContent);
 
-  const doc = new Document({
-    styles: {
-      default: {
-        document: { run: { font: 'Calibri', size: 22 } },
-        heading1: { run: { size: 40, bold: true, color: '333333' }, paragraph: { spacing: { before: 320, after: 160 } } },
-        heading2: { run: { size: 30, bold: true, color: '333333' }, paragraph: { spacing: { before: 280, after: 120 } } },
-        heading3: { run: { size: 26, bold: true, color: '333333' }, paragraph: { spacing: { before: 240, after: 100 } } },
-      }
-    },
-    sections: [{
-      properties: { page: { margin: { top: convertInchesToTwip(1), right: convertInchesToTwip(1), bottom: convertInchesToTwip(1), left: convertInchesToTwip(1) } } },
-      children
-    }]
-  });
+  const doc = createDocxDocument(children);
 
   const blob = await Packer.toBlob(doc);
   const timestamp = new Date().getTime();
@@ -6111,16 +6105,27 @@ async function showSwitchWorkdirDialog() {
         browseBtn.disabled = true;
         browseBtn.textContent = t('workspace.picking');
         try {
-          const result = await pickDirectory();
+          const raw = await pickDirectory();
+          const result = raw && typeof raw === 'object' ? raw : {};
+          const errorText = typeof result.error === 'string' ? result.error : '';
           if (result.success && result.path) {
             manualInput.value = result.path;
             manualInput.focus();
           } else if (result.success) {
             // 用户取消选择：静默
-          } else if (result.available === false) {
+          } else if (result.outdated) {
+            showToast(t('workspace.browseAgentOutdated'), 'error');
+          } else if (errorText === 'busy') {
+            // 代理端已有选择窗口在等待：不重复拉起第二个弹窗
+            showToast(t('workspace.browseBusy'), 'info');
+          } else if (errorText === 'timeout' || errorText === 'client-timeout') {
+            // 进程起来了却没等到结果：多为被系统策略拦截或窗口不可见，必须提示而不是静默
+            showToast(t('workspace.browseTimeout'), 'info', 5000);
+          } else if (/^(no-dialog-tool|no-display|remote-source)/.test(errorText)) {
             showToast(t('workspace.browseUnavailable'), 'info');
           } else {
-            showToast(t('workspace.browseFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
+            // all-backends-failed / internal 等：把各后端的真实失败原因透出来，避免“不知道怎么回事”
+            showToast(t('workspace.browseFailedWithError', { error: errorText || t('workspace.unknownError') }), 'error', 8000);
           }
         } catch (err) {
           showToast(t('workspace.browseFailedWithError', { error: err.message || err }), 'error');

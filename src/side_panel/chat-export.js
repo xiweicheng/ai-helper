@@ -33,7 +33,7 @@ registerTranslations('en', {
 });
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
-  Table, TableRow, TableCell, AlignmentType, WidthType,
+  Table, TableRow, TableCell, AlignmentType, WidthType, LevelFormat,
   BorderStyle, ImageRun, ExternalHyperlink, convertInchesToTwip
 } from 'docx';
 
@@ -839,6 +839,77 @@ async function renderMermaidBlocksToImages(markdownContent) {
   }
 }
 
+/**
+ * 构造导出用的 DOCX Document（聊天消息导出与工作区导出共用）
+ *
+ * 有序列表段落用的是 numbering:{ reference: 'default' }。docx 打包时才把
+ * `{reference-instance}` 占位符替换成真实 numId；若 Document 没有声明同名
+ * numbering config，占位符会原样写进 word/document.xml —— w:numId 变成
+ * 非整数且指向不存在的 num 定义，微软 Word 判定文件损坏拒绝打开（WPS 等
+ * 容错实现才打得开）。因此必须在这里声明 default 编号定义。
+ * @param {Array} children - docx 块级元素数组
+ * @returns {Document}
+ */
+export function createDocxDocument(children) {
+  return new Document({
+    styles: {
+      default: {
+        document: {
+          run: {
+            font: 'Calibri',
+            size: 22 // 11pt = 22 half-points
+          }
+        },
+        heading1: {
+          run: { size: 40, bold: true, color: '333333' },
+          paragraph: { spacing: { before: 320, after: 160 } }
+        },
+        heading2: {
+          run: { size: 30, bold: true, color: '333333' },
+          paragraph: { spacing: { before: 280, after: 120 } }
+        },
+        heading3: {
+          run: { size: 26, bold: true, color: '333333' },
+          paragraph: { spacing: { before: 240, after: 100 } }
+        }
+      }
+    },
+    // 有序列表（1. 2. 3.）依赖此定义，缺失会让 docx 留下未解析的 numId 占位符
+    numbering: {
+      config: [{
+        reference: 'default',
+        levels: [0, 1, 2].map((level) => ({
+          level,
+          format: LevelFormat.DECIMAL,
+          text: '%' + (level + 1) + '.',
+          alignment: AlignmentType.START,
+          style: {
+            paragraph: {
+              indent: {
+                left: convertInchesToTwip(0.25 * (level + 1)),
+                hanging: convertInchesToTwip(0.25)
+              }
+            }
+          }
+        }))
+      }]
+    },
+    sections: [{
+      properties: {
+        page: {
+          margin: {
+            top: convertInchesToTwip(1),
+            right: convertInchesToTwip(1),
+            bottom: convertInchesToTwip(1),
+            left: convertInchesToTwip(1)
+          }
+        }
+      },
+      children
+    }]
+  });
+}
+
 export async function exportAssistantMessageToDocx(messageDiv, exportBtn, exportDropdown) {
   const btnKey = exportBtn.dataset.exportBtnKey;
   if (btnKey && exportInProgressMap.has(btnKey)) return;
@@ -866,44 +937,8 @@ export async function exportAssistantMessageToDocx(messageDiv, exportBtn, export
     // 解析 Markdown 为 DOCX 元素
     const children = await parseMarkdownToDocxChildren(markdownContent);
 
-    // 创建 DOCX 文档
-    const doc = new Document({
-      styles: {
-        default: {
-          document: {
-            run: {
-              font: 'Calibri',
-              size: 22 // 11pt = 22 half-points
-            }
-          },
-          heading1: {
-            run: { size: 40, bold: true, color: '333333' },
-            paragraph: { spacing: { before: 320, after: 160 } }
-          },
-          heading2: {
-            run: { size: 30, bold: true, color: '333333' },
-            paragraph: { spacing: { before: 280, after: 120 } }
-          },
-          heading3: {
-            run: { size: 26, bold: true, color: '333333' },
-            paragraph: { spacing: { before: 240, after: 100 } }
-          }
-        }
-      },
-      sections: [{
-        properties: {
-          page: {
-            margin: {
-              top: convertInchesToTwip(1),
-              right: convertInchesToTwip(1),
-              bottom: convertInchesToTwip(1),
-              left: convertInchesToTwip(1)
-            }
-          }
-        },
-        children
-      }]
-    });
+    // 创建 DOCX 文档（含有序列表编号定义）
+    const doc = createDocxDocument(children);
 
     // 打包为 Blob（真正的 .docx OOXML 格式）
     const blob = await Packer.toBlob(doc);
