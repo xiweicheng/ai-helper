@@ -10,7 +10,7 @@
 #   bash scripts/push-all.sh              # 推送全部远端 + 部署 gh-pages
 #   bash scripts/push-all.sh -f           # 使用 --force-with-lease 推送
 #   bash scripts/push-all.sh --no-deploy  # 跳过 gh-pages 部署
-#   npm run push:all                      # 仓库根目录一键执行
+#   npm run push:all                      # 仓库根目录一键执行（固定带 --no-deploy，仅推送）
 #   npm run push:all -- -f                # 透传参数
 # 注意: macOS 自带 bash 3.2 在 set -u 下会把 $VAR 后紧跟的
 #       多字节 UTF-8 字符误并入变量名，故所有变量一律用 ${VAR}；

@@ -11,7 +11,7 @@
     "preview:docsite": "node scripts/build-docsite.mjs --preview",
     "package": "node scripts/package.js",
     "release:agent": "bash agent/publish.sh",
-    "push:all": "bash scripts/push-all.sh",
+    "push:all": "bash scripts/push-all.sh --no-deploy",
     "sync:wiki": "bash scripts/sync-wiki-to-gitee.sh",
     "preview": "vite",
     "lint": "eslint src/ agent/",
