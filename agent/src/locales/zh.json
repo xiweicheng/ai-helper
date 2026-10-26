@@ -87,7 +87,8 @@
     "stderrTruncated": "stderr 输出超过 5MB 上限，已截断",
     "ragNotAvailable": "RAG 功能依赖未安装或运行环境不满足要求，请先在代理端安装 RAG 依赖",
     "ragInstallInProgress": "RAG 依赖安装正在进行中，请稍后再试",
-    "ragLoadFailed": "知识库模块加载失败: {message}（可尝试重启代理端后重试）"
+    "ragLoadFailed": "知识库模块加载失败: {message}（可尝试重启代理端后重试）",
+    "asrNotAvailable": "语音输入组件未安装或正在安装中，请先在配置页「工具箱 → 语音输入」安装组件"
   },
   "rag": {
     "nodeVersionLow": "需要 Node.js 22+（当前 {version}），RAG 功能不可用",
@@ -306,6 +307,26 @@
     "gracefulShutdownTimeout": "优雅关闭超时，强制退出",
     "uncaughtException": "未捕获异常",
     "unhandledRejection": "未处理的 Promise 拒绝"
+  },
+  "asr": {
+    "depsMissing": "语音识别可选依赖未安装（需 Node.js 18+），语音输入功能不可用（可在配置页「工具箱 → 语音输入」一键安装，或运行 aha asr install）",
+    "depsReady": "语音识别可选依赖检测通过",
+    "installRunning": "语音识别组件安装已在进行中，请稍后重试",
+    "installTimeout": "语音识别组件安装超时（10 分钟），请检查网络后重试",
+    "installAborted": "语音识别组件安装已中止（Agent 关闭或进程退出）",
+    "installFailed": "语音识别组件安装失败: {message}",
+    "verifyFailed": "npm 安装完成，但依赖验证未通过",
+    "pickModelDirTitle": "选择语音模型目录（内含 manifest.json）",
+    "modelInvalid": "模型包校验未通过: {reason}",
+    "invalidModelId": "非法模型 ID: {id}",
+    "emptyAudio": "音频内容为空",
+    "invalidAudio": "音频数据解析失败",
+    "audioTooLarge": "音频超过大小限制（单次录音上限 5 分钟）",
+    "modelMissing": "未找到可用的语音模型包，请在配置页导入定稿模型",
+    "unsupportedAudio": "不支持的音频格式（仅支持 PCM WAV）",
+    "transcribeFailed": "语音识别失败，请重试",
+    "downloadFailed": "模型下载失败: {message}",
+    "downloadAborted": "模型下载已中止（Agent 关闭或进程退出）"
   },
   "memory": {
     "missingAction": "缺少 action 参数",

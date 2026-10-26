@@ -396,8 +396,29 @@ async function copyOffscreenDocument() {
   }
 }
 
+/**
+ * 复制录音 AudioWorklet 到 dist 根。
+ * 为什么不打包：worklet 运行在 AudioWorkletGlobalScope，不能用 import/export，
+ * 也不能用 blob: URL 加载（CSP script-src 'self'），只能作为独立文件用
+ * chrome.runtime.getURL('dist/voice-capture-worklet.js') 交给 addModule。
+ */
+function copyVoiceWorklet() {
+  const srcFile = path.join(__dirname, '..', 'src', 'side_panel', 'voice-capture-worklet.js');
+  const destFile = path.join(distDir, 'voice-capture-worklet.js');
+  if (!fs.existsSync(srcFile)) {
+    console.log('⚠️  voice-capture-worklet.js 不存在，跳过');
+    return;
+  }
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
+  }
+  fs.copyFileSync(srcFile, destFile);
+  console.log('📋 Copied dist/voice-capture-worklet.js');
+}
+
 async function run() {
   patchJsPDFRemoteCode(path.join(distDir, 'libs'));
+
 
   cleanDevArtifacts();
   
@@ -409,6 +430,7 @@ async function run() {
   fixBuild();
   removeOrphanedEntries();
   await copyOffscreenDocument();
+  copyVoiceWorklet();
 
   console.log('✅ Build artifacts fixed successfully!\n');
 }

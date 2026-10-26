@@ -13,6 +13,7 @@ import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResume
 import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
 import { enqueueInjection } from './injection.js';
 import * as AgentClient from './local-agent-client.js';
+import { getAsrStatus, clearAsrStatusCache, transcribeWavBase64, openAsrSession, base64ToUint8 } from './asr-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { generateCompactionSummary } from './context-compactor.js';
@@ -829,6 +830,105 @@ function ensureSidePanelVisibleFromGesture() {
   })?.catch?.(() => focusWindow(windowId));
 }
 
+// ==================== 语音输入（页面焦点快捷键通道） ====================
+
+/**
+ * 页面焦点下按 Alt+V：
+ * - 面板已开（镜像热）→ 直接转发 VOICE_TOGGLE，由面板自己 toggle（保留焦点与草稿上下文）；
+ * - 面板未开 → 写一次性标记 pendingVoiceStart，再在同一同步栈内打开面板（保住用户手势），
+ *   面板初始化时消费标记并自动开始录音。
+ *
+ * 注：这里刻意不用 chrome.action.click()（那会走 onClicked 的 toggle 语义，面板已开时反而关掉面板），
+ * 而是复用 ensureSidePanelVisibleFromGesture 的「只开不关」路径。
+ */
+function handleVoiceToggleFromPage() {
+  const mirrorOpen = _openPanelsByWindow.size > 0;
+  if (mirrorOpen) {
+    chrome.runtime.sendMessage({ type: 'VOICE_TOGGLE' }).catch(() => {});
+    return;
+  }
+  // 先落标记（不 await，避免打断手势）；面板起来时自己读取，
+  // 超过 15s（由面板判定）的陈旧标记会被忽略，避免下次开面板无故开录
+  try {
+    chrome.storage.session?.set?.({ pendingVoiceStart: Date.now() })?.catch?.(() => {});
+  } catch { /* 旧版 Chrome 无 storage.session：退化为仅打开面板 */ }
+  ensureSidePanelVisibleFromGesture();
+}
+
+// ==================== 语音输入（流式会话 port） ====================
+//
+// 面板 ↔ background 协议（port 名固定为 'asr'）：
+//   start  面板→bg {type:'start', language}             → 开 WS 并转发 ready
+//          面板→bg {type:'audio', data: base64(PCM16)}  → 转二进制帧下发
+//          面板→bg {type:'stop'|'cancel'}
+//   bg→面板  {type:'ready'|'partial'|'endpoint'|'final'|'error'|'closed'}
+//
+// 为什么绕一层：token 只存在 background；面板拿不到，也不应该拿。
+function attachAsrPort(port) {
+  let session = null;
+  let disposed = false;
+
+  const post = (msg) => {
+    if (disposed) return;
+    try { port.postMessage(msg); } catch { /* 面板已关：忽略 */ }
+  };
+
+  port.onDisconnect.addListener(() => {
+    disposed = true;
+    // 未走 stop 就断开（关面板/切标签页）→ cancel，代理端会释放会话
+    try { session?.cancel(); } catch { /* 忽略 */ }
+    session = null;
+  });
+
+  port.onMessage.addListener(async (msg) => {
+    if (disposed || !msg || typeof msg.type !== 'string') return;
+
+    if (msg.type === 'start') {
+      if (session) {
+        post({ type: 'error', code: 'busy', error: 'voice session already started' });
+        return;
+      }
+      try {
+        session = await openAsrSession({
+          language: msg.language || 'auto',
+          onEvent: (evt) => {
+            post(evt);
+            if (evt && (evt.type === 'final' || evt.type === 'closed' || evt.type === 'error')) {
+              session = null;
+            }
+          },
+        });
+        if (disposed) { session.cancel(); session = null; return; }
+        session.sendStart();
+      } catch (err) {
+        session = null;
+        post({ type: 'error', code: 'connect_failed', error: err?.message || String(err) });
+      }
+      return;
+    }
+
+    if (msg.type === 'audio') {
+      if (!session || typeof msg.data !== 'string') return;
+      try { session.sendPcm(base64ToUint8(msg.data)); } catch { /* 忽略坏帧 */ }
+      return;
+    }
+
+    if (msg.type === 'stop') {
+      try { session?.stop(); } catch { /* 忽略 */ }
+      return;
+    }
+
+    if (msg.type === 'cancel') {
+      try { session?.cancel(); } catch { /* 忽略 */ }
+      session = null;
+    }
+  });
+}
+
+chrome.runtime?.onConnect?.addListener?.((port) => {
+  if (port?.name === 'asr') attachAsrPort(port);
+});
+
 // 桌面通知接线：可见性判定（按发起实例身份）+ 通知中心（创建 / 点击 / 清理）
 initPanelVisibility({
   // 三态焦点：null（未知）按未聚焦处理 → 可见性判定保守弹通知（宁可多弹不漏弹）
@@ -916,6 +1016,10 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | DELETE_LOCAL_PROTOTYPE        | side_panel  | 删除本地原型文件             | 是   |
 // | COMPACT_CONTEXT_SUMMARY       | side_panel  | 手动压缩上下文摘要生成       | 是   |
 // | INJECT_MESSAGE                | side_panel  | 见缝插针：插话并入运行中任务 | 否   |
+// | ASR_GET_STATUS                | side_panel  | 语音识别状态（10s 缓存）     | 是   |
+// | ASR_TRANSCRIBE                | side_panel  | 整段录音转写（WAV base64）   | 是   |
+// | ASR_RESET_STATUS              | options     | 清空语音状态缓存（装完/改配置）| 否   |
+// | VOICE_TOGGLE_FROM_PAGE        | content     | 页面快捷键触发语音输入       | 否   |
 //
 // ==================== 消息监听 ====================
 
@@ -1041,6 +1145,38 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       running: !!(sessionId && activeReactLoops.has(sessionId)),
       activeSessionIds: Array.from(activeReactLoops),
     });
+    return false;
+  }
+
+  // ==================== 语音输入（本地 STT） ====================
+
+  // 语音识别状态：侧边栏用它决定 🎤 按钮是否出现（依赖 × 模型 × 用户开关三分离）
+  if (message.type === 'ASR_GET_STATUS') {
+    getAsrStatus({ force: message.force === true })
+      .then((status) => sendResponse({ success: true, status }))
+      .catch((err) => sendResponse({ success: false, error: err?.message || String(err) }));
+    return true;
+  }
+
+  // 整段转写（M1 闭环）：面板传 WAV base64 → 代理端 VAD 切段 + SenseVoice 定稿
+  if (message.type === 'ASR_TRANSCRIBE') {
+    transcribeWavBase64(message.audio, { language: message.language, timeoutMs: message.timeoutMs })
+      .then((res) => sendResponse(res))
+      .catch((err) => sendResponse({ success: false, error: err?.message || String(err) }));
+    return true;
+  }
+
+  // 状态缓存失效：配置页改完配置/装完依赖后调用，保证面板下次拉取是最新值
+  if (message.type === 'ASR_RESET_STATUS') {
+    clearAsrStatusCache();
+    sendResponse({ success: true });
+    return false;
+  }
+
+  // 页面焦点下的语音快捷键：面板已开 → 直接转发 toggle；未开 → 写一次性标记并打开面板
+  if (message.type === 'VOICE_TOGGLE_FROM_PAGE') {
+    handleVoiceToggleFromPage();
+    sendResponse({ success: true });
     return false;
   }
 

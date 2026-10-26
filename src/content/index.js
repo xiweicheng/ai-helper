@@ -69,6 +69,14 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     try { chrome.runtime.sendMessage({ type: 'CAPTURE_REGION_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
   }
+
+  // Alt+V ：语音输入（页面焦点时可用）
+  // 面板已开 → background 转发 VOICE_TOGGLE；未开 → background 写一次性标记并打开面板
+  if (e.altKey && !e.shiftKey && e.code === 'KeyV' && !e.ctrlKey && !e.metaKey) {
+    if (e.isComposing || e.repeat) return; // 输入法候选期 / 长按重复不响应
+    e.preventDefault();
+    try { chrome.runtime.sendMessage({ type: 'VOICE_TOGGLE_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
+  }
 });
 
 // ==================== 消息路由表（Map 查找，O(1)） ====================

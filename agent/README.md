@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) ([Chrome Web Store](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac) / [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)) with local file read/write, system command execution, Skill system, MCP protocol extension, and an optional local knowledge base (RAG) capability.
+AI Helper Agent — a local proxy service that provides the [AI Helper Chrome Extension](https://github.com/xiweicheng/ai-helper) ([Chrome Web Store](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac) / [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)) with local file read/write, system command execution, Skill system, MCP protocol extension, an optional local knowledge base (RAG), and optional on-device voice input (ASR).
 
 ## Installation
 
@@ -519,6 +519,37 @@ Endpoints are registered inside the authenticated region (Bearer token required)
 | POST | `/api/rag/collections/{id}/search` | Search a single knowledge base |
 | POST | `/api/rag/search` | Cross-knowledge-base search |
 
+## Voice Input (Local STT)
+
+Optional on-device speech-to-text. The side panel's 🎤 button (and `Alt+V`) records audio and streams it to the agent, which transcribes it **locally** — no cloud ASR endpoint, no audio leaving the machine. Speech models ship as offline packs (copied in from a networked machine) and the runtime (`sherpa-onnx-node`, 300MB+) is an opt-in dependency: installing the agent never installs it, and `asrDependencies` is a custom field npm ignores so `npm i -g` does not pull it either. Install from Options → Toolbox → Voice Input, via `aha asr install`, or with `install.sh --with-asr` / `install.ps1 -WithAsr`.
+
+- **Data location** — `~/.ai-helper-agent/asr/` (override with `AI_HELPER_ASR_ROOT`); model packs live in `models/<id>/` with a `manifest.json` each
+- **Three-way readiness** — `deps.ready` × `modelsReady` × `enabled`; `/api/asr/status` exposes `available` plus a `reason` (`deps_missing` / `models_missing` / `disabled`) so the UI can show exactly which link is missing
+- **Streaming draft + final pass** — a Streaming Zipformer transducer produces 150ms-throttled `partial` text while speaking; on `stop`, SenseVoice re-decodes the whole recording via VAD segmentation for punctuation and normalized numbers. Without an offline model the draft text is used as-is (`final.fallback=true`)
+- **Zero startup cost for non-users** — config read → on-disk package check → only then a 3s subprocess probe, all after `listen()`; no auto-reinstall (deliberately unlike RAG) because the package is large
+- **Session hygiene** — one concurrent session by default, 30s idle reclaim, 5-minute cap, 320KB frame limit, and an RSS guard that skips the offline pass instead of risking OOM
+
+See [docs/Voice-Input-Local-STT.md](../docs/Voice-Input-Local-STT.md) for model pack creation, the npm mirror package list, and the full WS frame protocol.
+
+### ASR API
+
+Registered inside the authenticated region; every endpoint except `deps/*` returns `503` while dependencies are unavailable.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/asr/status` | Decomposed readiness, `available`, `reason`, language list, recording cap |
+| POST | `/api/asr/config` | Update `enabled` / `language` / model selection / `idleUnloadMs` |
+| GET | `/api/asr/models` | Model list + `capability{online,offline,vad}` + `invalid[]` (`?verify=1` hashes) |
+| POST | `/api/asr/models/scan` | Rescan the models directory |
+| POST | `/api/asr/models/pick` | Pick a local model directory and register it (loopback only) |
+| DELETE | `/api/asr/models/{id}` | Delete a model pack |
+| POST | `/api/asr/transcribe` | Whole-clip transcription from a base64 PCM16/mono WAV |
+| POST | `/api/asr/warmup` | Preload ONNX sessions |
+| POST | `/api/asr/deps/detect` | Re-run dependency detection |
+| POST | `/api/asr/deps/install` | Install the whitelisted ASR dependencies |
+| GET | `/api/asr/deps/install/status` | Installation progress |
+| WS | `/ws/asr/{sessionId}` | Streaming session: binary PCM16 frames + JSON `start` / `stop` / `cancel` |
+
 ## Tech Stack
 
 - Node.js >= 18
@@ -527,6 +558,7 @@ Endpoints are registered inside the authenticated region (Bearer token required)
 - Zero external framework dependencies
 - Optional dependencies: `fd`, `rg` (ripgrep) — for accelerated file search
 - Optional dependencies for the knowledge base (RAG): `vectra` (vector store), `@huggingface/transformers` (local embeddings), `pdf-parse` / `mammoth` / `officeparser` / `cheerio` (document parsers)
+- Optional dependency for voice input (ASR): `sherpa-onnx-node` + its platform packages (installed on demand, never by `npm i -g`)
 
 ## License
 

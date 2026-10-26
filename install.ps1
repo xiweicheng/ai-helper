@@ -10,6 +10,8 @@ param(
     [switch]$Status,
     [switch]$NoAutostart,
     [switch]$PurgeData,
+    [switch]$WithAsr,
+    [switch]$NoAsr,
     [string]$AgentVersion = ""
 )
 
@@ -275,6 +277,59 @@ set AGENT_ROOT=%USERPROFILE%\.ai-helper-agent
     $env:Path += ";$BinDir"
 }
 
+# ==================== 语音识别可选组件 ====================
+# 核心原则：安装代理端 ≠ 获得语音能力。默认不装、不下载、不阻塞，失败不影响主流程。
+# 交互式终端才询问（默认否）；重定向/CI 静静跳过；也可用 -WithAsr / -NoAsr 显式指定。
+function Install-AsrOption {
+    $wantAsr = $false
+    if ($WithAsr) {
+        $wantAsr = $true
+    } elseif ($NoAsr) {
+        $wantAsr = $false
+    } else {
+        $interactive = $true
+        try { if ([Console]::IsInputRedirected) { $interactive = $false } } catch { $interactive = $false }
+        if ($interactive) {
+            Write-Host ""
+            Write-Info "语音识别组件（约 300MB+，本地离线运行，也可稍后在配置页一键安装）"
+            try { $answer = Read-Host "是否现在安装语音识别组件? [y/N]" } catch { $answer = "" }
+            if ($answer -match '^(y|Y|yes|YES)$') { $wantAsr = $true }
+        }
+    }
+
+    if (-not $wantAsr) {
+        Write-Info "已跳过语音识别组件（可稍后运行 aha asr install 或在配置页安装）"
+        return
+    }
+
+    $ahaCmd = Join-Path $BinDir "aha.cmd"
+    if (-not (Test-Path $ahaCmd)) {
+        Write-Warn "未找到 aha 命令，跳过语音识别组件安装（可稍后运行 aha asr install）"
+        return
+    }
+
+    Write-Info "正在安装语音识别组件（独立子进程，失败不影响代理端使用）..."
+    # 独立子进程执行；失败只告警并提示稍后在配置页安装，绝不中断安装主流程
+    $bak = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $asrExit = 1
+    try {
+        & $ahaCmd asr install 2>&1 | ForEach-Object { Write-Host "  $_" }
+        $asrExit = $LASTEXITCODE
+    } catch {
+        Write-Warn "语音识别组件安装异常: $($_.Exception.Message)"
+        $asrExit = 1
+    } finally {
+        $ErrorActionPreference = $bak
+    }
+
+    if ($asrExit -eq 0) {
+        Write-Ok "语音识别组件安装完成（还需在配置页导入本地模型包）"
+    } else {
+        Write-Warn "语音识别组件安装未成功，可稍后在配置页一键安装（代理端其余功能不受影响）"
+    }
+}
+
 # ==================== 启动 ====================
 # 注：命名避开 PowerShell 内置 cmdlet Start-Service
 function Start-AgentService {
@@ -421,6 +476,7 @@ $net = Detect-Network
 Install-Node $net
 Install-Agent $net
 Setup-CLI
+Install-AsrOption
 Start-AgentService
 
 if (-not $NoAutostart) { Setup-Autostart }

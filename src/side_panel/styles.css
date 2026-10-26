@@ -15814,3 +15814,126 @@ body {
 .message-fullscreen-body .message .process-history {
   display: none !important;
 }
+
+/* ==================== 语音输入（本地 STT） ==================== */
+/* 🎤 按钮：与发送/停止按钮同尺寸，录音中切换为品牌色脉冲 */
+.voice-input-btn {
+  background: rgba(var(--overlay-rgb), 0.06);
+  color: var(--text-secondary);
+}
+.voice-input-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.12);
+  color: var(--text-primary);
+}
+.voice-input-btn:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+}
+.voice-input-btn.recording {
+  background: var(--brand-gradient);
+  color: var(--text-on-brand);
+  box-shadow: 0 2px 8px rgba(var(--brand-rgb), 0.35);
+  animation: voice-btn-pulse 1.6s ease-in-out infinite;
+}
+@keyframes voice-btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(var(--brand-rgb), 0); }
+}
+
+/* 录音条：贴在输入框上方，条状控件而非模态框 */
+.voice-recorder-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin: 0 4px 4px;
+  border-radius: 10px;
+  background: rgba(var(--brand-rgb), 0.08);
+  border: 1px solid rgba(var(--brand-rgb), 0.25);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.voice-recorder-bar.show {
+  display: flex;
+}
+.voice-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 20px;
+  width: 56px;
+  flex-shrink: 0;
+}
+.voice-wave i {
+  display: block;
+  width: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--brand-500);
+  opacity: 0.35;
+  transition: height 0.12s linear, opacity 0.12s linear;
+}
+.voice-recorder-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.voice-recorder-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-recorder-status.is-warn {
+  color: var(--fill-danger);
+}
+.voice-recorder-btn {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: rgba(var(--overlay-rgb), 0.08);
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.voice-recorder-btn:hover {
+  background: rgba(var(--overlay-rgb), 0.16);
+  color: var(--text-primary);
+}
+.voice-recorder-btn:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 1px;
+}
+.voice-done-btn {
+  background: var(--brand-gradient);
+  color: var(--text-on-brand);
+}
+.voice-done-btn:hover {
+  background: var(--brand-gradient);
+  color: var(--text-on-brand);
+  filter: brightness(1.06);
+}
+
+/* 录音中：给输入框脉冲描边，明确「这段文字还在变动」 */
+body.voice-recording-active .input-wrapper textarea {
+  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.35);
+  animation: voice-input-glow 1.8s ease-in-out infinite;
+}
+@keyframes voice-input-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--brand-rgb), 0.22); }
+  50% { box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.38); }
+}
+
+/* 动效克制：尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .voice-input-btn.recording,
+  body.voice-recording-active .input-wrapper textarea {
+    animation: none;
+  }
+}

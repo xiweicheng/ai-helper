@@ -760,6 +760,22 @@
         </div>
       </div>
 
+      <!-- 语音输入（本地 STT，可选组件） -->
+      <div class="toolbox-section disabled-section" id="asrSection">
+        <div class="toolbox-section-header">
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title" data-i18n="toolbox.asrTitle">🎙 语音输入（本地识别）</h2>
+            <label class="global-toggle">
+              <input type="checkbox" id="asrEnableToggle">
+              <span class="global-toggle-slider"></span>
+              <span class="global-toggle-label" id="asrToggleLabel" data-i18n="toolbox.asrDisabled">已停用</span>
+            </label>
+          </div>
+          <span class="toolbox-section-desc" data-i18n="toolbox.asrDesc">本地离线语音转文字，音频不离开本机。需先在代理端安装可选依赖并导入本地模型包；两项就绪后侧边栏输入框才会出现🎤按钮（Alt+V）。</span>
+        </div>
+        <div class="toolbox-section-content" id="asrSectionContent"></div>
+      </div>
+
       <!-- Skill 管理 -->
       <div class="toolbox-section disabled-section" id="skillSection">
         <div class="toolbox-section-header">

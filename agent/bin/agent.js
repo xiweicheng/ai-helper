@@ -237,6 +237,7 @@ function printHelp() {
   console.log(t('cmdPaircode'));
   console.log(t('cmdConfig'));
   console.log(t('cmdRag'));
+  console.log(t('cmdAsr'));
   console.log(t('cmdUpdate'));
   console.log(t('cmdUninstall'));
   console.log(t('cmdAutostart'));
@@ -257,6 +258,7 @@ function printHelp() {
   console.log('  ai-helper-agent restart -b');
   console.log('  ai-helper-agent status');
   console.log('  ai-helper-agent rag install');
+  console.log('  ai-helper-agent asr install');
 }
 
 /**
@@ -899,6 +901,82 @@ if (command === 'start') {
     console.error(`[Agent] ${t('ragUnknownSub', { sub })}`);
   }
   console.log(t('ragHelpUsage'));
+  process.exit(1);
+
+// ==================== asr ====================
+} else if (command === 'asr') {
+  // 子命令：status（检测能力）/ install（一键安装语音识别依赖）
+  const sub = rawArgs[1];
+
+  // 同步 CLI 语言，保证探测日志与命令行界面语言一致
+  const { setAsrLang } = await import('../src/asr/detect.js');
+  setAsrLang(lang);
+
+  if (sub === 'status') {
+    const { detectAsrAvailable, getLastAsrProbeError } = await import('../src/asr/detect.js');
+    console.log(`[Agent] ${t('asrStatusTitle')}`);
+    console.log(`[Agent] ${t('ragNodeVersion', { version: process.version })}`);
+    const available = await detectAsrAvailable();
+    console.log(`[Agent] ${available ? t('asrAvailable') : t('asrNotAvailable')}`);
+    if (!available) {
+      const reason = getLastAsrProbeError();
+      if (reason) console.log(`[Agent] ${t('asrProbeError', { reason })}`);
+    }
+    // 依赖只是第一环，模型包是否就位由配置页展示（CLI 不读取模型目录以免耗时）
+    console.log(`[Agent] ${t('asrModelHint')}`);
+    process.exit(available ? 0 : 1);
+  }
+
+  if (sub === 'install') {
+    console.log(`[Agent] ${t('asrInstalling')}`);
+    // 与 API 一键安装共用同一命令构建：显式包名清单（asrDependencies）、
+    // 包目录内安装使 overrides 生效、--no-save 不污染包目录
+    const { buildAsrInstallCommand } = await import('../src/asr/install.js');
+    let cmd;
+    try {
+      cmd = buildAsrInstallCommand();
+    } catch (err) {
+      console.error(`[Agent] ${err.message}`);
+      process.exit(1);
+    }
+    const npm = spawn(cmd.command, cmd.args, {
+      cwd: cmd.cwd,
+      shell: cmd.shell,
+      stdio: 'inherit',
+      env: { ...process.env },
+      windowsHide: true
+    });
+    const code = await new Promise((resolvePromise) => {
+      npm.on('error', (err) => {
+        console.error(`[Agent] ${err.message}`);
+        resolvePromise(1);
+      });
+      npm.on('close', resolvePromise);
+    });
+    if (code !== 0) {
+      console.error(`[Agent] ${t('asrInstallFailed', { code })}`);
+      console.error(`[Agent] ${t('asrRestartAdvice')}`);
+      process.exit(1);
+    }
+    // 安装后验证（以全新子进程的实际加载结果为准，见 detect.js R8 说明）
+    const { detectAsrAvailable, getLastAsrProbeError } = await import('../src/asr/detect.js');
+    const available = await detectAsrAvailable({ force: true });
+    if (available) {
+      console.log(`[Agent] ${t('asrInstallSuccess')}`);
+    } else {
+      const reason = getLastAsrProbeError();
+      console.log(`[Agent] ${t('asrVerifyFailed')}${reason ? ` - ${reason}` : ''}`);
+      console.log(`[Agent] ${t('asrRestartAdvice')}`);
+    }
+    console.log(`[Agent] ${t('asrModelHint')}`);
+    process.exit(available ? 0 : 1);
+  }
+
+  // 未知/缺失子命令：显示用法
+  if (sub) {
+    console.error(`[Agent] ${t('asrUnknownSub', { sub })}`);
+  }
+  console.log(t('asrHelpUsage'));
   process.exit(1);
 
 // ==================== help ====================

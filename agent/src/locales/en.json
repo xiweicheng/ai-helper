@@ -87,7 +87,8 @@
     "stderrTruncated": "stderr output exceeded 5MB limit, truncated",
     "ragNotAvailable": "RAG dependencies are not installed or the environment does not meet the requirements. Please install RAG dependencies on the agent side first",
     "ragInstallInProgress": "RAG dependency installation is in progress, please try again later",
-    "ragLoadFailed": "Failed to load knowledge base module: {message} (try restarting the agent and retry)"
+    "ragLoadFailed": "Failed to load knowledge base module: {message} (try restarting the agent and retry)",
+    "asrNotAvailable": "Voice input dependencies are not installed or are being installed. Install them in Options → Toolbox → Voice Input"
   },
   "rag": {
     "nodeVersionLow": "Node.js 22+ is required (current {version}), RAG features are unavailable",
@@ -306,6 +307,26 @@
     "gracefulShutdownTimeout": "Graceful shutdown timeout, force exit",
     "uncaughtException": "Uncaught exception",
     "unhandledRejection": "Unhandled Promise rejection"
+  },
+  "asr": {
+    "depsMissing": "Optional speech recognition dependencies are not installed (Node.js 18+ required). Voice input is unavailable — install them in Options → Toolbox → Voice Input, or run `aha asr install`",
+    "depsReady": "Speech recognition dependencies detected",
+    "installRunning": "Dependency installation is already running, please retry later",
+    "installTimeout": "Dependency installation timed out (10 minutes). Check your network and retry",
+    "installAborted": "Dependency installation was aborted (agent stopped or process exited)",
+    "installFailed": "Dependency installation failed: {message}",
+    "verifyFailed": "npm install finished but dependency verification failed",
+    "pickModelDirTitle": "Select a speech model folder (must contain manifest.json)",
+    "modelInvalid": "Model pack validation failed: {reason}",
+    "invalidModelId": "Invalid model id: {id}",
+    "emptyAudio": "Audio payload is empty",
+    "invalidAudio": "Failed to decode audio payload",
+    "audioTooLarge": "Audio exceeds the size limit (max 5 minutes per recording)",
+    "modelMissing": "No usable speech model pack found. Import a finalize model in Options",
+    "unsupportedAudio": "Unsupported audio format (PCM WAV only)",
+    "transcribeFailed": "Speech recognition failed, please retry",
+    "downloadFailed": "Model download failed: {message}",
+    "downloadAborted": "Model download aborted (agent stopped or process exited)"
   },
   "memory": {
     "missingAction": "Missing action parameter",

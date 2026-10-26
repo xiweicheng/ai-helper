@@ -1088,6 +1088,7 @@ export {
   toggleAgentDisabled,
   isLocalAgent,
   agentRequest,
+  agentGet,
   readFile,
   statFile,
   writeFile,

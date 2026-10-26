@@ -2,7 +2,7 @@
 
 # AI Helper Agent
 
-AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper)（[Chrome 应用商店](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac) / [Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)）提供本地文件读写、系统命令执行、Skill 技能系统、MCP 协议扩展与可选本地知识库（RAG）能力。
+AI Helper 代理服务，为 [AI Helper Chrome 扩展](https://github.com/xiweicheng/ai-helper)（[Chrome 应用商店](https://chromewebstore.google.com/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/fnolhphogjkdcmnecpeckhjoeofldiac) / [Edge 扩展商店](https://microsoftedge.microsoft.com/addons/detail/ai-helper-%E7%BD%91%E9%A1%B5%E6%99%BA%E8%83%BD%E5%8A%A9%E6%89%8B/kabhmgfbkhpbfhhnokaafhkdbckeipcl)）提供本地文件读写、系统命令执行、Skill 技能系统、MCP 协议扩展、可选本地知识库（RAG）与可选本地语音输入（ASR）能力。
 
 ## 安装
 
@@ -509,6 +509,37 @@ enabled: true
 | POST | `/api/rag/collections/{id}/search` | 单库检索 |
 | POST | `/api/rag/search` | 跨知识库检索 |
 
+## 语音输入（本地 STT）
+
+可选的本机语音转文字。侧边栏 🎤 按钮（与 `Alt+V`）采集音频并流式发给 Agent，识别**全在本地完成** —— 不调云端 ASR，音频不出本机。语音模型以离线包形式分发（由有外网的机器做好后拷入），运行时（`sherpa-onnx-node`，300MB+）是可选依赖：装 Agent 不会装它，且 `asrDependencies` 是 npm 不识的自有字段，`npm i -g` 同样不会拉。安装入口：选项页「工具箱 → 语音输入」、`aha asr install`、`install.sh --with-asr` / `install.ps1 -WithAsr`。
+
+- **数据位置** —— `~/.ai-helper-agent/asr/`（可用 `AI_HELPER_ASR_ROOT` 覆盖）；模型包放在 `models/<id>/`，每个带一份 `manifest.json`
+- **三段式就绪判定** —— `deps.ready` × `modelsReady` × `enabled`；`/api/asr/status` 除 `available` 外还回 `reason`（`deps_missing` / `models_missing` / `disabled`），UI 能直接告诉用户缺哪一环
+- **流式草稿 + 整段定稿** —— Streaming Zipformer transducer 边说边出 `partial` 文本（节流 150ms）；收到 `stop` 后由 SenseVoice 经 VAD 切段重解码，补标点、规整数字。无离线模型时直接用草稿文本（`final.fallback=true`）
+- **未装用户零启动开销** —— 判定顺序：读配置 → 查磁盘上有没有包 → 两者都满足才起 3s 子进程探测，且全部在 `listen()` 之后；**不做自动重装**（与 RAG 刻意相反），因为包体大
+- **会话收敛** —— 默认并发 1、空闲 30s 回收、单次 5 分钟上限、单帧 320KB 限制，以及 RSS 超限时**跳过离线定稿**而不是冒 OOM 风险
+
+模型包制作、内网 npm 镜像包清单、完整 WS 帧协议见 [docs/Voice-Input-Local-STT.md](../docs/Voice-Input-Local-STT.md)。
+
+### ASR API
+
+注册在认证区内；除 `deps/*` 外，依赖不可用时统一返回 `503`。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/asr/status` | 拆分后的就绪状态、`available`、`reason`、语种表、录音时长上限 |
+| POST | `/api/asr/config` | 更新 `enabled` / `language` / 模型选择 / `idleUnloadMs` |
+| GET | `/api/asr/models` | 模型清单 + `capability{online,offline,vad}` + `invalid[]`（`?verify=1` 校验哈希） |
+| POST | `/api/asr/models/scan` | 重扫模型目录 |
+| POST | `/api/asr/models/pick` | 选本机模型目录并注册（仅回环地址） |
+| DELETE | `/api/asr/models/{id}` | 删除模型包 |
+| POST | `/api/asr/transcribe` | 整段转写（base64 PCM16 / 单声道 WAV） |
+| POST | `/api/asr/warmup` | 预热 ONNX 会话 |
+| POST | `/api/asr/deps/detect` | 重跑依赖探测 |
+| POST | `/api/asr/deps/install` | 安装白名单 ASR 依赖 |
+| GET | `/api/asr/deps/install/status` | 安装进度 |
+| WS | `/ws/asr/{sessionId}` | 流式会话：二进制 PCM16 帧 + JSON `start` / `stop` / `cancel` |
+
 ## 技术栈
 
 - Node.js >= 18
@@ -517,6 +548,7 @@ enabled: true
 - 零外部框架依赖
 - 可选依赖：`fd`、`rg`（ripgrep）— 用于加速文件搜索
 - 知识库（RAG）可选依赖：`vectra`（向量存储）、`@huggingface/transformers`（本地向量化）、`pdf-parse` / `mammoth` / `officeparser` / `cheerio`（文档解析）
+- 语音输入（ASR）可选依赖：`sherpa-onnx-node` 及其平台包（按需安装，`npm i -g` 不会拉取）
 
 ## License
 

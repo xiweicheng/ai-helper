@@ -573,10 +573,13 @@ do_install() {
   # Step 5: CLI 命令
   setup_cli
 
-  # Step 6: 启动
+  # Step 6: 语音识别（可选组件，默认不装，失败不影响主流程）
+  maybe_install_asr "$@"
+
+  # Step 7: 启动
   start_service
 
-  # Step 7: 开机自启
+  # Step 8: 开机自启
   local no_autostart=false
   for arg in "$@"; do
     [[ "$arg" == "--no-autostart" ]] && no_autostart=true
@@ -588,6 +591,55 @@ do_install() {
   echo ""
   ok "安装全部完成！运行 ${BOLD}aha status${NC} 查看状态，或打开浏览器插件进行配对。"
   echo ""
+}
+
+# ==================== 语音识别可选组件 ====================
+# 核心原则：安装代理端 ≠ 获得语音能力。默认不装、不下载、不阻塞，失败不影响主流程。
+# 交互式终端才询问（默认否）；非交互（管道/CI）静默跳过；也可用 --with-asr / --no-asr 显式指定。
+maybe_install_asr() {
+  local with_asr=""
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --with-asr) with_asr=true ;;
+      --no-asr)   with_asr=false ;;
+    esac
+  done
+
+  if [ -z "$with_asr" ]; then
+    if [ -t 0 ]; then
+      echo ""
+      info "语音识别组件（约 300MB+，本地离线运行，也可稍后在配置页一键安装）"
+      read -rp "是否现在安装语音识别组件? [y/N]: " answer
+      case "$answer" in
+        y|Y|yes|YES) with_asr=true ;;
+        *)           with_asr=false ;;
+      esac
+    else
+      # 非交互（curl | bash、CI）：静默跳过，绝不阻塞主流程
+      with_asr=false
+    fi
+  fi
+
+  if [ "$with_asr" != true ]; then
+    info "已跳过语音识别组件（可稍后运行 ${BOLD}aha asr install${NC} 或在配置页安装）"
+    return 0
+  fi
+
+  local aha_bin="$BIN_DIR/aha"
+  if [ ! -x "$aha_bin" ]; then
+    warn "未找到 aha 命令，跳过语音识别组件安装（可稍后运行 aha asr install）"
+    return 0
+  fi
+
+  info "正在安装语音识别组件（独立子进程，失败不影响代理端使用）..."
+  # 独立子进程执行；失败只告警并提示稍后在配置页安装，绝不中断安装主流程
+  if "$aha_bin" asr install </dev/null; then
+    ok "语音识别组件安装完成（还需在配置页导入本地模型包）"
+  else
+    warn "语音识别组件安装未成功，可稍后在配置页一键安装（代理端其余功能不受影响）"
+  fi
+  return 0
 }
 
 # ==================== 已安装时的交互菜单 ====================
@@ -635,6 +687,8 @@ main() {
       --update)    has_subcommand=true; do_update; return ;;
       --status)    has_subcommand=true; do_status; return ;;
       --no-autostart) ;; # 传给 do_install
+      --with-asr) ;; # 传给 do_install（语音识别可选组件）
+      --no-asr) ;; # 传给 do_install（语音识别可选组件）
       --agent-version=*) has_subcommand=true ;; # 已在第一遍处理，此处仅标记阻止走交互菜单
       *)           has_subcommand=true ;;
     esac

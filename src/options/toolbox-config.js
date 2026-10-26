@@ -19,6 +19,7 @@ import {
 } from './toolbox-skills.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
+import { refreshAsrSection, initAsrEvents } from './toolbox-asr.js';
 
 // 注册刷新回调（refreshToolbox 是函数声明，会被 hoist，可安全引用）
 // 供 toolbox-skills.js 调用，避免循环依赖
@@ -105,6 +106,10 @@ export async function refreshToolbox() {
 
   renderMcpServers(mcpServers);
   renderSkills(skills);
+
+  // 语音输入区（可选组件）：与 MCP/Skill 同层，独立自己拿状态与渲染
+  initAsrEvents();
+  refreshAsrSection().catch((err) => logger.warn('[Toolbox] refreshAsrSection failed:', err?.message || err));
 
   // 更新 MCP 工具数量统计
   updateMcpToolCount(mcpServers);

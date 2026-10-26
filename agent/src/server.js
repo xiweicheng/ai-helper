@@ -19,6 +19,12 @@ import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
 import { startRagInstall, getRagInstallStatus, stopRagInstall, maybeAutoRestoreRagDeps } from './rag/install.js';
+import { detectAsrAvailable, isAsrAvailable, resetAsrDetection, setAsrLang, getLastAsrProbeError } from './asr/detect.js';
+import { startAsrInstall, getAsrInstallStatus, stopAsrInstall } from './asr/install.js';
+import { asrRouter, isDepsIndependentPath as isAsrDepsIndependentPath, resolveAsrModels } from './asr/routes.js';
+import { createAsrSessionManager } from './asr/session.js';
+import { getAsrConfig } from './asr/config.js';
+import { warmupEngines } from './asr/engine.js';
 import { memoryRouter } from './memory/routes.js';
 import { stopProcessTree } from './process-tree.js';
 import {
@@ -497,7 +503,10 @@ export function startServer() {
         arch: PLATFORM_INFO.arch,
         nodeVersion: PLATFORM_INFO.nodeVersion,
         searchTools: getSearchToolsAvailable(),
-        ragAvailable: isRagAvailable()
+        ragAvailable: isRagAvailable(),
+        // 语音输入：只暴露「依赖是否就绪」与「用户是否启用」，模型清单走 /api/asr/status
+        asrDepsAvailable: isAsrAvailable(),
+        asrEnabled: getAsrConfig().enabled,
       });
     }
 
@@ -746,7 +755,9 @@ export function startServer() {
         },
         ...PLATFORM_INFO,
         searchTools: getSearchToolsAvailable(),
-        ragAvailable: isRagAvailable()
+        ragAvailable: isRagAvailable(),
+        asrDepsAvailable: isAsrAvailable(),
+        asrEnabled: getAsrConfig().enabled,
       });
     }
 
@@ -2129,6 +2140,43 @@ export function startServer() {
       return ragRouter(req, res, pathname, url, t, requestBody);
     }
 
+    // ========== 语音输入（本地 STT）接口（可选组件，默认不装不启用） ==========
+
+    if (pathname.startsWith('/api/asr/')) {
+      // 依赖安装/检测：固定白名单 + 强制 Bearer（位于认证区，不走本机来源免认证豁免）
+      if (req.method === 'POST' && pathname === '/api/asr/deps/install') {
+        if (agentOperationInProgress) {
+          return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
+        }
+        const result = startAsrInstall(t);
+        if (result.started) logSystem('asr_install', { reason: 'api_request', extId });
+        // 已在安装中一律回 200 + alreadyRunning：这是幂等重入而非错误，
+        // 前端据此继续轮询进度，避免把「重复点击」误报成「安装失败」
+        return jsonResponse(res, 200, result);
+      }
+
+      if (req.method === 'GET' && pathname === '/api/asr/deps/install/status') {
+        return jsonResponse(res, 200, getAsrInstallStatus());
+      }
+
+      if (req.method === 'POST' && pathname === '/api/asr/deps/detect') {
+        resetAsrDetection();
+        const available = await detectAsrAvailable({ force: true });
+        return jsonResponse(res, 200, {
+          success: true,
+          available,
+          error: available ? null : getLastAsrProbeError(),
+        });
+      }
+
+      // 依赖不可用时的降级：只拦截真正需要引擎的端点；
+      // status / config / models* 必须可用，否则配置页无法告诉用户「缺哪一环」
+      if (!isAsrDepsIndependentPath(pathname) && !isAsrAvailable()) {
+        return jsonResponse(res, 503, { success: false, code: 'deps_missing', error: t('error.asrNotAvailable') });
+      }
+      return asrRouter(req, res, pathname, url, t, requestBody);
+    }
+
     // 长期记忆业务端点（逻辑与数据文件同侧；零外部依赖，静态加载）
     if (pathname.startsWith('/api/memory/')) {
       return memoryRouter(req, res, pathname, url, t, requestBody);
@@ -2148,6 +2196,17 @@ export function startServer() {
 
   // ==================== WebSocket Server ====================
   const wss = new WebSocketServer({ noServer: true });
+
+  // 语音输入流式会话管理器（进程级单例；并发上限见 asr/config.js）
+  const asrSessions = createAsrSessionManager({
+    getModels: () => {
+      const resolved = resolveAsrModels();
+      return { online: resolved.online, offline: resolved.offline, vad: resolved.vad };
+    },
+    getIdleUnloadMs: () => getAsrConfig().idleUnloadMs,
+    onError: (stage, err) => logError('system', 'asr_session_error', { stage, error: err?.message || String(err) }),
+    onLog: (event, payload) => logSystem(event, payload),
+  });
 
   server.on('upgrade', (request, socket, head) => {
     let url;
@@ -2210,6 +2269,47 @@ export function startServer() {
           disconnectWsClient(execId, ws);
         });
       });
+    } else if (pathParts[1] === 'ws' && pathParts[2] === 'asr') {
+      // 语音输入流式通道：鉴权规则与 /ws/exec 完全一致（Header 优先，回退 ?token=）
+      const asrSessionId = pathParts[3] || randomBytes(8).toString('hex');
+      const wsLang = getRequestI18n(request).lang;
+      setAsrLang(wsLang);
+
+      const authHeader = request.headers.authorization;
+      let asrToken = null;
+      if (authHeader && authHeader.startsWith('Bearer ')) asrToken = authHeader.slice(7);
+      else asrToken = url.searchParams.get('token');
+      if (!verifyToken(asrToken)) {
+        logSecurity('ws_asr_auth_invalid', { sessionId: asrSessionId });
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // 依赖不可用时直接拒连（客户端按 deps_missing 引导用户去安装）
+      if (!isAsrAvailable()) {
+        socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        // 控制面心跳：与 /ws/exec 同节奏，检测半开连接
+        ws.isAlive = true;
+        ws.on('pong', () => { ws.isAlive = true; });
+        const heartbeat = setInterval(() => {
+          if (ws.readyState !== 1) { clearInterval(heartbeat); return; }
+          if (!ws.isAlive) { try { ws.terminate(); } catch {} clearInterval(heartbeat); return; }
+          ws.isAlive = false;
+          ws.ping();
+        }, 30000);
+        heartbeat.unref();
+        ws.on('close', () => clearInterval(heartbeat));
+
+        asrSessions.attach(ws, asrSessionId, {
+          language: url.searchParams.get('language') || getAsrConfig().language,
+        });
+      });
     } else {
       socket.destroy();
     }
@@ -2238,6 +2338,7 @@ export function startServer() {
     setSecurityLang(serverLang);
     setSearchLang(serverLang);
     setRagLang(serverLang);
+    setAsrLang(serverLang);
     setSkillLoaderLang(serverLang);
     setSkillRegistryLang(serverLang);
     setSkillExecutorLang(serverLang);
@@ -2263,6 +2364,28 @@ export function startServer() {
         startSkillDirWatcher();
       } catch (err) {
         console.error(`[Agent] ${ln('skillInitFailed')}:`, err.message);
+      }
+    })();
+
+    // 语音输入：零成本磁盘判定 → 必要时子进程探测 → 预热（全异步，不阻塞启动）
+    // 未装依赖的用户不会付出任何探测/加载开销（见 asr/detect.js 文件头）。
+    (async () => {
+      try {
+        const available = await detectAsrAvailable();
+        if (!available) return;
+        const config = getAsrConfig();
+        if (!config.enabled) return;
+        const resolved = resolveAsrModels();
+        if (!resolved.online && !resolved.offline) return;
+        const result = warmupEngines(resolved, { idleUnloadMs: config.idleUnloadMs });
+        if (result.failed.length > 0) {
+          logError('system', 'asr_warmup_failed', { failed: result.failed });
+        }
+        if (result.warmed.length > 0) {
+          logSystem('asr_warmup', { warmed: result.warmed, trigger: 'startup' });
+        }
+      } catch (err) {
+        console.error(`[Agent] ASR warmup failed:`, err.message);
       }
     })();
   });
@@ -2317,6 +2440,10 @@ export function startServer() {
 
     // 中止 RAG 依赖安装并回收 npm 进程树（R1/R3）：不留孤儿 npm 继续写 node_modules
     try { await stopRagInstall(); } catch {}
+
+    // 中止 ASR 依赖安装 + 释放全部流式会话（不留孤儿 npm / 原生引擎句柄）
+    try { await stopAsrInstall(); } catch {}
+    try { asrSessions.closeAll(); } catch {}
 
     // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {

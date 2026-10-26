@@ -36,6 +36,7 @@ import { debounce } from '../shared/utils.js';
 import { initQueuePanel, refreshQueueUI, editQueueTail } from './queue-panel.js';
 import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, markStopAndSend, hasQueuedItems, currentInputHasContext, runQueueNow } from './queue-runner.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
+import { initVoiceInput, toggleVoiceInput, handleVoiceEscape, matchVoiceShortcut } from './voice-input.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -2767,6 +2768,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const navApi = initMessageJumpNav();
   initMessageFullscreen();
 
+  // 语音输入：按钮门控 + 录音条 + 流式草稿通道（内部自行门控，未就绪时按钮保持隐藏）
+  initVoiceInput({ adjustInputHeight }).catch((err) => {
+    logger.warn('[SidePanel] initVoiceInput failed:', err?.message || err);
+  });
+
   // 全局键盘快捷键
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 't') {
@@ -2777,6 +2783,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         openToolsPopup();
       }
+    }
+
+    // Esc：录音中 → 取消录音（优先级高于问题列表与清空输入框）
+    if (e.key === 'Escape' && handleVoiceEscape()) {
+      e.preventDefault();
+      return;
     }
 
     // Esc：问题列表优先（清搜索词 / 退钉住 / 收起），未被导航消费才落到快捷键面板
@@ -2808,6 +2820,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.altKey && e.shiftKey && e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       captureRegionScreenshot();
+      return;
+    }
+
+    // Alt+V ：语音输入（开始 / 结束录音）；isComposing/repeat 与修饰键守卫在 matchVoiceShortcut 内
+    if (matchVoiceShortcut(e)) {
+      e.preventDefault();
+      toggleVoiceInput();
       return;
     }
 

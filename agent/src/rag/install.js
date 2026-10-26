@@ -67,6 +67,62 @@ export function getRagInstallSpecs() {
 }
 
 /**
+ * 取 spec 的包名（兼容 scoped：@scope/pkg@^1.0.0 → @scope/pkg）
+ * @param {string} spec
+ * @returns {string}
+ */
+function specName(spec) {
+  const idx = spec.lastIndexOf('@');
+  return idx > 0 ? spec.slice(0, idx) : spec;
+}
+
+/**
+ * 读取「对侧」可选组件（ASR 语音输入）曾安装成功的依赖 spec，用于合并安装
+ *
+ * 背景（实测缺陷）：ASR 与 RAG 的可选依赖都以 `npm install --no-save` 装在同一个
+ * 包目录里。npm 执行带包名的 install 时会按依赖树重算包目录，把不在本次清单内的
+ * 顶层包当作 extraneous 移除——只带自己清单安装，就会把 ASR 整组依赖清掉。
+ * 判据用对侧状态文件的 everSucceeded（持久化，不随目录被清而丢失）：只要对方曾经
+ * 装成功过，就把它的清单一起带上，既避免互相清除，也顺带恢复已被清掉的对方。
+ * @returns {string[]}
+ */
+function readPeerPreservedSpecs() {
+  try {
+    const stateFile = join(homedir(), '.ai-helper-agent', 'asr-install-state.json');
+    if (!existsSync(stateFile)) return [];
+    const state = JSON.parse(readFileSync(stateFile, 'utf-8'));
+    if (!state || state.everSucceeded !== true) return [];
+    const raw = JSON.parse(readFileSync(join(getAgentRoot(), 'package.json'), 'utf-8'));
+    const deps = raw && typeof raw.asrDependencies === 'object' && raw.asrDependencies !== null
+      ? raw.asrDependencies
+      : {};
+    return Object.entries(deps)
+      .filter(([name, spec]) => name && typeof spec === 'string' && spec.trim())
+      .map(([name, spec]) => `${name}@${spec}`);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 合并本组件清单与对侧保全清单（同名包以本组件 spec 为准，本组件顺序在前）
+ * @param {string[]} ownSpecs
+ * @param {string[]} peerSpecs
+ * @returns {string[]}
+ */
+function mergePreservedSpecs(ownSpecs, peerSpecs) {
+  const seen = new Set(ownSpecs.map(specName));
+  const merged = [...ownSpecs];
+  for (const spec of peerSpecs) {
+    const name = specName(spec);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    merged.push(spec);
+  }
+  return merged;
+}
+
+/**
  * Windows：定位与 node 同目录分布的 npm-cli.js（官方安装器 / nvm-windows 结构）
  * @param {string} execPath
  * @returns {string|null}
@@ -91,11 +147,13 @@ function findWinNpmCli(execPath) {
 export function buildRagInstallCommand(opts = {}) {
   const isWin = opts.isWin ?? process.platform === 'win32';
   const execPath = opts.execPath ?? process.execPath;
-  const specs = opts.specs ?? getRagInstallSpecs();
-  if (specs.length === 0) {
+  const ownSpecs = opts.specs ?? getRagInstallSpecs();
+  if (ownSpecs.length === 0) {
     // 包损坏/被裁剪：拒绝构建（无包名参数的 npm install 会按依赖树重算包目录，不可接受）
     throw new Error('ragDependencies missing in package.json');
   }
+  // 显式注入 specs（测试/诊断）视为精确清单，不做对侧保全
+  const specs = opts.specs ? ownSpecs : mergePreservedSpecs(ownSpecs, readPeerPreservedSpecs());
   // 如果有探测出的镜像 registry，自动注入（npm -g 用户无 mirrors.json 时此值为 undefined）
   const registryUrl = opts.registry ?? getRegistryUrl();
   const baseArgs = ['install', '--no-save', '--no-audit', '--no-fund'];

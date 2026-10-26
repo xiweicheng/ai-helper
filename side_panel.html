@@ -683,6 +683,9 @@
             </div>
           </div>
         </div>
+        <button class="input-inner-btn voice-input-btn" id="voiceInputBtn" type="button" style="display:none;" aria-pressed="false" aria-label="语音输入" data-i18n-title="voice.start" title="语音输入（Alt+V）">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
         <button class="input-inner-btn stop-companion-btn" id="stopCompanionBtn" type="button" style="display:none;" data-i18n-title="queue.stopNow" title="停止当前任务">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></svg>
         </button>
@@ -770,6 +773,17 @@
       </div>
       <div class="queue-list" id="queueList" style="display:none;"></div>
       <div class="queue-recent" id="queueRecent" style="display:none;"></div>
+    </div>
+    <div class="voice-recorder-bar" id="voiceRecorderBar" role="status" aria-live="polite" aria-hidden="true">
+      <div class="voice-wave" id="voiceWave" aria-hidden="true"></div>
+      <span class="voice-recorder-timer" id="voiceTimer">00:00</span>
+      <span class="voice-recorder-status" id="voiceStatusText" data-i18n="voice.listening">正在聆听…</span>
+      <button class="voice-recorder-btn voice-cancel-btn" id="voiceCancelBtn" type="button" data-i18n-title="voice.cancel" title="取消录音" aria-label="取消录音">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+      </button>
+      <button class="voice-recorder-btn voice-done-btn" id="voiceDoneBtn" type="button" data-i18n-title="voice.done" title="完成" aria-label="完成">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+      </button>
     </div>
     <div class="input-wrapper">
       <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.ico,.pdf,.docx,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.html,.css,.scss,.less,.xml,.yaml,.yml,.py,.java,.c,.cpp,.h,.go,.rs,.rb,.php,.sql,.sh,.bash,.zsh,.cfg,.ini,.toml,.conf,.log,.csv,.tsv,.env,.vue,.svelte,.astro,.rtf" style="display:none;">
@@ -1027,6 +1041,8 @@
             <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td data-i18n="shortcuts.editLastMessage">编辑最近一条用户消息</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td data-i18n="shortcuts.messageFullscreen">全屏查看 / 退出查看回答</td><td>Win / Mac</td></tr>
             <tr class="shortcuts-divider"><td colspan="3"></td></tr>
+            <tr><td><kbd>Alt</kbd> + <kbd>V</kbd></td><td data-i18n="shortcuts.voiceInput">语音输入（开始 / 结束）</td><td>Win / Mac</td></tr>
+            <tr class="shortcuts-divider"><td colspan="3"></td></tr>
             <tr><td><kbd>Enter</kbd></td><td data-i18n="shortcuts.sendMessage">发送消息</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.newLine">换行</td><td>Win / Mac</td></tr>
             <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td data-i18n="shortcuts.inputHistory">输入历史（输入框内）</td><td>Win / Mac</td></tr>
@@ -1034,6 +1050,7 @@
             <tr><td><kbd>Alt</kbd> + <kbd>Enter</kbd></td><td data-i18n="shortcuts.injectAdHoc">插入到正在执行的任务（不入队）</td><td>Win / Mac</td></tr>
             <tr><td><kbd>右键 / 长按</kbd> 停止</td><td data-i18n="shortcuts.stopAndSend">停止当前任务并立即执行队列</td><td>Win / Mac</td></tr>
             <tr><td><kbd>Esc</kbd></td><td data-i18n="shortcuts.clearInput">清空输入框</td><td>Win / Mac</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td data-i18n="shortcuts.cancelVoiceInput">取消录音（录音中优先）</td><td>Win / Mac</td></tr>
           </tbody>
         </table>
       </div>

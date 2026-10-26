@@ -33,6 +33,9 @@ const GLOBALS = {
   getComputedStyle: 'readonly', getSelection: 'readonly', matchMedia: 'readonly', scrollTo: 'readonly',
   alert: 'readonly', confirm: 'readonly', prompt: 'readonly',
   indexedDB: 'readonly', IDBKeyRange: 'readonly',
+  // Web Audio（语音输入：AudioWorklet 采集 PCM，ScriptProcessor 兜底）
+  AudioContext: 'readonly', AudioWorkletNode: 'readonly',
+  AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly',
   self: 'readonly', globalThis: 'readonly',
   // Chrome 的 legacy 全局：仅事件派发期间有效，非标准，勿新增依赖
   event: 'readonly',

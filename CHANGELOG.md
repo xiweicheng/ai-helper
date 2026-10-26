@@ -2,6 +2,25 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-26
+
+### 语音输入（本地 STT）：代理端本地推理 + 侧边栏 🎤 / Alt+V
+> 来源：需要「说话变文字」，但既没有可用的 ASR API，代理端又部署在无外网的公司办公网。硬约束是**数据不出本机、不出内网**，因此推理必须落在本机代理端，模型走离线包分发。
+
+- **技术选型**：`sherpa-onnx-node@^2.0.0`（N-API 预编译，7 个平台 optionalDependencies）+ 本地 ONNX 模型。流式草稿用 Streaming Zipformer（transducer，int8），松手定稿用 SenseVoice（int8，`use_itn=1`），断句用 Silero VAD。选它而不是 whisper.cpp / transformers.js whisper：① 同一次录音要「边说边出草稿 + 松手高精度定稿」两条链路，sherpa 的 online/offline 两套识别器是同一套配置模型，不用维护两个引擎；② N-API 预编译包不需要用户装编译器（whisper.cpp 要 build）；③ 中文 + 中英混说的 CER 明显好于 whisper-tiny/base。
+- **安装严格可选，零侵入主流程**（对齐 RAG 的形态，但反向取舍见下条）：`agent/package.json` 新增自有字段 `asrDependencies` —— npm 不认它，所以 `npm i -g ai-helper-agent` 与 `install.sh/ps1` 都不会顺手拉这 300MB+。安装入口三处齐备：配置页一键安装（`POST /api/asr/deps/install` + 2s 轮询进度）、`aha asr install`、`install.sh --with-asr` / `install.ps1 -WithAsr`。安装脚本里该步骤独立子进程执行，仅交互式终端才询问且**默认否**，非交互（管道 / CI）静默跳过，失败只打警告并提示「稍后在配置页安装」，绝不中断安装主流程。
+- **刻意不做依赖自动重装**（与 RAG 的 `maybeAutoRestoreRagDeps` 相反）：包体大、磁盘占用高，`npm -g` 升级把包目录内依赖清掉时只把 `everSucceeded=true` 记进状态，提示「依赖已被清理，请点击重新安装」，不在用户不知情时重下 300MB。
+- **启动期零成本探测**：判定顺序是「读 `asr-config.json` → 检查 `node_modules/sherpa-onnx-node/package.json` 是否存在 → 两者都满足才起子进程探测（超时 3s）」，未装用户不会付出任何加载开销（RAG 的探针会加载 onnxruntime，对未装用户纯浪费）；探测在 `server.listen` 之后异步执行，不阻塞启动、不影响任何既有接口。这里沿用 R8 教训：依赖可用性只能**子进程**判活 —— 模块求值失败会被永久缓存，进程内 import 一次失败后整个进程都以为它坏了。
+- **启用状态三分离**：`depsReady`（依赖）/ `modelsReady`（模型）/ `enabled`（用户开关），三者全真才向 UI 暴露 🎤，`/api/asr/status` 的 `reason` 直接回 `deps_missing` / `models_missing` / `disabled`。默认 `enabled=false` —— 装了不等于启用，避免「装了就该能用」的误解。扩展端 `computeArmed()` 以服务端 `available` 为权威（有该字段就用它），只在旧代理无该字段时才按三项自行推导，防止两端规则漂移。
+- **代理端新增 `agent/src/asr/`**：`config.js`（路径 / 默认值 / 写锁）、`model-pack.js`（manifest 校验 + 目录穿越防护 + sha256 按 path/size/mtime 缓存）、`detect.js`（子进程探针）、`engine.js`（online/offline/vad 三类懒加载单例，`intraOpNumThreads=clamp(1..4, cpus-1)`，`idleUnloadMs` 到期释放）、`transcribe.js`（WAV 解析 → 非 16k 线性插值重采样 → VAD 切段 → 逐段解码 → 拼接）、`session.js`（WS 流式会话注册表）、`routes.js`、`install.js`。
+- **`session.js` 的收敛策略**：二进制帧 `acceptWaveform + decode`，partial 节流 150ms；`isEndpoint` 为真则提交片段并 `reset` stream；`stop` 优先走离线定稿，无离线模型 / 离线失败 / RSS 超限时**退化为流式全文**（`fallback:true`，只在日志里记 `asr_offline_skipped`，不丢已识别内容）；`close` 未 stop、空闲 30s、总时长 5min、并发超限（默认 1）、进程退出统一收敛并释放。
+- **写单测时挖出 3 个真实缺陷并修掉**：① **partial 节流把 `currentText` 的更新也一起推迟**，导致「无离线模型时 stop 退化」拿到的是被节流窗口截断的旧文本（丢尾部）—— 拆成 `currentText`（最新解码文本，任何情况都更新）与 `lastSentText`（真正推送过的文本，仅用于去重），`endpoint` 时两者一并重置；② **输入框上方的「连续静音 2.5s」提示只有常量声明没有实现**（`SILENCE_HINT_MS`/`SILENCE_RMS`/`st.silentSince` 全是死代码），补 `trackSilence()` 接进每帧回调；③ **ASR 通道断开后 UI 卡在 `finalizing`**（原来延时 800ms 走 `finish('error')`，期间还发了一次 stop 帧），改为立即结束采集、**保留已写入的文字**、清草稿标记、条内提示「连接中断」。
+- **扩展端交互**：输入区上方新增「录音条」（24 根纯 CSS 音量柱 + `mm:ss` 计时 + `✕ 取消` / `✓ 完成` + 状态位 `role=status aria-live=polite`），录音中给输入框加脉冲描边表达「这段文字还在变动」；草稿直接写入 textarea（textarea 无法局部着色），用户中途手改则**降级为只追加**（`dirty` 标记），取消时按 `insertAt`/`insertedLen` 配对回滚。定稿后**不自动发送**（微信 / 飞书 / ChatGPT 桌面同款）。`prefers-reduced-motion` 下取消动效。
+- **快捷键 `Alt+V`（toggle）与录音态 `Esc`（取消，优先于「清空输入框」）**，三处触发通道：侧边栏内直接调 `toggleVoiceInput()`；网页内内容脚本拦截后转 `VOICE_TOGGLE_FROM_PAGE`；页面焦点但面板未打开时先走 `chrome.action.click()` 的用户手势传导，再在 `chrome.storage.session` 写一次性标记 `pendingVoiceStart`，面板初始化时 15s 内消费一次并自动开录。守卫 `isComposing`（输入法候选期）与 `repeat`（长按），并 `preventDefault()` 阻止 `Alt+V` 在页面输入框里打出字符。判定抽成 `matchVoiceShortcut(e)` 单一实现，侧边栏与单测共用，避免两处规则漂移。**不用 `chrome.commands`**：它带不了「当前面板 / 当前输入框」上下文，还要用户自己去 `chrome://extensions/shortcuts` 手工绑定，与开箱可用相悖。快捷键说明弹框（`Alt+/`）与 i18n（`voice.*` / `shortcuts.voiceInput` / `toolbox.asr*`）同步补齐。
+- **模型分发**：内网无模型下载通道，模型包由有外网的机器做成「一目录一模型 + `manifest.json`」后打 zip 拷入，配置页「选择模型目录」就地注册（`POST /api/asr/models/pick`，仅回环地址可用、零上传）。制作命令、`manifest.json` 字段、sha256 生成脚本、12 类校验失败原因、内网 npm 镜像需放通的 8 个包，全部写进 [docs/Voice-Input-Local-STT.md](docs/Voice-Input-Local-STT.md)。
+- **验证**：代理端 `cd agent && node --test test/unit` —— 新增 4 个文件（`asr-model-pack` 36 例 / `asr-session` 20 例 / `asr-routes` 21 例 / `asr-install-command`），全部通过；扩展端 `npx vitest run test/unit` —— 新增 4 个文件（`voice-input-draft` 14 例 / `voice-input-gating` 11 例 / `voice-input-shortcut` 15 例 / `voice-recorder-bar` 16 例），全部通过；`npm run build:silent` → BUILD_SUCCESS（`scripts/fix-build.js` 额外把 `voice-capture-worklet.js` 复制进 `dist/`，CSP `script-src 'self'` 下 `AudioWorklet.addModule` 只能用扩展内 URL，不能走 blob）。
+- **未验证（如实标注）**：真机尚未跑过真实录音链路 —— 单测全部是注入假 recognizer / 假 ws / 假 media，证明的是状态机与契约；`sherpa-onnx-node` 的实际加载、RTF、RSS 峰值需要在内网机执行 `agent/test/manual/asr-probe.mjs` 取得。若探针判定该 N-API 包在目标机不可用，按预案切 `@huggingface/transformers` whisper（复用 RAG 已装依赖 + 本地目录加载，`allowRemoteModels=false`），仅重写 `engine.js` 与 `transcribe.js` 的引擎层，其余设计不变。
+
 ## 2026-10-25
 
 ### 工具超时参数横向收口：5 个裸 timeout 参数 + 统一归一边界表
