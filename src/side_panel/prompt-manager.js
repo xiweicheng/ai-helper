@@ -1,17 +1,18 @@
 import state from './state.js';
 import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChatConfigLoaded, escapeHtml, escapeAttr, updateDropdownPosition } from './utils.js';
 import { addToInputHistory } from './input-history.js';
-import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText, renderKnowledgeContextBubbles } from './chat-manager.js';
+import { callApi, addContextBubble, addMessage, buildUserContent, stripImagesFromContent, addLoadingMessage, removeLoadingMessage, saveChatHistory, renderMessageMermaid, buildKnowledgeContextText, renderKnowledgeContextBubbles, refreshSelectionIndicatorFromState } from './chat-manager.js';
 import { markSessionCompleted } from './session-manager.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { compressQuotedContext, getMessageBudget } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { runCompaction, computeCurrentUsage } from './context-indicator.js';
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
-import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
+import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, getMcpContextText, refreshSkillPickedState, refreshMcpPickedState, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
-import { clearKnowledgeRefs } from './agent-at-selector.js';
-import { buildFileContentText, clearFiles } from './file-extract.js';
+import { refreshKnowledgePickedState, renderKnowledgeIndicator } from './agent-at-selector.js';
+import { buildFileContentText, renderFilePreviews } from './file-extract.js';
+import { renderImagePreviewsFromChat } from './image-preview.js';
 import { saveDocImageSnapshot } from './doc-images.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -633,6 +634,20 @@ export async function sendPromptByCode(code) {
     return;
   }
 
+  // 上下文快照：必须在第一个 await 之前取。
+  // 后面要等自动压缩、知识库检索、图片快照写入——等完再读 state，
+  // 就会把用户这段时间新挂的上下文当成"本条消息的"一起发走并消费掉。
+  const ctxSnapshot = {
+    quotedContextText: state.quotedContextText || '',
+    selectedContextText: state.selectedContextText || '',
+    selectedSkills: state.selectedSkills.slice(),
+    selectedMcpServices: state.selectedMcpServices.slice(),
+    knowledgeRefs: state.knowledgeRefs.slice(),
+    selectedPage: state.selectedPage,
+    attachedImages: state.attachedImages.slice(),
+    attachedFiles: state.attachedFiles.slice(),
+  };
+
   // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
   await runAutoCompactionBeforeSend({
     state,
@@ -652,62 +667,80 @@ export async function sendPromptByCode(code) {
 
   // 如果有选中内容且划词问答开启，拼接到用户消息前面，并标记为已使用
   let userMessage = prompt.content;
-  const hasSelectedContext = state.selectedContextText && state.selectedContextText.trim();
-  const hasQuotedContext = state.quotedContextText && state.quotedContextText.trim();
+  const hasSelectedContext = ctxSnapshot.selectedContextText && ctxSnapshot.selectedContextText.trim();
+  const hasQuotedContext = ctxSnapshot.quotedContextText && ctxSnapshot.quotedContextText.trim();
 
   // 收集上下文气泡信息，用于持久化保存和刷新恢复
   const contextBubbles = [];
 
   // 优先处理引用内容
   if (hasQuotedContext) {
-    const ctx = state.quotedContextText.trim();
+    const ctx = ctxSnapshot.quotedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     userMessage = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立引用气泡
     addContextBubble('quoted', ctx, false);
     contextBubbles.push({ type: 'quoted', text: ctx });
-    // 清除引用内容，只使用一次
-    state.quotedContextText = '';
+    // 批次消费：只清与本条快照一致的那份（发送期间用户新挂的属于下一条消息）
+    if (state.quotedContextText === ctxSnapshot.quotedContextText) state.quotedContextText = '';
   } else if (hasSelectedContext) {
-    const ctx = state.selectedContextText.trim();
+    const ctx = ctxSnapshot.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
     userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
     contextBubbles.push({ type: 'selected', text: ctx });
-    // 清除选中内容，只使用一次
-    state.selectedContextText = '';
+    // 批次消费：只清与本条快照一致的那份（发送期间用户新挂的属于下一条消息）
+    if (state.selectedContextText === ctxSnapshot.selectedContextText) state.selectedContextText = '';
   }
 
   // 注入技能上下文（如果已选中技能，支持多技能），与主发送链路保持对齐
-  const skillContext = await getSkillContextText();
+  const skillsSnapshot = ctxSnapshot.selectedSkills;
+  const skillContext = await getSkillContextText(skillsSnapshot);
   if (skillContext) {
     userMessage = skillContext + userMessage;
-    for (const skill of state.selectedSkills) {
+    for (const skill of skillsSnapshot) {
       addContextBubble('skill', t('contextBubble.bubbleSkill', { name: skill.name, desc: skill.description ? '：' + skill.description : '' }), false);
       contextBubbles.push({ type: 'skill', name: skill.name, description: skill.description || '' });
     }
-    clearSkillSelection();
+    // 批次消费本条快照里的技能：只移除那批（发送期间用户新选的技能属于下一条消息）
+    const consumedSkills = new Set(skillsSnapshot);
+    const keptSkills = state.selectedSkills.filter((s) => !consumedSkills.has(s));
+    if (keptSkills.length !== state.selectedSkills.length) {
+      state.selectedSkills = keptSkills;
+      state.selectedSkillIndex = -1;
+      renderSkillIndicator();
+      refreshSkillPickedState();
+    }
   }
 
   // 注入 MCP 服务上下文（如果已选中 MCP 服务，支持多服务）
   // 被选中的服务本次请求强制下发（forcedMcpServerIds），绕过弹窗关闭/助手排除列表
   let forcedMcpServerIds = null;
-  const mcpContext = getMcpContextText();
+  const mcpSnapshot = ctxSnapshot.selectedMcpServices;
+  const mcpContext = getMcpContextText(mcpSnapshot);
   if (mcpContext) {
-    const forcedIds = state.selectedMcpServices.map(s => s.serverId).filter(Boolean);
+    const forcedIds = mcpSnapshot.map(s => s.serverId).filter(Boolean);
     forcedMcpServerIds = forcedIds.length > 0 ? forcedIds : null;
     userMessage = mcpContext + userMessage;
-    for (const svc of state.selectedMcpServices) {
+    for (const svc of mcpSnapshot) {
       addContextBubble('mcp', t('contextBubble.bubbleMcp', { name: svc.serverName }), false);
       contextBubbles.push({ type: 'mcp', serverName: svc.serverName, serverId: svc.serverId || '' });
     }
-    clearMcpService();
+    // 批次消费本条快照里的 MCP 服务：只移除那批（发送期间用户新选的属于下一条消息）
+    const consumedMcp = new Set(mcpSnapshot);
+    const keptMcp = state.selectedMcpServices.filter((s) => !consumedMcp.has(s));
+    if (keptMcp.length !== state.selectedMcpServices.length) {
+      state.selectedMcpServices = keptMcp;
+      state.selectedMcpServiceIndex = -1;
+      renderMcpIndicator();
+      refreshMcpPickedState();
+    }
   }
 
   // 注入知识库检索上下文（如果已引用知识库），与主发送链路保持对齐
-  if (state.knowledgeRefs.length > 0) {
-    const refsSnapshot = state.knowledgeRefs.slice();
+  const refsSnapshot = ctxSnapshot.knowledgeRefs;
+  if (refsSnapshot.length > 0) {
     const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), false);
     let kbPayload = null;
     try {
@@ -721,27 +754,41 @@ export async function sendPromptByCode(code) {
       renderKnowledgeContextBubbles(kbPayload.refs, kbPayload.failed === true);
       contextBubbles.push({ type: 'knowledge', refs: kbPayload.refs, failed: kbPayload.failed || undefined });
     }
-    clearKnowledgeRefs();
+    // 批次消费本条快照里的知识库引用：只移除那批（发送期间用户新引的属于下一条消息）
+    const consumedRefs = new Set(refsSnapshot);
+    const keptRefs = state.knowledgeRefs.filter((r) => !consumedRefs.has(r));
+    if (keptRefs.length !== state.knowledgeRefs.length) {
+      state.knowledgeRefs = keptRefs;
+      refreshKnowledgePickedState();
+      renderKnowledgeIndicator();
+    }
   }
 
   // 注入网页上下文（如果已选中网页）
-  if (state.selectedPage) {
-    const pageCtx = `[网页上下文]\n标题: ${state.selectedPage.title}\nURL: ${state.selectedPage.url}\ntabId: ${state.selectedPage.id}\n`;
+  const pageSnapshot = ctxSnapshot.selectedPage;
+  if (pageSnapshot) {
+    const pageCtx = `[网页上下文]\n标题: ${pageSnapshot.title}\nURL: ${pageSnapshot.url}\ntabId: ${pageSnapshot.id}\n`;
     userMessage = pageCtx + userMessage;
-    addContextBubble('page', t('contextBubble.bubblePage', { title: state.selectedPage.title, url: state.selectedPage.url }), false);
-    contextBubbles.push({ type: 'page', title: state.selectedPage.title, url: state.selectedPage.url });
-    clearPageSelection();
+    addContextBubble('page', t('contextBubble.bubblePage', { title: pageSnapshot.title, url: pageSnapshot.url }), false);
+    contextBubbles.push({ type: 'page', title: pageSnapshot.title, url: pageSnapshot.url });
+    // 批次消费：用户已换成别的页面（引用不同）时那是下一条的，不清
+    if (state.selectedPage === pageSnapshot) clearPageSelection();
   }
 
-  // 如果选中内容或引用内容已使用，清除提示条
+  // 如果选中内容或引用内容已使用，清除提示条；state 已有新内容则属于下一条消息，绝不能清。
+  // 引用与选中同时挂载时本条只带走一份：另一份留着，并按它重绘提示条
   if (hasSelectedContext || hasQuotedContext) {
-    clearSelectedContext();
+    if (!state.quotedContextText && !state.selectedContextText) {
+      clearSelectedContext();
+    } else {
+      refreshSelectionIndicatorFromState();
+    }
   }
 
   // 注入文件内容（发送给模型，但不显示在用户消息气泡中），与主发送链路保持对齐
-  const attachedFilesSnapshot = state.attachedFiles.slice();
+  const attachedFilesSnapshot = ctxSnapshot.attachedFiles;
   if (attachedFilesSnapshot.length > 0) {
-    const fileContent = buildFileContentText();
+    const fileContent = buildFileContentText(attachedFilesSnapshot);
     if (fileContent) {
       userMessage += fileContent;
     }
@@ -756,11 +803,12 @@ export async function sendPromptByCode(code) {
     });
   }
 
-  // 构建用户消息 content（支持图片附件）
-  const userContent = buildUserContent(userMessage);
+  // 构建用户消息 content（支持图片附件；用入口处取的批次快照）
+  const inputImagesSnapshot = ctxSnapshot.attachedImages;
+  const userContent = buildUserContent(userMessage, inputImagesSnapshot);
 
   // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复，文件标签由 attachedFilesSnapshot 渲染
-  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content), true, [], null, false, userMessage, null, attachedFilesSnapshot);
+  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content, inputImagesSnapshot), true, [], null, false, userMessage, null, attachedFilesSnapshot);
 
   // 更新消息历史（附带上下文气泡信息，供刷新恢复）
   state.messageHistory.push({ role: 'user', content: userContent, messageId, timestamp, contextBubbles });
@@ -783,22 +831,32 @@ export async function sendPromptByCode(code) {
   const loadingId = addLoadingMessage();
   const mySessionId = state.activeSessionId;
 
-  const model = state.enableImageInput && state.attachedImages.length > 0
+  const model = state.enableImageInput && inputImagesSnapshot.length > 0
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
-  // 图片数据已包含在 userContent 中，立即清除预览栏 DOM
-  if (state.attachedImages.length > 0) {
-    const previewBar = document.getElementById('imagePreviewBar');
-    if (previewBar) {
-      previewBar.innerHTML = '';
-      previewBar.style.display = 'none';
+  // 图片已包含在本条 userContent 快照中：只移除"本条那批"并重绘预览栏
+  // （发送期间用户新挂的图片属于下一条消息，绝不能被这次清理带走）
+  if (inputImagesSnapshot.length > 0) {
+    const consumedImages = new Set(inputImagesSnapshot);
+    const keptImages = state.attachedImages.filter((img) => !consumedImages.has(img));
+    if (keptImages.length !== state.attachedImages.length) {
+      state.attachedImages = keptImages;
+      renderImagePreviewsFromChat();
     }
   }
 
-  // 文件内容已注入到消息中，清除文件附件
-  if (state.attachedFiles.length > 0) {
-    clearFiles();
+  // 文件已注入本条消息：只释放"本条那批"（revoke blob 句柄 + 重绘预览栏）
+  if (attachedFilesSnapshot.length > 0) {
+    const consumedFiles = new Set(attachedFilesSnapshot);
+    const keptFiles = state.attachedFiles.filter((f) => !consumedFiles.has(f));
+    if (keptFiles.length !== state.attachedFiles.length) {
+      for (const f of state.attachedFiles) {
+        if (consumedFiles.has(f) && f.dataUrl) URL.revokeObjectURL(f.dataUrl);
+      }
+      state.attachedFiles = keptFiles;
+      renderFilePreviews();
+    }
   }
 
   try {
@@ -922,9 +980,9 @@ export async function sendPromptByCode(code) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
   } finally {
     // 统一收尾：清生成态 + 标记完成 + 广播事件 + 通知队列接力
+    // 图片已在发送时按批次消费：这里绝不能再整栏清空（生成结束时用户可能刚为下一条挂好图片）
     notifyGenerationEnded(mySessionId);
     userInput.focus();
-    state.attachedImages = [];
   }
 }
 

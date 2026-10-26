@@ -102,7 +102,7 @@ describe('非激活会话派发', () => {
     expect(store.getRecent('s2')[0].status).toBe('done');
   });
 
-  test('激活会话派发不传 context / sessionState（走原有 state 路径）', async () => {
+  test('激活会话派发：上下文同样随载荷传入（不再借用输入区 state）', async () => {
     await store.enqueue({ sessionId: 's1', text: '前台任务' });
     const seen = [];
     runner.bindDispatcher(async (opts) => { seen.push(opts); return { ok: true }; });
@@ -110,7 +110,10 @@ describe('非激活会话派发', () => {
     await runner.drainQueue('s1');
 
     expect(seen).toHaveLength(1);
-    expect(seen[0].context).toBeUndefined();
+    // 载荷缺省补空：8 类字段齐备，sendMessage 不会回落到面板 state
+    expect(seen[0].context).toBeDefined();
+    expect(seen[0].context.quotedContextText).toBe('');
+    expect(seen[0].context.attachedImages).toEqual([]);
     expect(seen[0].sessionState).toBeUndefined();
     // 不该为了前台派发去读会话库
     expect(loadSessions).not.toHaveBeenCalled();

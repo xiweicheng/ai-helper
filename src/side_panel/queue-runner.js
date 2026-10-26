@@ -50,7 +50,7 @@ const EVENT_CONTEXT_RESTORED = 'queue-context-restored';
 
 /**
  * 注入真正的发送实现。
- * @param {(opts: {text: string, fromQueue?: boolean, sessionId?: string}) => Promise<{ok: boolean, reason?: string}>} fn
+ * @param {(opts: {text: string, fromQueue?: boolean, sessionId?: string, context?: Object, sessionState?: Object}) => Promise<{ok: boolean, reason?: string}>} fn
  */
 export function bindDispatcher(fn) {
   dispatcher = fn;
@@ -61,7 +61,7 @@ function isGenerating(sessionId) {
 }
 
 // ============================================================
-// 上下文快照：入队时接管，派发时归还
+// 上下文快照：入队时接管，派发时随载荷携带（不借还输入区）
 // ============================================================
 
 /** 读取当前输入区已挂载的上下文（只取轻量可持久化部分） */
@@ -108,7 +108,10 @@ function detachContextFromInput() {
   return snapshot;
 }
 
-/** 派发前把上下文还回 state，让 sendMessage 走完全相同的气泡/拼接路径 */
+/**
+ * 把上下文还回 state。只用于两条路径：入队失败回滚、✎ 回填（restoreContextForItem）。
+ * 派发**不再**借用输入区：条目上下文随 payload.context 交给 sendMessage。
+ */
 function restoreContextToInput(snapshot) {
   if (!snapshot) return;
   if (snapshot.quotedContextText) state.quotedContextText = snapshot.quotedContextText;
@@ -123,7 +126,8 @@ function restoreContextToInput(snapshot) {
 
 /**
  * 彻底复位输入区上下文。
- * 派发前必做：否则上一条残留的引用/图片/网页会串到下一条（用户看到的“带上下文”就会错乱）。
+ * 入队接管与 ✎ 回填前必做：否则残留的引用/图片/网页会串到下一条
+ * （用户看到的“带上下文”就会错乱）。派发路径不调用它——那会碰用户正在编辑的现场。
  */
 function resetInputContext() {
   const hadImages = (state.attachedImages || []).length > 0;
@@ -262,8 +266,11 @@ export async function enqueueFromInput({ autoDrain = true } = {}) {
   });
 
   if (!result.ok) {
-    // 入队失败必须把上下文还回去，否则用户的内容被吞了
+    // 入队失败必须把上下文还回去，否则用户的内容被吞了。
+    // 只还 state 不够：入队时指示器已被清掉，不广播重绘的话界面上仍是“什么都没有”，
+    // 用户会以为引用/技能/网页/图片真的消失了（实际还在 state 里，下次发送会跟着走）。
     restoreContextToInput(snapshot);
+    document.dispatchEvent(new CustomEvent(EVENT_CONTEXT_RESTORED, { detail: { snapshot } }));
     if (result.error === 'queue_full') {
       showToast(t('queue.queueFull', { limit: result.limit }), 'warning');
     } else {
@@ -391,30 +398,28 @@ async function drainOnce(sid) {
     showToast(t('queue.attachmentsMissing'), 'warning', 5000);
   }
 
-  // 上下文快照：本条目入队时接管的那一份 + 重附件
+  // 上下文快照：本条目入队时接管的那一份 + 重附件。
+  // 8 类字段显式补空（与 EMPTY_INPUT_CONTEXT 同构）：sendMessage 以"载荷即快照"的口径
+  // 消费上下文，缺字段会回落到面板 state——那会把用户输入区的东西串进队列消息
   const contextSnapshot = {
+    quotedContextText: '',
+    selectedContextText: '',
+    selectedSkills: [],
+    selectedMcpServices: [],
+    knowledgeRefs: [],
+    selectedPage: null,
     ...(item.contextSnapshot || {}),
     attachedImages: (heavy && heavy.images) || [],
     attachedFiles: (heavy && heavy.files) || [],
   };
 
   // 队列是会话维度的，目标会话可能不是面板当前显示的那个。
-  // 非激活时绝不能把上下文写进 state（那是别人的输入区），也不能广播 UI 事件。
+  // 激活与否都不再借用输入区：上下文一律随载荷 context 传入，由发送管线按"批次"消费。
+  // 这样用户正在编辑的新消息（刚挂的图片/引用/知识库）不会被后台接力换走或清掉。
   const onActiveSession = sid === state.activeSessionId;
-  let userBackup = null;
-  let userHadContext = false;
   let sessionState = null;
 
-  if (onActiveSession) {
-    // 先存档用户现场：自动接力是后台行为，用户可能刚挂上图片/引用准备下一条。
-    // 派发必须先复位再换成本条的上下文，但**用户自己挂的东西不能因此被悄悄清掉**。
-    userBackup = captureContext();
-    userHadContext = hasContext(userBackup);
-
-    // 先彻底复位再还原：否则上一条残留的引用 / 图片 / 网页会串到这一条
-    resetInputContext();
-    restoreContextToInput(contextSnapshot);
-  } else {
+  if (!onActiveSession) {
     sessionState = await loadSessionStateForDispatch(sid);
     if (!sessionState) {
       // 会话已被删除：队列随会话一起清掉（正常情况下删会话时已经清过，这里兜底）
@@ -426,10 +431,9 @@ async function drainOnce(sid) {
 
   let result = { ok: true };
   try {
-    const payload = { text: item.text, fromQueue: true, sessionId: sid };
+    // 上下文随载荷传入（激活会话同样走这条路）：sendMessage 不读也不写面板输入区
+    const payload = { text: item.text, fromQueue: true, sessionId: sid, context: contextSnapshot };
     if (!onActiveSession) {
-      // 非激活：上下文与会话态全部随载荷传入，sendMessage 不读也不写 state
-      payload.context = contextSnapshot;
       payload.sessionState = sessionState;
     }
     result = (await dispatcher(payload)) || { ok: true };
@@ -452,8 +456,7 @@ async function drainOnce(sid) {
     } else {
       // 派发没真正发出去（例如会话刚好又开始生成）：回队并置顶，绝不静默丢弃
       await store.rollbackInjecting(sid, item.id, 'dispatch_failed', result.reason || 'dispatch_failed');
-      // 附件已经还原到 state，但这条没发出去 → 清掉，避免下一次手动发送误带别的条目的附件
-      if (onActiveSession) resetInputContext();
+      // 输入区全程未被借用，无需复位（附件仍留在 IndexedDB 等重试）
       // 且不能在同 tick 重试：撞车的真相是“会话正忙”，立刻重来只会连撞 MAX_DISPATCH_ATTEMPTS 次，
       // 除了把同一段话重复塞进会话外没有任何收益。作废本轮已置位的重跑标记，
       // 真正的接力时机是 generation-ended（或用户下一次显式操作）。
@@ -465,12 +468,6 @@ async function drainOnce(sid) {
     await store.settle(sid, item.id, { status: QUEUE_STATUS.DONE, note: lostAttachments ? 'relayed_no_attachments' : 'relayed' });
     // 条目已进入归档（只保留文本与附件摘要），释放重附件
     await attachmentStore.deleteAttachments(item.id);
-  }
-
-  // 本条上下文已被发送流程消费（或已回滚），把用户自己挂的现场还回去
-  if (onActiveSession && userHadContext) {
-    restoreContextToInput(userBackup);
-    document.dispatchEvent(new CustomEvent(EVENT_CONTEXT_RESTORED, { detail: { snapshot: userBackup } }));
   }
 }
 

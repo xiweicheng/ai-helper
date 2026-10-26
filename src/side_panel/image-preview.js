@@ -485,15 +485,19 @@ export function renderImagePreviewsFromChat() {
 /**
  * 构建用户消息 content，当有图片附件时返回数组格式
  * @param {string} text - 纯文本内容
+ * @param {Array} [images] - 发送批次快照；缺省读 state.attachedImages。
+ *   发送管线必须传快照：消费点之后 state 可能已被清空或混入用户新挂的图片，
+ *   只有快照才能保证"这条消息只带自己那一刻的图片"
  * @returns {string|Array} content 字段值
  */
-export function buildUserContent(text) {
-  if (!state.enableImageInput || state.attachedImages.length === 0) {
+export function buildUserContent(text, images = null) {
+  const imgs = images || state.attachedImages;
+  if (!state.enableImageInput || imgs.length === 0) {
     return text;
   }
 
   const parts = [{ type: 'text', text: text }];
-  for (const img of state.attachedImages) {
+  for (const img of imgs) {
     parts.push({
       type: 'image_url',
       image_url: {

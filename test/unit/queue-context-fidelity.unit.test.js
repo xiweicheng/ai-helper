@@ -4,8 +4,8 @@
 // 这是用户最担心的一件事：看到队列里只有一行文字，怀疑图片、文件、引用、
 // 技能、MCP、知识库、网页这些隐形上下文被丢了。本文件逐项锁死这些行为：
 //   1. 入队时 8 类上下文被完整接管，并从输入区清空（不会重复带到下一条）
-//   2. 面板重载（内存全丢，只剩磁盘）后派发，8 类上下文依旧逐项还原
-//   3. 派发前彻底复位，上一条的引用/图片不会串到下一条
+//   2. 面板重载（内存全丢，只剩磁盘）后派发，8 类上下文随载荷逐项还原
+//   3. 派发只带载荷不碰输入区：条目上下文绝无串味，用户现场原封不动
 //   4. 入队失败（队列满）时上下文原样回滚到输入区，一个字都不丢
 //   5. 附件记录真的取不到时，条目照常执行并明确提示，绝不悄悄降级
 import { describe, test, expect, beforeEach, vi } from 'vitest';
@@ -177,10 +177,35 @@ describe('入队：上下文被完整接管', () => {
     expect(state.attachedImages).toHaveLength(1);
     expect(state.attachedFiles).toHaveLength(1);
   });
+
+  test('回滚时广播 queue-context-restored：指示器必须跟着回来', async () => {
+    // 入队先把上下文从输入区摘走（指示器一并隐藏），失败再把 state 还回来。
+    // 如果只还 state 不广播，界面上引用/技能/网页/图片全都“消失”了——
+    // 用户以为丢了内容，实际上它还在 state 里，这种状态最容易被误判成丢数据。
+    for (let i = 0; i < store.MAX_ITEMS_PER_SESSION; i += 1) {
+      await store.enqueue({ sessionId: 's1', text: `占位 ${i}` });
+    }
+    mountAllContext();
+    ui().value = '溢出的一条';
+
+    const restored = [];
+    const onRestored = (e) => restored.push(e && e.detail ? e.detail.snapshot : null);
+    document.addEventListener('queue-context-restored', onRestored);
+    try {
+      await runner.enqueueFromInput({ autoDrain: false });
+    } finally {
+      document.removeEventListener('queue-context-restored', onRestored);
+    }
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].quotedContextText).toBe('这是引用的原文');
+    expect(restored[0].selectedPage.url).toBe('https://example.com');
+    expect(restored[0].attachedImages).toHaveLength(1);
+  });
 });
 
 describe('派发：上下文逐项还原', () => {
-  test('面板重载后派发，8 类上下文与图片/文件全部还原', async () => {
+  test('面板重载后派发：8 类上下文随载荷完整传入，且不借用输入区', async () => {
     mountAllContext();
     ui().value = '带上下文排队';
     await runner.enqueueFromInput({ autoDrain: false });
@@ -190,17 +215,20 @@ describe('派发：上下文逐项还原', () => {
     expect(state.attachedImages).toHaveLength(0);
 
     const captured = [];
-    runner.bindDispatcher(async () => {
+    runner.bindDispatcher(async (payload) => {
       captured.push({
-        quoted: state.quotedContextText,
-        skills: state.selectedSkills.map((s) => s.name),
-        mcp: state.selectedMcpServices.map((s) => s.serverId),
-        kb: state.knowledgeRefs.map((r) => r.id),
-        page: state.selectedPage && state.selectedPage.url,
-        images: state.attachedImages.length,
-        imageOk: state.attachedImages[0] && state.attachedImages[0].originalUrl === IMAGE.originalUrl,
-        files: state.attachedFiles.map((f) => f.name),
-        fileText: state.attachedFiles[0] && state.attachedFiles[0].text,
+        quoted: payload.context.quotedContextText,
+        skills: payload.context.selectedSkills.map((s) => s.name),
+        mcp: payload.context.selectedMcpServices.map((s) => s.serverId),
+        kb: payload.context.knowledgeRefs.map((r) => r.id),
+        page: payload.context.selectedPage && payload.context.selectedPage.url,
+        images: payload.context.attachedImages.length,
+        imageOk: payload.context.attachedImages[0] && payload.context.attachedImages[0].originalUrl === IMAGE.originalUrl,
+        files: payload.context.attachedFiles.map((f) => f.name),
+        fileText: payload.context.attachedFiles[0] && payload.context.attachedFiles[0].text,
+        // 派发路径不得借用输入区：派发当下 state 必须仍是用户现场（这里是空的）
+        stateQuoted: state.quotedContextText,
+        stateImages: state.attachedImages.length,
       });
       return { ok: true };
     });
@@ -218,10 +246,12 @@ describe('派发：上下文逐项还原', () => {
       imageOk: true,
       files: ['需求.md'],
       fileText: '# 需求正文',
+      stateQuoted: '',
+      stateImages: 0,
     });
   });
 
-  test('派发下一条前彻底复位，上一条的引用/图片不会串过去', async () => {
+  test('连续派发：每条只拿自己入队时的上下文，条目之间绝不串味', async () => {
     // 需要生命周期接线（接力才会在一轮结束后继续下一条）
     await runner.initQueueRunner({ autoResume: false });
     mountAllContext();
@@ -233,16 +263,15 @@ describe('派发：上下文逐项还原', () => {
     await runner.enqueueFromInput({ autoDrain: false });
 
     const captured = [];
-    runner.bindDispatcher(async () => {
+    runner.bindDispatcher(async (payload) => {
       captured.push({
-        quoted: state.quotedContextText,
-        images: state.attachedImages.length,
-        files: state.attachedFiles.length,
-        page: state.selectedPage,
+        quoted: payload.context.quotedContextText,
+        images: payload.context.attachedImages.length,
+        files: payload.context.attachedFiles.length,
+        page: payload.context.selectedPage,
       });
-      // 注意：真实 sendMessage 会消费并清空 state，这里故意不清，
-      // 用来验证"即使外部没清，runner 也会在派发前复位"，杜绝串味。
-      // 同时模拟真实链路：一轮结束会广播 generation-ended，接力才会继续。
+      // 模拟真实链路：一轮结束会广播 generation-ended，接力才会继续。
+      // 这里故意不消费 state —— 载荷化后每条上下文各自独立，不存在串味可能。
       notifyGenerationEnded('s1');
       return { ok: true };
     });
@@ -281,7 +310,7 @@ describe('派发：上下文逐项还原', () => {
 
     expect(store.getItems('s1')).toHaveLength(1);
     expect(attachDisk.records.size).toBe(1);
-    // 失败后 state 被清空，避免下次手动发送误带这条的附件
+    // 附件还留在 IndexedDB 等重试；输入区在入队接管后就一直是空的（派发不借用、失败也不回填）
     expect(state.attachedImages).toHaveLength(0);
   });
 
@@ -294,8 +323,8 @@ describe('派发：上下文逐项还原', () => {
     attachDisk.records.clear();
 
     const captured = [];
-    runner.bindDispatcher(async () => {
-      captured.push({ images: state.attachedImages.length, files: state.attachedFiles.length });
+    runner.bindDispatcher(async (payload) => {
+      captured.push({ images: payload.context.attachedImages.length, files: payload.context.attachedFiles.length });
       return { ok: true };
     });
 
@@ -411,7 +440,7 @@ describe('入队闸门：解析中的文件不会被静默丢内容', () => {
 });
 
 describe('自动接力不得清掉用户刚挂的上下文', () => {
-  test('派发期间用户现场被存档，派发后原样归还', async () => {
+  test('派发全程用户现场原封不动：不被借用、不被清空、也不被归还动作碰到', async () => {
     await runner.initQueueRunner({ autoResume: false });
 
     // 先排一条带完整上下文的
@@ -426,16 +455,15 @@ describe('自动接力不得清掉用户刚挂的上下文', () => {
     state.quotedContextText = '用户新挂的引用';
 
     const captured = [];
-    runner.bindDispatcher(async () => {
-      // 模拟真实 sendMessage：只看得见本条自己的上下文，且发完就消费掉
+    runner.bindDispatcher(async (payload) => {
+      // 本条只拿自己的上下文（载荷携带）；派发当下用户现场必须原封不动
       captured.push({
-        quote: state.quotedContextText,
-        images: state.attachedImages.map((i) => i.originalUrl),
-        files: state.attachedFiles.map((f) => f.name),
+        quote: payload.context.quotedContextText,
+        images: payload.context.attachedImages.map((i) => i.originalUrl),
+        files: payload.context.attachedFiles.map((f) => f.name),
+        userQuote: state.quotedContextText,
+        userImages: state.attachedImages.map((i) => i.originalUrl),
       });
-      state.quotedContextText = '';
-      state.attachedImages = [];
-      state.attachedFiles = [];
       return { ok: true };
     });
 
@@ -447,7 +475,11 @@ describe('自动接力不得清掉用户刚挂的上下文', () => {
     expect(captured[0].images).toEqual([IMAGE.originalUrl]);
     expect(captured[0].files).toEqual(['需求.md']);
 
-    // 派发结束后，用户自己挂的现场回来了，没被后台接力默默清掉
+    // 派发当下：用户自己挂的现场原封不动（旧实现会把 state 借用/清空）
+    expect(captured[0].userQuote).toBe('用户新挂的引用');
+    expect(captured[0].userImages).toEqual([USER_IMAGE.originalUrl]);
+
+    // 派发结束后仍然原样（无借用即无需归还）
     expect(state.quotedContextText).toBe('用户新挂的引用');
     expect(state.attachedImages).toHaveLength(1);
     expect(state.attachedImages[0].originalUrl).toBe(USER_IMAGE.originalUrl);

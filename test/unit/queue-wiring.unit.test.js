@@ -184,9 +184,14 @@ describe('上下文（图片/文件/引用）不能丢', () => {
     expect(src).toContain('saveAttachments');
   });
 
-  test('派发前先彻底复位再还原，避免上下文串味', () => {
+  test('派发不再借用输入区：上下文随载荷传入，绝不串味也绝不碰用户现场', () => {
     const src = runnerSrc();
-    expect(src).toContain('resetInputContext();\n  restoreContextToInput(');
+    // 借用/复位/还原三件套必须从派发路径（drainOnce）退场：
+    // 回填 restoreContextForItem 仍要用它们把草稿还给输入区，但自动接力绝不能借
+    const drainOnceSrc = src.slice(src.indexOf('async function drainOnce'), src.indexOf('const drainAfterStop'));
+    expect(drainOnceSrc).not.toContain('resetInputContext();\n  restoreContextToInput(');
+    // 条目上下文随载荷 context 传递（激活会话同样如此），由发送管线按批次消费
+    expect(drainOnceSrc).toContain('context: contextSnapshot');
   });
 
   test('条目终结时释放重附件，不泄漏磁盘', () => {
@@ -229,10 +234,13 @@ describe('上下文（图片/文件/引用）不能丢', () => {
 
   test('自动接力不得清掉用户刚挂的上下文', () => {
     const src = runnerSrc();
-    expect(src).toContain('userBackup = captureContext()');
-    expect(src).toContain('if (onActiveSession && userHadContext) {');
-    // 用户现场要在派发（dispatcher 调用与结算）之前存档，否则存到的已经是空的了
-    expect(src.indexOf('userBackup = captureContext()')).toBeLessThan(src.indexOf('const still = store.findItem(sid, item.id)'));
+    // 存档/归还机制整体退场：派发路径上不存在任何输入区复位或借用
+    expect(src).not.toContain('userBackup = captureContext()');
+    expect(src).not.toContain('userHadContext');
+    const drainOnceSrc = src.slice(src.indexOf('async function drainOnce'), src.indexOf('const drainAfterStop'));
+    expect(drainOnceSrc).not.toContain('resetInputContext');
+    expect(drainOnceSrc).not.toContain('restoreContextToInput');
+    expect(drainOnceSrc).toContain('context: contextSnapshot');
     // 非激活会话不能碰面板输入区（那是别人的现场）
     expect(src).toContain('const onActiveSession = sid === state.activeSessionId;');
   });
