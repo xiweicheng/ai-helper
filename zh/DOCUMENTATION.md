@@ -167,7 +167,7 @@ ai-helper/
 │   ├── silent-build.js                  # 静默构建（CI 友好，仅失败输出）
 │   ├── generate-icons.js                # 图标生成脚本
 │   ├── deploy-pages.sh                  # GitHub Pages 部署脚本
-│   ├── push-all.sh                      # 一键推送到全部远端（含 Pages 部署）
+│   ├── push-all.sh                      # 一键推送到全部远端（npm run push:all 不触发 Pages 部署）
 │   ├── sync-wiki-to-gitee.sh            # GitHub Wiki 自动同步至 Gitee
 │   ├── auto-record.py                   # 演示视频自动录制脚本
 │   ├── gen-competition-pdf.py           # 参赛作品文档 PDF 生成
