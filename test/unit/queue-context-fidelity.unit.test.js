@@ -394,6 +394,51 @@ describe('✎ 回填：整条上下文一起还原', () => {
     expect(res.wantsAttachments).toBe(false);
     expect(state.attachedImages).toHaveLength(0);
   });
+
+  // 回填的语义是「把这条草稿还给我编辑」，不是「清空输入区」：
+  // 用户完全可能一边排队一边为下一条消息挂好了上下文，点 ✎ 不能把它们静默清掉。
+  test('回填不得清掉用户为下一条消息挂的上下文（条目没带的那几类一律保留）', async () => {
+    await store.enqueue({ sessionId: 's1', text: '纯文字条目' });
+    const item = store.getItems('s1')[0];
+
+    state.quotedContextText = '用户引用';
+    state.selectedContextText = '用户选中';
+    state.selectedSkills = [{ name: 'user-skill', description: '' }];
+    state.selectedMcpServices = [{ serverId: 'mcp-user', serverName: '用户MCP' }];
+    state.knowledgeRefs = [{ id: 'kb-user', name: '用户知识库' }];
+    state.selectedPage = { id: 7, title: '用户页面', url: 'https://user.example' };
+    state.attachedImages = [{ originalUrl: 'data:user-img', compressedUrl: 'data:user-img' }];
+    state.attachedFiles = [{ name: 'user.md', size: 3, type: 'text/markdown', text: 'x', status: 'done' }];
+
+    await runner.restoreContextForItem(item);
+
+    expect(state.quotedContextText).toBe('用户引用');
+    expect(state.selectedContextText).toBe('用户选中');
+    expect(state.selectedSkills).toEqual([{ name: 'user-skill', description: '' }]);
+    expect(state.selectedMcpServices).toEqual([{ serverId: 'mcp-user', serverName: '用户MCP' }]);
+    expect(state.knowledgeRefs).toEqual([{ id: 'kb-user', name: '用户知识库' }]);
+    expect(state.selectedPage).toEqual({ id: 7, title: '用户页面', url: 'https://user.example' });
+    expect(state.attachedImages).toHaveLength(1);
+    expect(state.attachedImages[0].originalUrl).toBe('data:user-img');
+    expect(state.attachedFiles).toHaveLength(1);
+    expect(state.attachedFiles[0].name).toBe('user.md');
+  });
+
+  test('条目带了同一类上下文时按条目整条替换（回填仍要能还原草稿）', async () => {
+    mountAllContext();
+    ui().value = '带图的条目';
+    await runner.enqueueFromInput({ autoDrain: false });
+    const item = store.getItems('s1')[0];
+
+    // 用户随后又给下一条挂了一张不同的图
+    state.attachedImages = [{ originalUrl: 'data:user-img', compressedUrl: 'data:user-img' }];
+
+    await runner.restoreContextForItem(item);
+
+    // 条目这张覆盖掉用户那张，避免回填出来的草稿与实际条目不一致
+    expect(state.attachedImages).toHaveLength(1);
+    expect(state.attachedImages[0].originalUrl).toBe(IMAGE.originalUrl);
+  });
 });
 
 describe('入队闸门：解析中的文件不会被静默丢内容', () => {

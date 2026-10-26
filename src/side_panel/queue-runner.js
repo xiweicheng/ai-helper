@@ -126,8 +126,8 @@ function restoreContextToInput(snapshot) {
 
 /**
  * 彻底复位输入区上下文。
- * 入队接管与 ✎ 回填前必做：否则残留的引用/图片/网页会串到下一条
- * （用户看到的“带上下文”就会错乱）。派发路径不调用它——那会碰用户正在编辑的现场。
+ * 只在入队接管前调用：否则残留的引用/图片/网页会串到下一条
+ * （用户看到的“带上下文”就会错乱）。派发与 ✎ 回填都不调用它——那会碰用户正在编辑的现场。
  */
 function resetInputContext() {
   const hadImages = (state.attachedImages || []).length > 0;
@@ -205,7 +205,10 @@ export async function restoreContextForItem(item) {
   const heavy = (await attachmentStore.loadAttachments(item.id)) || volatileContext.get(item.id) || null;
   const wantsAttachments = !!(item.attachmentSummary || (item.contextSnapshot && item.contextSnapshot.attachmentSummary));
 
-  resetInputContext();
+  // 回填 = 把这条草稿还回来编辑，不是清空输入区：
+  // 用户完全可能一边排队一边为下一条消息挂好了上下文，点 ✎ 不能把它们静默清掉。
+  // restoreContextToInput 只覆盖“条目实际带了的”那几类，其余原样保留；
+  // 条目带了同一类时仍整条替换（草稿必须与实际条目一致）。
   restoreContextToInput({
     ...(item.contextSnapshot || {}),
     attachedImages: (heavy && heavy.images) || [],

@@ -249,7 +249,8 @@ export async function editQueueItem(itemId, options = {}) {
       return false;
     }
   } else if (currentInputHasContext()) {
-    // 没写字但挂了图片/文件/引用：回填会先复位输入区，这些会被 revoke/清掉。
+    // 没写字但挂了图片/文件/引用：回填会把条目的上下文并进来，
+    // 同类项（例如条目也带图）会整条替换掉用户刚挂的那份。
     // 宁可拦住让用户先处理，也绝不静默丢掉它们。
     showToast(t('queue.inputHasUnsavedContext'), 'warning', 4000);
     return false;
