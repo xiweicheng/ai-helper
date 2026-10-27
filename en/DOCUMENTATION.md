@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 34 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 35 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -723,6 +723,20 @@ With the Agent connected, files the AI produces via scripts are correctly surfac
 
 ---
 
+### 35. Local Voice Input (Local STT)
+
+Speak instead of typing — and the **audio never leaves your machine**. Recognition runs an ONNX model inside the local Agent service, so no cloud ASR and no extra API key are needed:
+
+- **Three-part gating**: dependencies (`sherpa-onnx-node`) × models (`online` streaming / `offline` finalize) × the master switch. Only when all three are ready does 🎤 appear at the right of the input box; if any is missing the button is hidden outright rather than failing after a click.
+- **Two tempos**: a streaming draft appears as you speak (throttled to 150ms server-side, with VAD committing sentence ends as stable segments); once you stop, the offline model re-transcribes the whole clip to add punctuation and normalize numbers.
+- **Never lose the tail**: `Alt+V` wraps up even when focus sits on the page, and `Esc` cancels. The microphone grant must happen in a tab (Chromium will not prompt from a side panel), so the Voice tab offers a "Grant" shortcut.
+- **Draft only, never auto-sent**: the recognized text is inserted into the input box and you decide whether to send it.
+- **Reliable recorder strip**: 24 volume bars + timer + status text; focus is returned to the input box before the strip is hidden, and `aria-live` sits only on the status text so screen readers are not spammed by the timer.
+- **Bounded resources**: 5-minute recording cap, 30-second idle session reclaim, concurrency of 1, automatic fallback to the streaming text when RSS exceeds 3.5GB, and engine unload after 10 idle minutes; offline inference runs on a dedicated worker thread so the Agent's event loop keeps serving.
+- **Entry point**: Options → Voice tab (detect / one-click install of dependencies, scan and import model packs, language and master switch). Full setup steps and model pack layout → [`docs/Voice-Input-Local-STT.md`](../Voice-Input-Local-STT.md)
+
+---
+
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
 ### Content Extraction (6)
@@ -866,6 +880,7 @@ Agent command execution three-tier security:
 | mammoth.js | Word .docx text extraction |
 | SheetJS (xlsx) | Excel .xlsx/.xls text extraction |
 | Web Speech API | Text-to-speech |
+| sherpa-onnx (ONNX Runtime) | Local speech recognition (optional dependency, installed on the Agent side; audio never leaves the machine) |
 | EyeDropper API | Color picker |
 | Navigation/Performance API | Performance auditing |
 | Node.js (Agent) | Local file/command service, skill system, MCP protocol |
@@ -1081,6 +1096,22 @@ Note: user clarification time does not count toward the loop timeout (timer paus
 | Auto-rerun | Off | Revealed only when Completion Verification is on; four gates drive unmet sub-tasks back through re-execution |
 
 > The reflection and completion-verification sub-switches both live inside the same ReAct tab panel, toggled via `display`-based visibility; the tool-level reflection toggle has been removed — tool-result quality feedback is now handled automatically by the zero-cost inline "Tool Observation Hint" rule, with no configuration needed.
+
+### Voice (Local STT) Settings (the "Voice" tab)
+
+Only expands when the Agent side is available. All three conditions (dependencies × models × switch) must hold before the side panel shows 🎤.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Voice input master switch | Off | Master gate; with it off, 🎤 stays hidden even when dependencies and models are ready |
+| Recognition language | Auto | `auto` / Chinese / English / Japanese / Korean / Cantonese |
+| Streaming model | Auto-select | Produces the live draft while you speak (the `online` pack) |
+| Finalize model | Auto-select | Re-transcribes the whole clip after you stop (the `offline` pack; determines punctuation and number normalization quality) |
+| Idle unload | 10 min | How long an idle engine lives before memory is released; `0` disables unloading |
+| Dependency status | — | Shows the `sherpa-onnx-node` version and offers one-click install when missing |
+| Microphone grant | — | "Grant" opens a tab to approve once (no prompt is possible from a side panel) |
+
+Model packs live in `~/.ai-helper-agent/asr/models/<id>/` (one directory per pack, each containing `manifest.json`) and can be discovered by scan, imported from a folder, or downloaded from the built-in catalog.
 
 ### Chat Settings (in the side panel)
 

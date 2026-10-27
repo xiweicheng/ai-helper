@@ -1006,6 +1006,11 @@
       <p data-i18n="feat-rag-desc">Import PDF / Word / Excel / PPT / Markdown / HTML / CSV into local knowledge bases and get retrieval-augmented answers with clickable citations. Hybrid vector + keyword retrieval, multi-base management and cross-base search — fully local via the optional Agent.</p>
     </div>
     <div class="card">
+      <div class="card-icon">🎙️</div>
+      <h3 data-i18n="feat-voice-title">On-Device Voice Input</h3>
+      <p data-i18n="feat-voice-desc">Speak instead of typing: click 🎤 or press Alt+V and a streaming draft appears as you speak. Recognition runs a local ONNX model inside the optional Agent, so the audio never leaves your machine and no cloud speech service is needed. When you stop, a higher-accuracy pass adds punctuation and normalizes numbers, and the text is only inserted into the input box — never sent automatically.</p>
+    </div>
+    <div class="card">
       <div class="card-icon">🖥️</div>
       <h3 data-i18n="feat-agent-title">Agent Local Operations</h3>
       <p data-i18n="feat-agent-desc">Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.</p>
@@ -1797,7 +1802,7 @@
     'hero-title-1': { en: 'Make Your Browser', zh: '让你的浏览器' },
     'hero-title-2': { en: 'Think & Act', zh: '会思考、能行动' },
     'hero-subhead': { en: 'More Than Chat — A Real Action-Taking AI Assistant', zh: '不止是对话，更是能真正动手做事的 AI 助手' },
-    'hero-desc':    { en: 'A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, local knowledge base (RAG), multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.', zh: '基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、本地知识库（RAG）、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。' },
+    'hero-desc':    { en: 'A Chrome intelligent assistant extension built on the ReAct reasoning loop architecture. With 40+ built-in tools, it supports browser automation, workspace management, multimodal Q&A, long-term memory, local knowledge base (RAG), on-device voice input, multi-agent collaboration, task checkpoint recovery, Skill system, and MCP protocol extension — control your browser and full local development workflow using natural language.', zh: '基于 ReAct 推理循环架构的 Chrome 智能助手扩展。40+ 个内置工具，支持浏览器自动化、工作目录管理、多模态问答、长期记忆、本地知识库（RAG）、本地语音输入、多智能体协作、任务断点续接、Skill 系统和 MCP 协议扩展，用自然语言操控浏览器和本地开发全流程。' },
     'hero-btn-exp':  { en: 'Try It Now', zh: '立即体验' },
     'hero-btn-chrome': { en: 'Chrome Web Store', zh: 'Chrome 应用商店' },
     'hero-btn-edge': { en: 'Edge Add-ons', zh: 'Edge 扩展商店' },
@@ -1835,6 +1840,8 @@
     'feat-memory-desc':      { en: 'Automatically stores user preferences, knowledge, and decision records. Supports fact storage and conversation summary memory types, intelligent history retrieval, auto compression and eviction of low-value memories — the more you use it, the better it understands you.', zh: '自动存储用户偏好、知识和决策记录。支持事实存储和对话摘要两种记忆类型，智能检索历史记忆，自动压缩与淘汰低价值记忆，让 AI 越用越懂你。' },
     'feat-rag-title':        { en: 'Local Knowledge Base (RAG)', zh: '本地知识库（RAG）' },
     'feat-rag-desc':         { en: 'Import PDF / Word / Excel / PPT / Markdown / HTML / CSV into local knowledge bases and get retrieval-augmented answers with clickable citations. Hybrid vector + keyword retrieval, multi-base management and cross-base search — fully local via the optional Agent.', zh: '将 PDF / Word / Excel / PPT / Markdown / HTML / CSV 导入本地知识库，检索增强回答附带可点击的引用来源。向量 + 关键词混合检索，支持多库管理与跨库检索，数据全程本地（经可选 Agent 实现）。' },
+    'feat-voice-title':      { en: 'On-Device Voice Input', zh: '本地语音输入' },
+    'feat-voice-desc':       { en: 'Speak instead of typing: click 🎤 or press Alt+V and a streaming draft appears as you speak. Recognition runs a local ONNX model inside the optional Agent, so the audio never leaves your machine and no cloud speech service is needed. When you stop, a higher-accuracy pass adds punctuation and normalizes numbers, and the text is only inserted into the input box — never sent automatically.', zh: '用说的代替打字：点输入框旁的 🎤 或按 Alt+V，边说边出流式草稿。识别在可选 Agent 内跑本地 ONNX 模型，音频不出本机、不需要云端语音服务；松手后高精度模型补标点、规整数字，结果只写进输入框，不自动发送。' },
     'feat-agent-title':      { en: 'Agent Local Operations', zh: '代理本地操作' },
     'feat-agent-desc':       { en: 'Read/write files, search code, execute terminal commands. npm install, git operations, run scripts — all done directly in browser conversations.', zh: '读写文件、搜索代码、执行终端命令。npm install、git 操作、运行脚本，直接在浏览器对话中完成。' },
     'feat-artifact-title':   { en: 'Artifact Detection & Clickable Paths', zh: '文件产物识别与可点击路径' },

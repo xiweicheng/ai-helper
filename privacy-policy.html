@@ -44,7 +44,7 @@
   <!-- ==================== 中文版 ==================== -->
   <div id="zh">
     <h1>AI Helper 隐私政策</h1>
-    <p class="updated">最近更新：2026 年 10 月 12 日</p>
+    <p class="updated">最近更新：2026 年 10 月 28 日</p>
 
     <h2>结论先行</h2>
     <p><strong class="no">AI Helper 不收集、不上传、不出售任何用户个人数据。</strong>扩展没有自己的服务器，所有数据都只保存在你自己的设备本地，或发送给你自己配置的大语言模型服务。</p>
@@ -53,6 +53,7 @@
     <ul>
       <li>以下数据全部通过浏览器 <code>chrome.storage</code> 保存在<strong>你的设备本地</strong>：设置、智能体配置、自定义提示词、会话记录、长期记忆、执行日志、模型 API Key。</li>
       <li>扩展开发者<strong>无法访问</strong>上述任何数据，也不存在任何向开发者服务器传输数据的代码。</li>
+      <li><strong>语音音频从不落盘</strong>：录音只以内存中的音频分片存在，识别完成后立即释放，不会写入 <code>chrome.storage</code>、IndexedDB 或任何本地文件；只有识别出的文字会写进你的输入框。</li>
       <li>卸载扩展时，浏览器会一并清除这些本地数据。</li>
     </ul>
 
@@ -61,6 +62,7 @@
       <li>扩展唯一的网络请求，是调用<strong>你自行配置</strong>的大语言模型 API 端点（如 OpenAI 兼容接口、DeepSeek 等）。</li>
       <li>发送的内容仅包括：当前对话消息、你主动要求 AI 处理的页面文本/选中文本、以及工具运行所需的必要上下文。</li>
       <li>这些内容仅用于生成回复，其数据处理方式取决于你所选择的模型服务商的政策。</li>
+      <li>若你启用<strong>本地语音输入</strong>，音频只会通过 <code>127.0.0.1</code> 回环地址发送到你自己启动的本地 Agent 服务做识别，不经过互联网，也不发往开发者或任何第三方。</li>
       <li>除你配置的模型端点外，扩展不向任何第三方发起包含用户数据的请求。</li>
     </ul>
 
@@ -70,6 +72,8 @@
       <li><strong>用户主动触发</strong>：只有当你在对话中明确要求 AI 执行相应操作（如"搜索我的书签"、"翻译选中文字"）时才会使用。</li>
       <li><strong>本地处理</strong>：访问结果仅返回给你自己在侧边栏中查看，不会被记录、聚合或上传。</li>
       <li><strong>调试功能</strong>：仅在用户明确要求排查网页问题时附着当前标签页，期间浏览器显示可见提示条，可随时取消，空闲 2 分钟自动脱离。</li>
+      <li><strong>麦克风（可选）</strong>：仅在你启用本地语音输入、并主动点 🎤 或按 <code>Alt+V</code> 之后才会访问。麦克风授权由浏览器在扩展页面内弹窗索要，需你显式同意一次；未启用该功能或未开始录音时，扩展不访问麦克风。</li>
+      <li><strong>语音识别完全离线</strong>：识别模型与 ONNX 运行时都跑在你本机的 Agent 进程内，音频不上传云端、不写磁盘，也不会被开发者访问。</li>
     </ul>
 
     <h2>四、儿童与敏感信息</h2>
@@ -87,7 +91,7 @@
   <!-- ==================== 英文版 ==================== -->
   <div id="en">
     <h1>AI Helper Privacy Policy</h1>
-    <p class="updated">Last updated: October 12, 2026</p>
+    <p class="updated">Last updated: October 28, 2026</p>
 
     <h2>Bottom Line</h2>
     <p><strong class="no">AI Helper does not collect, upload or sell any personal user data.</strong> The extension has no server of its own. All data stays on your device, or is sent only to the LLM service that you yourself configure.</p>
@@ -96,6 +100,7 @@
     <ul>
       <li>All of the following are stored <strong>locally on your device</strong> via <code>chrome.storage</code>: settings, agent configurations, custom prompts, chat sessions, long-term memory, execution logs and your model API keys.</li>
       <li>The extension developer <strong>cannot access</strong> any of this data, and there is no code that transmits user data to any developer-controlled server.</li>
+      <li><strong>Voice audio is never written to disk</strong>: recordings exist only as in-memory audio chunks and are released as soon as transcription finishes. Nothing is written to <code>chrome.storage</code>, IndexedDB or any local file; only the transcribed text reaches your input box.</li>
       <li>Uninstalling the extension clears all of this local data.</li>
     </ul>
 
@@ -104,6 +109,7 @@
       <li>The only network requests the extension makes are calls to the LLM API endpoint <strong>you configure yourself</strong> (OpenAI-compatible APIs, DeepSeek, etc.).</li>
       <li>What is sent: the current conversation, page text / selected text that you explicitly ask the AI to work on, and the minimal context required for the tools to run.</li>
       <li>This content is used solely to generate responses; its handling is governed by the policy of the model provider you chose.</li>
+      <li>If you enable <strong>local voice input</strong>, audio is sent only over the <code>127.0.0.1</code> loopback address to the local Agent service you started yourself for transcription. It never traverses the internet and never reaches the developer or any third party.</li>
       <li>Other than your configured endpoint, the extension makes no third-party requests containing user data.</li>
     </ul>
 
@@ -112,7 +118,8 @@
     <ul>
       <li><strong>User-initiated</strong>: used only when you explicitly ask the AI to perform the corresponding action (e.g. "search my bookmarks", "translate the selection").</li>
       <li><strong>Processed locally</strong>: results are shown to you alone in the side panel and are never recorded, aggregated or uploaded.</li>
-      <li><strong>Debugging feature</strong>: attaches to the current tab only when you explicitly ask to troubleshoot a page. A visible browser infobar is shown while attached, you can cancel at any time, and the session auto-detaches after 2 minutes of idle.</li>
+      <li><strong>Microphone (optional)</strong>: accessed only after you enable local voice input and actively click 🎤 or press <code>Alt+V</code>. The browser asks for microphone permission inside the extension page and requires your explicit consent once; while the feature is off or no recording is running, the extension does not touch the microphone.</li>
+      <li><strong>Speech recognition runs fully offline</strong>: both the recognition models and the ONNX runtime live inside the Agent process on your own machine. Audio is not uploaded, not written to disk, and cannot be accessed by the developer.</li>
     </ul>
 
     <h2>4. Children and Sensitive Information</h2>

@@ -52,6 +52,9 @@ AI Helper 把浏览器变成 AI 的**操作系统**：LLM 通过 40+ 内建工�
 **8. 长任务可靠交付**
 Checkpoint 断点续接 + Service Worker 重启自动恢复；定时任务支持 Cron / 间隔 / 一次性三种调度，到点自动重跑并写入指定会话；任务完成/失败/等待确认弹出桌面通知，不错过任何结果。
 
+**9. 本地语音输入（音频不出本机）**
+用说的代替打字：点输入框旁的 🎤 或按 `Alt+V`，边说边出流式草稿，松手后高精度模型补标点、规整数字。识别在可选 Agent 内跑本地 ONNX 模型，**音频不上传、不落盘**；结果只写进输入框，不自动发送。启用采用三段式门控（依赖 × 模型 × 开关），未就绪时按钮直接隐藏。
+
 ---
 
 ## 三、技术架构（五层）
@@ -68,13 +71,13 @@ UI 层        Side Panel：对话 / 多会话 / 执行日志 / 工作目录 / �
 
 ## 四、技术栈
 
-Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · IndexedDB · OpenAI-Compatible API（含 Vision / 流式 / 多厂商切换）· Embedding 服务（远端 / 本地 BGE 双档）· Node.js + WebSocket（Agent）· MCP Protocol · marked / mermaid / pdf.js / mammoth / SheetJS · Vitest + Playwright
+Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · IndexedDB · OpenAI-Compatible API（含 Vision / 流式 / 多厂商切换）· Embedding 服务（远端 / 本地 BGE 双档）· Node.js + WebSocket（Agent）· sherpa-onnx（本地语音识别，可选依赖）· MCP Protocol · marked / mermaid / pdf.js / mammoth / SheetJS · Vitest + Playwright
 
 ---
 
 ## 五、工程与质量
 
-- **安全**：敏感操作二次确认、命令三级安全、路径沙箱、配对认证、密钥混淆编码、文件回收站、审计日志。
+- **安全**：敏感操作二次确认、命令三级安全、路径沙箱、配对认证、密钥混淆编码、文件回收站、审计日志；语音音频仅在本机内存处理，不上传、不落盘。
 - **可靠**：Checkpoint 断点续接 + Service Worker 重启自动恢复，长任务中断可一键继续。
 - **质量**：ESLint 规范、模块化设计、Vitest 单元测试 + Playwright E2E、中英文国际化。
 - **开源**：MIT 协议完全开源，结构清晰、注释完善，欢迎社区贡献。
@@ -93,6 +96,6 @@ Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · Inde
 
 - **在线网站**：<https://xiweicheng.github.io/ai-helper/>
 - **开源仓库**：<https://github.com/xiweicheng/ai-helper>
-- **商店上架**：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.2.0）
+- **商店上架**：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.5.1）
 - **代理端安装**：`curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash`（Windows 用 install.ps1），或 `npm install -g ai-helper-agent`
 - **演示视频**：产品介绍（约 4 分钟）/ 自动填表 Demo（67 秒），见仓库 `docs/videos/`

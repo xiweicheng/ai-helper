@@ -74,6 +74,7 @@ AI Helper 是一款开源的 LLM 浏览器智能助手，让你用自然语言�
 - 40+ 内置工具：标签页、书签、历史、下载和 Cookie 管理，页面内容提取（含 iframe），截图，以及可选本地代理的文件操作与命令执行。
 - 多智能体：创建自定义助手，各自拥有独立的系统提示词和工具权限，按场景自由切换。
 - 长期记忆：AI 跨会话记住你的偏好。
+- 本地语音输入（可选）：在侧边栏点 🎤 或按 Alt+V 直接说话，识别在本地代理内完成，不需要云端语音服务；松手后高精度定稿补标点、规整数字，结果只写进输入框，不会自动发送。
 - 可扩展：支持 Skill 工作流与 MCP（模型上下文协议）第三方工具接入。
 - 完全透明：推理日志、Token 用量统计，每一步思考和操作都可追溯。
 
@@ -81,6 +82,7 @@ AI Helper 是一款开源的 LLM 浏览器智能助手，让你用自然语言�
 
 - 自带 API Key 即可使用（OpenAI 兼容接口、DeepSeek 等），请求仅发往你自行配置的模型服务。
 - 所有对话、设置与记忆仅保存在你的设备本地，扩展自身不收集、不上传任何用户数据。
+- 语音输入是可选功能：未启用时不会访问麦克风；启用后需你在扩展页面中显式授权一次，音频仅在本机内存中处理，不上传也不写入磁盘。
 - 开源代码，欢迎审计：https://github.com/xiweicheng/ai-helper
 
 ### 英文版
@@ -96,6 +98,7 @@ Key features:
 - 40+ built-in tools: tab, bookmark, history, downloads and cookie management, page extraction (including iframes), screenshots, and file operations via an optional local agent.
 - Multi-agent support: create custom assistants with their own system prompts and tool permissions, and switch per scenario.
 - Long-term memory: the AI remembers your preferences across sessions.
+- Optional local voice input: click 🎤 in the side panel or press Alt+V and just speak. Recognition runs inside the local agent, with no cloud speech service involved; when you stop, a higher-accuracy pass adds punctuation and normalizes numbers, and the text is only inserted into the input box — never sent automatically.
 - Extensible via Skills and the MCP (Model Context Protocol) for third-party tools.
 - Full transparency: reasoning logs and token usage statistics make every thought and action traceable.
 
@@ -103,6 +106,7 @@ Privacy promise:
 
 - Bring your own API key (OpenAI-compatible endpoints, DeepSeek, etc.). Requests go only to the model service you configure yourself.
 - All conversations, settings and memory stay on your device. The extension itself collects and uploads no user data.
+- Voice input is optional: the microphone is never touched unless you enable it, and enabling it requires an explicit one-time grant inside the extension's own page. Audio is processed in local memory only — never uploaded, never written to disk.
 - Open source, audit welcome: https://github.com/xiweicheng/ai-helper
 
 ---
