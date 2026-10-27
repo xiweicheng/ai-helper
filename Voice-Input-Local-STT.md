@@ -23,7 +23,8 @@ background（asr-client.js）
 - **两个模型各司其职**：流式模型（Streaming Zipformer）负责「边说边出字」的草稿；
   离线模型（SenseVoice）负责松手后的整段高精度定稿（带标点、数字规整）。
   只有离线模型也能用 —— 此时没有实时草稿，松手后才出文字。
-- **零外网**：模型是本地文件，引擎是本地原生库；代理端不会发起任何外网请求。
+- **转写不出本机**：模型是本地文件，引擎是本地原生库，音频只走 `127.0.0.1`。
+  唯一可能的外网动作是**下载模型**（可关、可取消，失败不影响任何其它功能，见 4.0）。
 - **可选组件**：安装代理端 ≠ 获得语音能力。依赖、模型、启用开关三者齐备 🎤 才会出现。
 
 ## 2. 启用三段式（依赖 / 模型 / 开关）
@@ -33,11 +34,31 @@ background（asr-client.js）
 | 项 | 含义 | 缺失时的表现 |
 |---|---|---|
 | `deps.ready` | `sherpa-onnx-node` 可被加载（子进程探测，非进程内 import） | 配置页「未安装」，可一键安装 |
-| `modelsReady` | `models/` 下至少有一个合法的 `online` 或 `offline` 包 | 配置页「无模型」，可「选择模型目录」导入 |
+| `modelsReady` | 固定目录 `~/.ai-helper-agent/asr/models` 下至少有一个合法的 `online` 或 `offline` 包 | 配置页「无模型」，可一键下载（4.0）或从文件夹导入（4.4） |
 | `enabled` | 用户在配置页打开了开关（默认**关**） | 保存接口置为 `true` 即可 |
 
 三者全真 → `/api/asr/status` 的 `available=true` → 侧边栏 🎤 才显示。
 `reason` 字段会直接告诉前端缺的是 `deps_missing` / `models_missing` / `disabled`。
+
+### 2.1 麦克风授权（一次性，且只能在配置页做）
+
+前三项决定「🎤 要不要出现」，麦克风权限决定「点下去能不能录」。这一项由**浏览器**管，不在代理端。
+
+- **为什么侧边栏不弹授权框**：Chromium 的 side panel / popup / offscreen document 里调
+  `getUserMedia` **不会**展示原生权限弹窗，而是直接抛 `NotAllowedError`。只有**标签页形态的扩展页面**
+  （`chrome-extension://<id>/options.html`）能弹。这是浏览器限制，不是扩展没写申请逻辑。
+- **怎么授权**：配置页「语音 Tab → 麦克风权限」有状态与按钮（已授权 / 未授权 / 已被拒绝 / 状态未知）。
+  点「授权麦克风」→ 浏览器弹原生框 → 选允许后立刻 `track.stop()`（只要授权结果，不占麦克风）。
+  另外打开语音开关时也会**顺手申请一次**（那次点击本身就是用户手势，是最自然的「提前申请」时机）。
+- **授权按扩展记忆**：`chrome-extension://<id>` 这个 origin 上授权一次，侧边栏（同 origin）直接可用、不再询问。
+- **已经被拒绝过**：浏览器不会再弹框。正确入口是 `chrome://extensions` → 本扩展「详情」→「网站设置」→ 麦克风，
+  而**不是** `chrome://settings/content/microphone`（普通网站列表里未必有扩展）。配置页在「已被拒绝」状态下
+  会显示「复制扩展详情链接」，复制 `chrome://extensions/?id=<id>` 粘到地址栏即可。
+- **侧边栏的入口**：录音失败时录音条会多一个「去授权」，走 `OPEN_OPTIONS_PAGE{hash:'asr'}` 直达配置页，
+  切到语音 Tab 并自动滚到麦克风小节高亮（配置页的 hash 别名 `#asr`）。
+- **为什么不在 manifest 里声明 `audioCapture`**：那样确实能省掉运行时弹框（安装时一次授予），但代价是
+  **所有用户**都会在安装时看到「读取麦克风」的权限提示，且无法按需撤销；本项目把语音做成可选组件，
+  更合适的是「用到才申请」。若后续版本验证 `audioCapture` 在 MV3 下行为稳定，可再作为可选增强。
 
 ## 3. 安装依赖（三种入口，任选其一）
 
@@ -54,7 +75,7 @@ curl -fsSL .../install.sh | bash -s -- --with-asr
 #   irm .../install.ps1 | iex  （交互式会询问，默认否）
 #   irm .../install.ps1 -ArgumentList '-WithAsr' | iex
 
-# 入口 3：扩展「选项页 → 工具箱 → 语音输入」一键安装
+# 入口 3：扩展「选项页 → 语音 Tab」一键安装
 #   进度经 GET /api/asr/deps/install/status 每 2s 轮询
 ```
 
@@ -88,12 +109,33 @@ npm view sherpa-onnx-node@2 optionalDependencies version
 # 期望看到上述 7 个平台包，version 2.x
 ```
 
-## 4. 制作并导入模型包
+## 4. 拿到模型包（三条路，任选其一）
 
-内网没有模型下载通道，所以**模型包由一台有外网的机器做好、打 zip 后拷进来**。
-代理端不提供任何下载能力（这是有意的：无法验证来源的远端文件不该被执行）。
+模型的存放位置**固定、不可配置**：`~/.ai-helper-agent/asr/models/<id>/`（与 RAG 数据目录同族）。
+配置页只把这个路径展示出来，不提供「选择目录」—— 用户需要知道该往哪拷，不需要选一个位置。
 
-### 4.1 在外网机下载
+- **4.0 能上外网 / 能访问 HF 镜像** → 配置页一键下载（推荐，装完即用）
+- **4.1~4.4 完全内网** → 在外网机做好包，打 zip 拷进来（手动放置或「从文件夹导入」）
+
+### 4.0 一键下载（机器能访问外网或 HF 镜像时）
+
+配置页「语音 Tab → 模型」的下载按钮按内置清单逐文件拉取，**是尝试而不是前提**：
+
+- 目标只能是内置清单里的两个包（SenseVoice 定稿 + Streaming Zipformer 草稿）。
+  调用方传不进任意 URL：清单外的 id 直接 `skipped: no_targets`，不存在把它当通用下载器的入口。
+- 打开开关时若模型缺失，会自动尝试下载一次；成功即用，失败就停在「模型未安装」
+  并保留手动重试 / 拷包两条路，不影响其它功能。
+- 未完成的包落在 `models/.<id>.part/`（点开头，扫描器跳过），全部文件就绪并写完
+  `manifest.json` 才原子 rename 成正式目录 —— 「下到一半」不会变成「非法模型」告警。
+- 已存在且字节数对得上的文件直接跳过（秒级续传）；逐块算 sha256，与清单不符即删掉重下。
+- 默认端点 `https://hf-mirror.com`（实测 `huggingface.co` 直连不可达）；
+  `mirrors.json` 的 `huggingface: mirror` 或环境变量 `AI_HELPER_ASR_HF_ENDPOINT` 可改。
+- 取消 / 代理重启都不会留下假进度：任务状态落盘，下次启动把「运行中」收敛为「已中止」。
+
+> 为什么不下载官方的 `.tar.bz2`：Node 标准库没有 bzip2 解压能力，为一个解压引依赖不值得；
+> HF 支持单文件 HTTP 取，且实测 `Content-Length` 与本地已验证文件的字节数完全一致。
+
+### 4.1 在外网机下载（完全内网时做离线包）
 
 ```bash
 mkdir -p ~/asr-build && cd ~/asr-build
@@ -227,9 +269,10 @@ cd ~/asr-build && unzip -q asr-models.zip
 
 两种导入方式：
 
-1. **（推荐）配置页「选择模型目录」** —— 选项页 → 工具箱 → 语音输入 →
-   「选择模型目录」→ 选中 `packs`（或其下任意模型目录）。代理端在本机文件系统内
-   拷贝并就地注册，**零上传**（`POST /api/asr/models/pick`，仅回环地址可用）。
+1. **（推荐）配置页「从文件夹导入」** —— 选项页 → 语音 Tab →
+   「从文件夹导入」→ 选中 `packs`（或其下任意模型目录）。代理端把选中的包
+   拷进固定目录（大文件走 `copyFileSync` 逐文件拷贝，不会把 200MB+ 读进内存），
+   **零上传**（`POST /api/asr/models/pick`，仅回环地址可用）。
 2. **手动放置** —— 把每个模型目录直接拷到：
 
 ```
@@ -280,11 +323,13 @@ cd ~/asr-build && unzip -q asr-models.zip
   ```
   - 波形 24 根音量柱，纯 CSS（不引 canvas）；静音时压到 2px 灰条。
   - 连续 2.5s RMS 低于阈值 → 条内提示「没有听到声音」，重新出声自动恢复。
-  - 麦克风被拒 → 条内改为引导文案（指向 `chrome://settings/content/microphone`），
-    不再弹第二次系统框。
+  - 麦克风未授权 → 条内提示「麦克风未授权」并给出「去授权」按钮（直达配置页麦克风小节）；
+    条内不再讲「点地址栏图标」——扩展页面根本没有地址栏锁图标。
   - 代理断开 → 立即结束采集，**已识别出来的文字保留**，条内提示「连接中断」。
 - **草稿与手改**：草稿直接写进输入框（textarea 无法局部着色），靠录音条 + 输入框脉冲
   描边表达「未定稿」。录音中你手动改了输入框 → 后续不再替换草稿，降级为「只追加」。
+- **识别语言**：配置页下拉写的是「自动识别（中英混说）/ 中文 / 英文 / 日语 / 韩语 / 粤语」，
+  协议侧仍传 `auto|zh|en|ja|ko|yue` —— 文案是给人看的，编码只用于接口，不需要用户理解。
 - **回收**：录音中切标签页 / 切会话 / 关面板 → 停止采集并取消；代理端会话 30s 无帧自动释放。
   单次录音上限 5 分钟。
 
@@ -300,6 +345,10 @@ cd ~/asr-build && unzip -q asr-models.zip
 | GET | `/api/asr/models` | 模型清单 + `capability{online,offline,vad}` + `invalid[]`；`?verify=1` 走哈希校验 |
 | POST | `/api/asr/models/scan` | 重扫磁盘（顺带重置依赖探测缓存） |
 | POST | `/api/asr/models/pick` | 本机目录选择并注册模型包（仅回环地址；远端直接 `remote-source`） |
+| GET | `/api/asr/models/catalog` | 推荐模型清单（体积 / 是否已安装），不含仓库地址与内部细节 |
+| POST | `/api/asr/models/download` | 一键下载（body `{ids?}`）；已在下载回 `alreadyRunning`，幂等不算失败 |
+| GET | `/api/asr/models/download/status` | 下载进度（前端 1.5s 轮询，含每文件 phase） |
+| POST | `/api/asr/models/download/cancel` | 取消下载（已下完的文件保留，重试即续传） |
 | DELETE | `/api/asr/models/{id}` | 删除模型包 |
 | POST | `/api/asr/transcribe` | 整段转写：`{audio: "<base64 WAV>"}` → `{text, durationMs}` |
 | POST | `/api/asr/warmup` | 预热引擎（加载 ONNX 会话），无模型时 `409 model_missing` |
@@ -355,13 +404,14 @@ ws://127.0.0.1:<port>/ws/asr/<sessionId>?token=<token>
 | `AI_HELPER_ASR_SESSION_IDLE_MS` | `30000` | 会话空闲回收 |
 | `AI_HELPER_ASR_MAX_SESSIONS` | `1` | 并发会话上限 |
 | `AI_HELPER_ASR_RSS_LIMIT` | `3.5GB` | 超过则跳过离线定稿，直接用流式文本（防 OOM） |
+| `AI_HELPER_ASR_HF_ENDPOINT` | `https://hf-mirror.com` | 模型下载端点（自建代理 / 官方站点，仅接受 http/https） |
 
 `language` 取值：`auto` / `zh` / `en` / `ja` / `ko` / `yue`（非法值回落 `auto`）。
 
 ## 8. 验证
 
 ```bash
-# 代理端单测（模型包校验 / 会话状态机 / 路由契约 / 安装命令白名单）
+# 代理端单测（模型包校验 / 清单与下载状态机 / 会话状态机 / 路由契约 / 安装命令白名单）
 cd agent && node --test test/unit/*.unit.test.js
 
 # 扩展端单测（草稿替换 / 门控矩阵 / 快捷键 / 录音条）
@@ -380,3 +430,5 @@ node agent/test/manual/asr-probe.mjs --models ~/.ai-helper-agent/asr/models
 - **不做 TTS / 热词 / 多用户并发 / offscreen 改造**。
 - **不做依赖自动重装**（与 RAG 的 `maybeAutoRestoreRagDeps` 相反）：300MB 不该在用户不知情时反复下载。
 - **不做快捷键配置化**：先按 `Alt+V` 定死（与 `Alt+S` / `Alt+Shift+S` 同族），后续再评估。
+- **不做通用模型下载器**：只认内置清单里的两个包，拒绝任意 URL / 任意 id —— 否则它就是一个
+  「让本机下载任意文件」的接口，与「验证来源」的初衷相悖。
