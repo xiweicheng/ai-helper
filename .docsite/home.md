@@ -36,11 +36,14 @@ features:
   - title: MV3 架构
     details: Service Worker 生命周期、消息契约、Side Panel 渲染体系全解。
     link: /系统架构设计/
+  - title: 本地语音输入
+    details: 本地 ONNX 流式识别 + 定稿补标点，音频不出本机、不落盘、不自动发送。
+    link: /语音输入/
 ---
 
 ## 安装本地代理 Agent（可选）
 
-浏览器扩展本体开箱即用；若需解锁本地文件 / 命令 / MCP / Skill / 知识库，一键安装本地代理端（与 README 一致）：
+浏览器扩展本体开箱即用；若需解锁本地文件 / 命令 / MCP / Skill / 知识库 / 本地语音输入，一键安装本地代理端（与 README 一致）：
 
 ```bash
 # macOS / Linux

@@ -179,10 +179,11 @@ AI Helper 是一款开源的 LLM 浏览器智能助手，让你用自然语言�
 - 40+ 内置工具：标签页、书签、历史、下载和 Cookie 管理，页面内容提取，截图，以及可选本地代理的文件操作。
 - 多智能体：创建自定义助手，各自拥有独立的系统提示词和工具权限。
 - 长期记忆：AI 跨会话记住你的偏好。
+- 本地语音输入（可选）：点 🎤 或按 Alt+V 直接说话，识别在本地代理内完成，音频不出本机、不调云端语音服务；结果只写进输入框，不会自动发送。
 - 可扩展：支持 Skill 工作流与 MCP（模型上下文协议）第三方工具接入。
 - 完全透明：推理日志、Token 用量统计，数据仅存本地，不收集任何用户数据。
 
-自带 API Key 即可使用（OpenAI 兼容接口、DeepSeek 等）。所有对话与数据都留在你自己的设备上。
+自带 API Key 即可使用（OpenAI 兼容接口、DeepSeek 等）。所有对话与数据都留在你自己的设备上。语音输入为可选功能：未启用时不访问麦克风，音频仅在本机内存中处理，不上传也不落盘。
 
 ### 英文版
 
@@ -197,10 +198,11 @@ Key features:
 - 40+ built-in tools: tab, bookmark, history, downloads and cookie management, page extraction, screenshots, and file operations via an optional local agent.
 - Multi-agent support: create custom assistants with their own system prompts and tool permissions.
 - Long-term memory: the AI remembers your preferences across sessions.
+- Optional local voice input: click 🎤 or press Alt+V and just speak. Recognition runs inside the local agent — audio never leaves the machine and no cloud speech service is used; the text is only inserted into the input box and never sent automatically.
 - Extensible via Skills and the MCP (Model Context Protocol) for third-party tools.
 - Full transparency: reasoning logs, token usage statistics, and local-only data storage. No user data is collected.
 
-Bring your own API key (OpenAI-compatible endpoints, DeepSeek, etc.). All conversations and data stay on your device.
+Bring your own API key (OpenAI-compatible endpoints, DeepSeek, etc.). All conversations and data stay on your device. Voice input is optional: the microphone is never touched unless you enable it, and audio is processed in local memory only — never uploaded, never written to disk.
 
 ---
 
