@@ -340,6 +340,10 @@ async function loadSessionStateForDispatch(sid) {
       temperature: found.temperature,
       topP: found.topP,
       contextCompaction: found.contextCompaction,
+      // 目录绑定必须随快照带上：否则非激活会话的排队任务写回时
+      // 会拿到面板当前会话的目录（或把目标会话的绑定抹掉）
+      workdir: found.workdir || null,
+      workdirAgentId: found.workdirAgentId || null,
     };
   } catch (err) {
     logger.warn('[QueueRunner] load session state failed:', err?.message || err);

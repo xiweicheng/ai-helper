@@ -7,6 +7,7 @@ import { reactLoop, callApiNonStream } from './react-loop.js';
 import { createScheduledSession, appendMessageToSession } from '../storage/session-store.js';
 import { getSession, getScheduledTask, getAllScheduledTasks, putScheduledTask, deleteScheduledTask } from '../storage/db.js';
 import { BUILTIN_AGENTS } from '../shared/agent-defaults.js';
+import { getEffectiveWorkdir } from '../shared/workdir-scope.js';
 import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -146,7 +147,7 @@ async function resolveHostSession(task) {
   return { session: s, created: true };
 }
 
-async function buildSystemPrompt(agent, skillIds) {
+async function buildSystemPrompt(agent, skillIds, workdir = '') {
   const currentTime = new Date().toLocaleString('zh-CN');
   let prompt = agent?.systemPrompt || '';
   if (skillIds && skillIds.length > 0) {
@@ -155,8 +156,10 @@ async function buildSystemPrompt(agent, skillIds) {
       if (r?.success && r.prompts) prompt += '\n\n' + r.prompts;
     } catch { /* 忽略技能加载失败 */ }
   }
+  // 工作目录必须按定时任务的目标会话注入（不读全局单例），否则模型会猜错路径
+  const workdirLine = workdir ? `\n\n当前工作目录: ${workdir}\n（相对路径均基于该目录；需明确路径时请直接拼出绝对路径。）` : '';
   return `你是用户的 AI 助手，正在执行一个预先设定的定时任务。请严格按照任务指令完成并直接返回结果。
-当前时间: ${currentTime}
+当前时间: ${currentTime}${workdirLine}
 
 ${prompt}`.trim();
 }
@@ -348,8 +351,14 @@ export async function runTask(taskId, force = false) {
       }
     }
 
-    // 4. 构建消息
-    const systemPrompt = await buildSystemPrompt(agent, agentSkillIds);
+    // 4. 构建消息（目录按定时任务的宿主会话解析：已绑定用绑定值，未绑定用代理默认）
+    let scheduledWorkdir = '';
+    try {
+      scheduledWorkdir = (await getEffectiveWorkdir(hostSession.id)) || '';
+    } catch (e) {
+      logger.warn('[Scheduler] resolve workdir failed:', e?.message || e);
+    }
+    const systemPrompt = await buildSystemPrompt(agent, agentSkillIds, scheduledWorkdir);
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: buildUserContent(task, pageContext) },

@@ -127,7 +127,7 @@ describe('read_image — 文档附件来源', () => {
   it('agent 来源：走 downloadFile 现拉取图', async () => {
     const dl = await import('../../src/background/local-agent-client.js');
     const r = await call({ file: 'a.docx', image: 1 });
-    expect(dl.downloadFile).toHaveBeenCalledWith('/ws/_attachments/a/img-1.png');
+    expect(dl.downloadFile).toHaveBeenCalledWith('/ws/_attachments/a/img-1.png', 's1');
     expect(r.success).toBe(true);
     expect(r.content).toContain('180 万');
   });
@@ -187,7 +187,7 @@ describe('read_image — 代理端任意路径来源', () => {
     const dl = await import('../../src/background/local-agent-client.js');
     dl.downloadFile.mockResolvedValueOnce({ success: true, content: PNG_B64, mimeType: 'image/png' });
     const r = await call({ path: 'shot.png', question: '这是什么界面' });
-    expect(dl.downloadFile).toHaveBeenCalledWith('shot.png');
+    expect(dl.downloadFile).toHaveBeenCalledWith('shot.png', 's1');
     expect(r.success).toBe(true);
     expect(r.content).toContain('180 万');
     const body = visionReqBody();

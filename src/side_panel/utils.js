@@ -4,6 +4,7 @@ import state from './state.js';
 import { getAgent, getAllAgents } from './agent-store.js';
 import { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 import { decodeSecret } from '../shared/secret.js';
+import { getEffectiveWorkdir } from '../shared/workdir-scope.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 
@@ -580,7 +581,13 @@ function getBrowserOS() {
   return 'Unknown';
 }
 
-function getCommandExecutionEnv(agentToolIds = null) {
+/**
+ * 命令执行环境提示块
+ * @param {string[]|null} agentToolIds
+ * @param {string} workdir 本会话的有效工作目录（由调用方按 sessionId 解析后传入；
+ *   此处绝不能再读 state.agentPlatform.workdir 单例，否则切会话会串目录）
+ */
+function getCommandExecutionEnv(agentToolIds = null, workdir = '') {
   if (!state.agentPlatform || !state.agentPlatform.connected) {
     return null;
   }
@@ -647,7 +654,7 @@ function getCommandExecutionEnv(agentToolIds = null) {
     shellType,
     platformName: ap.platformName,
     arch: ap.arch,
-    workdir: ap.workdir || '',
+    workdir: workdir || '',
     commandHint
   };
 }
@@ -667,11 +674,25 @@ function agentHasTool(toolId, agentToolIds) {
  * 获取系统提示词
  * 优先级：Agent 自定义 > 全局自定义 > 默认
  * @param {Object} [agent] - 可选，当前使用的 Agent 对象
+ * @param {{ sessionId?: string|null, workdir?: string }} [options]
+ *   sessionId：本次提示词服务的目标会话（队列接力时必须传队列所属会话，
+ *   不能默认用 state.activeSessionId）；未传时回落面板当前会话。
+ *   workdir：已解析好的目录（任务派发时已冻结）；不传则内部按 sessionId 解析。
  */
-export async function getSystemPrompt(agent = null) {
+export async function getSystemPrompt(agent = null, options = {}) {
   const currentTime = new Date().toLocaleString('zh-CN');
   const browserOS = getBrowserOS();
-  const execEnv = getCommandExecutionEnv(agent?.toolIds);
+  // 注入即对齐：提示词里的目录必须是「目标会话」的目录，不是某个全局单例
+  const targetSessionId = options.sessionId !== undefined ? options.sessionId : state.activeSessionId;
+  let workdir = options.workdir || '';
+  if (!workdir && state.agentPlatform?.connected) {
+    try {
+      workdir = (await getEffectiveWorkdir(targetSessionId)) || '';
+    } catch (e) {
+      logger.warn('[SystemPrompt] resolve workdir failed:', e?.message || e);
+    }
+  }
+  const execEnv = getCommandExecutionEnv(agent?.toolIds, workdir);
 
   let commandEnvSection = '';
   

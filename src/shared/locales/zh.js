@@ -517,6 +517,20 @@ export default {
     defaultRange: '默认查询最近7天的审计日志',
   },
 
+  // 会话级工作目录（信息带 chip + 切换弹窗）
+  workdirTag: {
+    sessionScope: '（本会话）',
+    defaultScope: '（默认）',
+    switchTitle: '切换本会话工作目录',
+    restoreDefault: '恢复默认目录',
+    setAsAgentDefault: '同时设为代理默认目录（影响未绑定的会话）',
+    pathMissing: '目录不存在或不可访问，请重新选择',
+    agentSwitched: '代理已切换，本会话目录已回落到新代理的默认目录',
+    lockedHint: '任务执行中，无法切换工作目录',
+    restoredDefault: '已恢复默认目录',
+    tagHint: '点击切换本会话工作目录',
+  },
+
   // 输入区
   input: {
     atHint: '提示词 (单击) / 网页 (Ctrl/Cmd+单击)',

@@ -7,6 +7,7 @@ import { removeDocImageSnapshot } from '../side_panel/doc-images.js';
 import state from '../side_panel/state.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { unbindSessionWorkdirRemote } from '../shared/workdir-scope.js';
 
 registerTranslations('zh', {
   session: {
@@ -146,6 +147,11 @@ export async function saveCurrentSession() {
   // 上下文压缩记录（会话级；undefined 时 JSON 序列化自动省略字段）
   currentSession.contextCompaction = state.activeCompaction || undefined;
 
+  // 会话级工作目录绑定：只写本会话自己的值（null = 跟随代理默认）
+  // workdirAgentId 是「绑定时生效的代理」，换代理后绑定仍保留（切回原代理仍生效）
+  currentSession.workdir = state.sessionWorkdir || null;
+  currentSession.workdirAgentId = state.sessionWorkdir ? (state.workdirAgentId || null) : null;
+
   currentSession.messageHistory = serializeMessageHistory(state.messageHistory);
 
   currentSession.updatedAt = new Date().toISOString();
@@ -219,7 +225,8 @@ function mergeMessageHistory(onDisk, snapshot) {
  * @param {string} sessionId 目标会话
  * @param {{messageHistory?: Array, model?: string, useTools?: boolean, enabledTools?: Array,
  *          agentId?: string|null, temperature?: number, topP?: number,
- *          activeCompaction?: object|null}} snapshot
+ *          activeCompaction?: object|null, workdir?: string|null,
+ *          workdirAgentId?: string|null}} snapshot
  * @returns {Promise<boolean>} 是否写盘成功
  */
 export async function persistSessionState(sessionId, snapshot = {}) {
@@ -231,7 +238,7 @@ export async function persistSessionState(sessionId, snapshot = {}) {
     return false;
   }
 
-  const { messageHistory, model, useTools, enabledTools, agentId, temperature, topP, activeCompaction } = snapshot;
+  const { messageHistory, model, useTools, enabledTools, agentId, temperature, topP, activeCompaction, workdir, workdirAgentId } = snapshot;
   if (model !== undefined) target.model = model;
   if (useTools !== undefined) target.useTools = useTools;
   if (enabledTools !== undefined) target.enabledTools = [...enabledTools];
@@ -239,6 +246,9 @@ export async function persistSessionState(sessionId, snapshot = {}) {
   if (temperature !== undefined) target.temperature = temperature;
   if (topP !== undefined) target.topP = topP;
   if (activeCompaction !== undefined) target.contextCompaction = activeCompaction || undefined;
+  // 跨会话接力时目标会话的目录绑定不能丢（否则会拿到面板当前会话的目录）
+  if (workdir !== undefined) target.workdir = workdir || null;
+  if (workdirAgentId !== undefined) target.workdirAgentId = workdirAgentId || null;
   if (messageHistory !== undefined) target.messageHistory = mergeMessageHistory(
     Array.isArray(target.messageHistory) ? target.messageHistory : [],
     serializeMessageHistory(messageHistory),
@@ -271,6 +281,9 @@ export async function createSession() {
     order: Date.now(),
     isGenerating: false,
     lastExecutionLog: [],
+    // 新建会话不绑定目录：跟随代理默认
+    workdir: null,
+    workdirAgentId: null,
   };
 
   await idb.putSession(newSession);
@@ -314,6 +327,9 @@ export async function importSessions(sessionsData) {
       order: Date.now() + createdSessions.length,
       isGenerating: false,
       lastExecutionLog: [],
+      // 导入的第三方路径不应直接生效：显式置空，需用户在本机重新选择
+      workdir: null,
+      workdirAgentId: null,
     };
 
     await idb.putSession(newSession);
@@ -399,6 +415,22 @@ export async function switchToSession(sessionId) {
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
   state.activeAgentId = targetSession.agentId || null;
+  // 会话级工作目录：只恢复目标会话自己的绑定，不触碰代理全局 workdir。
+  // 绑定是否生效由 resolveWorkdirForSession 判定（代理不匹配时回落默认，记录保留）
+  state.sessionWorkdir = targetSession.workdir || null;
+  state.workdirAgentId = targetSession.workdirAgentId || null;
+  // 面板缓存按会话维度失效：$ 文件选择器/目录面板下次取值会重新按本会话解析
+  try {
+    const { resetWorkspaceRoot } = await import('../side_panel/workspace-manager.js');
+    resetWorkspaceRoot();
+  } catch (e) {
+    logger.warn('[SessionStore] reset workspace root failed:', e);
+  }
+  try {
+    document.dispatchEvent(new CustomEvent('session-workdir-changed', {
+      detail: { sessionId, workdir: state.sessionWorkdir, agentId: state.workdirAgentId },
+    }));
+  } catch { /* 非 UI 上下文（background）没有 document */ }
   // 持久化当前智能体 ID，避免刷新后丢失
   if (targetSession.agentId) {
     chrome.storage.local.set({ activeAssistantId: targetSession.agentId });
@@ -477,6 +509,18 @@ export async function deleteStoreSession(sessionId) {
   // 同步清理该会话的 ReAct checkpoint
   await cleanupCheckpointForSession(sessionId);
 
+  // 通知代理端删除会话目录绑定（注册表可回收，避免删会话后留下永久授权）
+  // 失败不阻断删除：代理端有剪枝与过期兜底
+  unbindSessionWorkdirRemote(sessionId).catch((e) => {
+    logger.debug('[SessionStore] unbind session workdir failed:', e?.message || e);
+  });
+  if (activeId === sessionId) {
+    // 被删的就是当前会话：面板上的绑定同步清空（目录 chip 立即回落默认）
+    state.sessionWorkdir = null;
+    state.workdirAgentId = null;
+    try { document.dispatchEvent(new CustomEvent('session-workdir-changed')); } catch { /* background 无 document */ }
+  }
+
   // 清理该会话的收藏
   try {
     const allBookmarks = await idb.getAllBookmarks();
@@ -513,6 +557,40 @@ export async function deleteStoreSession(sessionId) {
   }
 
   return true;
+}
+
+/**
+ * 写入/清除会话级工作目录绑定（本会话显式切换 / 本会话恢复默认的唯一写入口）
+ * 其他会话的任何操作不得调用本函数，否则并行会话的执行目录会被串改。
+ * @param {string} sessionId 目标会话
+ * @param {string|null} workdir 绑定目录（null = 恢复跟随默认）
+ * @param {string|null} [workdirAgentId=null] 绑定时生效的代理 id
+ * @returns {Promise<boolean>}
+ */
+export async function setSessionWorkdirBinding(sessionId, workdir, workdirAgentId = null) {
+  if (!sessionId) return false;
+  const target = await idb.getSession(sessionId);
+  if (!target) {
+    logger.warn('[SessionStore] setSessionWorkdirBinding cannot find session:', sessionId);
+    return false;
+  }
+  target.workdir = workdir || null;
+  target.workdirAgentId = workdir ? (workdirAgentId || null) : null;
+  target.updatedAt = new Date().toISOString();
+
+  // 目标就是面板当前会话时同步内存态，保证下一次提示词/执行立即对齐
+  if (state.activeSessionId === sessionId) {
+    state.sessionWorkdir = target.workdir;
+    state.workdirAgentId = target.workdirAgentId;
+  }
+
+  const ok = await idb.putSession(target);
+  try {
+    document.dispatchEvent(new CustomEvent('session-workdir-changed', {
+      detail: { sessionId, workdir: target.workdir, agentId: target.workdirAgentId },
+    }));
+  } catch { /* background 无 document */ }
+  return ok;
 }
 
 /**
@@ -628,6 +706,9 @@ export async function restoreArchivedSession(archivedId) {
     updatedAt: new Date().toISOString(),
     isGenerating: false,
     lastExecutionLog: [],
+    // 从归档恢复的会话不绑定目录（归档未保存绑定）
+    workdir: null,
+    workdirAgentId: null,
   };
 
   await idb.putSession(newSession);
@@ -734,6 +815,9 @@ export async function createScheduledSession(task) {
     isGenerating: false,
     lastExecutionLog: [],
     scheduledTaskId: task.id,
+    // 定时任务新建宿主会话：目标会话未提供绑定则跟随默认
+    workdir: task.workdir || null,
+    workdirAgentId: task.workdir ? (task.workdirAgentId || null) : null,
   };
 
   await idb.putSession(newSession);

@@ -115,7 +115,7 @@ describe('agent_exec 两端超时模型', () => {
     const ws = wireWs();
     const p = toolExecutor.executeAgentExecCommand({ command: 'echo hi', timeoutMs: 3000 }, 'tc1', 's1');
     await vi.advanceTimersByTimeAsync(0);
-    expect(AgentClient.execCommand).toHaveBeenCalledWith('echo hi', undefined, false, 5000);
+    expect(AgentClient.execCommand).toHaveBeenCalledWith('echo hi', undefined, false, 5000, 's1');
     ws.onmessage({ data: JSON.stringify({ type: 'exit', exitCode: 0, execId: 'e1', killed: false, timedOut: false }) });
     const r = await p;
     expect(r.success).toBe(true);
@@ -132,7 +132,7 @@ describe('agent_exec 两端超时模型', () => {
     expect(result).toBeTruthy();
     expect(result.success).toBe(false);
     expect(result.error).not.toContain('延长');
-    expect(AgentClient.stopCommand).toHaveBeenCalledWith('e1');
+    expect(AgentClient.stopCommand).toHaveBeenCalledWith('e1', 's2');
     expect(AgentClient.execCommandWait).not.toHaveBeenCalled();
   });
 
@@ -143,7 +143,7 @@ describe('agent_exec 两端超时模型', () => {
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(120000); // idleTimeoutMs = max(120000, min(96000,600000)) = 120000
     await vi.advanceTimersByTimeAsync(0);
-    expect(AgentClient.detachCommand).toHaveBeenCalledWith('e1');
+    expect(AgentClient.detachCommand).toHaveBeenCalledWith('e1', 's3');
     const r = await p;
     expect(r.partial).toBe(true);
     expect(r.success).toBe(true);

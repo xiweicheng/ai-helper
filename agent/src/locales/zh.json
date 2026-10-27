@@ -7,6 +7,8 @@
     "operationInProgress": "已有操作正在进行中，请稍后再试",
     "missingPath": "缺少 path 参数",
     "missingWorkdir": "缺少 workdir 参数",
+    "invalidSessionId": "会话标识格式无效",
+    "workdirNotInSessionScope": "路径不在本会话的工作目录内（{workdir}）",
     "workdirNotAbsolute": "workdir 必须是绝对路径",
     "workdirIsSystemDir": "不能将 Agent 系统目录设为工作目录",
     "pathNotAbsolute": "path 必须是绝对路径",
@@ -130,6 +132,8 @@
     "restarting": "Agent 正在重启...",
     "updateSuccess": "更新成功，Agent 正在重启...",
     "workdirSwitched": "工作目录已切换",
+    "workdirBoundToSession": "已绑定到本会话（其他会话不受影响）",
+    "workdirUnbound": "本会话已恢复跟随代理默认目录",
     "removedFromAllowedList": "已从允许列表中移除",
     "movedToTrash": "已移至回收站（7天后自动清理）",
     "mcpCommandConfirm": "MCP 命令需要确认: {reason}"

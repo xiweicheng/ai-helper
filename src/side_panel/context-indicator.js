@@ -188,11 +188,16 @@ export function scheduleContextUpdate() {
   debounceTimer = setTimeout(() => updateContextIndicator(), DEBOUNCE_MS);
 }
 
-/** 刷新缓存（system prompt 文本 + 有效 MCP 工具数）后重算 */
-export async function refreshContextCaches() {
+/**
+ * 刷新缓存（system prompt 文本 + 有效 MCP 工具数）后重算
+ * @param {string|null} [sessionId] 目标会话（目录切换/会话切换/代理切换后必须重算，
+ *   因为 system prompt 里的工作目录按会话解析）
+ */
+export async function refreshContextCaches(sessionId = null) {
+  const targetSessionId = sessionId !== null ? sessionId : state.activeSessionId;
   try {
     const agent = await getCurrentAgentPrompt();
-    systemPromptCache = await getSystemPrompt(agent);
+    systemPromptCache = await getSystemPrompt(agent, { sessionId: targetSessionId });
   } catch (err) {
     logger.warn('[ContextIndicator] refresh system prompt failed:', err?.message);
   }
@@ -219,8 +224,11 @@ export function initContextIndicator() {
   document.addEventListener('generating-state-changed', () => { refreshContextCaches(); });
   // 模型/助手切换：system prompt 与工具集可能变化
   document.addEventListener('agent-model-changed', () => { refreshContextCaches(); });
-  // 会话切换：state.activeCompaction 已由 switchToSession 恢复，直接重算
-  document.addEventListener('session-switched', () => { scheduleContextUpdate(); });
+  // 会话切换：state.activeCompaction 已由 switchToSession 恢复；
+  // 同时会话可能绑定了不同工作目录，system prompt 缓存必须重建
+  document.addEventListener('session-switched', () => { refreshContextCaches(); });
+  // 会话级工作目录变更（切换/恢复默认/代理切换回落）：提示词里的目录变了
+  document.addEventListener('session-workdir-changed', () => { refreshContextCaches(); });
   // 记忆开关 / 条数 / MCP / 工具变化
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;

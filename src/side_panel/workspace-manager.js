@@ -3,6 +3,8 @@
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { decodeSecret } from '../shared/secret.js';
+import state from './state.js';
+import { invalidateDefaultWorkdir } from '../shared/workdir-scope.js';
 
 registerTranslations('zh', {
   workspaceMgr: {
@@ -161,9 +163,30 @@ export function getMimeType(name) {
 }
 
 // 缓存工作目录路径
+// 缓存键含「会话 + 代理」：换会话或换代理都必须失效，否则文件选择器/面板会串目录
 let _workspaceRoot = null;
+let _workspaceRootKey = null;
 let _homeDir = null;
 let _agentConfig = null;
+
+/**
+ * 当前面板所在会话 id（工作目录面板 / $ 选择器 / 产物列表都属于“正在看的这个会话”）
+ * @returns {string|null}
+ */
+function currentSessionId() {
+  try {
+    return state?.activeSessionId || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 代理请求头：带会话头，代理端据此把相对路径与权限校验绑到该会话的目录 */
+function agentHeaders(config, sessionId) {
+  const headers = { 'Authorization': `Bearer ${config.token}` };
+  if (sessionId) headers['X-AIH-Session-Id'] = sessionId;
+  return headers;
+}
 
 /**
  * 代理不可达判定：浏览器 fetch 网络失败文案跨浏览器不同
@@ -202,7 +225,7 @@ export async function getAgentConfig() {
     const active = agents.find(a => a.id === activeId) || agents[0];
     if (!active) return null;
     // token 在存储中以 enc: 混淆，发请求前必须解码为明文，否则代理端鉴权失败（401）
-    _agentConfig = { url: active.url, token: decodeSecret(active.token) };
+    _agentConfig = { id: active.id, url: active.url, token: decodeSecret(active.token) };
     return _agentConfig;
   } catch (err) {
     logger.warn('[WorkspaceManager] getAgentconfiguration failed:', err.message);
@@ -211,20 +234,25 @@ export async function getAgentConfig() {
 }
 
 /**
- * 获取工作目录根路径
+ * 获取工作目录根路径（按会话解析：已绑定取绑定值，未绑定取代理默认值）
+ * @param {string} [sessionId] 目标会话；缺省用面板当前会话
+ * @returns {Promise<string|null>}
  */
-export async function getWorkspaceRoot() {
-  if (_workspaceRoot) return _workspaceRoot;
+export async function getWorkspaceRoot(sessionId) {
+  const sid = sessionId === undefined ? currentSessionId() : sessionId;
   const config = await getAgentConfig();
+  const key = `${sid || ''}::${config?.id || config?.url || ''}`;
+  if (_workspaceRoot && _workspaceRootKey === key) return _workspaceRoot;
   if (!config) return null;
   try {
     const resp = await fetch(`${config.url}/api/status/detail`, {
-      headers: { 'Authorization': `Bearer ${config.token}` }
+      headers: agentHeaders(config, sid)
     });
     if (resp.ok) {
       const data = await resp.json();
       if (data.success && data.workdir) {
         _workspaceRoot = data.workdir;
+        _workspaceRootKey = key;
         return _workspaceRoot;
       }
     }
@@ -260,25 +288,29 @@ export async function getHomeDir() {
 }
 
 /**
- * 重置工作目录缓存（切换代理时调用）
+ * 重置工作目录缓存（切换代理 / 切换会话 / 目录变更时调用）
  */
 export function resetWorkspaceRoot() {
   _workspaceRoot = null;
+  _workspaceRootKey = null;
   _homeDir = null;
   _agentConfig = null;
+  invalidateDefaultWorkdir();
 }
 
 /**
  * 获取 Agent 状态详情（含 workdir、allowedPaths 等）
  * 切换工作目录弹窗用
+ * @param {string} [sessionId] 目标会话；缺省用面板当前会话（workdir 为会话有效目录）
  * @returns {Promise<Object|null>}
  */
-export async function getAgentStatusDetail() {
+export async function getAgentStatusDetail(sessionId) {
+  const sid = sessionId === undefined ? currentSessionId() : sessionId;
   const config = await getAgentConfig();
   if (!config) return null;
   try {
     const resp = await fetch(`${config.url}/api/status/detail`, {
-      headers: { 'Authorization': `Bearer ${config.token}` }
+      headers: agentHeaders(config, sid)
     });
     if (resp.ok) {
       const data = await resp.json();
@@ -291,14 +323,20 @@ export async function getAgentStatusDetail() {
 }
 
 /**
- * 切换 Agent 工作目录
- * 调用 /api/config/workdir，后端自动 mkdir 并把新 workdir 加入 allowedPaths
- * 切换成功后清掉本地 workspaceRoot 缓存，下次 getWorkspaceRoot 重新拉取新值
+ * 切换工作目录
+ * 有 sessionId：只绑定本会话（代理端不写 config、不改 allowedPaths），可选同时设为代理默认目录
+ * 无 sessionId：沿用全局切换语义（影响所有未绑定会话）
  * @param {string} newWorkdir - 新工作目录绝对路径
- * @returns {Promise<{success: boolean, workdir?: string, allowedPaths?: string[], error?: string}>}
+ * @param {Object} [options]
+ * @param {string|null} [options.sessionId] 目标会话；显式传 null 表示全局切换
+ * @param {boolean} [options.setAsDefault] 绑定成功后是否再走一次全局切换
+ * @returns {Promise<{success: boolean, workdir?: string, scope?: string, allowedPaths?: string[], error?: string}>}
  */
-export async function switchWorkspace(newWorkdir) {
-  const result = await agentRequest('/api/config/workdir', { workdir: newWorkdir });
+export async function switchWorkspace(newWorkdir, options = {}) {
+  const sid = options.sessionId === undefined ? currentSessionId() : options.sessionId;
+  const body = { workdir: newWorkdir };
+  if (sid) body.sessionId = sid;
+  const result = await agentRequest('/api/config/workdir', body, sid);
   if (result.success) {
     // 清缓存：让 getWorkspaceRoot 下次重新拉取新 workdir
     resetWorkspaceRoot();
@@ -362,16 +400,20 @@ export async function pickDirectory() {
 
 /**
  * 直接向 Agent 发送请求
+ * @param {string} path
+ * @param {Object} [body]
+ * @param {string|null} [sessionId] 目标会话；undefined 表示用面板当前会话，null 表示不带会话头
  */
-async function agentRequest(path, body = {}) {
+async function agentRequest(path, body = {}, sessionId = undefined) {
   const config = await getAgentConfig();
   if (!config) return { success: false, error: t('workspaceMgr.agentNotPairedDetail') };
+  const sid = sessionId === undefined ? currentSessionId() : sessionId;
   try {
     const resp = await fetch(`${config.url}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...agentHeaders(config, sid)
       },
       body: JSON.stringify(body)
     });

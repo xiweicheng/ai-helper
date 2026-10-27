@@ -878,7 +878,8 @@ export async function sendPromptByCode(code) {
     let messages = [
       {
         role: 'system',
-        content: await getSystemPrompt()
+        // 目录注入按本次发送的目标会话解析（不能读已被就地改写的全局单例）
+        content: await getSystemPrompt(null, { sessionId: mySessionId })
       }
     ];
 

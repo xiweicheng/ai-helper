@@ -9,6 +9,7 @@ import * as AgentClient from './local-agent-client.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { truncateByTokens } from '../shared/token-counter.js';
+import { getEffectiveWorkdir } from '../shared/workdir-scope.js';
 
 // 注册 agentDispatcher 命名空间翻译
 registerTranslations('zh', {
@@ -44,8 +45,11 @@ async function loadAgent(agentId) {
 
 /**
  * 构建子 Agent 的系统提示词（含技能过滤）
+ * @param {Object} agent 子代理定义
+ * @param {string} task 任务描述
+ * @param {string} workdir 主会话的有效工作目录（子代理继承主会话目录）
  */
-async function buildSubAgentPrompt(agent, task) {
+async function buildSubAgentPrompt(agent, task, workdir = '') {
   let prompt = agent.systemPrompt || '';
   if (!prompt.trim()) {
     prompt = `You are an AI assistant. Please complete the following task.`;
@@ -78,7 +82,8 @@ ${task}
 - You are a sub-agent; only complete the task assigned to you
 - Use your available tools to complete the task efficiently
 - Return the result directly after completion; no extra confirmation is needed
-- Structure your final answer as: **Conclusion** (the direct answer/result), **Key evidence** (facts, data, links found along the way), **Unfinished items** (anything not completed and why); omit sections that do not apply
+- Structure your final answer as: **Conclusion** (the direct answer/result), **Key evidence** (facts, data, links found along the way), **Unfinished items** (anything not completed and why); omit sections that do not apply${workdir ? `
+- Working directory: ${workdir} (relative paths resolve against it; use absolute paths when you need to be explicit)` : ''}
 - Current time: ${new Date().toLocaleString('zh-CN')}`;
 }
 
@@ -140,8 +145,14 @@ export async function executeDispatchSubAgent(args, toolCallId, sessionId) {
   const agentTools = await getTools(agent.toolIds, agent.id, agent.skillIds, null, agent.mcpExcludedServerIds ?? null);
   logger.debug('[AgentDispatcher] sub Agent tool count :', agentTools.length);
 
-  // 3. 构建子 Agent 消息
-  const systemPrompt = await buildSubAgentPrompt(agent, task);
+  // 3. 构建子 Agent 消息（目录继承主会话：子代理不单独建会话绑定）
+  let parentWorkdir = '';
+  try {
+    parentWorkdir = (await getEffectiveWorkdir(sessionId)) || '';
+  } catch (e) {
+    logger.warn('[AgentDispatcher] resolve workdir failed:', e?.message || e);
+  }
+  const systemPrompt = await buildSubAgentPrompt(agent, task, parentWorkdir);
   const messages = [{ role: 'system', content: systemPrompt }];
 
   // 4. 获取配置

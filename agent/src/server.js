@@ -3,7 +3,7 @@ import http from 'http';
 import { WebSocketServer } from 'ws';
 import { readFileSync, writeFileSync, createWriteStream, createReadStream, statSync, existsSync, watch } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
-import { join, dirname, basename, resolve, isAbsolute, relative } from 'path';
+import { join, dirname, basename, resolve, isAbsolute, relative, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { ZipArchive } from 'archiver';
 import { homedir, tmpdir } from 'os';
@@ -11,6 +11,7 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import os from 'os';
 import { loadConfig, saveConfig, setConfigLang } from './config.js';
+import { getSessionWorkdir, bindSessionWorkdir, unbindSessionWorkdir, isValidSessionId, getBaseSessionId } from './session-workdirs.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest, setAuthLang } from './auth.js';
 import { checkPath, checkCommand, normalizePathFormat, setSecurityLang } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup, setTrashLang } from './trash.js';
@@ -390,6 +391,95 @@ function parseMultipartBody(req) {
   });
 }
 
+// ==================== 会话级工作目录：请求级上下文 ====================
+
+/** 跨平台路径比较归一（Windows 大小写不敏感） */
+function normForCompare(p) {
+  const s = String(p || '').replace(/\\/g, '/');
+  return process.platform === 'win32' ? s.toLowerCase() : s;
+}
+
+/**
+ * 解析本次请求的会话上下文（会话级工作目录的唯一入口）。
+ *
+ * 优先组：
+ *   1. X-AIH-Workdir（扩展端冻结的执行期目录）：仅在等于该会话的注册值、
+ *      或会话未注册但等于全局默认时采纳；否则忽略并记审计日志（继续走下一级）。
+ *   2. 该 sessionId 的注册表值。
+ *   3. 全局 config.workdir。
+ *
+ * 为什么带第 1 级：并行会话可能同时执行，扩展端会在任务派发时冻结目录；
+ * 这一级把“冻结值”显式带到代端并留下审计痕迹，同时不构成提权——
+ * 接受的条件仍是「该会话本就注册了这个目录」。
+ *
+ * @param {import('http').IncomingMessage} req
+ * @returns {{ sessionId: string|null, workdir: string, globalWorkdir: string, registered: string|null, scope: 'session'|'default' }}
+ */
+export function resolveRequestScope(req) {
+  const config = loadConfig();
+  const globalWorkdir = resolve(normalizePathFormat(config.workdir));
+
+  const rawId = req.headers['x-aih-session-id'];
+  const sessionId = typeof rawId === 'string' && isValidSessionId(rawId) ? rawId : null;
+  // 派生会话（子任务/子代理）没有自己的绑定：回落到主会话的注册值
+  const baseSessionId = getBaseSessionId(sessionId);
+  const registeredRaw = sessionId
+    ? (getSessionWorkdir(sessionId) || (baseSessionId !== sessionId ? getSessionWorkdir(baseSessionId) : null))
+    : null;
+  const registered = registeredRaw ? resolve(normalizePathFormat(registeredRaw)) : null;
+
+  let workdir = registered || globalWorkdir;
+  const scope = registered ? 'session' : 'default';
+
+  const rawDeclared = req.headers['x-aih-workdir'];
+  if (typeof rawDeclared === 'string' && rawDeclared) {
+    let declared = null;
+    try {
+      declared = resolve(normalizePathFormat(decodeURIComponent(rawDeclared)));
+    } catch { declared = null; }
+
+    if (declared) {
+      const expected = registered || globalWorkdir;
+      if (normForCompare(declared) === normForCompare(expected)) {
+        workdir = declared;
+      } else {
+        // 冻结值已失效（例如会话绑定被改过）：宁可回落，也不按旧目录执行
+        logSecurity('session_workdir_header_ignored', {
+          sessionId,
+          declared,
+          effective: expected,
+        });
+      }
+    }
+  }
+
+  return { sessionId, workdir, globalWorkdir, registered, scope };
+}
+
+/**
+ * /api/exec 的 cwd 归一（导出供单测覆盖「缺省 / 相对 / 越界」三种语义）
+ * - 缺省：用本会话有效目录
+ * - 相对：按会话有效目录解析（checkPath 内部同规则）
+ * - 绝对：越界即拒绝，hint 给出本会话目录，便于模型自我纠正而不是反复猜旧路径
+ *
+ * @param {string|undefined} cwd 模型给出的 cwd（可能缺省/相对/绝对）
+ * @param {{ sessionId: string|null, workdir: string }} scope 请求作用域
+ * @param {Function} tFn 翻译函数
+ * @returns {Promise<{ requested: string, cwd: string, allowed: boolean, reason?: string, hint: string }>}
+ */
+export async function resolveExecCwd(cwd, scope, tFn) {
+  const requested = typeof cwd === 'string' ? cwd.trim() : '';
+  const candidate = requested || scope.workdir;
+  const checked = await checkPath(candidate, tFn, scope);
+  return {
+    requested,
+    cwd: checked.resolved,
+    allowed: !!checked.allowed,
+    reason: checked.reason,
+    hint: scope.workdir,
+  };
+}
+
 /**
  * 创建并启动服务器
  */
@@ -452,7 +542,7 @@ export function startServer() {
     // CORS 预检（仅放行 Chrome 扩展来源）
     if (req.method === 'OPTIONS') {
       const optHeaders = {
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Memory-Caller',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Memory-Caller, X-AIH-Session-Id, X-AIH-Workdir',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS'
       };
       const allowedOrigin = getAllowedOrigin(req);
@@ -557,6 +647,10 @@ export function startServer() {
       logSecurity('auth_invalid', { path: pathname });
       return jsonResponse(res, 403, { success: false, error: t('error.invalidToken') });
     }
+
+    // 会话级工作目录：本次请求的有效目录（会话绑定 > 全局默认）。
+    // 认证后才解析：配对 token 是唯一信任边界，未配对请求不应触及会话状态。
+    const scope = resolveRequestScope(req);
 
     // 心跳接口（需认证）：仅刷新 lastAuthTime 维持"插件在线"状态，不返回敏感信息
     if (req.method === 'GET' && pathname === '/api/heartbeat') {
@@ -739,7 +833,14 @@ export function startServer() {
         success: true,
         version: AGENT_VERSION,
         pairCodeTTL: config.pairCodeTTL,
-        workdir: config.workdir,
+        // workdir：本次请求的有效目录（带会话头且已绑定时为会话目录，否则为全局默认）
+        workdir: scope.workdir,
+        // defaultWorkdir：代理全局默认目录（未绑定会话的兜底），扩展端用它渲染「默认」态
+        defaultWorkdir: config.workdir,
+        scope: scope.scope,
+        sessionId: scope.sessionId,
+        sessionWorkdir: scope.registered,
+        sessionWorkdirSupported: true,
         allowedPaths: config.allowedPaths,
         commandTimeout: config.commandTimeout,
         fileMaxSize: config.fileMaxSize,       // 读取大小限制（/api/fs/read、/api/fs/download）
@@ -766,9 +867,10 @@ export function startServer() {
       try {
         const { fileBuffer, fileName, mimeType } = await parseMultipartBody(req);
 
-        // 安全检查：过滤危险字符 + basename 防路径穿越（.. 等）
+        // 安全校验：过滤危险字符 + basename 防路径穿越（.. 等）
         const safeName = basename(fileName.replace(/[/\\:*?"<>|]/g, '_')) || 'unnamed_file';
-        const destPath = join(config.workdir, safeName);
+        // 落盘目录 = 本会话有效目录（会话绑定优先，未绑定跟全局）
+        const destPath = join(scope.workdir, safeName);
 
         // 去重：如果文件已存在，添加后缀
         let finalPath = destPath;
@@ -777,13 +879,13 @@ export function startServer() {
           const base = safeName.substring(0, safeName.length - ext.length) || safeName;
           let counter = 1;
           while (await exists(finalPath)) {
-            finalPath = join(config.workdir, `${base}_${counter}${ext}`);
+            finalPath = join(scope.workdir, `${base}_${counter}${ext}`);
             counter++;
           }
         }
 
         // 确保工作目录存在
-        await mkdir(config.workdir, { recursive: true });
+        await mkdir(scope.workdir, { recursive: true });
 
         // 写入文件
         await writeFile(finalPath, fileBuffer);
@@ -809,7 +911,7 @@ export function startServer() {
       if (!targetPath || typeof targetPath !== 'string') {
         return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
       }
-      const check = await checkPath(targetPath, t);
+      const check = await checkPath(targetPath, t, scope);
       if (!check.allowed) {
         logSecurity('fs_upload_stream_blocked', { path: targetPath, reason: check.reason });
         return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -889,6 +991,14 @@ export function startServer() {
           return jsonResponse(res, 400, { success: false, error: t('error.missingWorkdir') });
         }
 
+        // 会话级绑定：带 sessionId 时只写会话注册表，不动全局 config / allowedPaths。
+        // 显式传了非法 sessionId 必须报错，不能默默降级成全局切换（那会影响所有未绑定会话）
+        const hasSessionParam = body.sessionId !== undefined && body.sessionId !== null && body.sessionId !== '';
+        if (hasSessionParam && !isValidSessionId(body.sessionId)) {
+          return jsonResponse(res, 400, { success: false, error: t('error.invalidSessionId') });
+        }
+        const targetSessionId = hasSessionParam ? body.sessionId : null;
+
         // 展开 ~ 到用户主目录
         let resolvedWorkdir = newWorkdir.trim();
         if (resolvedWorkdir === '~') {
@@ -908,9 +1018,28 @@ export function startServer() {
 
         // 禁止设为 Agent 系统目录本身（防敏感文件暴露）
         const AGENT_DIR_PATH = join(homedir(), '.ai-helper-agent');
-        if (resolvedWorkdir === AGENT_DIR_PATH) {
+        if (resolvedWorkdir === AGENT_DIR_PATH || resolvedWorkdir.startsWith(AGENT_DIR_PATH + sep)) {
           logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: t('error.workdirIsSystemDir') });
           return jsonResponse(res, 403, { success: false, error: t('error.workdirIsSystemDir') });
+        }
+
+        if (targetSessionId) {
+          try {
+            await mkdir(resolvedWorkdir, { recursive: true });
+            const entry = await bindSessionWorkdir(targetSessionId, resolvedWorkdir);
+            logSystem('session_workdir_bound', { sessionId: targetSessionId, workdir: resolvedWorkdir, extId });
+            return jsonResponse(res, 200, {
+              success: true,
+              workdir: resolvedWorkdir,
+              scope: 'session',
+              sessionId: targetSessionId,
+              updatedAt: entry?.updatedAt || Date.now(),
+              message: t('message.workdirBoundToSession')
+            });
+          } catch (err) {
+            logError('config', 'session_workdir_bind_error', { sessionId: targetSessionId, path: resolvedWorkdir, error: err.message });
+            return jsonResponse(res, 500, { success: false, error: t('error.switchWorkdirFailed', { message: err.message }) });
+          }
         }
 
         try {
@@ -938,6 +1067,29 @@ export function startServer() {
           });
         } catch (err) {
           logError('config', 'workdir_switch_error', { path: resolvedWorkdir, error: err.message });
+          return jsonResponse(res, 500, { success: false, error: t('error.switchWorkdirFailed', { message: err.message }) });
+        }
+      }
+
+      // === 解除会话工作目录绑定（恢复跟随代理默认目录） ===
+      if (pathname === '/api/config/workdir/unbind' && req.method === 'POST') {
+        if (!isValidSessionId(body.sessionId)) {
+          return jsonResponse(res, 400, { success: false, error: t('error.invalidSessionId') });
+        }
+        try {
+          const removed = await unbindSessionWorkdir(body.sessionId);
+          const defaultWorkdir = loadConfig().workdir;
+          logSystem('session_workdir_unbound', { sessionId: body.sessionId, removed, extId });
+          return jsonResponse(res, 200, {
+            success: true,
+            removed,
+            workdir: defaultWorkdir,
+            scope: 'default',
+            sessionId: body.sessionId,
+            message: t('message.workdirUnbound')
+          });
+        } catch (err) {
+          logError('config', 'session_workdir_unbind_error', { sessionId: body.sessionId, error: err.message });
           return jsonResponse(res, 500, { success: false, error: t('error.switchWorkdirFailed', { message: err.message }) });
         }
       }
@@ -1060,7 +1212,8 @@ export function startServer() {
             body.pattern || '*',
             body.recursive !== false,
             maxResults,
-            t
+            t,
+            scope
           );
           if (result.success) {
             logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -1086,7 +1239,8 @@ export function startServer() {
             body.recursive !== false,
             maxResults,
             body.contextLines !== undefined ? body.contextLines : 2,
-            t
+            t,
+            scope
           );
           if (result.success) {
             logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -1102,7 +1256,7 @@ export function startServer() {
 
       // 读取文件
       if (pathname === '/api/fs/read') {
-        const check = await checkPath(body.path, t);
+        const check = await checkPath(body.path, t, scope);
         if (!check.allowed) {
           logSecurity('fs_read_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1118,7 +1272,7 @@ export function startServer() {
 
       // 写入文件
       if (pathname === '/api/fs/write') {
-        const check = await checkPath(body.path, t);
+        const check = await checkPath(body.path, t, scope);
         if (!check.allowed) {
           logSecurity('fs_write_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1156,7 +1310,7 @@ export function startServer() {
       // 列出目录
       if (pathname === '/api/fs/list') {
         const dirPath = body.path || '.';
-        const check = await checkPath(dirPath, t);
+        const check = await checkPath(dirPath, t, scope);
         if (!check.allowed) {
           logSecurity('fs_list_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1178,7 +1332,7 @@ export function startServer() {
 
       // 获取文件详细信息（权限、创建/访问/修改时间、MIME 类型等）
       if (pathname === '/api/fs/stat') {
-        const check = await checkPath(body.path, t);
+        const check = await checkPath(body.path, t, scope);
         if (!check.allowed) {
           logSecurity('fs_stat_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1210,7 +1364,7 @@ export function startServer() {
 
       // 删除文件/目录（移至回收站，7天后自动清理）
       if (pathname === '/api/fs/delete') {
-        const check = await checkPath(body.path, t);
+        const check = await checkPath(body.path, t, scope);
         if (!check.allowed) {
           logSecurity('fs_delete_blocked', { path: body.path, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1229,7 +1383,7 @@ export function startServer() {
 
       // === 文档图片抽取（docx；图片落盘到文档旁 _attachments/） ===
       if (pathname === '/api/documents/extract-images') {
-        const { status, payload } = await extractImagesHandler(body, { t });
+        const { status, payload } = await extractImagesHandler(body, { t, sessionCtx: scope });
         if (payload.success) {
           logFs('extract_images', { path: body.path, count: payload.images.length, truncated: payload.truncated });
         } else {
@@ -1244,7 +1398,7 @@ export function startServer() {
         if (!targetPath || typeof targetPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(targetPath, t);
+        const check = await checkPath(targetPath, t, scope);
         if (!check.allowed) {
           logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1306,7 +1460,7 @@ export function startServer() {
 
         const resolvedPaths = [];
         for (const p of paths) {
-          const check = await checkPath(p, t);
+          const check = await checkPath(p, t, scope);
           if (!check.allowed) {
             logSecurity('fs_download_blocked', { path: p, reason: check.reason });
             return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
@@ -1388,7 +1542,7 @@ export function startServer() {
             // 多文件打包流式下载
             const resolvedPaths = [];
             for (const p of paths) {
-              const check = await checkPath(p, t);
+              const check = await checkPath(p, t, scope);
               if (!check.allowed) {
                 logSecurity('fs_download_blocked', { path: p, reason: check.reason });
                 return jsonResponse(res, 403, { success: false, error: t('error.pathNotAllowed', { path: p }) });
@@ -1412,7 +1566,7 @@ export function startServer() {
             }
           } else if (targetPath && typeof targetPath === 'string') {
             // 单文件/目录流式下载
-            const check = await checkPath(targetPath, t);
+            const check = await checkPath(targetPath, t, scope);
             if (!check.allowed) {
               logSecurity('fs_download_blocked', { path: targetPath, reason: check.reason });
               return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1468,7 +1622,7 @@ export function startServer() {
         if (!filePath || typeof filePath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(filePath, t);
+        const check = await checkPath(filePath, t, scope);
         if (!check.allowed) {
           logSecurity('fs_preview_xlsx_blocked', { path: filePath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1525,7 +1679,7 @@ export function startServer() {
         if (!dirPath || typeof dirPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(dirPath, t);
+        const check = await checkPath(dirPath, t, scope);
         if (!check.allowed) {
           logSecurity('fs_mkdir_blocked', { path: dirPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1556,7 +1710,7 @@ export function startServer() {
         if (os.platform() === 'win32' && /[:*?"<>|]/.test(newName)) {
           return jsonResponse(res, 400, { success: false, error: t('error.newNameInvalidChars') });
         }
-        const check = await checkPath(oldPath, t);
+        const check = await checkPath(oldPath, t, scope);
         if (!check.allowed) {
           logSecurity('fs_rename_blocked', { path: oldPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1566,7 +1720,7 @@ export function startServer() {
         }
         const newFullPath = join(dirname(check.resolved), newName);
         // 确保目标路径也在允许范围内
-        const newCheck = await checkPath(newFullPath, t);
+        const newCheck = await checkPath(newFullPath, t, scope);
         if (!newCheck.allowed) {
           logSecurity('fs_rename_blocked', { path: newFullPath, reason: newCheck.reason });
           return jsonResponse(res, 403, { success: false, error: t('error.targetPathNotAllowed', { reason: newCheck.reason }) });
@@ -1596,12 +1750,12 @@ export function startServer() {
         if (!srcPath || typeof srcPath !== 'string' || !destDir || typeof destDir !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPathOrDestDir') });
         }
-        const srcCheck = await checkPath(srcPath, t);
+        const srcCheck = await checkPath(srcPath, t, scope);
         if (!srcCheck.allowed) {
           logSecurity('fs_move_blocked', { path: srcPath, reason: srcCheck.reason });
           return jsonResponse(res, 403, { success: false, error: srcCheck.reason });
         }
-        const destCheck = await checkPath(destDir, t);
+        const destCheck = await checkPath(destDir, t, scope);
         if (!destCheck.allowed) {
           logSecurity('fs_move_blocked', { path: destDir, reason: destCheck.reason });
           return jsonResponse(res, 403, { success: false, error: destCheck.reason });
@@ -1615,7 +1769,7 @@ export function startServer() {
         }
         const itemName = basename(srcCheck.resolved);
         const destPath = join(destCheck.resolved, itemName);
-        const destCheck2 = await checkPath(destPath, t);
+        const destCheck2 = await checkPath(destPath, t, scope);
         if (!destCheck2.allowed) {
           logSecurity('fs_move_blocked', { path: destPath, reason: destCheck2.reason });
           return jsonResponse(res, 403, { success: false, error: t('error.moveTargetNotAllowed', { reason: destCheck2.reason }) });
@@ -1642,7 +1796,7 @@ export function startServer() {
         if (!targetPath || typeof targetPath !== 'string') {
           return jsonResponse(res, 400, { success: false, error: t('error.missingPath') });
         }
-        const check = await checkPath(targetPath, t);
+        const check = await checkPath(targetPath, t, scope);
         if (!check.allowed) {
           logSecurity('browser_open_blocked', { path: targetPath, reason: check.reason });
           return jsonResponse(res, 403, { success: false, error: check.reason });
@@ -1684,13 +1838,23 @@ export function startServer() {
         const { command, cwd, wait, force, timeoutMs } = body;
         if (!command || typeof command !== 'string') return jsonResponse(res, 400, { success: false, error: t('error.missingCommand') });
 
-        // 校验 cwd
-        let resolvedCwd = cwd || config.workdir;
-        const cwdCheck = await checkPath(resolvedCwd, t);
+        // 校验 cwd：缺省用本会话有效目录；相对路径按它解析（checkPath 内部同规则）
+        const cwdCheck = await resolveExecCwd(cwd, scope, t);
         if (!cwdCheck.allowed) {
-          logSecurity('exec_cwd_blocked', { command, cwd: resolvedCwd, reason: cwdCheck.reason });
-          return jsonResponse(res, 403, { success: false, error: t('error.execDirCheckFailed', { reason: cwdCheck.reason }) });
+          logSecurity('exec_cwd_blocked', { command, cwd: cwdCheck.cwd, reason: cwdCheck.reason, sessionId: scope.sessionId });
+          // hint 带上本会话有效目录：模型拿到 403 后能自我纠正，而不是反复猜旧路径
+          return jsonResponse(res, 403, {
+            success: false,
+            // 模型显式给了 cwd 却被拒：用「不在本会话目录内」的措辞，比笼统的校验失败更好自我纠正
+            error: cwd
+              ? t('error.workdirNotInSessionScope', { workdir: scope.workdir })
+              : t('error.execDirCheckFailed', { reason: cwdCheck.reason }),
+            reason: cwdCheck.reason,
+            hint: cwdCheck.hint,
+          });
         }
+        // 相对 cwd 已在 checkPath 内按会话目录解析，这里必须用解析后的绝对路径
+        const resolvedCwd = cwdCheck.cwd;
 
         // 安全检查
         const cmdCheck = checkCommand(command, !!force, t);

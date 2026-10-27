@@ -5714,15 +5714,26 @@ body {
   display: none;
 }
 /* 焦点视觉已由 .input-container:focus-within 承担（一体化容器改造） */
-.input-disclaimer {
+/* ========== 输入区信息带（input-container 底部一行，flex 排布） ==========
+   成员宽度优先级：模型名 > 上下文环 > 目录名 > 免责声明。
+   整行 pointer-events:none，避免遮挡文本域点击；可交互子项各自恢复 auto。 */
+.input-meta-band {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 6px;
-  /* 左右让位：左侧为占用指示器、右侧为模型名预留安全区；右侧固定 150px，
-     使居中文字在模型名左侧安全区内显示，避免窄屏下与模型名重叠（文字视觉略偏左属预期） */
-  padding: 0 150px 0 92px;
-  box-sizing: border-box;
+  left: 16px;
+  right: 16px;
+  bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
+.input-meta-band > * { pointer-events: auto; }
+
+/* 免责声明：吃掉中间全部剩余空间，文字居中省略；窄屏按断点整块隐藏 */
+.input-disclaimer {
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: center;
   font-size: 10px;
   line-height: 1;
@@ -5732,13 +5743,10 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  z-index: 5;
 }
-/* ========== 上下文占用指示器（input-container 内左下角，disclaimer 左侧空白区） ========== */
+/* ========== 上下文占用指示器（信息带首位） ========== */
 .context-usage-indicator {
-  position: absolute;
-  left: 16px;
-  bottom: 2px;
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5750,7 +5758,6 @@ body {
   line-height: 1;
   color: var(--text-tertiary);
   border-radius: 4px;
-  z-index: 2;
   transition: color 0.15s ease, opacity 0.15s ease;
 }
 
@@ -5770,14 +5777,49 @@ body {
   mask: radial-gradient(circle, transparent 3px, #000 3.5px);
 }
 
-/* ========== 当前模型名指示（input-container 内右下角，disclaimer 右侧空白区；点击打开模型设置） ========== */
+/* ========== 本会话工作目录 chip（信息带内，上下文环右侧；点击打开会话级切换弹窗） ========== */
+.workdir-tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.workdir-tag:hover { color: var(--text-secondary); }
+
+.workdir-tag-icon { flex: none; }
+
+.workdir-tag-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 同会话任务执行中：禁用切换，视觉弱化（仍可点击以弹出提示） */
+.workdir-tag[data-locked="true"] { opacity: 0.55; cursor: not-allowed; }
+/* 绑定目录已失效（被删除/改名/代理端注册表剪枝）：用警示色提示，不做静默回落 */
+.workdir-tag[data-invalid="true"] { color: var(--warning-500); }
+
+/* ========== 当前模型名指示（信息带末位；点击打开模型设置） ========== */
 .current-model-tag {
-  position: absolute;
-  right: 16px;
-  bottom: 2px;
+  flex: none;
+  /* 免责声明隐藏后由 auto 外边距把模型名顶到右端；声明可见时无剩余空间，不起作用 */
+  margin-left: auto;
+  max-width: 40%;
   display: inline-block;
   box-sizing: border-box;
-  max-width: calc(50% - 96px);
   padding: 2px 4px;
   background: none;
   border: none;
@@ -5789,7 +5831,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  z-index: 2;
   transition: color 0.15s ease;
 }
 
@@ -5797,11 +5838,17 @@ body {
 
 .context-usage-percent { font-variant-numeric: tabular-nums; }
 
-/* 窄屏：隐藏百分比文字，仅保留环形 */
+/* 窄屏降级（优先级：模型名 > 上下文环 > 目录名 > 免责声明） */
+@media (max-width: 520px) {
+  .workdir-tag { max-width: 110px; }
+}
+@media (max-width: 460px) {
+  /* 先牺牲免责声明，保住目录名与模型名 */
+  .input-disclaimer { display: none; }
+}
 @media (max-width: 420px) {
   .context-usage-percent { display: none; }
-  .input-disclaimer { padding: 0 140px 0 60px; }
-  .current-model-tag { max-width: calc(50% - 100px); }
+  .workdir-tag { max-width: 96px; }
 }
 /* ========== 压缩分隔条（聊天区内） ========== */
 .compaction-divider {

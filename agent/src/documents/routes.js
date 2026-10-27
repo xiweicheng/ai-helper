@@ -10,17 +10,18 @@ const EXTRACT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 /**
  * POST /api/documents/extract-images 处理器
  * @param {object} body { path, maxImages? }
- * @param {{ t?: Function, checkPathOverride?: Function }} [opts] checkPathOverride 仅供单测注入
+ * @param {{ t?: Function, checkPathOverride?: Function, sessionCtx?: { sessionId?: string, workdir?: string } }} [opts]
+ *   checkPathOverride 仅供单测注入；sessionCtx 为请求级会话上下文（会话级工作目录）
  * @returns {Promise<{ status: number, payload: object }>}
  */
-export async function extractImagesHandler(body = {}, { t, checkPathOverride } = {}) {
+export async function extractImagesHandler(body = {}, { t, checkPathOverride, sessionCtx } = {}) {
   const tt = typeof t === 'function' ? t : (k) => k;
   const path = body.path;
   if (!path || typeof path !== 'string') return { status: 400, payload: { success: false, error: 'missingPath' } };
   const ext = extname(path).toLowerCase();
   if (ext !== '.docx') return { status: 400, payload: { success: false, error: 'unsupportedFormat' } };
 
-  const check = await (checkPathOverride || checkPath)(path, tt);
+  const check = await (checkPathOverride || checkPath)(path, tt, sessionCtx || {});
   if (!check.allowed) return { status: 403, payload: { success: false, error: check.reason } };
   const resolved = check.resolved;
 

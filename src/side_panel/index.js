@@ -37,6 +37,7 @@ import { initQueuePanel, refreshQueueUI, editQueueTail } from './queue-panel.js'
 import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, markStopAndSend, hasQueuedItems, currentInputHasContext, runQueueNow } from './queue-runner.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { initVoiceInput, toggleVoiceInput, handleVoiceEscape, matchVoiceShortcut } from './voice-input.js';
+import { resolveWorkdirForSession, formatWorkdirLabel } from '../shared/workdir-scope.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -573,6 +574,85 @@ function updateCurrentModelTag() {
   el.style.display = name ? '' : 'none';
 }
 
+/**
+ * 信息带：工作目录 chip（显示末级目录名，点击打开会话级切换弹窗）
+ * 取值唯一入口是 resolveWorkdirForSession（按会话解析），绝不读 state.agentPlatform.workdir 单例
+ */
+
+// 代理切换导致绑定失效只需提示一次：按「会话 + 代理」记账，避免每次刷新都弹
+const workdirAgentSwitchNotified = new Set();
+
+async function updateWorkdirTag() {
+  const el = document.getElementById('workdirTag');
+  const nameEl = document.getElementById('workdirTagName');
+  if (!el || !nameEl) return;
+  const sid = state.activeSessionId || null;
+  // 显隐条件：代理未连接 / 未启用 agent_exec / 目录为空 → 整块隐藏
+  const execEnabled = Array.isArray(state.enabledTools) && state.enabledTools.includes('agent_exec');
+  if (state.agentPlatform?.connected !== true || !execEnabled) {
+    el.style.display = 'none';
+    return;
+  }
+  let resolved = null;
+  try {
+    resolved = await resolveWorkdirForSession(sid);
+  } catch (err) {
+    logger.debug('[WorkdirTag] resolve failed:', err && err.message);
+  }
+  const workdir = (resolved && resolved.workdir) || '';
+  if (!workdir) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = '';
+  const homeDir = state.agentPlatform?.homeDir || '';
+  nameEl.textContent = formatWorkdirLabel(workdir, { homeDir });
+  // 同会话任务执行中：禁止切换（点击只提示，不弹窗）
+  el.dataset.locked = (state.generatingSessionIds?.has(sid) || hasQueuedItems(sid)) ? 'true' : 'false';
+  // 与代理端权威值比对：注册表被剪枝 / 目录被改名时不静默回落，chip 标异常并在 title 说明
+  try {
+    const { getWorkspaceRoot } = await import('./workspace-manager.js');
+    const agentRoot = await getWorkspaceRoot(sid);
+    el.dataset.invalid = (agentRoot && agentRoot !== workdir) ? 'true' : 'false';
+  } catch {
+    el.dataset.invalid = 'false';
+  }
+  const scopeSuffix = resolved.scope === 'session'
+    ? t('workdirTag.sessionScope')
+    : t('workdirTag.defaultScope');
+  const invalidSuffix = el.dataset.invalid === 'true' ? t('workdirTag.pathMissing') : '';
+  el.title = `${workdir}${scopeSuffix}${invalidSuffix}`;
+  // 绑定存在但当前代理不同：已按计划自动回落默认目录，这里提示一次（切回原代理仍生效）
+  if (resolved.boundWorkdir && resolved.scope === 'default') {
+    const noticeKey = `${sid || ''}::${resolved.agentId || ''}`;
+    if (!workdirAgentSwitchNotified.has(noticeKey)) {
+      workdirAgentSwitchNotified.add(noticeKey);
+      showToast(t('workdirTag.agentSwitched'), 'warning');
+    }
+  }
+}
+
+/** 初始化工作目录 chip：绑定点击（会话级切换弹窗）并首次刷新 */
+function initWorkdirTag() {
+  const el = document.getElementById('workdirTag');
+  if (el) {
+    el.setAttribute('aria-label', t('workdirTag.tagHint'));
+    el.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (el.dataset.locked === 'true') {
+        showToast(t('workdirTag.lockedHint'), 'warning');
+        return;
+      }
+      const { showSwitchWorkdirDialog } = await import('./workspace-panel.js');
+      await showSwitchWorkdirDialog({ sessionId: state.activeSessionId || null });
+    });
+  }
+  updateWorkdirTag();
+  // 会话切换 / 本会话目录切换 / 代理切换 / 平台信息刷新都走这几条事件
+  document.addEventListener('session-workdir-changed', () => { updateWorkdirTag(); });
+  document.addEventListener('agent-model-changed', () => { updateWorkdirTag(); });
+}
+
 /** 初始化模型名指示：绑定点击（打开模型设置）并首次刷新 */
 function initCurrentModelTag() {
   const el = document.getElementById('currentModelTag');
@@ -885,7 +965,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     let messages = [
       {
         role: 'system',
-        content: await getSystemPrompt()
+        // 目录注入按本次发送的目标会话解析
+        content: await getSystemPrompt(null, { sessionId: mySessionId })
       }
     ];
 
@@ -1026,6 +1107,8 @@ async function updateAgentIndicator(platformInfo, skipPing = false) {
 
   // 同步更新工作目录面板入口可见性
   updateWorkspacePanelVisibility(connected);
+  // 目录 chip 与连接态/代理信息绑定，一起刷新
+  updateWorkdirTag();
 }
 
 /**
@@ -4450,6 +4533,7 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initContextIndicator);
 document.addEventListener('DOMContentLoaded', initCurrentModelTag);
+document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
 document.addEventListener('DOMContentLoaded', async () => {

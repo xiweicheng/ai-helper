@@ -7,6 +7,8 @@
     "operationInProgress": "An operation is already in progress, please try again later",
     "missingPath": "Missing path parameter",
     "missingWorkdir": "Missing workdir parameter",
+    "invalidSessionId": "Invalid session identifier",
+    "workdirNotInSessionScope": "Path is outside this session's working directory ({workdir})",
     "workdirNotAbsolute": "workdir must be an absolute path",
     "workdirIsSystemDir": "Cannot set the Agent system directory as working directory",
     "pathNotAbsolute": "path must be an absolute path",
@@ -130,6 +132,8 @@
     "restarting": "Agent is restarting...",
     "updateSuccess": "Update successful, Agent is restarting...",
     "workdirSwitched": "Working directory switched",
+    "workdirBoundToSession": "Bound to this session only (other sessions are unaffected)",
+    "workdirUnbound": "This session now follows the agent default directory",
     "removedFromAllowedList": "Removed from allowed list",
     "movedToTrash": "Moved to trash (auto-cleaned after 7 days)",
     "mcpCommandConfirm": "MCP command needs confirmation: {reason}"

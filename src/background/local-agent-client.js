@@ -1,6 +1,7 @@
 import logger from '../shared/logger.js';
 import { getLanguage, t, registerTranslations } from '../shared/i18n.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
+import { buildAgentScope } from '../shared/workdir-scope.js';
 
 // 内部工具：从存储读取的 agents 数组解密 token
 function _decodeAgents(agents) {
@@ -390,13 +391,34 @@ async function toggleAgentDisabled(agentId, disabled) {
 }
 
 /**
+ * 请求作用域：会话 + 该会话的有效工作目录（执行期冻结值优先）
+ * 支持传 sessionId 字符串或已解析好的 { sessionId, workdir }；
+ * 不传则请求不带会话头（MCP/RAG/Skill 等管理类接口无需会话语义）。
+ * @param {string|{sessionId: string, workdir?: string}|null} scope
+ * @returns {Promise<{sessionId: string, workdir: string|null}|null>}
+ */
+async function resolveRequestScope(scope) {
+  if (!scope) return null;
+  if (typeof scope === 'string') {
+    try {
+      return await buildAgentScope(scope);
+    } catch (err) {
+      logger.debug('[AgentClient] build session scope failed:', err?.message || err);
+      return { sessionId: scope, workdir: null };
+    }
+  }
+  return scope.sessionId ? scope : null;
+}
+
+/**
  * 发送带认证的 HTTP 请求到 Agent
  * @param {string} path
  * @param {Object} [body]
  * @param {string} [method='POST']
  * @param {number} [timeoutMs=60000] - 请求超时时间（毫秒）
+ * @param {string|{sessionId: string, workdir?: string}|null} [scope] - 会话作用域（会话级目录隔离）
  */
-async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000) {
+async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000, scope = null) {
   const config = await getAgentConfig();
   if (!config.connected) {
     return { success: false, error: t('agentClient.agentNotPaired') };
@@ -411,13 +433,22 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000)
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const requestScope = await resolveRequestScope(scope);
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.token}`,
+      'Accept-Language': getLanguage()
+    };
+    // 会话头：代理端据此选择该会话的有效 workdir 做路径校验；
+    // X-AIH-Workdir 只是执行期冻结值的声明，代理端只在与注册值一致时采纳
+    if (requestScope?.sessionId) {
+      headers['X-AIH-Session-Id'] = requestScope.sessionId;
+      if (requestScope.workdir) headers['X-AIH-Workdir'] = requestScope.workdir;
+    }
+
     const fetchOptions = {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`,
-        'Accept-Language': getLanguage()
-      },
+      headers,
       signal: controller.signal
     };
 
@@ -481,8 +512,8 @@ async function agentGet(path, timeoutMs = 30000) {
   }
 }
 
-async function readFile(filePath) {
-  return agentRequest('/api/fs/read', { path: filePath });
+async function readFile(filePath, scope = null) {
+  return agentRequest('/api/fs/read', { path: filePath }, 'POST', 60000, scope);
 }
 
 /**
@@ -491,8 +522,8 @@ async function readFile(filePath) {
  * @param {string} filePath - 文件绝对路径
  * @returns {Promise<{success: boolean, exists?: boolean, info?: object}>}
  */
-async function statFile(filePath) {
-  const result = await agentRequest('/api/fs/stat', { path: filePath });
+async function statFile(filePath, scope = null) {
+  const result = await agentRequest('/api/fs/stat', { path: filePath }, 'POST', 60000, scope);
   if (result.success) {
     return { success: true, exists: true, info: result.info };
   }
@@ -504,8 +535,8 @@ async function statFile(filePath) {
   return { success: false };
 }
 
-async function writeFile(filePath, content) {
-  return agentRequest('/api/fs/write', { path: filePath, content });
+async function writeFile(filePath, content, scope = null) {
+  return agentRequest('/api/fs/write', { path: filePath, content }, 'POST', 60000, scope);
 }
 
 /**
@@ -554,16 +585,16 @@ async function uploadFile(file) {
  * @param {string} filePath - 文件的绝对路径
  * @returns {Promise<{success: boolean, path?: string, error?: string}>}
  */
-async function openBrowser(filePath) {
-  return agentRequest('/api/browser/open', { path: filePath });
+async function openBrowser(filePath, scope = null) {
+  return agentRequest('/api/browser/open', { path: filePath }, 'POST', 60000, scope);
 }
 
-async function listDir(dirPath) {
-  return agentRequest('/api/fs/list', { path: dirPath });
+async function listDir(dirPath, scope = null) {
+  return agentRequest('/api/fs/list', { path: dirPath }, 'POST', 60000, scope);
 }
 
-async function deleteFile(filePath) {
-  return agentRequest('/api/fs/delete', { path: filePath });
+async function deleteFile(filePath, scope = null) {
+  return agentRequest('/api/fs/delete', { path: filePath }, 'POST', 60000, scope);
 }
 
 /**
@@ -571,22 +602,22 @@ async function deleteFile(filePath) {
  * @param {string} filePath - 文件或目录路径
  * @returns {Promise<{success: boolean, type?: string, name?: string, size?: number, content?: string, mimeType?: string, error?: string}>}
  */
-async function downloadFile(filePath) {
-  return agentRequest('/api/fs/download', { path: filePath }, 'POST', 120000);
+async function downloadFile(filePath, scope = null) {
+  return agentRequest('/api/fs/download', { path: filePath }, 'POST', 120000, scope);
 }
 
 /**
  * 按文件名模式搜索文件
  */
-async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200) {
-  return agentRequest('/api/fs/search_files', { path: rootPath, pattern, recursive, maxResults });
+async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200, scope = null) {
+  return agentRequest('/api/fs/search_files', { path: rootPath, pattern, recursive, maxResults }, 'POST', 60000, scope);
 }
 
 /**
  * 搜索文件内容
  */
-async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2) {
-  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines });
+async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, scope = null) {
+  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines }, 'POST', 60000, scope);
 }
 
 /**
@@ -597,32 +628,32 @@ async function searchContent(rootPath, pattern, filePattern = null, caseSensitiv
  * @param {number} [timeoutMs=null] - 受管模式协商信号：传给 Agent 作为进程超时权威预算；
  *   不传（null）则老 Agent 保持旧语义
  */
-async function execCommand(command, cwd, force = false, timeoutMs = null) {
+async function execCommand(command, cwd, force = false, timeoutMs = null, scope = null) {
   const body = { command, cwd, force };
   if (Number(timeoutMs) > 0) body.timeoutMs = Math.round(Number(timeoutMs));
-  return agentRequest('/api/exec', body);
+  return agentRequest('/api/exec', body, 'POST', 60000, scope);
 }
 
 /**
  * 同步执行命令并等待结果（用于扩展端获取完整输出）
  * @returns {Promise<Object>} { success, exitCode, stdout, stderr, execId, killed, error? }
  */
-async function execCommandWait(command, cwd, force = false, timeoutMs = 600000) {
-  return agentRequest('/api/exec', { command, cwd, wait: true, force }, 'POST', timeoutMs);
+async function execCommandWait(command, cwd, force = false, timeoutMs = 600000, scope = null) {
+  return agentRequest('/api/exec', { command, cwd, wait: true, force }, 'POST', timeoutMs, scope);
 }
 
 /**
  * 停止命令执行
  */
-async function stopCommand(execId) {
-  return agentRequest('/api/exec/stop', { execId });
+async function stopCommand(execId, scope = null) {
+  return agentRequest('/api/exec/stop', { execId }, 'POST', 60000, scope);
 }
 
 /**
  * 显式声明 daemon 化：豁免 Agent 端超时（挂起型命令）
  */
-async function detachCommand(execId) {
-  return agentRequest('/api/exec/detach', { execId });
+async function detachCommand(execId, scope = null) {
+  return agentRequest('/api/exec/detach', { execId }, 'POST', 60000, scope);
 }
 
 /**

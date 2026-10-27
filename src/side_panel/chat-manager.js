@@ -1315,7 +1315,8 @@ export async function sendMessage(opts = {}) {
     let messages = [
       {
         role: 'system',
-        content: await getSystemPrompt(currentAgent)
+        // 目标会话可能不是面板当前会话（队列接力/后台会话），目录必须按它解析
+        content: await getSystemPrompt(currentAgent, { sessionId: mySessionId })
       }
     ];
 
@@ -1542,6 +1543,9 @@ export async function sendMessage(opts = {}) {
         temperature: sess.temperature,
         topP: sess.topP,
         activeCompaction: sess.contextCompaction,
+        // 目录绑定随写回保持目标会话自己的值（不因面板切走而被串改）
+        workdir: sess.workdir,
+        workdirAgentId: sess.workdirAgentId,
       });
       document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
     }

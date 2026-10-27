@@ -2060,7 +2060,8 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     }
     (async () => {
       const results = await Promise.allSettled(
-        paths.map(p => AgentClient.statFile(p))
+        // 产物路径属于会话工作目录：带会话头让代理端按该会话校验
+        paths.map(p => AgentClient.statFile(p, message.sessionId || null))
       );
       const existenceMap = {};
       results.forEach((r, i) => {

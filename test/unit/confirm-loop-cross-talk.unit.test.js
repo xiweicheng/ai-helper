@@ -111,8 +111,12 @@ beforeAll(async () => {
   configModule = await import('../../src/background/config.js');
 });
 
-/** 让总线上的微任务与 Promise 链全部走到位（不用假 timers：这里只关心投递顺序，不推进超时） */
-async function flush(rounds = 6) {
+/**
+ * 让总线上的微任务与 Promise 链全部走到位（不用假 timers：这里只关心投递顺序，不推进超时）
+ * 轮数放宽到 40：agent_exec 现在会先按会话解析冻结目录（会话记录读取 + 代理默认目录缓存），
+ * 链路比原来多若干跳 Promise，6 轮会在确认请求发出前就断言
+ */
+async function flush(rounds = 40) {
   for (let i = 0; i < rounds; i++) await Promise.resolve();
 }
 

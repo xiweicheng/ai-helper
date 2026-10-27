@@ -6041,23 +6041,54 @@ function showInputDialog(title, defaultValue = '', placeholder = '') {
   });
 }
 
+/** 该会话是否有排队任务（队列非空时禁止切换目录） */
+async function hasPendingQueue(sessionId) {
+  if (!sessionId) return false;
+  try {
+    const { getQueuedCount } = await import('./queue-store.js');
+    return getQueuedCount(sessionId) > 0;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * 切换工作目录弹窗：列出 allowedPaths 供选择，支持手动输入绝对路径
+ * 切换工作目录弹窗（会话级）：列出 allowedPaths 供选择，支持手动输入绝对路径
+ * - 目标会话已绑定：显示「恢复默认目录」
+ * - 目标会话未绑定：本次切换即绑定该会话（不影响其他会话）
+ * - 可选「同时设为代理默认目录」：绑定后再走一次全局切换（影响未绑定会话）
+ * - 同会话任务执行中：拦截并提示，不弹窗
  * 仅通过按钮关闭（取消/切换/列表项点击），禁止点击遮罩关闭
+ * @param {Object} [options]
+ * @param {string|null} [options.sessionId] 目标会话；缺省=面板当前会话
+ * @returns {Promise<boolean>} 是否发生了目录变更
  */
-async function showSwitchWorkdirDialog() {
+export async function showSwitchWorkdirDialog(options = {}) {
+  const sessionId = options.sessionId !== undefined ? options.sessionId : (state.activeSessionId || null);
+
+  // 同会话任务执行中：拦截并提示，不弹窗（长任务中途换目录会让执行中请求失校）
+  if (sessionId && (state.generatingSessionIds?.has(sessionId) || await hasPendingQueue(sessionId))) {
+    showToast(t('workdirTag.lockedHint'), 'warning');
+    return false;
+  }
+
   let detail = null;
   try {
-    detail = await getAgentStatusDetail();
+    detail = await getAgentStatusDetail(sessionId);
   } catch (err) {
     showToast(t('workspace.getWorkdirInfoFailed'), 'error');
-    return;
+    return false;
   }
   if (!detail) {
     showToast(t('workspace.cannotConnectAgent'), 'error');
-    return;
+    return false;
   }
 
+  // 旧版代理端无会话级支持：降级为全局切换语义，不展示会话专属控件
+  const sessionSupported = !!sessionId && detail.sessionWorkdirSupported === true;
+  const boundWorkdir = sessionSupported ? (detail.sessionWorkdir || '') : '';
+  const isBound = !!boundWorkdir;
+  const scopeSuffix = isBound ? t('workdirTag.sessionScope') : t('workdirTag.defaultScope');
   const currentWorkdir = detail.workdir || '';
   let allowedPaths = Array.isArray(detail.allowedPaths) ? [...detail.allowedPaths] : [];
 
@@ -6078,8 +6109,11 @@ async function showSwitchWorkdirDialog() {
     overlay.innerHTML = `
       <div class="modal-container switch-workdir-dialog" style="max-width:480px;width:90%;box-sizing:border-box;position:relative;">
         <button class="switch-workdir-close" title="${t('workspace.close')}" style="position:absolute;top:10px;right:12px;width:28px;height:28px;border:none;background:transparent;color:var(--text-tertiary);border-radius:6px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;padding:0;transition:all 0.2s;">✕</button>
-        <div class="modal-title">${t('workspace.switchWorkdirTitle')}</div>
-        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px;word-break:break-all;">${t('workspace.currentLabel')}<span style="color:var(--info-500);" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span></div>
+        <div class="modal-title">${sessionSupported ? t('workdirTag.switchTitle') : t('workspace.switchWorkdirTitle')}</div>
+        <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text-tertiary);margin-bottom:10px;word-break:break-all;">
+          <span style="flex:1;min-width:0;">${t('workspace.currentLabel')}<span style="color:var(--info-500);" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span><span>${scopeSuffix}</span></span>
+          ${isBound ? `<button class="switch-workdir-restore" style="flex-shrink:0;padding:4px 10px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:12px;cursor:pointer;white-space:nowrap;">${t('workdirTag.restoreDefault')}</button>` : ''}
+        </div>
         <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
         <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:8px;margin-bottom:10px;"></div>
         <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.orInputPath')}</div>
@@ -6087,6 +6121,7 @@ async function showSwitchWorkdirDialog() {
           <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="flex:1;min-width:0;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;" autofocus>
           ${browseAvailable ? `<button class="switch-workdir-browse" title="${t('workspace.browseBtn')}" style="flex-shrink:0;padding:6px 14px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap;">${t('workspace.browseBtn')}</button>` : ''}
         </div>
+        ${sessionSupported ? `<label style="display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;"><input type="checkbox" class="switch-workdir-set-default" style="margin-top:1px;flex-shrink:0;"><span>${t('workdirTag.setAsAgentDefault')}</span></label>` : ''}
         <div style="display:flex;justify-content:flex-end;gap:8px;">
           <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.cancel')}</button>
           <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--info-500);color:var(--text-inverse);cursor:pointer;">${t('workspace.switchBtn')}</button>
@@ -6100,6 +6135,8 @@ async function showSwitchWorkdirDialog() {
     const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
     const closeBtn = overlay.querySelector('.switch-workdir-close');
     const browseBtn = overlay.querySelector('.switch-workdir-browse');
+    const restoreBtn = overlay.querySelector('.switch-workdir-restore');
+    const setDefaultCheckbox = overlay.querySelector('.switch-workdir-set-default');
 
     // 浏览：弹出代理端系统原生目录选择框，选中后填入输入框（仍由用户点击 Switch 确认）
     if (browseBtn) {
@@ -6226,10 +6263,23 @@ async function showSwitchWorkdirDialog() {
         if (!ok) return;
       }
       cleanup();
-      const result = await performSwitchWorkdir(targetPath);
+      const setAsDefault = !!(setDefaultCheckbox && setDefaultCheckbox.checked);
+      const result = await performSwitchWorkdir(targetPath, {
+        // 旧版代理端不支持会话级目录：退回全局切换语义
+        sessionId: sessionSupported ? sessionId : null,
+        setAsDefault
+      });
       resolve(result);
     }
 
+    if (restoreBtn) {
+      restoreBtn.addEventListener('click', async () => {
+        restoreBtn.disabled = true;
+        cleanup();
+        const ok = await performRestoreDefaultWorkdir(sessionId, { sessionSupported });
+        resolve(ok);
+      });
+    }
     confirmBtn.addEventListener('click', () => doSwitch(manualInput.value));
     cancelBtn.addEventListener('click', () => { cleanup(); resolve(false); });
     closeBtn.addEventListener('click', () => { cleanup(); resolve(false); });
@@ -6248,17 +6298,9 @@ async function showSwitchWorkdirDialog() {
 }
 
 /**
- * 执行切换：调后端接口 + 同步所有前端缓存 + 重新导航
+ * 清空工作目录面板的导航状态（切目录后必须复位，否则会停在已失效的旧路径上）
  */
-async function performSwitchWorkdir(newWorkdir) {
-  const result = await switchWorkspace(newWorkdir);
-  if (!result.success) {
-    showToast(t('workspace.switchFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
-    return false;
-  }
-
-  // 1) resetWorkspaceRoot 已在 switchWorkspace 内调用
-  // 2) 清面板本地状态（同 handleStorageChange 代理切换逻辑）
+function resetPanelNavigationState() {
   workspaceRoot = null;
   currentPath = null;
   pathHistory = [];
@@ -6268,8 +6310,8 @@ async function performSwitchWorkdir(newWorkdir) {
   isSearchMode = false;
   dirCache.clear();
 
-  // 2.1) 清搜索框 DOM 残留（输入框 value / 清除按钮 / 展开态）
-  //      仅清 JS 变量不够：输入框旧关键词会带到新目录，点搜索时 searchQuery 已空 → performSearch 直接 return → "点不动"
+  // 清搜索框 DOM 残留（输入框 value / 清除按钮 / 展开态）
+  // 仅清 JS 变量不够：输入框旧关键词会带到新目录，点搜索时 searchQuery 已空 → performSearch 直接 return → "点不动"
   const _searchInput = document.getElementById('workspaceSearchInput');
   if (_searchInput) _searchInput.value = '';
   const _clearBtn = document.getElementById('workspaceSearchClear');
@@ -6280,33 +6322,111 @@ async function performSwitchWorkdir(newWorkdir) {
     const _box = _toolbar.querySelector('.workspace-search-box');
     if (_box) _box.classList.remove('search-box-expanded');
   }
+}
 
-  // 3) 同步 state.agentPlatform.workdir（system prompt 下次构建自动用新值）
-  if (state.agentPlatform) {
-    state.agentPlatform = { ...state.agentPlatform, workdir: result.workdir };
-  }
-
-  // 4) 同步 state.agentWorkdirs（代理下拉列表显示）
-  try {
-    const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
-    if (activeAgentId) {
-      state.agentWorkdirs.set(activeAgentId, result.workdir);
-      // 5) 更新下拉列表该项显示（index.js 暴露的全局函数）
-      if (typeof window.updateAgentItemWorkdir === 'function') {
-        window.updateAgentItemWorkdir(activeAgentId, result.workdir);
-      }
-    }
-  } catch (e) {
-    logger.debug('[WorkspacePanel] sync dropdown column table workdir failed:', e);
-  }
-
-  // 6) 重新导航到新 root
+/**
+ * 目录变更后的统一收尾：清缓存 + 复位面板 + 重导航 + 通知其余 UI
+ * 目录 chip / 上下文估算缓存 / 系统提示词缓存都靠 session-workdir-changed 对齐
+ */
+async function afterWorkdirChanged(sessionId, workdir) {
+  resetWorkspaceRoot();
+  resetPanelNavigationState();
   const panel = document.getElementById('workspacePanel');
   if (panel && panel.classList.contains('expanded')) {
     await navigateToRoot();
   }
+  document.dispatchEvent(new CustomEvent('session-workdir-changed', {
+    detail: { sessionId, workdir }
+  }));
+}
 
+/**
+ * 执行切换（会话级）：调后端接口 + 写会话绑定 + 同步所有前端缓存 + 重新导航
+ * @param {string} newWorkdir
+ * @param {Object} [options]
+ * @param {string|null} [options.sessionId] 目标会话；null=全局切换（影响所有未绑定会话）
+ * @param {boolean} [options.setAsDefault] 绑定本会话后再走一次全局切换
+ * @returns {Promise<boolean>}
+ */
+async function performSwitchWorkdir(newWorkdir, options = {}) {
+  const sessionId = options.sessionId === undefined ? (state.activeSessionId || null) : options.sessionId;
+  const setAsDefault = options.setAsDefault === true;
+
+  // 会话级：只写会话注册表，不动全局 config / allowedPaths
+  const result = await switchWorkspace(newWorkdir, { sessionId });
+  if (!result.success) {
+    showToast(t('workspace.switchFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
+    return false;
+  }
+
+  // 绑定落到会话记录（唯一写入口：本会话显式切换）
+  if (sessionId) {
+    try {
+      const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
+      const { setSessionWorkdirBinding } = await import('../storage/session-store.js');
+      await setSessionWorkdirBinding(sessionId, result.workdir, activeAgentId || null);
+    } catch (err) {
+      logger.warn('[WorkspacePanel] persist session workdir failed:', err);
+    }
+  }
+
+  // 勾选「同时设为代理默认目录」：再走一次全局切换（影响所有未绑定会话）
+  if (setAsDefault) {
+    const defResult = await switchWorkspace(result.workdir, { sessionId: null });
+    if (!defResult.success) {
+      showToast(t('workspace.switchFailedWithError', { error: defResult.error || t('workspace.unknownError') }), 'error');
+    }
+  }
+
+  // 只有全局语义才会改代理默认目录：此时同步单例缓存与代理下拉列表
+  // 会话级绑定不得写 state.agentPlatform.workdir（它是「代理默认目录缓存」，改了会串到别的会话）
+  if (!sessionId || setAsDefault) {
+    state.defaultWorkdir = result.workdir;
+    if (state.agentPlatform) {
+      state.agentPlatform = { ...state.agentPlatform, workdir: result.workdir };
+    }
+    try {
+      const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
+      if (activeAgentId) {
+        state.agentWorkdirs.set(activeAgentId, result.workdir);
+        if (typeof window.updateAgentItemWorkdir === 'function') {
+          window.updateAgentItemWorkdir(activeAgentId, result.workdir);
+        }
+      }
+    } catch (e) {
+      logger.debug('[WorkspacePanel] sync dropdown column table workdir failed:', e);
+    }
+  }
+
+  await afterWorkdirChanged(sessionId, result.workdir);
   showToast(t('workspace.switchedTo', { path: result.workdir }), 'success');
+  return true;
+}
+
+/**
+ * 恢复默认目录：解除本会话绑定，回到跟随代理默认目录
+ * @param {string} sessionId
+ * @param {Object} [options]
+ * @param {boolean} [options.sessionSupported] 代理端是否支持会话级目录
+ * @returns {Promise<boolean>}
+ */
+async function performRestoreDefaultWorkdir(sessionId, options = {}) {
+  if (!sessionId) return false;
+  const { unbindSessionWorkdirRemote } = await import('../shared/workdir-scope.js');
+  const remote = await unbindSessionWorkdirRemote(sessionId);
+  // 代理端失败时不清本地绑定：否则代理仍按旧注册值执行，界面却显示已恢复默认
+  if (remote === null && options.sessionSupported) {
+    showToast(t('workspace.switchFailedWithError', { error: t('workspace.unknownError') }), 'error');
+    return false;
+  }
+  try {
+    const { setSessionWorkdirBinding } = await import('../storage/session-store.js');
+    await setSessionWorkdirBinding(sessionId, null, null);
+  } catch (err) {
+    logger.warn('[WorkspacePanel] clear session workdir failed:', err);
+  }
+  await afterWorkdirChanged(sessionId, '');
+  showToast(t('workdirTag.restoredDefault'), 'success');
   return true;
 }
 

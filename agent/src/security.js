@@ -68,6 +68,8 @@ const HARD_BLOCKED_PATHS = [
   join(AGENT_DIR, 'config.json'),     // 代理配置文件
   join(AGENT_DIR, 'pairings.json'),   // 配对记录
   join(AGENT_DIR, 'mcp_servers.json'),// MCP 服务器配置
+  join(AGENT_DIR, 'session-workdirs.json'),     // 会话工作目录注册表（写入=自我扩权）
+  join(AGENT_DIR, 'session-workdirs.json.tmp'), // 同上，写入中断留下的临时文件
   join(AGENT_DIR, 'logs') + sep,      // 日志目录
   join(AGENT_DIR, '.trash') + sep,    // 回收站目录（通过 /api/trash 端点管理）
   join(AGENT_DIR, 'builtin_skills_state.json'), // 内置技能状态
@@ -104,9 +106,12 @@ function isHardBlocked(normalizedPath, platformOverride) {
  * 使用 realpath 防止符号链接绕过
  * @param {string} pathStr - 待检查的路径
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
+ * @param {{ sessionId?: string, workdir?: string }} [ctx] - 会话上下文
+ *   workdir 为该会话的**有效工作目录**（由调用方从会话注册表解析后传入）：
+ *   相对路径按它解析，且它本身永远放行。未传则回落 config.workdir，旧行为完全不变。
  * @returns {{ allowed: boolean, reason?: string, resolved?: string }}
  */
-async function checkPath(pathStr, tFn) {
+async function checkPath(pathStr, tFn, ctx = {}) {
   if (!pathStr || typeof pathStr !== 'string') {
     return { allowed: false, reason: tr('security.pathInvalid', undefined, tFn) };
   }
@@ -122,8 +127,15 @@ async function checkPath(pathStr, tFn) {
   try {
     const config = loadConfig();
 
+    // 会话级工作目录：请求级上下文优先，缺省回落全局默认。
+    // 注意这是 checkPath 内部唯一的相对路径基准来源——绝不能在这里读会话状态之外的东西，
+    // 否则并行会话之间会互相串目录。
+    const effectiveWorkdir = (ctx && typeof ctx.workdir === 'string' && ctx.workdir)
+      ? ctx.workdir
+      : config.workdir;
+
     const normalizedPathStr = normalizePathFormat(pathStr);
-    const normalizedWorkdir = normalizePathFormat(config.workdir);
+    const normalizedWorkdir = normalizePathFormat(effectiveWorkdir);
 
     const resolved = isAbsolute(normalizedPathStr) ? resolve(normalizedPathStr) : resolve(normalizedWorkdir, normalizedPathStr);
     const normalized = normalize(resolved);
@@ -139,17 +151,41 @@ async function checkPath(pathStr, tFn) {
       return { allowed: true, resolved: normalized };
     }
 
-    // 0.6. 工作目录永远放行（不受 allowedPaths 配置控制）
-    //      workdir 是用户当前选定的操作目录，必须始终可访问，即使未在 allowedPaths 中也不应被拦截
+    // 0.6. 有效工作目录永远放行（不受 allowedPaths 配置控制）
+    //      workdir 是用户为当前会话选定的操作目录，必须始终可访问，即使未在 allowedPaths 中也不应被拦截
     if (normalizedWorkdir) {
       const workdirResolved = resolve(normalizedWorkdir);
       const workdirPrefix = workdirResolved.endsWith(sep) ? workdirResolved : workdirResolved + sep;
       if (normalized.startsWith(workdirPrefix) || normalized === workdirResolved) {
-        // realpath 硬阻止检查：防止通过 workdir 内的符号链接绕过到代理系统文件
+        // realpath 复查：符号链接不能借会话目录跳出沙箱
+        // 1) 命中硬阻止项一律拒绝（workdir 内链接指向代理系统文件）
+        // 2) 真实路径必须仍在有效目录 / allowedPaths / 记忆目录内，否则视为越界
         try {
           const realPath = await realpath(resolved);
           if (isHardBlocked(realPath)) {
             return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
+          }
+          const sameOrInside = (child, root) => {
+            const prefix = root.endsWith(sep) ? root : root + sep;
+            return child === root || child.startsWith(prefix);
+          };
+          // 基准自身也可能挂在符号链接路径上（macOS 的 /var → /private/var），
+          // 只比较原始字符串会把正常文件误判成越界，因此两边都做一次 realpath 归一
+          const realWorkdir = await realpath(workdirResolved).catch(() => workdirResolved);
+          let inside = sameOrInside(realPath, realWorkdir) || sameOrInside(realPath, workdirResolved);
+          if (!inside) {
+            for (const allowed of (config.allowedPaths || [])) {
+              const allowedResolved = resolve(normalizePathFormat(allowed));
+              const realAllowed = await realpath(allowedResolved).catch(() => allowedResolved);
+              if (sameOrInside(realPath, realAllowed) || sameOrInside(realPath, allowedResolved)) {
+                inside = true;
+                break;
+              }
+            }
+          }
+          if (!inside && sameOrInside(realPath, normalize(MEMORY_DIR))) inside = true;
+          if (!inside) {
+            return { allowed: false, reason: tr('security.pathOutOfRange', undefined, tFn) };
           }
         } catch (err) {
           if (err.code !== 'ENOENT') {

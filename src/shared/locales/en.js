@@ -517,6 +517,20 @@ export default {
     defaultRange: 'Defaults to querying the last 7 days of audit logs',
   },
 
+  // Session-scoped working directory (meta band chip + switch dialog)
+  workdirTag: {
+    sessionScope: ' (this session)',
+    defaultScope: ' (default)',
+    switchTitle: 'Switch working directory for this session',
+    restoreDefault: 'Restore default directory',
+    setAsAgentDefault: 'Also set as the agent default directory (affects unbound sessions)',
+    pathMissing: 'Directory does not exist or is not accessible, please choose again',
+    agentSwitched: 'Agent switched; this session now falls back to the new agent default directory',
+    lockedHint: 'Cannot switch working directory while a task is running',
+    restoredDefault: 'Restored to the default directory',
+    tagHint: 'Click to switch the working directory for this session',
+  },
+
   // Input area
   input: {
     atHint: 'Prompts (click) / Pages (Ctrl/Cmd+click)',

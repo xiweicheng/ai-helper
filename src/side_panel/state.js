@@ -47,6 +47,8 @@ export let activeAgentSkillIds = null; // 当前 Agent 绑定的技能名称列�
 export let customAgents = [];      // 用户自定义 Agent 列表缓存
 
 // Agent 平台信息（从 Agent 获取，用于系统提示词注入）
+// 注意：workdir 字段已降级为「代理默认目录缓存」，禁止在提示词拼装路径上直接读取，
+// 会话级目录一律走 shared/workdir-scope.js 的 resolveWorkdirForSession(sessionId)
 export let agentPlatform = {
   platformName: 'Unknown',
   platform: 'unknown',
@@ -56,6 +58,14 @@ export let agentPlatform = {
   workdir: '',
   connected: false
 };
+
+// 会话级工作目录绑定值（null = 跟随代理默认目录）
+// 唯一写入者：本会话显式切换 / 本会话恢复默认（切换会话只读取，不改其他会话）
+export let sessionWorkdir = null;
+// 绑定时生效的代理 id；换代理后绑定仍保留（切回原代理仍生效），是否生效由 resolveWorkdirForSession 判定
+export let workdirAgentId = null;
+// 代理全局默认工作目录（/api/status/detail 的 defaultWorkdir），未绑定会话的兜底与展示用
+export let defaultWorkdir = '';
 
 // 配置常量 - 从 storage 获取，使用默认值作为后备
 export let chatConfig = {
@@ -241,6 +251,12 @@ export default {
   set customAgents(v) { customAgents = v; },
   get agentPlatform() { return agentPlatform; },
   set agentPlatform(v) { Object.assign(agentPlatform, v); },
+  get sessionWorkdir() { return sessionWorkdir; },
+  set sessionWorkdir(v) { sessionWorkdir = v; },
+  get workdirAgentId() { return workdirAgentId; },
+  set workdirAgentId(v) { workdirAgentId = v; },
+  get defaultWorkdir() { return defaultWorkdir; },
+  set defaultWorkdir(v) { defaultWorkdir = v; },
   get inputHistory() { return inputHistory; },
   set inputHistory(v) { inputHistory = v; },
   get inputHistoryIndex() { return inputHistoryIndex; },

@@ -4,6 +4,19 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：按 sessionId 解析 + 执行期冻结 + 信息带目录 chip
+> 来源：工作目录原本是代理 `config.json` 里的单一全局值，切一次所有会话跟着变。用户要求「并行会话里切走改目录，不能影响别的会话正在跑或排队的任务」，且「注入到上下文的目录必须跟着会话走，不能沿用全局旧值」。
+
+- **代理端会话注册表**：新增 `agent/src/session-workdirs.js`（`~/.ai-helper-agent/session-workdirs.json`，0600 + tmp/rename 原子写 + 写锁 + mtime 缓存 + 200 条/90 天剪枝 + sessionId 白名单）。会话绑定**不**写 `config.allowedPaths` —— 否则删会话会留下永久授权，沙箱被逐步撑成整个文件系统。
+- **权限校验会话化**：`checkPath(pathStr, tFn, { sessionId, workdir })`，相对路径按会话有效目录解析，放行集合 = 会话目录 ∪ `allowedPaths` ∪ 记忆目录；顺序仍是硬阻止 > 记忆目录 > 会话目录 > `allowedPaths` > realpath 复查（符号链接逃不掉）。
+- **请求作用域贯穿**：`resolveRequestScope()` 解析 `X-AIH-Session-Id`；`X-AIH-Workdir` 只是「执行期冻结值」的声明，**仅当**等于该会话注册值（或未注册且等于全局默认）时才采纳，否则忽略并写审计日志。exec / fs / upload / status-detail / config-workdir(+unbind) 全部走会话上下文。
+- **扩展端唯一解析入口**：`src/shared/workdir-scope.js` 的 `resolveWorkdirForSession()` 是唯一取值来源，`state.agentPlatform.workdir` 降级为「代理默认目录缓存」，禁止再出现在提示词拼装路径（源码守卫单测卡住回归）。
+- **注入即对齐**：`getSystemPrompt(agent, { sessionId })` + 三处发送点传目标 sessionId；定时任务、子代理派发、ReAct 子任务三处后台提示词都按会话注入目录。
+- **执行期隔离**：`beginSessionRun`/`endSessionRun` 引用计数在任务派发时冻结目录，`convergeSessionCwd()` 把越界 cwd 收拢回会话目录并记审计；跨会话接力时 `loadSessionStateForDispatch` 快照补 `workdir`/`workdirAgentId`，出队取的是所属会话的目录。
+- **界面**：输入区信息带改为 flex 容器，上下文百分比右侧新增目录 chip（末级目录名，`title` 放完整路径 + 作用域），520/460/400/320 四档依次压窄目录名 → 隐免责声明 → 只留环；切换弹窗支持「恢复默认目录」「同时设为代理默认目录」，同会话执行中拦截不弹窗。
+- **修掉三个真实缺陷**：`/api/exec` 403 分支在 `resolvedCwd` 声明前引用它（越界 cwd 会抛 TDZ 而不是回 403，模型的自我纠正通道直接失效）；`executeAgentFile`/`executeAgentSearch` 分发器漏传 sessionId（所有 fs/搜索工具退回全局目录校验）；`workdir-scope` 动态 import `db.js`（热路径多一次模块加载，且宏任务让测试等不到）。
+- **验证**：代理端 `node --test` → **753 例全绿**；扩展端 `npx vitest run` → **196 文件 / 2985 例全绿**；新增真 HTTP 端到端冒烟 `agent/test/smoke/session-workdir.smoke.mjs` → **31 项全过**（绑定不污染全局 config、exec cwd 四种语义、跨会话借用 403、头采纳矩阵、unbind 回落）；Playwright 四档截图 9 例通过；`npx eslint src/ agent/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
 ### 语音评审 Low 级项收口：模型哈希改分块读 + 录音条 live region 收敛
 > 来源：上一轮评审列了 6 条 Low，但原始清单在上下文重置时丢了，本轮逐项重审确认能复现的那几条并改掉。
 

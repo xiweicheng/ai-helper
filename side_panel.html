@@ -755,12 +755,19 @@
         <div id="fileAtList"></div>
       </div>
     </div>
-    <button id="contextUsageIndicator" class="context-usage-indicator" type="button" data-level="safe">
-      <span class="context-usage-ring" aria-hidden="true"></span>
-      <span class="context-usage-percent">--%</span>
-    </button>
-    <button id="currentModelTag" class="current-model-tag" type="button"></button>
-    <div class="input-disclaimer" data-i18n="input.aiDisclaimer">内容由 AI 生成，仅供参考</div>
+    <!-- 输入区信息带：上下文占用 / 本会话工作目录 / 免责声明 / 模型名，同一行 flex 排布 -->
+    <div class="input-meta-band" id="inputMetaBand">
+      <button id="contextUsageIndicator" class="context-usage-indicator" type="button" data-level="safe">
+        <span class="context-usage-ring" aria-hidden="true"></span>
+        <span class="context-usage-percent">--%</span>
+      </button>
+      <button id="workdirTag" class="workdir-tag" type="button" style="display: none;">
+        <svg class="workdir-tag-icon" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+        <span class="workdir-tag-name" id="workdirTagName"></span>
+      </button>
+      <div class="input-disclaimer" data-i18n="input.aiDisclaimer">内容由 AI 生成，仅供参考</div>
+      <button id="currentModelTag" class="current-model-tag" type="button"></button>
+    </div>
     <div class="queue-strip" id="queueStrip" style="display:none;">
       <div class="queue-strip-head">
         <span class="queue-strip-icon" aria-hidden="true">⇥</span>

@@ -218,8 +218,8 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {Array<{path, name, size, mtime}>}
  */
-export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200, tFn) {
-  const pathCheck = await checkPath(rootPath, tFn);
+export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200, tFn, ctx = {}) {
+  const pathCheck = await checkPath(rootPath, tFn, ctx);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }
@@ -409,8 +409,8 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
  * @returns {{ success: boolean, results: Array, total: number, engine: string }}
  */
-export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, tFn) {
-  const pathCheck = await checkPath(rootPath, tFn);
+export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, tFn, ctx = {}) {
+  const pathCheck = await checkPath(rootPath, tFn, ctx);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
   }

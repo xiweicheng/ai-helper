@@ -14,6 +14,7 @@ import { tryParseToolArgs } from './tool-helpers.js';
 import { appendAuditLog, recordToolStats } from './activity-store.js';
 import { decideNetworkAccess } from '../shared/network-scope.js';
 import { clampTimeoutMs, TOOL_TIMEOUT_BOUNDS } from '../shared/tool-timeout.js';
+import { getEffectiveWorkdir, getAgentDefaultWorkdir, resolveScopeCwd } from '../shared/workdir-scope.js';
 import { executeAgentMemory } from './tool-memory.js';
 import { executeDebugPage } from './tool-debugger.js';
 import { setLastOperatedTab, getLastOperatedTab, getKeepalivePort } from './state.js';
@@ -1895,23 +1896,24 @@ async function executeManageAiAgent(args, toolCallId) {
   }
 }
 
-async function executeAgentFile(args, toolCallId) {
+async function executeAgentFile(args, toolCallId, sessionId = null) {
   const { action } = args;
+  // 会话上下文必须一路透传：代理端按会话注册表校验路径，漏传会退回全局目录
   switch (action) {
-    case 'read': return executeAgentReadFile(args, toolCallId);
-    case 'write': return executeAgentWriteFile(args, toolCallId);
-    case 'list': return executeAgentListDir(args, toolCallId);
-    case 'delete': return executeAgentDeleteFile(args, toolCallId);
-    case 'download': return executeAgentDownloadFile(args, toolCallId);
+    case 'read': return executeAgentReadFile(args, toolCallId, sessionId);
+    case 'write': return executeAgentWriteFile(args, toolCallId, sessionId);
+    case 'list': return executeAgentListDir(args, toolCallId, sessionId);
+    case 'delete': return executeAgentDeleteFile(args, toolCallId, sessionId);
+    case 'download': return executeAgentDownloadFile(args, toolCallId, sessionId);
     default: return makeResult(false, t('toolExec.unknownAgentFileAction', { action }), { tool_call_id: toolCallId });
   }
 }
 
-async function executeAgentSearch(args, toolCallId) {
+async function executeAgentSearch(args, toolCallId, sessionId = null) {
   const { searchType } = args;
   switch (searchType) {
-    case 'file': return executeAgentSearchFiles(args, toolCallId);
-    case 'content': return executeAgentSearchContent(args, toolCallId);
+    case 'file': return executeAgentSearchFiles(args, toolCallId, sessionId);
+    case 'content': return executeAgentSearchContent(args, toolCallId, sessionId);
     default: return makeResult(false, t('toolExec.unknownAgentSearchType', { type: searchType }), { tool_call_id: toolCallId });
   }
 }
@@ -2183,7 +2185,7 @@ async function executeReadImage(args, toolCallId, sessionId) {
     if (typeof args.path !== 'string' || !args.path.trim()) {
       return makeResult(false, t('toolExec.docImagePathInvalid', { path: String(args.path) }), { tool_call_id: toolCallId });
     }
-    const dl = await AgentClient.downloadFile(args.path);
+    const dl = await AgentClient.downloadFile(args.path, sessionId);
     if (!dl || !dl.success || !dl.content) {
       return makeResult(false, t('toolExec.docImagePathFailed', { path: String(args.path) }), { tool_call_id: toolCallId });
     }
@@ -2216,7 +2218,7 @@ async function executeReadImage(args, toolCallId, sessionId) {
   let dataUrl = img.dataUrl || '';
   if (!dataUrl && img.path) {
     // agent 来源：落盘路径现拉（跨会话仍可用）；同样过 magic bytes 硬校验（纵深防御）
-    const dl = await AgentClient.downloadFile(img.path);
+    const dl = await AgentClient.downloadFile(img.path, sessionId);
     if (!dl || !dl.success || !dl.content) {
       return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
     }
@@ -4063,7 +4065,12 @@ export async function executePreviewUiPrototype(args, toolCallId, sessionId = nu
     try {
       const config = await AgentClient.getAgentConfig();
       if (config.connected) {
-        const relativePath = `prototypes/${newPrototypeId}/index.html`;
+        // 应用内部产物固定落代理全局默认目录的绝对路径：不随会话绑定漂移，
+        // 否则切会话后预览会 404（产物不属于任何会话）
+        const defaultWorkdir = (await getAgentDefaultWorkdir()) || '';
+        const relativePath = defaultWorkdir
+          ? `${String(defaultWorkdir).replace(/[/\\]+$/, '')}/prototypes/${newPrototypeId}/index.html`
+          : `prototypes/${newPrototypeId}/index.html`;
         const writeResult = await AgentClient.writeFile(relativePath, html.trim());
 
         if (writeResult.success) {
@@ -4199,11 +4206,11 @@ async function executeAgentSkill(args, toolCallId) {
 /**
  * Agent 文件读取
  */
-async function executeAgentReadFile(args, toolCallId) {
+async function executeAgentReadFile(args, toolCallId, sessionId = null) {
   const { path } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
-  const result = await AgentClient.readFile(path);
+  const result = await AgentClient.readFile(path, sessionId);
   if (result.success) {
     return { success: true, content: result.content, size: result.size, path: result.path, tool_call_id: toolCallId };
   }
@@ -4297,12 +4304,12 @@ async function executeWaitForNavigation(args, toolCallId, sessionId) {
 /**
  * Agent 文件写入
  */
-async function executeAgentWriteFile(args, toolCallId) {
+async function executeAgentWriteFile(args, toolCallId, sessionId = null) {
   const { path, content } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   if (content === undefined || content === null) return { success: false, error: t('toolExec.missingContent'), tool_call_id: toolCallId };
   
-  const result = await AgentClient.writeFile(path, content);
+  const result = await AgentClient.writeFile(path, content, sessionId);
   if (result.success) {
     appendAuditLog('file_write', `Write file: ${result.path}`, { path: result.path, size: result.size });
     return { success: true, message: t('toolExec.fileWritten', { path: result.path, size: result.size }), path: result.path, size: result.size, tool_call_id: toolCallId };
@@ -4313,10 +4320,10 @@ async function executeAgentWriteFile(args, toolCallId) {
 /**
  * Agent 目录列表
  */
-async function executeAgentListDir(args, toolCallId) {
+async function executeAgentListDir(args, toolCallId, sessionId = null) {
   const { path } = args;
   
-  const result = await AgentClient.listDir(path || '.');
+  const result = await AgentClient.listDir(path || '.', sessionId);
   if (result.success) {
     const files = result.entries?.filter(e => e.type === 'file') || [];
     const dirs = result.entries?.filter(e => e.type === 'directory') || [];
@@ -4332,11 +4339,11 @@ async function executeAgentListDir(args, toolCallId) {
 /**
  * Agent 文件删除
  */
-async function executeAgentDeleteFile(args, toolCallId) {
+async function executeAgentDeleteFile(args, toolCallId, sessionId = null) {
   const { path } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
-  const result = await AgentClient.deleteFile(path);
+  const result = await AgentClient.deleteFile(path, sessionId);
   if (result.success) {
     const typeLabel = t(result.isDir ? 'toolExec.typeDirectory' : 'toolExec.typeFile');
     const typeLabelEn = result.isDir ? 'directory' : 'file';
@@ -4400,11 +4407,11 @@ async function executeAgentRestoreTrash(args, toolCallId) {
  * Agent 文件/目录下载
  * 单文件直接返回 base64 内容触发下载，目录自动打包为 zip
  */
-async function executeAgentDownloadFile(args, toolCallId) {
+async function executeAgentDownloadFile(args, toolCallId, sessionId = null) {
   const { path } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
 
-  const result = await AgentClient.downloadFile(path);
+  const result = await AgentClient.downloadFile(path, sessionId);
   if (!result.success) {
     return { success: false, error: result.error, tool_call_id: toolCallId };
   }
@@ -4532,11 +4539,37 @@ export function computeExecGuardMs(effectiveTimeout) {
 }
 
 /**
- * Agent 命令执行
- * 处理黑名单拦截、灰名单确认、普通命令直接执行三种情况
+ * agent_exec 的 cwd 收敛到本会话冻结目录：
+ * - 相对路径按冻结目录拼接；绝对路径越界则丢弃并写审计日志
+ * - 最终仍由代理端（按会话注册表）复核，这里只是不让模型/陈旧路径把目录带偏
+ * @param {string|undefined} cwd
+ * @param {string|null} sessionId
+ * @returns {Promise<string|undefined>}
  */
+async function convergeSessionCwd(cwd, sessionId) {
+  if (!sessionId) return cwd;
+  let root = '';
+  try {
+    root = (await getEffectiveWorkdir(sessionId)) || '';
+  } catch (err) {
+    logger.warn('[AgentExec] resolve session workdir failed:', err?.message || err);
+    return cwd;
+  }
+  if (!root) return cwd;
+  const { cwd: scoped, dropped, original } = resolveScopeCwd(cwd, root);
+  if (dropped) {
+    logger.warn('[AgentExec] cwd converged to session workdir:', original, '->', scoped);
+    appendAuditLog('cwd_converged', `cwd converged: ${original} -> ${scoped}`, {
+      sessionId, requested: original, workdir: scoped,
+    });
+  }
+  return scoped;
+}
+
 export async function executeAgentExecCommand(args, toolCallId, sessionId) {
-  const { command, cwd, timeoutMs } = args;
+  const { command, timeoutMs } = args;
+  // 执行目录一律收敛到本会话的冻结目录（并行会话之间互不影响）
+  const cwd = await convergeSessionCwd(args.cwd, sessionId);
   if (!command) return { success: false, error: t('toolExec.missingCommand'), tool_call_id: toolCallId };
 
   const config = await getStoredConfig();
@@ -4556,7 +4589,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const idleTimeoutMs = Math.max(120000, Math.min(effectiveTimeout * 0.8, 600000));
 
   if (useAgentStream) {
-    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce, effectiveTimeout);
+    let initResult = await AgentClient.execCommand(command, cwd, effectiveForce, effectiveTimeout, sessionId);
     
     if (initResult.level === 'deny') {
       return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
@@ -4572,7 +4605,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       }
       // 用户已在弹窗确认 → 以 force 重新初始化（跳过灰名单，黑名单仍生效）
       effectiveForce = true;
-      initResult = await AgentClient.execCommand(command, cwd, true, effectiveTimeout);
+      initResult = await AgentClient.execCommand(command, cwd, true, effectiveTimeout, sessionId);
       if (initResult.level === 'deny') {
         return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
       }
@@ -4600,7 +4633,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       // 非正常退出时，终止后台进程，防止孤儿进程持续运行
       if (!normalExit && execId) {
         try {
-          await AgentClient.stopCommand(execId);
+          await AgentClient.stopCommand(execId, sessionId);
           console.log('[AgentExec] terminated commandprocess:', execId, reason ? `(origin reason : ${reason})` : '');
         } catch (stopErr) {
           console.warn('[AgentExec] terminate commandprocess failed:', stopErr.message);
@@ -4721,7 +4754,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           if (idleTime >= idleTimeoutMs) {
             idleTimeout = true;
             console.warn('[AgentExec] idle no output for', Math.round(idleTime / 1000), 's, detach to agent-managed daemon');
-            AgentClient.detachCommand(execId).catch(() => {});
+            AgentClient.detachCommand(execId, sessionId).catch(() => {});
             if (ws) { try { ws.close(); } catch {} }
             if (totalTimeoutId) clearTimeout(totalTimeoutId);
             finish('resolve');
@@ -4869,7 +4902,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       console.warn('[AgentExec] exec init failed before process start, fallback to sync mode:', errorMessage);
       // 为同步回退路径也注册取消机制
       let result = await executeWithCancel(sessionId, toolCallId, 
-        AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
+        AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId)
       );
       if (result.cancelled) {
         return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -4881,7 +4914,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           return commandDeniedResult(command, cwd, toolCallId);
         }
         result = await executeWithCancel(sessionId, toolCallId,
-          AgentClient.execCommandWait(command, cwd, true, effectiveTimeout)
+          AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId)
         );
         if (result.cancelled) {
           return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -4958,7 +4991,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
   }
 
   let result = await executeWithCancel(sessionId, toolCallId,
-    AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout)
+    AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId)
   );
   if (result.cancelled) {
     return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -4970,7 +5003,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       return commandDeniedResult(command, cwd, toolCallId);
     }
     result = await executeWithCancel(sessionId, toolCallId,
-      AgentClient.execCommandWait(command, cwd, true, effectiveTimeout)
+      AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId)
     );
     if (result.cancelled) {
       return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -5035,11 +5068,11 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
 /**
  * Agent 文件名搜索
  */
-async function executeAgentSearchFiles(args, toolCallId) {
+async function executeAgentSearchFiles(args, toolCallId, sessionId = null) {
   const { path, pattern, recursive, maxResults } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   
-  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200);
+  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200, sessionId);
   if (result.success) {
     const engineLabel = result.engine === 'fd' ? t('toolExec.engineLabelFd') : t('toolExec.engineLabelNodejs');
     const fileList = result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n');
@@ -5058,7 +5091,7 @@ async function executeAgentSearchFiles(args, toolCallId) {
 /**
  * Agent 文件内容搜索
  */
-async function executeAgentSearchContent(args, toolCallId) {
+async function executeAgentSearchContent(args, toolCallId, sessionId = null) {
   const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   if (!pattern) return { success: false, error: t('toolExec.missingPattern'), tool_call_id: toolCallId };
@@ -5066,7 +5099,8 @@ async function executeAgentSearchContent(args, toolCallId) {
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
     caseSensitive || false, recursive !== false, maxResults || 100,
-    contextLines !== undefined ? contextLines : 2
+    contextLines !== undefined ? contextLines : 2,
+    sessionId
   );
   if (result.success) {
     const engineLabel = result.engine === 'rg' ? t('toolExec.engineLabelRipgrep') : t('toolExec.engineLabelNodejs');
@@ -5312,7 +5346,7 @@ export async function cancelRunningAgentCommands(sessionId, mode = 'kill') {
   
   // 异步停止进程，不阻塞返回
   if (mode === 'kill') {
-    AgentClient.stopCommand(execId).then(() => {
+    AgentClient.stopCommand(execId, sessionId).then(() => {
       console.log('[Background] stopped Agent command process:', execId);
     }).catch((err) => {
       console.warn('[Background] stop Agent command process failed:', err.message);

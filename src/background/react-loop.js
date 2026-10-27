@@ -13,6 +13,7 @@ import { wrapUntrusted, applyUntrustedContract, getContractText } from '../share
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { createLoopDetector } from './loop-detector.js';
 import { isAgentPaired, writeFile as writeAgentFile, execCommandWait, getAgentConfig } from './local-agent-client.js';
+import { beginSessionRun, endSessionRun, getEffectiveWorkdir } from '../shared/workdir-scope.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
@@ -1041,13 +1042,30 @@ export async function reactLoop(...args) {
   // 顶层主任务判定：有 sessionId（args[5]）且无 taskContext（args[6]）——
   // 子任务/子代理不另起续跑闹钟（它们随主任务的 checkpoint 整体恢复）
   const isTopLevelTask = !args[6] && !!args[5];
+  const sessionId = args[5] || null;
   startSwHeartbeat();
   if (isTopLevelTask) startAutoResumeWatch();
+  await freezeSessionWorkdir(sessionId);
   try {
     return await reactLoopImpl(...args);
   } finally {
+    if (sessionId) endSessionRun(sessionId);
     if (isTopLevelTask) stopAutoResumeWatch();
     stopSwHeartbeat();
+  }
+}
+
+/**
+ * 执行期冻结本会话的工作目录：本轮所有工具/子任务复用这一个目录
+ * （引用计数兼容嵌套子任务），用户切到其他会话改目录也不会让本轮中途换目录。
+ * 冻结失败不阻断主循环：各请求会退回按会话解析，代理端仍会复核。
+ */
+async function freezeSessionWorkdir(sessionId) {
+  if (!sessionId) return;
+  try {
+    await beginSessionRun(sessionId);
+  } catch (err) {
+    logger.warn('[Background] begin session run failed:', err?.message || err);
   }
 }
 
@@ -1195,7 +1213,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // toolCallId 来自模型响应，可能含 / 或 ../，须同样清洗，防止越出 tool-results/ 目录写入 workspace
       const safeCallId = String(toolCallId || crypto.randomUUID()).replace(/[^a-zA-Z0-9_-]/g, '_');
       const filePath = `tool-results/${safeToolName}_${safeCallId}.txt`;
-      const writeResult = await writeAgentFile(filePath, fullContentStr);
+      // 卸载文件落本会话工作目录（带会话头，代理端按该会话校验）
+      const writeResult = await writeAgentFile(filePath, fullContentStr, sessionId);
       if (!writeResult?.success) {
         logger.debug(`[Background] tool result offload write failed: ${writeResult?.error || 'unknown'}`);
         return null;
@@ -3176,11 +3195,22 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           sessionKey: sessionId,
         });
 
+        // 子任务提示词必须带本会话的工作目录（冻结值）：否则模型只能猜路径
+        let subtaskWorkdir = '';
+        try {
+          subtaskWorkdir = (await getEffectiveWorkdir(sessionId)) || '';
+        } catch (e) {
+          logger.warn('[Background] resolve subtask workdir failed:', e?.message || e);
+        }
+        const subtaskWorkdirHint = subtaskWorkdir
+          ? `\n\nWorking directory: ${subtaskWorkdir} (relative paths resolve against it; use absolute paths when you need to be explicit)`
+          : '';
+
         // 为子任务创建独立的消息上下文
         const subtaskMessages = [
           {
             role: 'system',
-            content: `You are executing a subtask. Focus on completing this task and do not ask the user any questions.\n\nTask context: ${taskDescription}\n\nCurrent subtask: ${subtask.description}\n\nYou may use all available tools to complete the task. Choose the appropriate tools based on the actual situation.${inheritedContext}`
+            content: `You are executing a subtask. Focus on completing this task and do not ask the user any questions.\n\nTask context: ${taskDescription}\n\nCurrent subtask: ${subtask.description}\n\nYou may use all available tools to complete the task. Choose the appropriate tools based on the actual situation.${inheritedContext}${subtaskWorkdirHint}`
           },
           {
             role: 'user',
