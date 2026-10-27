@@ -259,3 +259,51 @@ describe('M1 / M3 / M5 / M6：结构契约（这些路径在单测里不好造�
     expect(TOOLBOX_ASR).toContain('x.error || x.reason');
   });
 });
+
+describe('无障碍：隐藏录音条前必须先把焦点交还输入框', () => {
+  it('点「取消」（焦点留在按钮上）时，焦点回输入框，录音条才允许 aria-hidden', async () => {
+    await startRecordingForTest({ media });
+
+    dom.cancelBtn.focus();
+    expect(document.activeElement).toBe(dom.cancelBtn);
+
+    dom.cancelBtn.click();
+
+    // 旧行为：hideBar 直接给整条设 aria-hidden="true"，而焦点还在 #voiceCancelBtn 上，
+    // Chrome 会拒绝并告警（Blocked aria-hidden ... descendant retained focus），
+    // 键盘/读屏用户的焦点还会被悬空。
+    expect(document.activeElement).toBe(dom.input);
+    expect(dom.bar.contains(document.activeElement)).toBe(false);
+    expect(dom.bar.getAttribute('aria-hidden')).toBe('true');
+    expect(dom.bar.classList.contains('show')).toBe(false);
+  });
+
+  it('焦点本来就在条外时，收起录音条不抢用户的焦点', async () => {
+    await startRecordingForTest({ media });
+
+    dom.btn.focus();
+    expect(document.activeElement).toBe(dom.btn);
+
+    dom.cancelBtn.click();
+
+    expect(document.activeElement).toBe(dom.btn);
+  });
+
+  it('显示时移除 aria-hidden，而不是写成 "false"（属性只表达隐藏）', async () => {
+    await startRecordingForTest({ media });
+
+    expect(dom.bar.hasAttribute('aria-hidden')).toBe(false);
+  });
+
+  it('live region 只挂在状态文本上，计时器跳秒不会被读屏朗朗上口', () => {
+    const html = readFileSync(`${ROOT}/side_panel.html`, 'utf8');
+    const barTag = html.match(/<div class="voice-recorder-bar"[^>]*>/)[0];
+    // 整条是 role=status 的话，同级的 00:01 / 00:02 也属于 live 区域，每 200ms 报一次
+    expect(barTag).not.toContain('aria-live');
+    expect(barTag).not.toContain('role="status"');
+
+    const statusTag = html.match(/<span class="voice-recorder-status"[^>]*>/)[0];
+    expect(statusTag).toContain('role="status"');
+    expect(statusTag).toContain('aria-live="polite"');
+  });
+});

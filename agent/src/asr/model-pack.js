@@ -21,13 +21,13 @@
 
 import { join, resolve, relative, isAbsolute, basename } from 'path';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync, rmSync, copyFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync, rmSync, copyFileSync, openSync, readSync, closeSync } from 'fs';
 import { MANIFEST_SCHEMA, MODEL_KINDS, MODELS_DIR, HASH_CACHE_FILE } from './config.js';
 
 // 单个模型文件大小上限（8GB）：防止把整盘文件误当模型读入哈希
 const MAX_MODEL_FILE_BYTES = 8 * 1024 * 1024 * 1024;
 
-// 流式哈希的读块大小（避免一次性把 300MB 读进内存）
+// 流式哈希的读块大小（避免一次性把几百 MB 读进内存）
 const HASH_CHUNK_BYTES = 4 * 1024 * 1024;
 
 /**
@@ -97,9 +97,20 @@ export function sha256OfFile(filePath) {
 
   try {
     const hash = createHash('sha256');
-    const buf = readFileSync(filePath);
-    for (let offset = 0; offset < buf.length; offset += HASH_CHUNK_BYTES) {
-      hash.update(buf.subarray(offset, Math.min(offset + HASH_CHUNK_BYTES, buf.length)));
+    // 分块读：整包 readFileSync 会把整个模型读进内存（上限 8GB，超过 Buffer 上限
+    // 还会直接抛 ERR_FS_FILE_TOO_LARGE），而这里只需要顺序过一遍算摘要。
+    const chunk = Buffer.allocUnsafe(Math.min(HASH_CHUNK_BYTES, st.size));
+    const fd = openSync(filePath, 'r');
+    try {
+      let position = 0;
+      for (;;) {
+        const read = readSync(fd, chunk, 0, chunk.length, position);
+        if (read <= 0) break;
+        hash.update(chunk.subarray(0, read));
+        position += read;
+      }
+    } finally {
+      try { closeSync(fd); } catch { /* 忽略 */ }
     }
     const digest = hash.digest('hex');
     cache[key] = digest;

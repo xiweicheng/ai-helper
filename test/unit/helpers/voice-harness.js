@@ -13,10 +13,10 @@ export function setupDom() {
         <textarea id="userInput"></textarea>
       </div>
     </div>
-    <div id="voiceRecorderBar" role="status" aria-live="polite" aria-hidden="true">
+    <div id="voiceRecorderBar" aria-hidden="true">
       <div id="voiceWave"></div>
       <span id="voiceTimer">00:00</span>
-      <span id="voiceStatusText"></span>
+      <span id="voiceStatusText" role="status" aria-live="polite"></span>
       <button id="voicePermBtn" style="display:none">去授权</button>
       <button id="voiceCancelBtn"></button>
       <button id="voiceDoneBtn"></button>

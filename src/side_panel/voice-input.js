@@ -376,7 +376,9 @@ function setBarStatus(text, tone = '') {
 function showBar() {
   if (!st.bar) return;
   st.bar.classList.add('show');
-  st.bar.setAttribute('aria-hidden', 'false');
+  // 属性只用来表达「隐藏」：显示时直接移除，不写 aria-hidden="false"
+  // （false 与移除在无障碍树上等价，但两态写法容易再写出「隐藏时焦点还在里面」那类问题）
+  st.bar.removeAttribute('aria-hidden');
 }
 
 /** 「去授权」入口：只在麦克风未授权时露出（授权只能在标签页形态的配置页做） */
@@ -385,8 +387,29 @@ function showPermButton(show) {
   st.permBtn.style.display = show ? '' : 'none';
 }
 
+/**
+ * 隐藏前先把焦点收走
+ *
+ * 「取消 / 完成」都是条内按钮触发的：点完焦点就留在按钮上，紧接着 hideBar 给整条设
+ * aria-hidden="true"，浏览器会拦下并告警（Blocked aria-hidden on an element because
+ * its descendant retained focus），键盘/读屏用户的焦点还会被悬空。所以隐藏前先把焦点
+ * 交还输入框 —— 取消或定稿之后，用户下一步本来就是接着打字。
+ */
+function releaseBarFocus() {
+  const active = document.activeElement;
+  if (!st.bar || !active || !st.bar.contains(active)) return;
+  if (st.input && typeof st.input.focus === 'function') {
+    try {
+      st.input.focus({ preventScroll: true });
+      return;
+    } catch { /* 输入框不可聚焦时退化为直接 blur */ }
+  }
+  try { active.blur(); } catch { /* 忽略 */ }
+}
+
 function hideBar() {
   if (!st.bar) return;
+  releaseBarFocus();
   showPermButton(false);
   st.bar.classList.remove('show');
   st.bar.setAttribute('aria-hidden', 'true');

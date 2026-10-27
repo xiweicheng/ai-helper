@@ -49,6 +49,24 @@ describe('sha256OfFile：续传校验要复用的那个函数', () => {
     writeFileSync(empty, '');
     assert.equal(mod.sha256OfFile(empty), null);
   });
+
+  it('大文件按 4MB 分块累计：跨块边界与一次性计算一致', () => {
+    const file = join(root, 'big.bin');
+    const size = 9 * 1024 * 1024 + 123; // 跨 3 个块，末尾不齐块
+    const buf = Buffer.allocUnsafe(size);
+    for (let i = 0; i < size; i++) buf[i] = i % 251;
+    writeFileSync(file, buf);
+    assert.equal(mod.sha256OfFile(file), createHash('sha256').update(buf).digest('hex'));
+  });
+
+  it('源码：顺序分块读（readSync），不再整包 readFileSync 后算摘要', () => {
+    const src = readFileSync(join(ASR_SRC, 'model-pack.js'), 'utf8');
+    const start = src.indexOf('export function sha256OfFile');
+    assert.ok(start > -1);
+    const body = src.slice(start, start + 1400);
+    assert.ok(!body.includes('readFileSync('), '整包读会把几百 MB 模型一次性拖进内存');
+    assert.ok(body.includes('readSync'));
+  });
 });
 
 describe('同字节数、不同内容：只看 size 的续传一定漏', () => {

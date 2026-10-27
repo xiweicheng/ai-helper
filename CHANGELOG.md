@@ -2,6 +2,24 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-28
+
+### 语音评审 Low 级项收口：模型哈希改分块读 + 录音条 live region 收敛
+> 来源：上一轮评审列了 6 条 Low，但原始清单在上下文重置时丢了，本轮逐项重审确认能复现的那几条并改掉。
+
+- **模型哈希整包读**：`sha256OfFile` 的注释写着「按 4MB 分块，避免一次性读入」，实现却是 `readFileSync(filePath)` 把整个文件读进内存 —— 上限设在 8GB，而 Node Buffer 上限约 2GB，超过会直接抛 `ERR_FS_FILE_TOO_LARGE`；几百 MB 的模型也是实打实的内存尖峰。改为 `openSync` + 4MB `readSync` 循环顺序读，内存峰值从「文件大小」降到 4MB。
+- **录音条 live region 位置不对**：`role="status" aria-live="polite"` 原本挂在整条 `#voiceRecorderBar` 上，而条内计时器每 200ms 改写一次 `00:01`/`00:02` —— 读屏用户会被跳秒刷屏，真正该播报的状态文案反而被淹没。把 live region 下移到 `#voiceStatusText`，计时器与波形不再参与播报。
+- **`aria-hidden="false"` 两态写法**：`showBar()` 原来写 `setAttribute('aria-hidden','false')`。false 与移除在无障碍树上等价，但两态写法正是上一轮「隐藏时焦点还在里面」那类问题的温床。改为显示时 `removeAttribute`，属性只表达「隐藏」。
+- **核实后不改的一项**：「WS 握手无超时」在现有实现下不成立 —— Node 的 `headersTimeout`（默认 60s）在 upgrade 请求上同样生效，而升级后的连接还有 30s 一拍、两拍不回就 `terminate` 的心跳。不做改动。
+- **验证**：新增 3 例（9MB 跨块文件的哈希与一次性计算一致；源码契约：`sha256OfFile` 内不得出现 `readFileSync(`；`side_panel.html` 的 live region 必须在状态文本上、显示录音条后 `aria-hidden` 必须不存在）。代理端 `node --test test/unit/*.test.js` → **696 例全绿**；扩展端 `npx vitest run` → **192 文件 / 2929 例全绿**；`npx eslint src/ agent/src/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
+### 无障碍：收起录音条前先把焦点交还输入框（消掉 Chrome 的 aria-hidden 告警）
+> 来源：用户真机点「取消」后，控制台出现 `Blocked aria-hidden on an element because its descendant retained focus`，焦点元素是 `button.voice-cancel-btn#voiceCancelBtn`，被隐藏的祖先是 `div.voice-recorder-bar#voiceRecorderBar`。
+
+- **问题**：「取消 / 完成 / 去授权」三个按钮都在录音条里，点是靠点击或 Enter 触发的 —— 点完焦点就留在按钮上；紧接着 `hideBar()` 给整条设 `aria-hidden="true"`，等于把一个**仍带焦点**的子树从无障碍树里摘掉。Chrome 122+ 会拒绝该属性并告警，读屏 / 键盘用户的焦点还会被悬空。功能上不报错，但属于实打实的可访问性缺陷。
+- **修法**：新增 `releaseBarFocus()`，在 `hideBar()` 最前面调用 —— 若 `document.activeElement` 落在录音条内，先 `focus({ preventScroll: true })` 回输入框（取消或定稿之后用户下一步本来就是接着打字），输入框不可聚焦时退化为 `blur()`；焦点本就在条外则**不动**，不抢用户当前的焦点位置。
+- **验证**：`voice-review-fixes` 补 2 例（点取消后焦点回 `#userInput` 且条内不再含焦点元素；焦点在麦克风按钮上时收起条不抢焦点）。**反向验证**：临时摘掉 `releaseBarFocus()` 调用跑一遍 → 第一例变红（`expected <button#voiceCancelBtn> to be <textarea#userInput>`），第二例仍绿，说明断言能精确区分「有修复 / 无修复」。语音相关 8 个测试文件 99 例全绿；`npx eslint` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
 ## 2026-10-27
 
 ### 语音转文字代码评审遗留项 M8：offline 定稿搬到 worker 线程（同步原生调用不再堵事件循环）

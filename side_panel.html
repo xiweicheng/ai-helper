@@ -774,10 +774,10 @@
       <div class="queue-list" id="queueList" style="display:none;"></div>
       <div class="queue-recent" id="queueRecent" style="display:none;"></div>
     </div>
-    <div class="voice-recorder-bar" id="voiceRecorderBar" role="status" aria-live="polite" aria-hidden="true">
+    <div class="voice-recorder-bar" id="voiceRecorderBar" aria-hidden="true">
       <div class="voice-wave" id="voiceWave" aria-hidden="true"></div>
       <span class="voice-recorder-timer" id="voiceTimer">00:00</span>
-      <span class="voice-recorder-status" id="voiceStatusText" data-i18n="voice.listening">正在聆听…</span>
+      <span class="voice-recorder-status" id="voiceStatusText" role="status" aria-live="polite" data-i18n="voice.listening">正在聆听…</span>
       <button class="voice-recorder-btn voice-perm-btn" id="voicePermBtn" type="button" data-i18n="voice.micDeniedAction" data-i18n-title="voice.micDeniedActionTitle" data-i18n-aria-label="voice.micDeniedActionTitle" title="打开配置页授权麦克风" aria-label="去授权" style="display:none;">去授权</button>
       <button class="voice-recorder-btn voice-cancel-btn" id="voiceCancelBtn" type="button" data-i18n-title="voice.cancel" title="取消录音" aria-label="取消录音">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
