@@ -5,16 +5,22 @@
 
 import { state, agentApi, getAgentConnection, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
 import { t } from '../shared/i18n.js';
+import { queryMicState, requestMicAccess, watchMicState } from '../shared/mic-permission.js';
 import logger from '../shared/logger.js';
 
 /** 安装状态轮询间隔（毫秒） */
 const INSTALL_POLL_INTERVAL_MS = 2000;
+
+/** 模型下载进度轮询间隔（毫秒） */
+const DOWNLOAD_POLL_INTERVAL_MS = 1500;
 
 let installPollTimer = null;
 let eventsBound = false;
 let lastStatus = null;
 // 轮询期间连续取不到状态的次数（防一次网络抖动就误报安装失败）
 let installPollFailures = 0;
+// 模型下载轮询句柄
+let downloadPollTimer = null;
 
 // ==================== 数据 ====================
 
@@ -79,6 +85,88 @@ function progressHtml(install) {
   return `<div class="asr-progress-state">${escapeHtml(text)}</div>${tail}`;
 }
 
+/**
+ * 字节数可读化（下载体积展示）
+ * @param {number} bytes
+ * @returns {string}
+ */
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i++;
+  }
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
+}
+
+// 识别语言的展示文案（编码到人话；协议侧仍用 auto/zh/en/…）
+const LANG_I18N_KEYS = {
+  auto: 'toolbox.asrLangAuto',
+  zh: 'toolbox.asrLangZh',
+  en: 'toolbox.asrLangEn',
+  ja: 'toolbox.asrLangJa',
+  ko: 'toolbox.asrLangKo',
+  yue: 'toolbox.asrLangYue',
+};
+
+/**
+ * 语言编码 → 可读文案
+ * @param {string} code
+ * @returns {string}
+ */
+function langLabel(code) {
+  const key = LANG_I18N_KEYS[code];
+  return key ? t(key) : String(code || '');
+}
+
+/**
+ * 模型下载进度区文本（空字符串 = 无内容可展示）
+ * @param {object|undefined} download
+ * @returns {string}
+ */
+function downloadProgressText(download) {
+  if (!download) return '';
+  if (download.running === true) {
+    const done = Number(download.bytesDone) || 0;
+    const total = Number(download.bytesTotal) || 0;
+    const pct = total > 0 ? Math.min(100, Math.floor((done / total) * 100)) : 0;
+    const current = Array.isArray(download.targets)
+      ? download.targets.find((x) => x.phase === 'downloading')
+      : null;
+    return t('toolbox.asrDownloadProgress', {
+      percent: pct,
+      done: formatBytes(done),
+      total: formatBytes(total),
+      model: current ? current.id : '',
+    });
+  }
+  // 成功后不保留进度块（模型 pill 已有 ✓），失败则写明具体原因
+  if (download.done === true && download.success !== true) {
+    return download.error || t('toolbox.asrDownloadFailed');
+  }
+  return '';
+}
+
+/**
+ * 模型下载进度区 HTML（含进度条）
+ * @param {object|undefined} download
+ * @returns {string}
+ */
+function downloadProgressHtml(download) {
+  const text = downloadProgressText(download);
+  if (!text) return '';
+  const total = Number(download?.bytesTotal) || 0;
+  const done = Number(download?.bytesDone) || 0;
+  const pct = total > 0 ? Math.min(100, Math.floor((done / total) * 100)) : 0;
+  const bar = download?.running === true
+    ? `<div class="asr-progress-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>`
+    : '';
+  return `<div class="asr-progress-state">${escapeHtml(text)}</div>${bar}`;
+}
+
 function renderStatusBlock(status) {
   if (!status) {
     return `<div class="toolbox-empty"><div class="toolbox-empty-icon">⚠️</div>
@@ -121,10 +209,29 @@ function renderStatusBlock(status) {
     ? `<div class="asr-invalid">${invalid.map((x) => `<div>⚠ ${escapeHtml(String(x.id || x.dir || ''))}: ${escapeHtml(String(x.reason || ''))}</div>`).join('')}</div>`
     : '';
 
+  // ---- 推荐模型下载：缺什么就下什么；全已安装则按钮置灰 ----
+  const catalog = Array.isArray(status.catalog) ? status.catalog : [];
+  const missingModels = catalog.filter((c) => c.installed !== true);
+  const missingBytes = missingModels.reduce((sum, c) => sum + (Number(c.totalBytes) || 0), 0);
+  const download = status.download || {};
+  const downloading = download.running === true && download.done !== true;
+  // 旧代理没有 catalog 字段 → 不渲染下载按钮（避免点了 404 的误导入口）
+  let downloadBtn = '';
+  if (catalog.length > 0 && downloading) {
+    downloadBtn = `<button class="toolbox-add-btn" id="asrDownloadCancelBtn" type="button">${escapeHtml(t('toolbox.asrDownloadCancel'))}</button>`;
+  } else if (catalog.length > 0 && missingModels.length === 0) {
+    downloadBtn = `<button class="toolbox-add-btn" id="asrDownloadBtn" type="button" disabled>${escapeHtml(t('toolbox.asrDownloadInstalled'))}</button>`;
+  } else if (catalog.length > 0) {
+    downloadBtn = `<button class="toolbox-add-btn" id="asrDownloadBtn" type="button">${escapeHtml(t('toolbox.asrDownloadBtn', { size: formatBytes(missingBytes) }))}</button>`;
+  }
+
   const langs = Array.isArray(status.languages) && status.languages.length
     ? status.languages
     : ['auto', 'zh', 'en'];
   const currentLang = status.language || 'auto';
+  // 选项结构与「界面语言」下拉保持一致：纯文本 .model-option（不带额外包裹层），
+  // 样式全部来自 .model-dropdown / .model-option 基类
+  const langOptions = langs.map((code) => `<div class="model-option${code === currentLang ? ' selected' : ''}" role="option" aria-selected="${code === currentLang ? 'true' : 'false'}" data-lang="${escapeHtml(code)}">${escapeHtml(langLabel(code))}</div>`).join('');
 
   return `
     <div class="asr-status-card">
@@ -149,8 +256,6 @@ function renderStatusBlock(status) {
           ${escapeHtml(depsReady ? t('toolbox.asrDepsInstalled') : installing ? t('toolbox.asrInstalling') : t('toolbox.asrInstallBtn'))}
         </button>
         <button class="toolbox-add-btn asr-detect-btn" id="asrDetectBtn" type="button">${escapeHtml(t('toolbox.asrRedetect'))}</button>
-        <button class="toolbox-add-btn asr-pick-btn" id="asrPickBtn" type="button">${escapeHtml(t('toolbox.asrPickDir'))}</button>
-        <button class="toolbox-add-btn asr-scan-btn" id="asrScanBtn" type="button">${escapeHtml(t('toolbox.asrRescan'))}</button>
       </div>
       <div class="asr-install-progress" id="asrInstallProgress"${progressText(install) ? '' : ' style="display:none;"'}>${progressHtml(install)}</div>
     </div>
@@ -160,14 +265,24 @@ function renderStatusBlock(status) {
       <div class="asr-model-dir">${escapeHtml(t('toolbox.asrModelsDirLabel'))}<code>${escapeHtml(status.modelsDirDisplay || '~/.ai-helper-agent/asr/models')}</code></div>
       <div class="asr-model-list">${modelRows}</div>
       ${invalidRows}
-      <div class="asr-hint">${escapeHtml(t('toolbox.asrModelHint'))}</div>
+      <div class="asr-actions asr-model-actions">
+        ${downloadBtn}
+        <button class="toolbox-add-btn" id="asrPickBtn" type="button">${escapeHtml(t('toolbox.asrPickDir'))}</button>
+        <button class="toolbox-add-btn" id="asrScanBtn" type="button">${escapeHtml(t('toolbox.asrRescan'))}</button>
+      </div>
+      <div class="asr-install-progress" id="asrDownloadProgress"${downloadProgressText(download) ? '' : ' style="display:none;"'}>${downloadProgressHtml(download)}</div>
+      <div class="asr-hint">${escapeHtml(t('toolbox.asrModelHint', { dir: status.modelsDirDisplay || '~/.ai-helper-agent/asr/models' }))}</div>
     </div>
 
     <div class="asr-subsection">
       <div class="asr-subsection-title">${escapeHtml(t('toolbox.asrLanguage'))}</div>
-      <select class="asr-lang-select" id="asrLangSelect">
-        ${langs.map((l) => `<option value="${escapeHtml(l)}" ${l === currentLang ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}
-      </select>
+      <!-- 触发器直接复用「界面语言」那颗下拉的写法：.model-selector + readonly input
+           （样式、右侧箭头、focus ring 全部来自基类，不再单独定一套按钮样式） -->
+      <div class="model-selector asr-lang-field" id="asrLangField">
+        <input type="text" id="asrLangInput" readonly value="${escapeHtml(langLabel(currentLang))}" aria-haspopup="listbox" aria-expanded="false">
+        <div class="model-dropdown asr-lang-menu" id="asrLangDropdown" role="listbox">${langOptions}</div>
+      </div>
+      <div class="asr-hint">${escapeHtml(t('toolbox.asrLangHint'))}</div>
     </div>
   `;
 }
@@ -178,6 +293,7 @@ function renderStatusBlock(status) {
 export async function refreshAsrSection() {
   const container = document.getElementById('asrSectionContent');
   if (!container) return;
+  const section = document.getElementById('asrSection');
 
   await getAgentConnection();
   if (!state.agentConnected) {
@@ -185,27 +301,135 @@ export async function refreshAsrSection() {
       <div class="toolbox-empty-title">${escapeHtml(t('toolbox.asrAgentDisconnected'))}</div></div>`;
     const toggle = document.getElementById('asrEnableToggle');
     if (toggle) { toggle.checked = false; toggle.disabled = true; }
+    // 代理未连接：这里不能收起。语音已独立成 Tab，「扩展」里那条 Agent 状态提示不再跟过来，
+    // 收起后就只剩一个「已停用」开关，用户看不出原因（空态是唯一的提示，且只有一行）
+    section?.classList.remove('disabled-section');
     return;
   }
-
-  const section = document.getElementById('asrSection');
-  section?.classList.remove('disabled-section');
 
   const status = await loadAsrStatus();
   container.innerHTML = renderStatusBlock(status);
 
   const toggle = document.getElementById('asrEnableToggle');
   const toggleLabel = document.getElementById('asrToggleLabel');
+  const enabled = status?.enabled === true;
   if (toggle) {
     toggle.disabled = false;
-    toggle.checked = status?.enabled === true;
-    if (toggleLabel) toggleLabel.textContent = toggle.checked ? t('toolbox.asrEnabled') : t('toolbox.asrDisabled');
+    toggle.checked = enabled;
+    if (toggleLabel) toggleLabel.textContent = enabled ? t('toolbox.asrEnabled') : t('toolbox.asrDisabled');
   }
+  // 总开关关闭 → 收起下方所有配置项（与 MCP / 技能区块同一套 disabled-section 语义）：
+  // 关着时这些项一个都用不上，铺开只会把下面的「技能管理」顶到屏幕外
+  section?.classList.toggle('disabled-section', !enabled);
 
   bindSectionEvents();
 
   // 安装仍在进行（用户重新打开配置页）→ 接上轮询，否则进度永远停在快照上
   if (status?.install?.running === true) pollInstallStatus();
+  // 下载同理
+  if (status?.download?.running === true) pollDownloadStatus();
+}
+
+// ==================== 麦克风授权 ====================
+//
+// 侧边栏（side panel）里调 getUserMedia 不会弹授权框，只会直接抛 NotAllowedError；
+// 只有标签页形态的扩展页面能弹。所以把授权动作放在这里：一次授权按扩展 origin 记忆，
+// 侧边栏随后直接可用（侧边栏失败时会用「去授权」把人送到本区块）。
+
+/** 权限状态 → 状态 pill 文案 / 色调 */
+const MIC_STATE_UI = {
+  granted: { text: 'toolbox.asrMicStateGranted', tone: 'ok' },
+  prompt: { text: 'toolbox.asrMicStatePrompt', tone: 'warn' },
+  denied: { text: 'toolbox.asrMicStateDenied', tone: 'bad' },
+  unknown: { text: 'toolbox.asrMicStateUnknown', tone: 'warn' },
+};
+
+/** 权限状态 → 引导文案 */
+const MIC_HINT_KEY = {
+  granted: 'toolbox.asrMicHintGranted',
+  prompt: 'toolbox.asrMicHintPrompt',
+  denied: 'toolbox.asrMicHintDenied',
+  unknown: 'toolbox.asrMicHintUnknown',
+};
+
+let micWatching = false;
+
+/**
+ * 刷新「麦克风权限」小节的展示
+ * @returns {Promise<string>} 归一化后的权限状态
+ */
+export async function refreshMicState() {
+  const pill = document.getElementById('asrMicPill');
+  if (!pill) return 'unknown';
+  const state = await queryMicState();
+  const ui = MIC_STATE_UI[state] || MIC_STATE_UI.unknown;
+  pill.className = `asr-pill ${ui.tone}`;
+  pill.textContent = t(ui.text);
+
+  const hint = document.getElementById('asrMicHint');
+  if (hint) hint.textContent = t(MIC_HINT_KEY[state] || MIC_HINT_KEY.unknown);
+
+  const grantBtn = document.getElementById('asrMicGrantBtn');
+  if (grantBtn) {
+    // 已被拒绝时再点也不会弹框（Chrome 直接拦），换成「复制扩展详情链接」引导
+    grantBtn.hidden = state === 'denied';
+    grantBtn.disabled = state === 'granted';
+    grantBtn.textContent = state === 'granted' ? t('toolbox.asrMicGrantedBtn') : t('toolbox.asrMicGrantBtn');
+  }
+  const copyBtn = document.getElementById('asrMicCopyBtn');
+  if (copyBtn) copyBtn.hidden = state !== 'denied';
+  return state;
+}
+
+/** 申请授权（必须由用户手势触发） */
+async function grantMicAccess() {
+  const btn = document.getElementById('asrMicGrantBtn');
+  if (btn) { btn.disabled = true; btn.textContent = t('toolbox.asrMicGranting'); }
+  let res;
+  try {
+    res = await requestMicAccess();
+  } finally {
+    // 不管结果如何都回到真实状态（按钮文案与可用性由 refreshMicState 统一重置）
+    await refreshMicState();
+  }
+  if (res?.ok) showToast(t('toolbox.asrMicGrantedToast'));
+  else if (res?.state === 'denied') showToast(t('toolbox.asrMicDeniedToast'), 'error');
+  else if (res?.error === 'unsupported') showToast(t('toolbox.asrMicUnsupportedToast'), 'error');
+  else showToast(t('toolbox.asrMicNotGrantedToast'), 'error');
+}
+
+/** 被拒绝后：复制扩展详情链接（chrome:// 地址无法用 <a> 打开，只能让用户粘贴） */
+async function copyExtensionDetailsLink() {
+  const id = globalThis.chrome?.runtime?.id || '';
+  if (!id) { showToast(t('toolbox.asrMicCopyFailed'), 'error'); return; }
+  try {
+    await navigator.clipboard.writeText(`chrome://extensions/?id=${id}`);
+    showToast(t('toolbox.asrMicCopied'));
+  } catch {
+    showToast(t('toolbox.asrMicCopyFailed'), 'error');
+  }
+}
+
+/**
+ * 启用语音输入时顺手要一次权限：点开关本身就是用户手势，
+ * 且配置页是标签页（唯一能弹授权框的地方）。错过这里就只剩「侧边栏报错 → 跳过来补授权」。
+ */
+async function ensureMicOnEnable() {
+  if (await queryMicState() === 'granted') return;
+  const res = await requestMicAccess();
+  if (res?.ok) showToast(t('toolbox.asrMicGrantedToast'));
+  await refreshMicState();
+}
+
+/** 首次进入时挂上：按钮只绑一次，权限变化自动同步 */
+function initMicSection() {
+  document.getElementById('asrMicGrantBtn')?.addEventListener('click', grantMicAccess);
+  document.getElementById('asrMicCopyBtn')?.addEventListener('click', copyExtensionDetailsLink);
+  refreshMicState();
+  if (micWatching) return;
+  micWatching = true;
+  // 用户可能在 chrome://extensions 里改了权限：回到本页自动同步状态
+  watchMicState(() => { refreshMicState(); });
 }
 
 // ==================== 事件 ====================
@@ -215,34 +439,36 @@ function bindSectionEvents() {
   document.getElementById('asrDetectBtn')?.addEventListener('click', redetect);
   document.getElementById('asrPickBtn')?.addEventListener('click', pickModelDir);
   document.getElementById('asrScanBtn')?.addEventListener('click', rescanModels);
+  document.getElementById('asrDownloadBtn')?.addEventListener('click', () => startModelDownload());
+  document.getElementById('asrDownloadCancelBtn')?.addEventListener('click', cancelModelDownload);
 
   document.querySelectorAll('.asr-model-del').forEach((btn) => {
     btn.addEventListener('click', () => deleteModel(btn.getAttribute('data-model-id')));
   });
 
-  document.getElementById('asrLangSelect')?.addEventListener('change', async (e) => {
-    const language = e.target.value;
-    const res = await agentApi('POST', '/api/asr/config', { language });
-    if (res && res.success !== false) {
-      showToast(t('toolbox.asrLangSaved'));
-      notifyStatusChanged();
-    } else {
-      showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
-    }
-  });
+  bindLangSelectEvents();
 
   const toggle = document.getElementById('asrEnableToggle');
   if (toggle && !toggle.dataset.bound) {
     toggle.dataset.bound = '1';
     toggle.addEventListener('change', async () => {
       const enabled = toggle.checked;
+      // 借这次点击顺手把麦克风权限要下来：侧边栏里弹不出授权框，这里是唯一能「提前申请」的时机
+      if (enabled) await ensureMicOnEnable();
       const res = await agentApi('POST', '/api/asr/config', { enabled });
       if (res && res.success !== false) {
         const label = document.getElementById('asrToggleLabel');
         if (label) label.textContent = enabled ? t('toolbox.asrEnabled') : t('toolbox.asrDisabled');
         showToast(enabled ? t('toolbox.asrEnabledToast') : t('toolbox.asrDisabledToast'));
         notifyStatusChanged();
-        refreshAsrSection();
+        // 等刷新完再判断：lastStatus 是刷新后的快照（否则拿到的是旧状态）
+        await refreshAsrSection();
+        // 启用时缺模型 → 自动尝试下载（失败会降级为「模型未安装」状态，不影响其它功能）
+        // 只在清单可用且有缺口时才触发：旧代理没有 catalog，别去撞一个不存在的端点
+        const catalog = Array.isArray(lastStatus?.catalog) ? lastStatus.catalog : [];
+        if (enabled && catalog.some((c) => c.installed !== true)) {
+          triggerAutoDownload();
+        }
       } else {
         toggle.checked = !enabled;
         showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
@@ -251,11 +477,149 @@ function bindSectionEvents() {
   }
 }
 
+/**
+ * 识别语言下拉：展开 + 选择
+ * 触发器与「界面语言」下拉完全同构（.model-selector + readonly input）
+ */
+function bindLangSelectEvents() {
+  const trigger = document.getElementById('asrLangInput');
+  const menu = document.getElementById('asrLangDropdown');
+  if (!trigger || !menu) return;
+
+  trigger.addEventListener('click', () => {
+    const shown = menu.classList.toggle('show');
+    trigger.setAttribute('aria-expanded', shown ? 'true' : 'false');
+  });
+
+  menu.querySelectorAll('.model-option').forEach((option) => {
+    option.addEventListener('click', async () => {
+      const language = option.getAttribute('data-lang') || 'auto';
+      menu.classList.remove('show');
+      trigger.setAttribute('aria-expanded', 'false');
+      const res = await agentApi('POST', '/api/asr/config', { language });
+      if (res && res.success !== false) {
+        trigger.value = langLabel(language);
+        menu.querySelectorAll('.model-option').forEach((el) => {
+          const isCurrent = el.getAttribute('data-lang') === language;
+          el.classList.toggle('selected', isCurrent);
+          el.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+        });
+        showToast(t('toolbox.asrLangSaved'));
+        notifyStatusChanged();
+      } else {
+        showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
+      }
+    });
+  });
+}
+
 /** 让侧边栏下次拉取状态时绕过 10s 缓存 */
 function notifyStatusChanged() {
   try {
     chrome.runtime.sendMessage({ type: 'ASR_RESET_STATUS' }).catch?.(() => {});
   } catch { /* background 可能未运行 */ }
+}
+
+// ==================== 模型下载 ====================
+
+/** 下载进度 */
+async function loadDownloadStatus() {
+  try {
+    return await agentApi('GET', '/api/asr/models/download/status');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 手动开始下载推荐模型
+ */
+async function startModelDownload() {
+  const btn = document.getElementById('asrDownloadBtn');
+  if (btn) { btn.disabled = true; btn.textContent = t('toolbox.asrDownloading'); }
+  try {
+    const res = await agentApi('POST', '/api/asr/models/download', {});
+    // alreadyRunning = 幂等重入（重复点击）：接上进度轮询，不当成失败
+    if (res && res.success === false && res.alreadyRunning !== true) {
+      showToast(res.error || t('toolbox.asrDownloadFailed'), 'error');
+      await refreshAsrSection();
+      return;
+    }
+    if (res && res.skipped === 'already_installed') {
+      showToast(t('toolbox.asrDownloadInstalled'));
+      await refreshAsrSection();
+      return;
+    }
+    if (res && res.started !== true && res.alreadyRunning !== true) {
+      // 无可用目标等异常分支：回到真实状态
+      await refreshAsrSection();
+      return;
+    }
+    pollDownloadStatus();
+  } catch (err) {
+    showToast(t('toolbox.asrDownloadFailed'), 'error');
+    await refreshAsrSection();
+  }
+}
+
+/**
+ * 取消下载（已落盘的文件保留，下次重试续传）
+ */
+async function cancelModelDownload() {
+  try {
+    await agentApi('POST', '/api/asr/models/download/cancel', {});
+  } catch { /* 忽略：下面的刷新会反映真实状态 */ }
+  stopDownloadPolling();
+  showToast(t('toolbox.asrDownloadCanceled'));
+  await refreshAsrSection();
+}
+
+/**
+ * 启用开关后自动尝试下载（用户已确认的交互：能下就下，下不下来就降级为「未安装」）
+ */
+async function triggerAutoDownload() {
+  showToast(t('toolbox.asrAutoDownloadStart'));
+  await startModelDownload();
+}
+
+function renderDownloadProgress(download) {
+  const el = document.getElementById('asrDownloadProgress');
+  if (!el) return;
+  const html = downloadProgressHtml(download);
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = html;
+}
+
+function stopDownloadPolling() {
+  if (downloadPollTimer) clearInterval(downloadPollTimer);
+  downloadPollTimer = null;
+}
+
+function pollDownloadStatus() {
+  stopDownloadPolling();
+  let failures = 0;
+  const tick = async () => {
+    const download = await loadDownloadStatus();
+    if (!download) {
+      if (++failures >= 3) {
+        stopDownloadPolling();
+        showToast(t('toolbox.asrAgentUnreachable'), 'error');
+      }
+      return;
+    }
+    failures = 0;
+    renderDownloadProgress(download);
+    if (download.running === true && download.done !== true) return;
+    stopDownloadPolling();
+    notifyStatusChanged();
+    if (download.success === true) showToast(t('toolbox.asrDownloadDone'));
+    else if (download.aborted === true) showToast(t('toolbox.asrDownloadCanceled'));
+    else showToast(download.error || t('toolbox.asrDownloadFailed'), 'error');
+    await refreshAsrSection();
+  };
+  tick();
+  downloadPollTimer = setInterval(tick, DOWNLOAD_POLL_INTERVAL_MS);
 }
 
 async function startInstall() {
@@ -379,4 +743,16 @@ async function deleteModel(id) {
 export function initAsrEvents() {
   if (eventsBound) return;
   eventsBound = true;
+  initMicSection();
+  // 语言下拉：点击区域外收起。全局只绑一次（每次重渲染都会重建 DOM，
+  // 若在 bindSectionEvents 里绑会不断累积监听）
+  document.addEventListener('click', (e) => {
+    const field = document.getElementById('asrLangField');
+    const menu = document.getElementById('asrLangDropdown');
+    if (!field || !menu) return;
+    if (field.contains(e.target)) return;
+    menu.classList.remove('show');
+    document.getElementById('asrLangInput')?.setAttribute('aria-expanded', 'false');
+  });
 }
+

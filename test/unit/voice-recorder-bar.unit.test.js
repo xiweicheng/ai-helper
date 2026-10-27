@@ -135,24 +135,30 @@ describe('静音 / 无结果提示', () => {
 });
 
 describe('权限与采集失败的分流', () => {
-  it('麦克风权限被拒：条内给引导文案，不进入录音态，取消会话', async () => {
+  it('麦克风未授权：条内提示 + 「去授权」入口，点击跳配置页麦克风小节', async () => {
     stubMedia({ failWith: Object.assign(new Error('denied'), { name: 'NotAllowedError' }) });
     dom = setupDom();
     await initVoiceInput({});
     await expect(toggleVoiceInput()).resolves.toBe(false);
     expect(isVoiceRecording()).toBe(false);
-    expect(dom.status.textContent).toContain(t('voice.micDenied'));
-    expect(dom.status.textContent).toContain(t('voice.micDeniedHelp'));
+    // 侧边栏里浏览器不会弹授权框，所以文案不再讲「地址栏图标」，只指向配置页
+    expect(dom.status.textContent).toBe(t('voice.micDenied'));
     expect(dom.status.className).toContain('is-warn');
+    expect(dom.permBtn.style.display).not.toBe('none');
     expect(chromeCtx.port.controlFrames().some((f) => f.type === 'cancel')).toBe(true);
+
+    dom.permBtn.click();
+    expect(chromeCtx.sentMessages.some((m) => m.type === 'OPEN_OPTIONS_PAGE' && m.hash === 'asr')).toBe(true);
+    expect(dom.permBtn.style.display).toBe('none');
   });
 
-  it('其他采集错误：通用失败文案', async () => {
+  it('其他采集错误：通用失败文案（不露「去授权」入口）', async () => {
     stubMedia({ failWith: Object.assign(new Error('no device'), { name: 'NotFoundError' }) });
     dom = setupDom();
     await initVoiceInput({});
     await expect(toggleVoiceInput()).resolves.toBe(false);
     expect(dom.status.textContent).toBe(t('voice.failed'));
+    expect(dom.permBtn.style.display).toBe('none');
   });
 
   it('代理端报 busy：提示后直接回滚，不留半截草稿', async () => {

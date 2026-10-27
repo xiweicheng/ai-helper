@@ -399,8 +399,10 @@ async function copyOffscreenDocument() {
 /**
  * 复制录音 AudioWorklet 到 dist 根。
  * 为什么不打包：worklet 运行在 AudioWorkletGlobalScope，不能用 import/export，
- * 也不能用 blob: URL 加载（CSP script-src 'self'），只能作为独立文件用
- * chrome.runtime.getURL('dist/voice-capture-worklet.js') 交给 addModule。
+ * 也不能用 blob: URL 加载（CSP script-src 'self'），只能作为独立文件交给 addModule。
+ * 注意：本函数把它放在 dist 根 —— 打包后 dist 就是扩展根，面板侧因此要按
+ * 「扩展根 → dist/ 子目录」两种形态依次探测（见 voice-input.js 的 WORKLET_PATHS），
+ * 不能写死 'dist/...'，否则商店包里会变成 dist/dist/... 而 ERR_FILE_NOT_FOUND。
  */
 function copyVoiceWorklet() {
   const srcFile = path.join(__dirname, '..', 'src', 'side_panel', 'voice-capture-worklet.js');

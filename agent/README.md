@@ -521,7 +521,7 @@ Endpoints are registered inside the authenticated region (Bearer token required)
 
 ## Voice Input (Local STT)
 
-Optional on-device speech-to-text. The side panel's 🎤 button (and `Alt+V`) records audio and streams it to the agent, which transcribes it **locally** — no cloud ASR endpoint, no audio leaving the machine. Speech models ship as offline packs (copied in from a networked machine) and the runtime (`sherpa-onnx-node`, 300MB+) is an opt-in dependency: installing the agent never installs it, and `asrDependencies` is a custom field npm ignores so `npm i -g` does not pull it either. Install from Options → Toolbox → Voice Input, via `aha asr install`, or with `install.sh --with-asr` / `install.ps1 -WithAsr`.
+Optional on-device speech-to-text. The side panel's 🎤 button (and `Alt+V`) records audio and streams it to the agent, which transcribes it **locally** — no cloud ASR endpoint, no audio leaving the machine. Speech models ship as offline packs (copied in from a networked machine) and the runtime (`sherpa-onnx-node`, 300MB+) is an opt-in dependency: installing the agent never installs it, and `asrDependencies` is a custom field npm ignores so `npm i -g` does not pull it either. Install from Options → Voice tab, via `aha asr install`, or with `install.sh --with-asr` / `install.ps1 -WithAsr`.
 
 - **Data location** — `~/.ai-helper-agent/asr/` (override with `AI_HELPER_ASR_ROOT`); model packs live in `models/<id>/` with a `manifest.json` each
 - **Three-way readiness** — `deps.ready` × `modelsReady` × `enabled`; `/api/asr/status` exposes `available` plus a `reason` (`deps_missing` / `models_missing` / `disabled`) so the UI can show exactly which link is missing

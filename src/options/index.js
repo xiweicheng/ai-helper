@@ -31,7 +31,7 @@ import {
 } from './network-access-config.js';
 import { initProfileManager } from './profile-manager.js';
 import { ensureProfilesMigrated } from '../shared/model-profiles.js';
-import { initToolbox, refreshToolbox } from './toolbox-config.js';
+import { initToolbox, refreshToolbox, refreshVoicePanel } from './toolbox-config.js';
 import { initKnowledgePanel, refreshKnowledgePanel } from './knowledge-panel.js';
 import { initMemoryPanel, refreshMemoryPanel, saveMemoryFromGlobalSave } from './memory-panel.js';
 import { initSaveBarSticky } from './save-bar.js';
@@ -93,10 +93,35 @@ function switchTab(tabName) {
 // 根据 hash 激活对应 tab
 function activateByHash() {
   const hash = window.location.hash.replace('#', '');
-  const validTabs = ['basic', 'toolbar', 'react', 'chat', 'agent', 'toolbox', 'knowledge', 'memory'];
+  const validTabs = ['basic', 'toolbar', 'react', 'chat', 'agent', 'toolbox', 'voice', 'knowledge', 'memory'];
+  // 侧边栏「去授权」直达：语音输入已独立成 Tab，落点就是麦克风小节（#asr 旧链接继续有效）
+  if (hash === 'asr') {
+    switchTab('voice');
+    focusMicBlock();
+    return;
+  }
   if (validTabs.includes(hash)) {
     switchTab(hash);
   }
+}
+
+/**
+ * #asr 直达的落点：麦克风小节（总开关关着时它被收起，就退回到整个区块）
+ * 面板切过来后 refreshAsrSection 是异步渲染的，所以状态未就绪时短暂重试几次
+ * @param {number} [attempt]
+ */
+function focusMicBlock(attempt = 0) {
+  const mic = document.getElementById('asrMicBlock');
+  if (!mic || mic.getBoundingClientRect().height === 0) {
+    if (attempt < 8) setTimeout(() => focusMicBlock(attempt + 1), 120);
+    return;
+  }
+  mic.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  mic.classList.remove('section-flash');
+  // 强制重排：连续两次 #asr 直达也要能重放动画
+  void mic.offsetWidth;
+  mic.classList.add('section-flash');
+  setTimeout(() => mic.classList.remove('section-flash'), 2000);
 }
 
 // 页面加载时获取已保存的配置
@@ -235,6 +260,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   // （只读 storage / DOM，不依赖各自 init 里的临时状态），因此早于 initToolbox()
   // 被调用也不会出错；异步失败在此吞掉，避免 switchTab 里浮出未处理的 rejection
   tabRefreshers.toolbox = () => { refreshToolbox().catch(() => {}); };
+  // 语音单独一个 Tab：与工具箱拆开后各拉各的，进「扩展」不再顺便把 ASR 状态拉一遍
+  tabRefreshers.voice = () => { refreshVoicePanel().catch(() => {}); };
   tabRefreshers.knowledge = () => { refreshKnowledgePanel().catch(() => {}); };
 
   // 根据 hash 激活对应 tab

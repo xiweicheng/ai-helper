@@ -36,6 +36,7 @@
       <button class="tab-nav-btn" data-tab="toolbar" data-i18n="settings.tabToolbar">划词</button>
       <button class="tab-nav-btn" data-tab="agent" data-i18n="settings.tabAgent">代理</button>
       <button class="tab-nav-btn" data-tab="toolbox" data-i18n="settings.tabToolbox">扩展</button>
+      <button class="tab-nav-btn" data-tab="voice" data-i18n="settings.tabVoice">语音</button>
       <button class="tab-nav-btn" data-tab="knowledge" data-i18n="knowledge.tabTitle">知识库</button>
       <button class="tab-nav-btn" data-tab="memory" data-i18n="memoryPanel.tabTitle">记忆</button>
     </div>
@@ -760,22 +761,6 @@
         </div>
       </div>
 
-      <!-- 语音输入（本地 STT，可选组件） -->
-      <div class="toolbox-section disabled-section" id="asrSection">
-        <div class="toolbox-section-header">
-          <div class="toolbox-section-title-row">
-            <h2 class="toolbox-section-title" data-i18n="toolbox.asrTitle">🎙 语音输入（本地识别）</h2>
-            <label class="global-toggle">
-              <input type="checkbox" id="asrEnableToggle">
-              <span class="global-toggle-slider"></span>
-              <span class="global-toggle-label" id="asrToggleLabel" data-i18n="toolbox.asrDisabled">已停用</span>
-            </label>
-          </div>
-          <span class="toolbox-section-desc" data-i18n="toolbox.asrDesc">本地离线语音转文字，音频不离开本机。需先在代理端安装可选依赖并导入本地模型包；两项就绪后侧边栏输入框才会出现🎤按钮（Alt+V）。</span>
-        </div>
-        <div class="toolbox-section-content" id="asrSectionContent"></div>
-      </div>
-
       <!-- Skill 管理 -->
       <div class="toolbox-section disabled-section" id="skillSection">
         <div class="toolbox-section-header">
@@ -816,6 +801,39 @@
 
       <input type="file" id="importSkillFile" accept=".json" style="display:none;">
     </div><!-- /tab-toolbox -->
+
+    <!-- 语音输入（本地 STT，可选组件）：独立成 Tab 而不是塞在「扩展」里 ——
+         它是「换一种输入方式」，与 MCP / 技能（给 AI 加能力）不是一类；
+         自身体量也够（依赖 + 模型 + 识别语言 + 麦克风权限），夹在 MCP 与技能之间时要滚过 MCP 才找得到 -->
+    <div class="tab-panel" data-tab="voice">
+<div class="toolbox-section disabled-section" id="asrSection">
+        <div class="toolbox-section-header">
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title" data-i18n="toolbox.asrTitle">🎙 语音输入（本地识别）</h2>
+            <label class="global-toggle">
+<input type="checkbox" id="asrEnableToggle">
+              <span class="global-toggle-slider"></span>
+              <span class="global-toggle-label" id="asrToggleLabel" data-i18n="toolbox.asrDisabled">已停用</span>
+            </label>
+          </div>
+          <span class="toolbox-section-desc" data-i18n="toolbox.asrDesc">本地离线语音转文字，音频不离开本机。需先在代理端安装可选依赖并导入本地模型包；两项就绪后侧边栏输入框才会出现🎤按钮（Alt+V）。</span>
+        </div>
+<div class="toolbox-section-content" id="asrSectionContent"></div>
+        <!-- 麦克风授权：侧边栏/弹窗里无法弹出授权框（Chromium 限制），只能在这个标签页里授权一次，
+             结果按扩展 origin 记忆，侧边栏随后直接可用 -->
+<div class="asr-mic-block" id="asrMicBlock">
+          <div class="asr-mic-head">
+            <span class="asr-subsection-title" data-i18n="toolbox.asrMicTitle">麦克风权限</span>
+            <span class="asr-pill" id="asrMicPill">…</span>
+          </div>
+          <div class="asr-mic-hint" id="asrMicHint" data-i18n="toolbox.asrMicHintUnknown">正在检测麦克风权限…</div>
+          <div class="asr-actions">
+            <button class="toolbox-add-btn" id="asrMicGrantBtn" type="button" data-i18n="toolbox.asrMicGrantBtn">授权麦克风</button>
+            <button class="toolbox-add-btn" id="asrMicCopyBtn" type="button" data-i18n="toolbox.asrMicCopyBtn" hidden>复制扩展详情链接</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /tab-voice -->
 
     <!-- 知识库管理 -->
     <div class="tab-panel" data-tab="knowledge">

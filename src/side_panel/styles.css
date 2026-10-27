@@ -15920,20 +15920,39 @@ body {
   filter: brightness(1.06);
 }
 
-/* 录音中：给输入框脉冲描边，明确「这段文字还在变动」 */
-body.voice-recording-active .input-wrapper textarea {
-  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.35);
+/* 「去授权」：文字按钮而非圆形图标，比图标更能说清下一步 */
+.voice-recorder-btn.voice-perm-btn {
+  width: auto;
+  padding: 0 9px;
+  border-radius: 11px;
+  font-size: 11px;
+  line-height: 20px;
+  white-space: nowrap;
+  background: var(--brand-gradient);
+  color: var(--text-on-brand);
+}
+.voice-recorder-btn.voice-perm-btn:hover {
+  background: var(--brand-gradient);
+  color: var(--text-on-brand);
+  filter: brightness(1.06);
+}
+
+/* 录音中：给输入容器脉冲描边，明确「这段文字还在变动」。
+   描边必须画在 .input-container 上 —— textarea 自己的 border-radius 是 0（圆角在容器上），
+   画在 textarea 上会得到一圈直角光晕，和容器的 16px / 8px 圆角对不上，看着很突兀。 */
+body.voice-recording-active .input-container {
+  border-color: rgba(var(--brand-rgb), 0.4);
   animation: voice-input-glow 1.8s ease-in-out infinite;
 }
 @keyframes voice-input-glow {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--brand-rgb), 0.22); }
-  50% { box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.38); }
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--brand-rgb), 0.22), 0 2px 10px rgba(var(--overlay-rgb), 0.08); }
+  50% { box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.38), 0 4px 16px rgba(var(--overlay-rgb), 0.12); }
 }
 
 /* 动效克制：尊重系统「减少动态效果」偏好 */
 @media (prefers-reduced-motion: reduce) {
   .voice-input-btn.recording,
-  body.voice-recording-active .input-wrapper textarea {
+  body.voice-recording-active .input-container {
     animation: none;
   }
 }

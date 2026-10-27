@@ -17,6 +17,7 @@ export function setupDom() {
       <div id="voiceWave"></div>
       <span id="voiceTimer">00:00</span>
       <span id="voiceStatusText"></span>
+      <button id="voicePermBtn" style="display:none">去授权</button>
       <button id="voiceCancelBtn"></button>
       <button id="voiceDoneBtn"></button>
     </div>
@@ -31,6 +32,7 @@ export function setupDom() {
     wave: document.getElementById('voiceWave'),
     timer: document.getElementById('voiceTimer'),
     status: document.getElementById('voiceStatusText'),
+    permBtn: document.getElementById('voicePermBtn'),
     cancelBtn: document.getElementById('voiceCancelBtn'),
     doneBtn: document.getElementById('voiceDoneBtn'),
   };
@@ -99,6 +101,13 @@ export function stubMedia(opts = {}) {
     configurable: true,
     value: { getUserMedia: gum },
   });
+
+  // voice-input 会先 fetch 探一下 worklet 到底在扩展根还是 dist/ 下（两种安装形态不同），
+  // jsdom 里既没有 chrome-extension:// 协议也发不出真实请求，这里直接判「存在」。
+  globalThis.fetch = async (url) => {
+    const hit = String(url).includes('voice-capture-worklet.js');
+    return { ok: hit, status: hit ? 200 : 404 };
+  };
 
   class FakeWorkletNode {
     constructor() {

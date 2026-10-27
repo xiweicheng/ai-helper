@@ -20,6 +20,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { enqueueFromInput } from './queue-runner.js';
+import { abortVoiceInput } from './voice-input.js';
 
 // 从提取的子模块导入
 import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
@@ -1018,6 +1019,12 @@ export async function sendMessage(opts = {}) {
   // 队列接力复用同一发送管线：文本由调用方给定，其余（上下文装配、气泡、历史落盘）完全一致
   const text = String(opts.text != null ? opts.text : (userInput?.value || '')).trim();
   if (!text) return { ok: false, reason: 'empty' };
+  // 真要发送了：语音输入必须当场收尾（Enter / 发送按钮 / 一键发送都走这里）。
+  // 采集还在跑的话，后续 partial/final 会继续往输入框写，而输入框马上被清空 ——
+  // 用户会看到刚发出去的消息后面又冒出一段字。
+  // abort 不回滚草稿：这些已识别出来的字正是要发出去的内容。
+  // 队列派发（fromQueue）不消费输入框，用户可能正在录下一句，不能停。
+  if (!opts.fromQueue) abortVoiceInput();
   // 生成中的早退保留：入队路径不经过这里，防的是其它调用方绕过状态检查
   if (state.generatingSessionIds.has(mySessionId)) return { ok: false, reason: 'generating' };
 

@@ -21,6 +21,7 @@ import { onGenerationEnded } from './generation-lifecycle.js';
 import { evaluateAutoCarry, peakIteration, commitAutoCarry } from './queue-auto-carry.js';
 import * as attachmentStore from './queue-attachment-store.js';
 import { loadSessions } from './session-manager.js';
+import { abortVoiceInput } from './voice-input.js';
 
 /** 本面板实例标识，用于派发租约 */
 const INSTANCE_ID = 'panel_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
@@ -244,6 +245,9 @@ export async function enqueueFromInput({ autoDrain = true } = {}) {
   const userInput = document.getElementById('userInput');
   const text = (userInput?.value || '').trim();
   if (!text) return { ok: false, error: 'empty' };
+  // 入队同样是对输入框内容的一次「消费」：先把语音采集收尾，否则清空后
+  // 还在飞的 partial/final 会继续往输入框里写字（等于把下一句说进了空气）。
+  abortVoiceInput();
 
   const sessionId = state.activeSessionId;
   if (!sessionId) {
@@ -687,6 +691,8 @@ export async function injectAdHocText(text) {
   const sid = state.activeSessionId;
   const content = String(text || '').trim();
   if (!sid || !content) return { ok: false, error: 'empty' };
+  // 插话把这段话送进正在跑的任务：录音同样必须停，理由同入队
+  abortVoiceInput();
   if (!isGenerating(sid)) {
     showToast(t('queue.injectNoTask'), 'warning', 3000);
     return { ok: false, error: 'no_running_task' };

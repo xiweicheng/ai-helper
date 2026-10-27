@@ -2,6 +2,72 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-27
+
+### 语音输入真机试用回流：worklet 路径修正（消掉两条报错）+ 发送即停录音 + 录音描边跟随圆角
+> 来源：用户真机试用，截到三条控制台报错 + 三条体验反馈：① 识别出文字后按 Enter / 点发送，语音还在录；② 按 Enter 发送是不是也该停；③ 录音时输入框的边框特效是直角，很突兀。
+
+- **那三条报错不是无害噪音，是同一条因果链**：`Failed to load worklet module script ... (Network error)` → `[AIH] [Voice] worklet unavailable, fallback to ScriptProcessor` → `ScriptProcessorNode is deprecated`。真因不是 CSP，是路径多拼了一层：`voice-input.js` 写死 `chrome.runtime.getURL('dist/voice-capture-worklet.js')`，而**打包后 dist 就是扩展根**（`manifest.json` 在 dist 根），于是请求落到不存在的 `<根>/dist/voice-capture-worklet.js` → `ERR_FILE_NOT_FOUND`，每次录音都静默退到 ScriptProcessor（主线程音频回调 + 已废弃 API）。功能虽能用，但白丢了 worklet 的低占用，还常驻一条废弃警告。修法：`WORKLET_PATHS = ['voice-capture-worklet.js', 'dist/voice-capture-worklet.js']` 两个候选（商店 zip / load unpacked dist → 扩展根；load unpacked 项目根 → 源码形态在 `dist/` 子目录），**先用 `fetch` 探存在性再 `addModule`** —— 直接 `addModule` 失败会由浏览器打一条错误日志，不能拿来当探测手段；解析结果缓存，一次会话只探一次。
+- **发送 = 语音终态，三条「消费输入框」的路径全部收尾**：`chat-manager.sendMessage()` 在「确认有文字」之后 abort（带 `if (!opts.fromQueue)` 守卫 —— 队列派发不消费输入框，用户可能正在录下一句）；`queue-runner.enqueueFromInput()`（生成中按 Enter / 发送按钮带草稿）与 `injectAdHocText()`（Alt+Enter 插话）同样先 abort 再清空。abort 用 `rollback: false`：已经识别出来的字正是要发出去的内容，不能回滚。开关语义不变 —— 录音中再点一次 🎤 仍是 `finish('stop')`；发完之后 phase 已回 idle，再点 🎤 就是新的一次录音。
+- **还抄出一个更麻烦的竞态**：`startRecording()` 在 `await startCapture()` 之后**不复查 phase**。采集是异步的（getUserMedia 授权框 + worklet fetch/addModule 合起来几百毫秒），这期间按 Enter 发送 → `abort()` 已把 phase 打回 idle，但采集恰好这时就绪，下一行 `phase = 'recording'` 把刚停掉的录音重新拉起来 —— 表现就是「消息发出去了，麦克风还亮着，说一句又往空输入框里冒字」。现在采集返回后先复查 `phase === 'starting'`，不是则 `stopCapture()` 当场释放刚拿到的流并 return false；catch 分支同样加了复查（否则迟到的采集错误会在已收起的录音条上闪一条「失败」）。顺带 `cancelRecording()` 在 `starting` 阶段不再往代理端发 `cancel`（那时还没发 `start`，没有会话可取消）。
+- **迟到的 final 必须丢弃**：代理端在 `cancel` 之后仍可能补一条 `final`，原 `onAgentEvent` 无条件 `finalizeText`，于是「消息发出去后又冒出一段字 / 弹一条已完成」，像偷偷又录了一次。现在 `final` 只在 `recording | finalizing` 时处理，其余一律丢弃 —— 同时覆盖「点 🎤 停止 → 转写中 → 立刻按 Enter 发送」这条路径（final 回来时输入框已清空）。
+- **描边直角是因为画错了层**：脉冲光晕原先挂在 `.input-wrapper textarea` 上，而 textarea 的 `border-radius` 是 0（圆角由 `.input-container` 的 `16px 16px 8px 8px` 提供）→ 得到一圈直角光晕，和容器圆角对不上。改挂 `.input-container` 后光晕自然贴合圆角，基底 `box-shadow` 与 `transition` 一并复用（不新增过渡）。
+- **验证**：新增 `test/unit/voice-send-stop.unit.test.js`（11 例：abort 后采集停 / 按钮复原 / 录音条收起 / 发出 `cancel`、abort 不回滚已识别文字、迟到 final 被丢弃、**`starting` 阶段被 abort 后不重拉录音且流当场释放**（用悬起 getUserMedia 卡出窗口，已反向验证：摘掉修复则此例失败）、三条消费路径的接线契约、worklet 候选与 fetch 探测、描边挂在容器且 textarea 保持 `border-radius: 0`）。探针 `_voice-worklet-load.mjs` 在真实 dist 上实测：`voice-capture-worklet.js` → **HTTP 200 / 1451 bytes**，`AudioWorklet.addModule` → **ok**，`new AudioWorkletNode('voice-capture')` 注册成功（即不再走 ScriptProcessor 兜底，deprecation 警告随之消失）；录音态容器 `border-radius = 16px 16px 8px 8px`、`box-shadow = rgba(102,126,234,0.22) 0 0 0 1px, ...`、textarea `box-shadow = none`，截图 `_voice-recording-glow.png` 可见光晕贴着圆角。全量 `npx vitest run test/unit` → **191 文件 / 2912 例全绿**；`npx eslint src/ ...` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+- **未验证（如实标注）**：探针是在 `side_panel.html` 里直接 `fetch + addModule`（无麦克风授权，跑不通真实 `getUserMedia` 采集链），所以「真机录音时控制台零报错」仍建议手动再确认一次；现有证据只能证明「路径可达 / 模块可加载 / processor 可实例化」这三段。
+
+### 语音输入（本地 STT）体验收口：安装误报「失败」修复 + 模型一键下载 + 语言文案与下拉统一
+> 来源：真机试用反馈 5 点：① 点依赖安装几次都提示安装报错，过一会儿「重新检测」又说已装好；② 模型目录为什么还要选；③ 模型能不能也自动装；④ 识别语言为什么写的是语言编码；⑤ 输入框下拉太原始、要和项目其它下拉统一。
+
+- **问题 ① 的真根因不在「重复点击」，而是前端读了一个不存在的字段**：`getAsrInstallStatus()` 返回的是 `{running, done, success, phase, logTail}`，前端却判 `install.status === 'running' | 'done'` —— 恒为 `undefined`，于是第一次点击就立刻走 `else` 分支：进度区写「安装已中断」、并弹红 toast「安装失败」、同时 `clearInterval` 停掉轮询。npm 其实一直在后台正常跑，所以「过一会儿重新检测」就变成已装好。修法：前端统一判 `running` / `done` / `success`；`startAsrInstall` 在已在安装时返回 `{started:false, alreadyRunning:true}` 且 HTTP 统一回 **200**（原来是 `409`，前端只能当失败），按钮在安装中置为 disabled + 「安装中…」；轮询连续 3 次拿不到状态才提示，一次网络抖动不再误报。**顺带纠正用户的一个猜测**：ASR 刻意**不**在启用时自动装依赖（`install.js` 顶部有注释），300MB+ 不该在用户不知情时吃带宽。
+- **问题 ② 的真相：模型目录本来就是固定的**（`MODELS_DIR = ASR_ROOT/models`），可变的只是旧 UI 把「从外部目录拷包进来」写成了「选择模型目录」，读起来像是让用户选一个存储位置。改成：配置页直接展示固定路径（`getModelsDirDisplay()` 把 home 折叠为 `~`，避免暴露用户名长路径），按钮改叫「从文件夹导入」；同时修掉 `copyDirSync` 用 `writeFileSync(to, readFileSync(from))` 把 239MB 整文件读进内存的隐患（改 `copyFileSync`），并让 `scanModels` 跳过点开头目录（下载器的 `.part` 中转目录不该出现在「非法模型」列表里）。
+- **问题 ③ 落地为「两条腿走路」**：新增 `agent/src/asr/model-catalog.js`（内置 2 个包 / 6 个文件的体积与 sha256，均以本机已跑通且转写通过的包为准）+ `agent/src/asr/model-download.js`（任务式逐文件下载）+ 4 个端点（`catalog` / `download` / `download/status` / `download/cancel`）。关键取舍：**不下载官方 `.tar.bz2`**（Node 没有 bzip2，为解压引依赖不值得），改走 HF 单文件 HTTP + 本地生成 `manifest.json`；默认端点 `hf-mirror.com`（实测 `huggingface.co` 直连 curl 返回 000 不可达，镜像 200，且 6 个文件的 `Content-Length` 与本地字节数完全一致）；未完成包落 `models/.<id>.part/`，全部就绪才原子 `rename`；已存在且字节数对得上的文件直接跳过（续传），逐块 `sha256`，无数据 60s 超时，`AbortController` 取消，任务状态落盘并在启动时把「运行中」收敛为「已中止」。交互按用户选定：**打开开关时缺模型就自动试一次**，失败降级为「模型未安装 + 固定路径」并保留手动重试 / 拷包两条路，不把内网用户一棒子打死。
+- **问题 ④/⑤**：识别语言从 `auto/zh/en/…` 改为「自动识别（中英混说）/ 中文 / 英文 / 日语 / 韩语 / 粤语」（协议侧仍传编码），下拉直接复用项目已有的 `.model-selector` / `.model-dropdown` / `.model-option`，避免同一页面两种下拉形态。**注：当时的触发器是自写的 `<button>`，次日又按用户反馈改成与「界面语言」下拉完全同构（见下文「识别语言下拉与『界面语言』同构」），本条不再代表现状。**
+- **验证**：代理端新增 `asr-model-catalog.unit.test.js`（20 例：清单自洽、id 白名单、端点覆盖、状态机 404/尺寸不符/幂等重入/取消/已安装跳过）+ `asr-routes` 补 6 例下载端点契约 —— 全量 **667 例 / 118 套件全绿**；扩展端 `vitest` **187 文件 / 2870 例全绿**；`eslint src/ agent/src/` 无输出；`npm run build:silent` → BUILD_SUCCESS。真机 status 实测：`modelsDirDisplay=~/.ai-helper-agent/asr/models`、`catalog` 两条目 `installed=true`、`install.running=false done=true success=true`（即历史安装其实是成功的）。
+- **未验证（如实标注）**：本机两个包已存在 → 真实从零下载 434MB 未跑（接口回 `skipped: already_installed`），下载链路的失败 / 取消 / 续传 / 幂等由本地假镜像的单测覆盖；真机建议拿一台干净环境验一次断点续传与取消。
+
+### 语音输入麦克风授权：侧边栏里弹不出授权框的根治（配置页一次性授权 + 侧边栏「去授权」）
+> 来源：用户反馈「点 🎤 只提示我去授权，浏览器却没弹框；还得自己到配置页找配置项——是不是代码没触发申请？」
+
+- **根因不是代码没触发，是浏览器不允许**：Chromium 在 **side panel / popup / offscreen document** 里调 `getUserMedia` **不会**展示原生权限弹窗，直接抛 `NotAllowedError`；只有**标签页形态的扩展页面**能弹。更麻烦的是扩展页面没有地址栏锁图标，用户也没有「点图标放行」的入口；原文案指向 `chrome://settings/content/microphone` 也不对——扩展不在普通站点列表里，正确入口是 `chrome://extensions` → 详情 → 网站设置。
+- **方案（用户明确选定：不动 manifest）**：新增 `src/shared/mic-permission.js`（`normalizeMicState` / `queryMicState` / `requestMicAccess` / `watchMicState`，依赖可注入）——把「已拒绝」和「只是关掉了弹窗（仍是 prompt）」分开，`permissions.query` 抛错（老浏览器不认 `microphone`）回落 `unknown` 而不是误报被拒。配置页「语音 Tab → 麦克风权限」新增常驻的**麦克风权限小节**：状态 pill（已授权 / 未授权 / 已被拒绝 / 状态未知）+「授权麦克风」，拿到流后立刻 `track.stop()` 只要授权结果；已被拒绝时按钮换成「复制扩展详情链接」（`chrome://` 地址无法用 `<a>` 打开，只能让用户粘）。
+- **真正的「提前申请」落在打开开关那一下**：开关的 click 本身就是用户手势，且配置页是标签页，所以启用语音输入时先 `getUserMedia` 再保存配置——错过这里就只剩「侧边栏报错 → 跳过来补授权」。授权按 `chrome-extension://<id>` 记忆，一次之后侧边栏直接可用且不再询问。
+- **侧边栏侧**：录音条新增隐藏的「去授权」文字按钮，仅 `NotAllowedError` / `SecurityError` 时露出，走已有的 `OPEN_OPTIONS_PAGE{hash:'asr'}`；配置页 `activateByHash` 新增 `#asr` 别名（`switchTab('toolbox')` + `scrollIntoView` + `.section-flash` 高亮，后随语音独立成 Tab 改为 `switchTab('voice')` + `focusMicBlock()`）。未授权时录音条停留 12s（其它失败仍 4s），避免按钮来不及点。同时把文案从「麦克风权限被拒绝」改为「麦克风未授权」——侧边栏里大多数情况是**从未授权**而非**被拒绝**，原表述会把人引向错误的自查方向。
+- **刻意不做**：不在 `manifest.json` 声明 `audioCapture`。它能省掉运行时弹框（安装时一次授予），代价是**所有用户**安装时都会看到麦克风权限提示且无法按需撤销；本项目把语音做成可选组件，「用到才申请」更合适。MV3 下该权限的实际行为本轮未取得一手证据（官方 permissions 列表页抓取失败），只作为后续可选增强记录。
+- **验证**：新增 `test/unit/mic-permission.unit.test.js`（14 例：状态归一化 / 查询兜底 / 申请成功即 stop 轨道 / 拒绝 vs 关弹窗 / NotFoundError 不误判 / watch 取消订阅），并改写 `voice-recorder-bar` 的权限用例（断言「去授权」露出 + 点击发出 `OPEN_OPTIONS_PAGE{hash:'asr'}`）。扩展端全量 `npx vitest run test/unit` → **188 文件 / 2884 例全绿**；`npx eslint src/` 无输出；`npm run build:silent` → BUILD_SUCCESS（已确认 dist 内 `options.html`、`side_panel.html`、i18n 包含新文案与 `#voicePermBtn`）。
+- **未验证（如实标注）**：真机未手动跑「点授权 → 浏览器弹框 → 允许 / 拒绝 / 关掉」三条路径。弹框能力依赖 Chromium 对**标签页形态扩展页面**的例外行为，若实测某些版本仍不弹，降级路径是文案里的「复制扩展详情链接 → 网站设置」手工授权，功能不受影响。
+
+### 语音输入独立成 Tab（从「扩展」迁出）+ 识别语言下拉撑满整行
+> 来源：「语音输入放在扩展 Tab 下是不是合适？为什么不单独搞一个 Tab，叫『语音』呢？」（用户选定：拆）；随后「这个下拉输入框宽度设为 100%，撑满」。
+
+- **为什么值得一个 Tab**：语音是「换一种输入方式」，MCP / 技能是「给 AI 加能力」，不是一类；体量也够（依赖 + 模型 + 识别语言 + 麦克风权限四个小节）。原先夹在 MCP 与技能之间，想改识别语言得先滚过整个 MCP 列表。也与「知识库 / 记忆」这两个同为「装依赖 + 下模型 + 开关」的子系统独立成 Tab 的先例一致。
+- **搬了什么**：`options.html` 新增 `data-tab="voice"` 面板并把 `#asrSection` 整块移入（「扩展」面板删掉原 ASR 块）；`index.js` 的 `validTabs` 加 `'voice'`、`tabRefreshers.voice` 走新增的 `refreshVoicePanel()`（`initAsrEvents` + `refreshAsrSection`）；`refreshToolbox()` 摘掉 ASR 两行 —— 进「扩展」不再顺手查一遍 ASR 状态（代理端那次 status 会去查依赖 / 模型 / 安装进度）。
+- **深链不动**：`#asr` 继续有效，只是落点从 `switchTab('toolbox') + 滚动` 换成 `switchTab('voice') + focusMicBlock()`（面板异步渲染，等 `#asrMicBlock` 量出高度再滚 + `.section-flash`，最多重试 8×120ms），侧边栏「去授权」一行没改。
+- **顺手修掉拆出来的一个坑**：独立 Tab 里没有「扩展」那颗 `#toolboxAgentStatus` 兜底，代理未连接时若沿用「收起」就只剩一张「已停用」的折叠卡、没有任何原因提示。disconnected 分支改回**展开**，文案指向「代理」Tab：`Agent 未连接：请先到「代理」Tab 完成连接，之后才能配置语音输入`。
+- **识别语言下拉撑满**：`.asr-lang-field` 由 `max-width: 320px` 改成 `width: 100%` —— 正下方的提示文字本来就占满整行，下拉只到 320px 显得「半截」；浮层 `.model-dropdown` 是 `left:0; right:0`，自然跟随同宽，排版（padding / 字体 / 圆角 / 边框）仍全部来自 `.model-selector` 基类。
+- **验证**：新增 `test/unit/voice-tab-structure.unit.test.js`（8 例：8 个 Tab 顺序、ASR 节点只在语音面板、「扩展」零残留、双语文案、`#asr` 落点、`tabRefreshers.voice`、`refreshToolbox` 已解耦）。探针 `_tabnav-width.mjs` 重写为守卫：中英文各量一次 —— **8 个 Tab / 1 行 / 容器 540px / 零截字**，并实测 `#voice` 激活与 `#asr` 深链落点（voice=true toolbox=false）；`_asr-section-collapse.mjs` 开 370px → 关 79px（省 291px）；`_asr-lang-dropdown-clip.mjs` 新增宽度断言 —— 触发器 **540px**（可用 540），下拉同宽 540px，排版 5 项仍与 `#languageInput` 全等。全量 `npx vitest run test/unit` → **190 文件 / 2901 例全绿**；`npx eslint src/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
+### 语音输入：总开关关闭时收起下方全部配置项
+> 来源：「总开关关掉后，下面的配置项还在界面上铺着，想看『技能管理』还得往下滚。」
+
+- **折叠机制本来就有，是被自己摘掉的**：区块沿用了 MCP / 技能同款的 `.toolbox-section.disabled-section`（`max-height: 0 ↔ 2000px` + `opacity`），但 `refreshAsrSection()` 每一轮都无条件 `remove` 这个类 —— 于是「关掉总开关」只改了 checkbox，配置区永远是展开态。改成按 `status.enabled` 去 `toggle`。（**注**：代理未连接分支次日又改回展开 —— 语音已独立成 Tab，那里没有别的状态兜底，收起会让用户面对一片空白；见上文「语音输入独立成 Tab」。）
+- **只收内容区不够**：`#asrMicBlock`（麦克风权限小节）物理上在 `#asrSectionContent` **之外** —— 内容区每次刷新都整体替换 `innerHTML`，静态节点放进去会被冲掉。所以它必须单独跟随 `disabled-section` 收起，否则关掉总开关后仍剩一整块（标题 + 提示 + 按钮）。
+- **验证**：新增探针 `test-results-probes/_asr-section-collapse.mjs`（真实扩展页面，只切类不改配置）—— 开启时区块 370px（内容 148 + 麦克风 128），关闭时 79px（只剩标题行），省 291px；同时校验「授权麦克风」按钮完整落在区块内。
+
+### 识别语言下拉与「界面语言」同构（去掉自写触发器）
+> 来源：「识别语言那个下拉框是不是可以参考界面语言下拉框的样式去做？」
+
+- **差异是真差异，不是错觉**：识别语言的触发器是自写的 `<button class="asr-lang-trigger">`（`padding: 10px`、`font-family: inherit`、自定义 hover / focus ring），而「界面语言」是 `.model-selector` + `readonly input`（`padding: 12px 40px 12px 12px`、等宽字体、`focus` 时 `border + 3px` 光晕）。两者并排能看出高度与字重不同，选项还多包了一层 `.model-option-left`。
+- **做法：删掉那套，直接同构**：触发器换成 `<input type="text" id="asrLangInput" readonly>`（选项文案放进 `value`，随 `renderStatusBlock` 重渲染自然回显），选项回归纯文本 `.model-option`；一并删除 `.asr-lang-trigger` 相关的 31 行自定义样式与 `.model-option-left` 包裹，只保留 `.asr-lang-field`（宽度，见上文已改为 100%）与 `.asr-lang-menu.model-dropdown { max-height: 280px }`（6 个语种一屏看完）。代价是语言名回到等宽字体 —— 与「界面语言」保持一致优先。
+- **验证**：`_asr-lang-dropdown-clip.mjs` 新增逐项比对 —— `padding / font / border-radius / border / background` 与 `#languageInput` 计算样式**完全相等**；`asr-lang-dropdown-style.unit.test.js` 补 3 例守卫（触发器必须是 `.model-selector` + readonly input、不得再有 `.asr-lang-trigger`、选项不得再包 `.model-option-left`），防止又长出第二套；扩展端全量 `npx vitest run test/unit` → **189 文件 / 2892 例全绿**，`npx eslint src/` 无输出，`npm run build:silent` → BUILD_SUCCESS。
+
+### 语音输入：识别语言下拉只能看到第一项（区块 overflow 裁切）
+> 来源：上一轮刚把识别语言改成自定义下拉，用户截图反馈「下拉高度怎么这么低，选项显示不出来」。
+
+- **不是下拉被压扁，是被上层挖掉了**：`.toolbox-section-content` 为了折叠动画带 `overflow: hidden`（`max-height: 0 ↔ 2000px`），而语言下拉是 `.model-selector` 内的**绝对定位** `.model-dropdown` —— 浮层一旦越过区块内容区的底边就被裁切，看上去像「高度只有一行」。下拉自身 `max-height: 240px` + `overflow-y: auto` 一直是正常的（截图里那条细竖条就是它自己的滚动条）。
+- **修法**：给「展开态的语音输入内容区」单开覆盖 `#asrSection:not(.disabled-section) #asrSectionContent { max-height: none; overflow: visible; }`。带 `:not(.disabled-section)` 守卫是关键——折叠态仍回到 `overflow: hidden`，`max-height: 0` 折叠动画与「代理未连接时收起」都不受影响（探针有反向断言）。不用把规则提到全局 `.toolbox-section-content`，免影响 MCP / Skill / 知识库等其它区块。
+- **顺手修一个观感问题**：6 个语种 = 6×41≈246px，默认 240px 会只为 6px 溢出挂一条滚动条。`.asr-lang-menu.model-dropdown { max-height: 280px }` → 一屏看完，多语种扩展后仍会内部滚动。
+- **验证**：新增 `test/unit/asr-lang-dropdown-style.unit.test.js`（5 例：基础折叠仍是 hidden / 展开态必须放开 / 覆盖规则带 `:not()` 守卫 / 语种高度 > 240 / 定位上下文在 `.model-selector`）+ 真机扩展探针 `test-results-probes/_asr-lang-dropdown-clip.mjs`（加载真实 dist 的 options.html，用 `elementFromPoint` 在「区块底边之外」取点：修前命中下方区块、修后命中下拉项）。结果：`overflow=visible`、折叠态 `hidden`、下拉高 247px 一屏 6 项、探针点命中 `model-option-left`，截图 `_asr-lang-dropdown-clip.png` 可见 6 项完整展开。全量 `npx vitest run test/unit` → **189 文件 / 2889 例全绿**；`eslint` 无输出；`build:silent` BUILD_SUCCESS。
+
 ## 2026-10-26
 
 ### 语音输入（本地 STT）：代理端本地推理 + 侧边栏 🎤 / Alt+V

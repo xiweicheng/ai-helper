@@ -511,7 +511,7 @@ enabled: true
 
 ## 语音输入（本地 STT）
 
-可选的本机语音转文字。侧边栏 🎤 按钮（与 `Alt+V`）采集音频并流式发给 Agent，识别**全在本地完成** —— 不调云端 ASR，音频不出本机。语音模型以离线包形式分发（由有外网的机器做好后拷入），运行时（`sherpa-onnx-node`，300MB+）是可选依赖：装 Agent 不会装它，且 `asrDependencies` 是 npm 不识的自有字段，`npm i -g` 同样不会拉。安装入口：选项页「工具箱 → 语音输入」、`aha asr install`、`install.sh --with-asr` / `install.ps1 -WithAsr`。
+可选的本机语音转文字。侧边栏 🎤 按钮（与 `Alt+V`）采集音频并流式发给 Agent，识别**全在本地完成** —— 不调云端 ASR，音频不出本机。语音模型以离线包形式分发（由有外网的机器做好后拷入），运行时（`sherpa-onnx-node`，300MB+）是可选依赖：装 Agent 不会装它，且 `asrDependencies` 是 npm 不识的自有字段，`npm i -g` 同样不会拉。安装入口：选项页「语音」Tab、`aha asr install`、`install.sh --with-asr` / `install.ps1 -WithAsr`。
 
 - **数据位置** —— `~/.ai-helper-agent/asr/`（可用 `AI_HELPER_ASR_ROOT` 覆盖）；模型包放在 `models/<id>/`，每个带一份 `manifest.json`
 - **三段式就绪判定** —— `deps.ready` × `modelsReady` × `enabled`；`/api/asr/status` 除 `available` 外还回 `reason`（`deps_missing` / `models_missing` / `disabled`），UI 能直接告诉用户缺哪一环

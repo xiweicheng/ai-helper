@@ -25,11 +25,13 @@ registerTranslations('zh', {
     done: '完成',
     noSpeech: '没有听到声音',
     noResult: '未识别到语音',
-    micDenied: '麦克风权限被拒绝',
-    micDeniedHelp: '请点击地址栏左侧的图标允许麦克风，或在 chrome://settings/content/microphone 中放行本扩展',
+    micDenied: '麦克风未授权',
+    micDeniedHelp: '侧边栏里浏览器不会弹授权框，请到配置页「语音输入 → 麦克风权限」授权一次',
+    micDeniedAction: '去授权',
+    micDeniedActionTitle: '打开配置页授权麦克风（侧边栏内无法弹出授权框）',
     unavailable: '语音功能不可用',
     modelMissing: '缺少语音模型',
-    modelMissingHelp: '请在配置页「工具箱 → 语音输入」中导入模型包',
+    modelMissingHelp: '请在配置页「语音」Tab 中导入模型包',
     busy: '有语音任务正在进行',
     failed: '语音识别失败',
     connectionLost: '连接中断',
@@ -48,11 +50,13 @@ registerTranslations('en', {
     done: 'Done',
     noSpeech: 'No sound detected',
     noResult: 'No speech recognised',
-    micDenied: 'Microphone permission denied',
-    micDeniedHelp: 'Allow the microphone from the address bar icon, or enable it at chrome://settings/content/microphone',
+    micDenied: 'Microphone not granted',
+    micDeniedHelp: 'The browser cannot prompt inside the side panel — grant it once in Options → Voice Input → Microphone permission',
+    micDeniedAction: 'Grant access',
+    micDeniedActionTitle: 'Open options to grant microphone access (the side panel cannot show the prompt)',
     unavailable: 'Voice input unavailable',
     modelMissing: 'Speech model missing',
-    modelMissingHelp: 'Import a model pack in Options → Toolbox → Voice Input',
+    modelMissingHelp: 'Import a model pack in the Options "Voice" tab',
     busy: 'Another voice task is running',
     failed: 'Speech recognition failed',
     connectionLost: 'Connection lost',
@@ -81,6 +85,7 @@ const st = {
   wave: null,
   timerEl: null,
   statusEl: null,
+  permBtn: null,
   barEls: [],
   status: null,
   armed: false,
@@ -330,8 +335,15 @@ function showBar() {
   st.bar.setAttribute('aria-hidden', 'false');
 }
 
+/** 「去授权」入口：只在麦克风未授权时露出（授权只能在标签页形态的配置页做） */
+function showPermButton(show) {
+  if (!st.permBtn) return;
+  st.permBtn.style.display = show ? '' : 'none';
+}
+
 function hideBar() {
   if (!st.bar) return;
+  showPermButton(false);
   st.bar.classList.remove('show');
   st.bar.setAttribute('aria-hidden', 'true');
   st.barEls.forEach((el) => { el.style.height = ''; el.style.opacity = ''; });
@@ -430,8 +442,37 @@ function trackSilence(rms) {
 }
 
 /** AudioWorklet 路径 */
+// worklet 文件所在层级随「扩展根」而变，写死一个路径必然有一半安装形态加载失败：
+//   - 商店 zip / load unpacked dist（manifest.json 在扩展根）→ 文件就在扩展根
+//   - load unpacked 项目根（源码形态）→ 文件在 dist/ 子目录
+// 早先只写了 'dist/...'，于是最常见的安装形态下拿到的是 ERR_FILE_NOT_FOUND，
+// 静默退到 ScriptProcessor，并带出一条 deprecation 警告。
+const WORKLET_PATHS = ['voice-capture-worklet.js', 'dist/voice-capture-worklet.js'];
+let workletUrl; // 解析成功后缓存：一次会话里扩展根不会变
+
+/**
+ * 解析 worklet 的真实 URL。
+ * 先用 fetch 探一下再交给 addModule：addModule 失败会由浏览器直接打一条
+ * 「Failed to load worklet module script」错误，那是纯噪音，不能拿来当探测手段。
+ * @returns {Promise<string|null>} 两处都没有 → null（调用方走 ScriptProcessor 兜底）
+ */
+async function resolveWorkletUrl() {
+  if (workletUrl !== undefined) return workletUrl;
+  for (const rel of WORKLET_PATHS) {
+    let url = '';
+    try { url = chrome.runtime.getURL(rel); } catch { continue; }
+    try {
+      const res = await fetch(url);
+      if (res && res.ok) { workletUrl = url; return url; }
+    } catch { /* 换下一个候选 */ }
+  }
+  workletUrl = null;
+  return null;
+}
+
 async function startWorklet(ctx, source) {
-  const url = chrome.runtime.getURL('dist/voice-capture-worklet.js');
+  const url = await resolveWorkletUrl();
+  if (!url) throw new Error('worklet not found in extension');
   await ctx.audioWorklet.addModule(url);
   const node = new AudioWorkletNode(ctx, 'voice-capture');
   const needResample = Math.abs(ctx.sampleRate - TARGET_RATE) > 1;
@@ -567,9 +608,18 @@ async function startRecording(opts = {}) {
   try {
     await startCapture();
   } catch (err) {
+    // 采集途中已被 abort（发送 / 再点一次 🎤 / 切走）：这条迟到的错误已经无处可报，
+    // 继续往下走只会在已收起的录音条上闪一条「失败」
+    if (st.phase !== 'starting') {
+      stopCapture();
+      return false;
+    }
     const name = err?.name || '';
-    if (name === 'NotAllowedError' || name === 'SecurityError') {
-      setBarStatus(`${t('voice.micDenied')} — ${t('voice.micDeniedHelp')}`, 'warn');
+    // 侧边栏/弹窗里根本弹不出授权框（Chromium 限制），能做的只是把人送到配置页授权一次
+    const denied = name === 'NotAllowedError' || name === 'SecurityError';
+    if (denied) {
+      setBarStatus(t('voice.micDenied'), 'warn');
+      showPermButton(true);
     } else {
       setBarStatus(t('voice.failed'), 'warn');
     }
@@ -578,7 +628,18 @@ async function startRecording(opts = {}) {
     setButtonState(false);
     setInputRecordingClass(false);
     try { port.postMessage({ type: 'cancel' }); } catch { /* 忽略 */ }
-    setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 4000);
+    // 未授权时条内多一个「去授权」按钮，给用户留出点击时间；其它失败仍快速收起
+    setTimeout(() => { if (st.phase === 'idle') hideBar(); }, denied ? 12000 : 4000);
+    return false;
+  }
+
+  // getUserMedia 的授权框、worklet 的 fetch + addModule 都可能等上几百毫秒。这期间用户
+  // 完全可能按 Enter 发送（或再点一次 🎤 关掉）—— abort 已把 phase 打回 idle，而采集恰好
+  // 在这时才就绪。不复查的话，下面那句 phase = 'recording' 会把刚停掉的录音重新拉起来，
+  // 表现就是「消息已经发出去了，麦克风还亮着，说一句又往空输入框里冒字」。
+  // 这里必须 stopCapture()：刚申请到手的流要当场释放，否则浏览器的录音指示会一直亮。
+  if (st.phase !== 'starting') {
+    stopCapture();
     return false;
   }
 
@@ -636,9 +697,11 @@ function finish(mode) {
 
 function cancelRecording({ rollback = true } = {}) {
   if (st.phase === 'idle') return false;
+  // 'starting' 期间还没发过 start：代理端没有会话可取消，发 cancel 只会多一条无主消息
+  const startSent = st.phase === 'recording' || st.phase === 'finalizing';
   st.phase = 'finalizing';
   stopCapture();
-  try { st.port?.postMessage({ type: 'cancel' }) } catch { /* 忽略 */ }
+  if (startSent) { try { st.port?.postMessage({ type: 'cancel' }) } catch { /* 忽略 */ } }
   if (rollback) rollbackDraft();
   st.phase = 'idle';
   setButtonState(false);
@@ -691,6 +754,9 @@ function onAgentEvent(evt) {
   }
 
   if (evt.type === 'final') {
+    // 已收尾（发送 / 取消 / 超时重入）后迟到的 final 一律丢弃：
+    // 否则发送完再弹一条「已完成」的空条，看起来像又录了一次
+    if (st.phase !== 'recording' && st.phase !== 'finalizing') return;
     finalizeText(evt.text || st.lastText, { fallback: evt.fallback === true });
     return;
   }
@@ -774,6 +840,7 @@ export async function initVoiceInput(opts = {}) {
   st.wave = document.getElementById('voiceWave');
   st.timerEl = document.getElementById('voiceTimer');
   st.statusEl = document.getElementById('voiceStatusText');
+  st.permBtn = document.getElementById('voicePermBtn');
   st.adjustInputHeight = typeof opts.adjustInputHeight === 'function' ? opts.adjustInputHeight : null;
 
   if (!st.input || !st.btn) {
@@ -797,6 +864,16 @@ export async function initVoiceInput(opts = {}) {
   document.getElementById('voiceDoneBtn')?.addEventListener('click', (e) => {
     e.preventDefault();
     finish('stop');
+  });
+
+  // 未授权时条内的「去授权」：跳配置页的麦克风小节（侧边栏里弹不出授权框）
+  st.permBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    try {
+      chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'asr' }).catch?.(() => {});
+    } catch { /* background 可能未运行：忽略 */ }
+    setBarStatus(t('voice.micDeniedHelp'), 'warn');
+    showPermButton(false);
   });
 
   // 用户手改输入框 → 后续只追加，不覆盖

@@ -93,6 +93,20 @@ function updateSkillCount(skills) {
 }
 
 /**
+ * 刷新「语音」Tab
+ * 语音单独成 Tab 后不再随工具箱一起刷新：进「扩展」不应该顺便拉一遍 ASR 状态（
+ * 代理端那次 status 会去查依赖/模型/安装进度，没必要）
+ */
+export async function refreshVoicePanel() {
+  initAsrEvents();
+  try {
+    await refreshAsrSection();
+  } catch (err) {
+    logger.warn('[Voice] refreshAsrSection failed:', err?.message || err);
+  }
+}
+
+/**
  * 刷新整个工具箱面板
  */
 export async function refreshToolbox() {
@@ -106,10 +120,6 @@ export async function refreshToolbox() {
 
   renderMcpServers(mcpServers);
   renderSkills(skills);
-
-  // 语音输入区（可选组件）：与 MCP/Skill 同层，独立自己拿状态与渲染
-  initAsrEvents();
-  refreshAsrSection().catch((err) => logger.warn('[Toolbox] refreshAsrSection failed:', err?.message || err));
 
   // 更新 MCP 工具数量统计
   updateMcpToolCount(mcpServers);

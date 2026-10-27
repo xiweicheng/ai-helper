@@ -310,6 +310,63 @@ describe('模型被删除后的降级（无定稿模型）', () => {
   });
 });
 
+describe('推荐模型下载端点', () => {
+  test('下载相关端点不依赖 sherpa 依赖（装不上依赖也要能下模型/看状态）', () => {
+    for (const p of [
+      '/api/asr/models/catalog',
+      '/api/asr/models/download',
+      '/api/asr/models/download/status',
+      '/api/asr/models/download/cancel',
+    ]) {
+      assert.equal(routes.isDepsIndependentPath(p), true, `${p} 应放行`);
+    }
+  });
+
+  test('GET /api/asr/models/catalog：清单含体积与安装态，不泄露仓库细节', async () => {
+    const res = await call('GET', '/api/asr/models/catalog');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.models.length, 2);
+    for (const item of res.body.models) {
+      assert.equal(item.installed, false, '临时模型目录里没有推荐包');
+      assert.ok(item.totalBytes > 0);
+      assert.equal(item.repo, undefined);
+      assert.equal(item.manifest, undefined);
+    }
+  });
+
+  test('GET /api/asr/models/download/status：从未下载 → 全零快照', async () => {
+    const res = await call('GET', '/api/asr/models/download/status');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.running, false);
+    assert.equal(res.body.done, false);
+    assert.deepEqual(res.body.targets, []);
+  });
+
+  test('POST /api/asr/models/download：非法 id 不触发下载（200 + skipped）', async () => {
+    const res = await call('POST', '/api/asr/models/download', { body: { ids: ['../../etc/passwd'] } });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.started, false);
+    assert.equal(res.body.skipped, 'no_targets');
+  });
+
+  test('POST /api/asr/models/download/cancel：没在下载时 stopped=false，不产生假状态', async () => {
+    const res = await call('POST', '/api/asr/models/download/cancel');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.stopped, false);
+  });
+
+  test('status 带出固定模型目录、推荐清单与下载快照（配置页一次拿全）', async () => {
+    const res = await call('GET', '/api/asr/status');
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.modelsDir, cfg.MODELS_DIR, '模型目录固定，不受用户选择影响');
+    assert.equal(res.body.modelsDirDisplay, '~/asr/models', '展示时折叠 home 前缀');
+    assert.equal(res.body.catalog.length, 2);
+    assert.equal(res.body.download.running, false);
+  });
+});
+
 describe('未知路径', () => {
   test('返回 404 + error.unknownApiPath', async () => {
     const res = await call('GET', '/api/asr/nope');
