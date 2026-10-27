@@ -24,7 +24,7 @@ import { startAsrInstall, getAsrInstallStatus, stopAsrInstall } from './asr/inst
 import { asrRouter, isDepsIndependentPath as isAsrDepsIndependentPath, resolveAsrModels } from './asr/routes.js';
 import { createAsrSessionManager } from './asr/session.js';
 import { getAsrConfig } from './asr/config.js';
-import { warmupEngines } from './asr/engine.js';
+import { warmupAsrEngines, closeOfflinePool } from './asr/offline-pool.js';
 import { memoryRouter } from './memory/routes.js';
 import { stopProcessTree } from './process-tree.js';
 import {
@@ -2381,7 +2381,8 @@ export function startServer() {
         if (!config.enabled) return;
         const resolved = resolveAsrModels();
         if (!resolved.online && !resolved.offline) return;
-        const result = warmupEngines(resolved, { idleUnloadMs: config.idleUnloadMs });
+        // 流式引擎在主线程预热，offline 引擎在 worker 线程预热（不阻塞启动，也不重复驻留模型）
+        const result = await warmupAsrEngines(resolved, { idleUnloadMs: config.idleUnloadMs });
         if (result.failed.length > 0) {
           logError('system', 'asr_warmup_failed', { failed: result.failed });
         }
@@ -2448,6 +2449,8 @@ export function startServer() {
     // 中止 ASR 依赖安装 + 释放全部流式会话（不留孤儿 npm / 原生引擎句柄）
     try { await stopAsrInstall(); } catch {}
     try { asrSessions.closeAll(); } catch {}
+    // offline 定稿线程也要收掉：native 会话持有几百 MB，进程退出前让它先 free
+    try { await closeOfflinePool(); } catch {}
 
     // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {

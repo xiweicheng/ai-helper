@@ -1169,6 +1169,11 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   // 状态缓存失效：配置页改完配置/装完依赖后调用，保证面板下次拉取是最新值
   if (message.type === 'ASR_RESET_STATUS') {
     clearAsrStatusCache();
+    // 光清缓存不够：侧边栏开着时它不会重新拉，配完依赖 / 开完总开关回去 🎤 还是不出现
+    // （面板里那条 ASR_STATUS_CHANGED 监听否则永远等不到消息）。
+    try {
+      chrome.runtime.sendMessage({ type: 'ASR_STATUS_CHANGED' }).catch?.(() => {});
+    } catch { /* 没有接收方：忽略 */ }
     sendResponse({ success: true });
     return false;
   }

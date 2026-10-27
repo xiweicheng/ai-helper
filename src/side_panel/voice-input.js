@@ -36,6 +36,7 @@ registerTranslations('zh', {
     failed: '语音识别失败',
     connectionLost: '连接中断',
     tooShort: '录音太短',
+    maxDuration: '已达单次录音时长上限，正在转写…',
     unsupported: '当前浏览器不支持录音',
   },
 });
@@ -61,6 +62,7 @@ registerTranslations('en', {
     failed: 'Speech recognition failed',
     connectionLost: 'Connection lost',
     tooShort: 'Recording too short',
+    maxDuration: 'Recording length limit reached, transcribing…',
     unsupported: 'Recording is not supported in this browser',
   },
 });
@@ -101,6 +103,10 @@ const st = {
   silenceWarned: false,
   draft: null, // {start, len, dirty}
   lastText: '',
+  // 已写进输入框的那一版文本：用户接手草稿（dirty）后只能追加「比它多出来的尾巴」
+  appliedText: '',
+  // ScriptProcessor 兜底的 0 增益中继（不进 destination 不会被回调，真进去又会被听见）
+  mute: null,
   programmatic: false,
   draftSupported: true,
   finishWaitTimer: null,
@@ -265,12 +271,55 @@ function captureInsertPoint() {
 }
 
 /**
+ * 纯函数：流式 partial 是「累积文本」，用户接手草稿后只能追加与上一版相比多出来的尾巴。
+ * 返回 null 表示这一版发生了改写（不是纯追加）—— 此时宁可不动用户的文本，也不整段重写。
+ * @param {string} prev 上一版已写入输入框的文本
+ * @param {string} next 本次收到的文本
+ * @returns {string|null} 可安全追加的增量
+ */
+export function appendOnlyDelta(prev, next) {
+  const a = s(prev);
+  const b = s(next);
+  if (!b) return '';
+  if (!a) return b;
+  if (!b.startsWith(a)) return null;
+  return b.slice(a.length);
+}
+
+/** 写入输入框：机器改内容必须走这里，好让发送按钮等下游知道「值变了」 */
+function writeInput(value, caret) {
+  const input = st.input;
+  if (!input) return;
+  st.programmatic = true;
+  input.value = value;
+  try { input.setSelectionRange(caret, caret); } catch { /* 忽略 */ }
+  st.programmatic = false;
+  // 不能派发原生 input 事件：侧边栏还挂着「扫 / @ $ 弹选择器」的监听，
+  // 口述内容里出现这三个字符就会在录音中途弹出面板。只发一个专用信号。
+  try { document.dispatchEvent(new CustomEvent('voice-draft-written')); } catch { /* 忽略 */ }
+  try { st.adjustInputHeight?.(); } catch { /* 忽略 */ }
+  try { input.focus(); } catch { /* 忽略 */ }
+}
+
+/**
  * 把文本写入草稿区间。
- * 用户中途手改 → dirty=true → 之后只追加，避免覆盖用户输入。
+ * 用户中途手改 → dirty=true → 只追加新增的尾巴：既不覆盖用户输入，也不重复整段。
+ * （早先这里退化成「在光标处追加整段」，而 partial 每 150ms 一次、dirty 又永不复位，
+ *   用户改一个字之后输入框里会一层层堆出重复文本 —— 5 分钟能堆出几十份。）
  */
 function applyDraft(text) {
   const input = st.input;
   if (!input || !st.draft) return;
+
+  if (st.draft.dirty) {
+    const delta = appendOnlyDelta(st.appliedText, text);
+    st.appliedText = s(text);
+    if (!delta) return;
+    const caret = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+    writeInput(input.value.slice(0, caret) + delta + input.value.slice(caret), caret + delta.length);
+    return;
+  }
+
   const caret = typeof input.selectionStart === 'number' ? input.selectionStart : undefined;
   const next = computeDraftEdit({
     value: input.value,
@@ -279,14 +328,9 @@ function applyDraft(text) {
     caret,
     canReplace: st.draftSupported,
   });
-  st.programmatic = true;
-  input.value = next.value;
   if (next.len > 0) st.draft.len = next.len;
-  try { input.setSelectionRange(next.caret, next.caret); } catch { /* 忽略 */ }
-  st.programmatic = false;
-
-  try { st.adjustInputHeight?.(); } catch { /* 忽略 */ }
-  try { input.focus(); } catch { /* 忽略 */ }
+  st.appliedText = s(text);
+  writeInput(next.value, next.caret);
 }
 
 /** 回滚本次草稿（取消时） */
@@ -388,8 +432,7 @@ function ensurePort() {
         // 代理端断开：立即结束本次采集。已写入的文字保留（用户已经看得见），
         // 但清掉 draft 让后续事件不再替换/回滚它。
         stopCapture();
-        if (st.finishWaitTimer) { clearTimeout(st.finishWaitTimer); st.finishWaitTimer = null; }
-        st.phase = 'idle';
+        resetToIdle();
         st.draft = null;
         st.lastText = '';
         setButtonState(false);
@@ -506,7 +549,13 @@ function startScriptProcessor(ctx, source) {
     sendChunk(floatToInt16(floats), Math.sqrt(peak / Math.max(1, floats.length)));
   };
   source.connect(node);
-  node.connect(ctx.destination);
+  // ScriptProcessor 只有被拉到 destination 才会回调，但不能让用户听见自己说话：
+  // 串一个 0 增益节点再进 destination（worklet 不需要这一步，它悬空也会被驱动）。
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  node.connect(mute);
+  mute.connect(ctx.destination);
+  st.mute = mute;
   st.node = node;
 }
 
@@ -553,16 +602,28 @@ function stopCapture() {
   if (st.timer) { clearInterval(st.timer); st.timer = null; }
   try { st.node?.port?.close?.(); } catch { /* 忽略 */ }
   try { st.node?.disconnect?.(); } catch { /* 忽略 */ }
+  try { st.mute?.disconnect?.(); } catch { /* 忽略 */ }
   try { st.source?.disconnect?.(); } catch { /* 忽略 */ }
   try { st.stream?.getTracks?.().forEach((tr) => tr.stop()); } catch { /* 忽略 */ }
   try { st.ctx?.close?.(); } catch { /* 忽略 */ }
   st.node = null;
+  st.mute = null;
   st.source = null;
   st.stream = null;
   st.ctx = null;
 }
 
 // ==================== 生命周期 ====================
+
+/**
+ * 回到空闲。所有「回到 idle」的出口都走这里 ——
+ * 60s 兜底定时器只能在这里统一清掉，否则 cancel/错误路径会把上一轮的定时器
+ * 带到下一次录音里（触发时提前定稿，紧接着的真实 final 被当成「迟到」丢弃）。
+ */
+function resetToIdle() {
+  if (st.finishWaitTimer) { clearTimeout(st.finishWaitTimer); st.finishWaitTimer = null; }
+  st.phase = 'idle';
+}
 
 function startTimer() {
   const tick = () => {
@@ -583,9 +644,14 @@ async function startRecording(opts = {}) {
     // 未 armed 时给一次性反馈（配置页才是修复入口）
     await refreshGating();
     if (!st.armed) return false;
+    // refreshGating 要问代理端，是个 await：这期间又有人点 🎤 / 按 Alt+V，另一路可能
+    // 已经进了 starting/recording。不复查就会两路并发采集，前一组 AudioContext 与
+    // MediaStream 被后者覆盖、永不释放（麦克风指示常亮），两路帧还会同时上送。
+    if (st.phase !== 'idle') return false;
   }
   st.phase = 'starting';
   st.lastText = '';
+  st.appliedText = '';
   st.draft = captureInsertPoint();
   st.draftSupported = true;
   st.silentSince = 0;
@@ -599,7 +665,7 @@ async function startRecording(opts = {}) {
   const port = ensurePort();
   if (!port) {
     setBarStatus(t('voice.failed'), 'warn');
-    st.phase = 'idle';
+    resetToIdle();
     setButtonState(false);
     setInputRecordingClass(false);
     return false;
@@ -624,7 +690,7 @@ async function startRecording(opts = {}) {
       setBarStatus(t('voice.failed'), 'warn');
     }
     stopCapture();
-    st.phase = 'idle';
+    resetToIdle();
     setButtonState(false);
     setInputRecordingClass(false);
     try { port.postMessage({ type: 'cancel' }); } catch { /* 忽略 */ }
@@ -671,7 +737,7 @@ function finish(mode) {
   if (mode === 'cancel') {
     try { st.port?.postMessage({ type: 'cancel' }) } catch { /* 忽略 */ }
     rollbackDraft();
-    st.phase = 'idle';
+    resetToIdle();
     hideBar();
     return;
   }
@@ -680,7 +746,7 @@ function finish(mode) {
     try { st.port?.postMessage({ type: 'cancel' }) } catch { /* 忽略 */ }
     rollbackDraft();
     setBarStatus(t('voice.tooShort'), 'warn');
-    st.phase = 'idle';
+    resetToIdle();
     setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 2200);
     return;
   }
@@ -703,7 +769,7 @@ function cancelRecording({ rollback = true } = {}) {
   stopCapture();
   if (startSent) { try { st.port?.postMessage({ type: 'cancel' }) } catch { /* 忽略 */ } }
   if (rollback) rollbackDraft();
-  st.phase = 'idle';
+  resetToIdle();
   setButtonState(false);
   setInputRecordingClass(false);
   hideBar();
@@ -716,20 +782,19 @@ function cancelRecording({ rollback = true } = {}) {
  * @param {{fallback?: boolean}} [opts]
  */
 function finalizeText(text, opts = {}) {
-  if (st.finishWaitTimer) { clearTimeout(st.finishWaitTimer); st.finishWaitTimer = null; }
   const finalText = s(text).trim();
   if (!finalText) {
     // 没识别到：撤掉草稿并提示（不弹 toast）
     rollbackDraft();
     setBarStatus(t('voice.noResult'), 'warn');
-    st.phase = 'idle';
+    resetToIdle();
     setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 2200);
     return;
   }
   applyDraft(finalText);
   st.draft = null;
   st.lastText = '';
-  st.phase = 'idle';
+  resetToIdle();
   setBarStatus(t('voice.done'));
   setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 1200);
 }
@@ -768,16 +833,26 @@ function onAgentEvent(evt) {
 
   if (evt.type === 'error') {
     const code = evt.code || 'internal';
+
+    // 时长上限不是失败：代理端紧接着会用整段音频跑一次 offline 定稿（质量比 partial 高）。
+    // 这里只改文案、保持 finalizing 等那条 final；提前用 partial 定稿会把它丢掉，
+    // 而且用户看到的会是「识别失败」而不是「到上限了」。
+    if (code === 'max_duration') {
+      // 面板计时器被后台节流时，agent 的上限事件就是唯一可靠信号：这里补一刀停录
+      if (st.phase === 'recording') finish('stop');
+      // 必须在 finish 之后设：finish 内部会先写「正在转写…」，再写就把上限文案盖掉了
+      setBarStatus(t('voice.maxDuration'), 'warn');
+      return;
+    }
+
     if (code === 'busy') setBarStatus(t('voice.busy'), 'warn');
     else if (code === 'model_missing') setBarStatus(`${t('voice.modelMissing')} — ${t('voice.modelMissingHelp')}`, 'warn');
     else setBarStatus(t('voice.failed'), 'warn');
-    // busy/model_missing 属于硬失败：直接回滚，不留半截草稿
+
+    // 硬失败：直接回滚，不留半截草稿
     stopCapture();
-    if (st.phase === 'recording' || st.phase === 'finalizing') {
-      if (code !== 'max_duration') rollbackDraft();
-      else finalizeText(st.lastText, { fallback: true });
-    }
-    st.phase = 'idle';
+    if (st.phase === 'recording' || st.phase === 'finalizing') rollbackDraft();
+    resetToIdle();
     setButtonState(false);
     setInputRecordingClass(false);
     if (code === 'model_missing') refreshGating();

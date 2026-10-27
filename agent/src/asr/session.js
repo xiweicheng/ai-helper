@@ -11,6 +11,9 @@
 //   - {type:'error', code, error}      busy / model_missing / internal / rss_pressure
 //
 // 资源回收：连接关闭（未 stop）、空闲 30s、总时长 5min、并发超限 —— 全部收敛到 release()。
+//
+// stop 定稿是异步的：offline 推理跑在 worker 线程（见 offline-pool.js），会话在发起定稿的
+// 那一刻就 release（并发名额、流式资源立即归还），final 帧等 worker 回来再补发。
 
 import {
   MAX_SESSIONS,
@@ -18,8 +21,9 @@ import {
   MAX_RECORDING_MS,
   RSS_LIMIT_BYTES,
 } from './config.js';
-import { tidyJoin, tidyChineseSpacing, stripSenseVoiceTags, transcribeSamples } from './transcribe.js';
+import { tidyJoin, tidyChineseSpacing, stripSenseVoiceTags } from './transcribe.js';
 import { getOnlineRecognizer as defaultGetOnline } from './engine.js';
+import { runOfflineTask } from './offline-pool.js';
 
 // 草稿推送节流（150ms：肉眼连贯且不会把 WS 打满）
 const PARTIAL_THROTTLE_MS = 150;
@@ -50,6 +54,7 @@ export function pcm16ToFloat32(buf) {
  *   getOfflineRecognizer?: Function,
  *   getVad?: Function,
  *   transcribe?: Function,
+ *   offlineTimeoutMs?: number,
  *   maxSessions?: number,
  *   now?: () => number,
  * }} deps
@@ -62,7 +67,16 @@ export function createAsrSessionManager(deps) {
     ? deps.maxSessions
     : MAX_SESSIONS;
   const getIdleUnloadMs = deps.getIdleUnloadMs || (() => 0);
-  const transcribe = deps.transcribe || transcribeSamples;
+  // 默认走 worker 线程（不阻塞事件循环）；单测注入同步/异步实现，返回 Promise 或值都可
+  const transcribe = deps.transcribe || ((samples, opts) => runOfflineTask({
+    kind: 'samples',
+    samples,
+    opts,
+    idleMs: getIdleUnloadMs(),
+    timeoutMs: deps.offlineTimeoutMs,
+    modelId: opts && opts.offlineModel ? opts.offlineModel.id : undefined,
+    onLog: deps.onLog,
+  }));
 
   /**
    * 发送 JSON 帧（连接已断时静默忽略）
@@ -189,6 +203,10 @@ export function createAsrSessionManager(deps) {
 
   /**
    * 处理 stop：优先 offline 定稿，必要时退回流式文本
+   *
+   * 同步段先把整段波形与草稿取走，异步段只等 worker 结果 —— 调用方可以立刻 release，
+   * 把并发名额与流式资源还给下一次录音（一次定稿可能几百毫秒到数十秒）。
+   * @returns {Promise<void>} 定稿帧发出（或放弃）后 resolve
    */
   function finalize(session) {
     const models = session.models || deps.getModels();
@@ -196,37 +214,40 @@ export function createAsrSessionManager(deps) {
     session.chunks = [];
 
     const draftText = tidyJoin([session.committedText, session.currentText]);
+    const finishWith = (text, fallback) => send(session, { type: 'final', text, fallback });
 
     if (!models.offline) {
-      send(session, { type: 'final', text: draftText, fallback: true });
-      return;
+      finishWith(draftText, true);
+      return Promise.resolve();
     }
 
     // RSS 保护：接近阈值时不做 offline 定稿（避免 OOM 拖垮整个代理）
     const rss = typeof process.memoryUsage === 'function' ? process.memoryUsage().rss : 0;
     if (rss > RSS_LIMIT_BYTES) {
       deps.onLog?.('asr_offline_skipped', { reason: 'rss_pressure', rss });
-      send(session, { type: 'final', text: draftText, fallback: true });
-      return;
+      finishWith(draftText, true);
+      return Promise.resolve();
     }
 
     if (samples.length === 0) {
-      send(session, { type: 'final', text: draftText, fallback: !draftText });
-      return;
+      finishWith(draftText, !draftText);
+      return Promise.resolve();
     }
 
-    try {
-      const result = transcribe(samples, {
+    // Promise.resolve().then 包一层：注入的同步实现抛错也走同一条回退路径
+    return Promise.resolve()
+      .then(() => transcribe(samples, {
         offlineModel: models.offline,
         vadModel: models.vad || null,
         idleUnloadMs: getIdleUnloadMs(),
         language: session.language,
+      }))
+      .then((result) => {
+        finishWith((result && result.text) || draftText, false);
+      }, (err) => {
+        deps.onError?.('offline_finalize_failed', err);
+        finishWith(draftText, true);
       });
-      send(session, { type: 'final', text: result.text || draftText, fallback: false });
-    } catch (err) {
-      deps.onError?.('offline_finalize_failed', err);
-      send(session, { type: 'final', text: draftText, fallback: true });
-    }
   }
 
   /**
@@ -245,12 +266,11 @@ export function createAsrSessionManager(deps) {
     if (type === 'stop') {
       if (session.finishing) return;
       session.finishing = true;
-      try {
-        finalize(session);
-      } finally {
-        release(session);
-        try { session.ws.close(); } catch { /* 忽略 */ }
-      }
+      // 定稿是异步的：先发起（同步段已取走波形与草稿），立刻释放名额，再等结果补发 final
+      const done = finalize(session);
+      release(session);
+      const close = () => { try { session.ws.close(); } catch { /* 忽略 */ } };
+      done.then(close, close);
       return;
     }
 
@@ -345,9 +365,12 @@ export function createAsrSessionManager(deps) {
     // 总时长上限：到时自动定稿并结束（长按不现实，5 分钟已是单次输入的合理上限）
     session.maxTimer = setTimeout(() => {
       send(session, { type: 'error', code: 'max_duration', error: 'recording length limit reached' });
-      try { finalize(session); } catch { /* 忽略 */ }
+      session.finishing = true;
+      let done;
+      try { done = finalize(session); } catch { done = Promise.resolve(); }
       release(session);
-      try { ws.close(); } catch { /* 忽略 */ }
+      const close = () => { try { ws.close(); } catch { /* 忽略 */ } };
+      done.then(close, close);
     }, MAX_RECORDING_MS);
     if (typeof session.maxTimer.unref === 'function') session.maxTimer.unref();
 

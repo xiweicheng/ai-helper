@@ -8,7 +8,7 @@
 //   - 逐文件下载（不是 .tar.bz2）：Node 没有内置 bzip2，而 HF 支持单文件 HTTP 取
 //   - 落盘目录 MODELS_DIR/.<id>.part/：未完成的包对 scanModels 不可见（点开头的目录跳过），
 //     全部文件就绪后才写 manifest.json 并原子 rename 成 MODELS_DIR/<id>/
-//   - 秒级续传：已存在且字节数匹配的文件直接跳过，下载中断后重试不会从头再来
+//   - 秒级续传：已存在且字节数「与哈希」都匹配的文件直接跳过，下载中断后重试不会从头再来
 //   - 逐块算 sha256：与写入同步进行，不额外读一遍盘；不匹配即判失败并删除该文件
 //   - 任务状态持久化：代理重启后把「运行中」收敛为「已中止」，不出现假进度
 //
@@ -24,7 +24,7 @@ import {
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { MODELS_DIR } from './config.js';
-import { readModelManifest } from './model-pack.js';
+import { readModelManifest, sha256OfFile } from './model-pack.js';
 import { MODEL_CATALOG, buildFileUrl, getEntryBytes, resolveCatalogEntries } from './model-catalog.js';
 import { logError, logSystem } from '../logger.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
@@ -270,15 +270,16 @@ async function runDownload(task, entries, t) {
       if (task.aborted) return;
       const dest = join(partDir, file.name);
       const already = existsSync(dest) ? safeSize(dest) : 0;
-      // 续传：字节数已经对上的文件直接跳过（不做哈希——下完之后整包 manifest 校验兜底）
-      if (already === file.size) {
+      // 续传：字节数对上「且」哈希对上才跳过。只看大小的话，中断 / 掉电留下的
+      // 「大小对、内容坏」文件会被当成已下载，重试永远命中这条跳过，直到引擎加载模型才炸。
+      if (already === file.size && sha256Matches(dest, file)) {
         target.bytesDone += file.size;
         task.bytesDone += file.size;
         savePersistedState();
         continue;
       }
       if (already > 0) {
-        // 大小不符 = 上次写到一半，删掉重下（不做 Range 续传：镜像对 Range 的支持不一致）
+        // 大小不符 / 内容不符 = 上次没写对，删掉重下（不做 Range 续传：镜像对 Range 的支持不一致）
         try { rmSync(dest, { force: true }); } catch { /* 忽略 */ }
         task.bytesDone = Math.max(0, task.bytesDone - already);
         target.bytesDone = Math.max(0, target.bytesDone - already);
@@ -308,7 +309,7 @@ async function runDownload(task, entries, t) {
     } catch (err) {
       return failTask(task, target, t('asr.downloadFailed', { message: `manifest: ${err.message}` }));
     }
-    const checked = readModelManifest(partDir);
+    const checked = readModelManifest(partDir, { verifyHash: true });
     if (!checked.ok) {
       return failTask(task, target, t('asr.downloadFailed', { message: `verify: ${checked.error}` }));
     }
@@ -365,6 +366,26 @@ function safeSize(filePath) {
   } catch {
     return 0;
   }
+}
+
+/**
+ * 续传前校验「已存在的那个文件」是否真的下完了
+ *
+ * 只比字节数不够：中断 / 掉电可能留下大小恰好一致、内容却是残片的文件。
+ * 这种文件一旦被当成「已下载」，后续每次重试都命中跳过，直到引擎加载模型才炸，
+ * 而且报错信息和下载毫无关系，排查成本极高。
+ *
+ * 清单没给 sha256 时退回「只信大小」（兼容早期不带哈希的包）；
+ * 给了哈希但读不出来（权限 / 超限）按不匹配处理，宁可重下也不赌。
+ * @param {string} filePath
+ * @param {{ name: string, size: number, sha256?: string }} file
+ * @returns {boolean}
+ */
+function sha256Matches(filePath, file) {
+  const want = typeof file.sha256 === 'string' ? file.sha256.trim().toLowerCase() : '';
+  if (!want) return true;
+  const got = sha256OfFile(filePath);
+  return typeof got === 'string' && got.toLowerCase() === want;
 }
 
 /**

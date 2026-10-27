@@ -2728,6 +2728,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听生成状态变化与草稿变化，自动切换按钮形态
   document.addEventListener('generating-state-changed', updateSendBtnState);
   userInput.addEventListener('input', updateSendBtnState);
+  // 语音草稿是程序写入的，不派发 input 事件（口述里出现 / @ $ 会误触选择器），
+  // 所以它单独发一个信号：否则生成中用语音补一句，按钮仍是「停止」，点下去会中断生成
+  document.addEventListener('voice-draft-written', updateSendBtnState);
 
   // 提示词菜单项（promptTriggerBtn）的点击行为已迁移至 input-add-menu.js——
   // 与其余选择器菜单项统一处理：打开弹窗并直达对应 Tab

@@ -82,7 +82,7 @@ function persistHashCache() {
  * @param {string} filePath
  * @returns {string|null} 十六进制摘要；读取失败返回 null
  */
-function sha256OfFile(filePath) {
+export function sha256OfFile(filePath) {
   let st;
   try {
     st = statSync(filePath);

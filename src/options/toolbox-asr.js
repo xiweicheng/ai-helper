@@ -206,7 +206,9 @@ function renderStatusBlock(status) {
     : `<div class="asr-model-empty">${escapeHtml(t('toolbox.asrNoModels'))}</div>`;
 
   const invalidRows = invalid.length
-    ? `<div class="asr-invalid">${invalid.map((x) => `<div>⚠ ${escapeHtml(String(x.id || x.dir || ''))}: ${escapeHtml(String(x.reason || ''))}</div>`).join('')}</div>`
+    // 代理端返回的是 { dir, name, error }（model-pack.scanModels），不是 { id, reason }：
+    // 读错字段的后果是冒号后永远空白、并且回落到 dir —— 把本机绝对路径（含用户名）暴露给用户
+    ? `<div class="asr-invalid">${invalid.map((x) => `<div>⚠ ${escapeHtml(String(x.name || x.id || x.dir || ''))}: ${escapeHtml(String(x.error || x.reason || ''))}</div>`).join('')}</div>`
     : '';
 
   // ---- 推荐模型下载：缺什么就下什么；全已安装则按钮置灰 ----

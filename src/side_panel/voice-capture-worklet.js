@@ -2,8 +2,10 @@
 //
 // 职责：收 Float32 输入 → 累积 1600 样本（@16k ≈ 100ms）→ 转 Int16 → 转移所有权回主线程。
 // 说明：
-//   - 该文件不参与 esbuild 打包，由 scripts/fix-build.js 直接复制到 dist/ 根，
-//     面板用 chrome.runtime.getURL('dist/voice-capture-worklet.js') 加载（CSP 禁止 blob:）；
+//   - 该文件不参与 esbuild 打包，由 scripts/fix-build.js 直接复制到 dist/ 根；
+//     面板按 ['voice-capture-worklet.js', 'dist/voice-capture-worklet.js'] 依次探测
+//     （安装形态不同，扩展根也不同：装 dist 时在根，源码形态下在 dist/ 子目录），
+//     加载走 chrome.runtime.getURL（CSP 禁止 blob:）；
 //   - 顺带算 RMS 回传，供录音条波形与「没有听到声音」判定使用，避免主线程重复遍历。
 
 class VoiceCaptureProcessor extends AudioWorkletProcessor {

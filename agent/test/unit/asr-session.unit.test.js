@@ -118,6 +118,9 @@ function createManager(overrides = {}) {
 
 // ==================== 用例 ====================
 
+/** 等定稿链跑完：finalize 是异步的（生产走 worker 线程），final 帧稍后才到 */
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 describe('pcm16ToFloat32', () => {
   test('按 -1..1 归一化，奇数字节丢弃', () => {
     const buf = Buffer.alloc(6);
@@ -252,7 +255,7 @@ describe('音频帧 → 草稿', () => {
     manager.release(manager._sessions.get('f1'));
   });
 
-  test('acceptWaveform 抛错时降级为「只保留波形」，不影响后续 stop 定稿', () => {
+  test('acceptWaveform 抛错时降级为「只保留波形」，不影响后续 stop 定稿', async () => {
     const { manager, fake, calls } = createManager();
     const ws = makeWs();
     manager.attach(ws, 'a1');
@@ -261,13 +264,14 @@ describe('音频帧 → 草稿', () => {
     ws.audio(320);
     assert.ok(calls.onError.some((e) => e.code === 'accept_waveform_failed'));
     ws.control({ type: 'stop' });
+    await flush();
     assert.equal(calls.transcribe.length, 1, 'stop 仍应走 offline 定稿');
     assert.equal(calls.transcribe[0].samples.length, 320);
   });
 });
 
 describe('stop / cancel / release', () => {
-  test('stop：优先 offline 定稿，推 final 后释放并关闭连接', () => {
+  test('stop：优先 offline 定稿，推 final 后释放并关闭连接', async () => {
     const { manager, fake, calls } = createManager();
     const ws = makeWs();
     manager.attach(ws, 'st1');
@@ -275,6 +279,8 @@ describe('stop / cancel / release', () => {
     fake.state.text = '草稿';
     ws.audio(160);
     ws.control({ type: 'stop' });
+    assert.equal(manager.activeCount(), 0, '会话应立刻释放（不等定稿）');
+    await flush();
 
     const final = ws.sent.find((m) => m.type === 'final');
     assert.ok(final, '应推 final 帧');
@@ -288,7 +294,45 @@ describe('stop / cancel / release', () => {
     assert.equal(fake.state.freed, true, '流应被 free');
   });
 
-  test('stop 但无 offline 模型：回退为流式草稿（fallback:true）', () => {
+  test('stop 后立刻让出并发名额：定稿还在跑也能开下一路', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const { manager } = createManager({ raw: { transcribe: () => gate } });
+    const ws = makeWs();
+    manager.attach(ws, 'st1b');
+    ws.control({ type: 'start' });
+    ws.audio(160);
+    ws.control({ type: 'stop' });
+
+    // 关键：offline 未返回时名额已经还回去了（MAX_SESSIONS 默认 1）
+    assert.equal(manager.activeCount(), 0);
+    const second = makeWs();
+    assert.equal(manager.attach(second, 'st1c'), true, '下一路应立即被接受');
+
+    release({ text: '迟到的定稿' });
+    await flush();
+    assert.equal(ws.sent.find((m) => m.type === 'final').text, '迟到的定稿');
+    assert.equal(ws.closed, true, '定稿完成后才断开');
+    manager.release(manager._sessions.get('st1c'));
+  });
+
+  test('定稿期间连接已断：final 静默丢弃，不抛异常', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const { manager, calls } = createManager({ raw: { transcribe: () => gate } });
+    const ws = makeWs();
+    manager.attach(ws, 'st1d');
+    ws.control({ type: 'start' });
+    ws.audio(160);
+    ws.control({ type: 'stop' });
+    ws.readyState = 3; // 客户端先断开
+    release({ text: '没人要了' });
+    await flush();
+    assert.equal(ws.sent.filter((m) => m.type === 'final').length, 0);
+    assert.equal(calls.onError.length, 0, '断连不是错误');
+  });
+
+  test('stop 但无 offline 模型：回退为流式草稿（fallback:true）', async () => {
     const { manager, fake } = createManager({
       raw: { getModels: () => ({ online: ONLINE_MODEL, offline: null, vad: null }) },
     });
@@ -303,9 +347,11 @@ describe('stop / cancel / release', () => {
     assert.equal(final.fallback, true);
     assert.equal(final.text, '流式草稿');
     assert.equal(manager.activeCount(), 0);
+    await flush();
+    assert.equal(ws.closed, true);
   });
 
-  test('offline 定稿抛错：记录 onError 并回退流式草稿（不丢用户已识别的文字）', () => {
+  test('offline 定稿抛错：记录 onError 并回退流式草稿（不丢用户已识别的文字）', async () => {
     let clock = 10_000;
     const { manager, fake, calls } = createManager({
       clock: () => clock,
@@ -317,6 +363,7 @@ describe('stop / cancel / release', () => {
     fake.state.text = '已识别';
     ws.audio();
     ws.control({ type: 'stop' });
+    await flush();
 
     const final = ws.sent.find((m) => m.type === 'final');
     assert.equal(final.fallback, true);
@@ -325,7 +372,7 @@ describe('stop / cancel / release', () => {
     assert.equal(manager.activeCount(), 0);
   });
 
-  test('stop 幂等：重复 stop 不重复定稿', () => {
+  test('stop 幂等：重复 stop 不重复定稿', async () => {
     const { manager, calls } = createManager();
     const ws = makeWs();
     manager.attach(ws, 'st4');
@@ -333,6 +380,7 @@ describe('stop / cancel / release', () => {
     ws.audio();
     ws.control({ type: 'stop' });
     ws.emit('message', Buffer.from(JSON.stringify({ type: 'stop' })), false);
+    await flush();
     assert.equal(calls.transcribe.length, 1, '第二个 stop 应被 finishing 挡住');
   });
 
@@ -434,7 +482,7 @@ describe('资源上限', () => {
     manager.release(manager._sessions.get('i2'));
   });
 
-  test('总时长上限：发 max_duration、定稿并释放', (t) => {
+  test('总时长上限：发 max_duration、定稿并释放', async (t) => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
     const { manager } = createManager();
     const ws = makeWs();
@@ -451,6 +499,8 @@ describe('资源上限', () => {
 
     const err = ws.sent.find((m) => m.type === 'error');
     assert.equal(err.code, 'max_duration');
+    assert.equal(manager.activeCount(), 0, '超时也立刻让出名额');
+    await flush();
     assert.ok(ws.sent.some((m) => m.type === 'final'), '超时也应定稿');
     assert.equal(manager.activeCount(), 0);
   });

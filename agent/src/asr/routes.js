@@ -24,8 +24,8 @@ import { detectAsrAvailable, resetAsrDetection, getLastAsrProbeError, getAsrProb
 import { getAsrInstallStatus } from './install.js';
 import { toPublicCatalog } from './model-catalog.js';
 import { startModelDownload, stopModelDownload, getModelDownloadStatus } from './model-download.js';
-import { transcribeWav } from './transcribe.js';
-import { getLoadedEngineInfo, warmupEngines } from './engine.js';
+import { getLoadedEngineInfo } from './engine.js';
+import { runOfflineTask, warmupAsrEngines, getWorkerLoadedModelId } from './offline-pool.js';
 
 // transcribe 请求体上限（base64 后约 1.33 倍；5min @16k mono PCM16 ≈ 9.6MB，留足余量）
 const MAX_AUDIO_BASE64_CHARS = 40 * 1024 * 1024;
@@ -117,6 +117,9 @@ async function buildStatus(t) {
   const modelsReady = capability.offline || capability.online;
   // 三者全真才允许向 UI 暴露 🎤 按钮（避免"装了就该能用"的误解）
   const available = depsReady && modelsReady && config.enabled;
+  // offline 引擎现在常驻 worker 线程，主线程看不到它；补上 worker 侧的真实状态
+  const loaded = getLoadedEngineInfo();
+  if (!loaded.offline) loaded.offline = getWorkerLoadedModelId();
 
   return {
     success: true,
@@ -144,7 +147,7 @@ async function buildStatus(t) {
       offline: resolved.offline ? resolved.offline.id : null,
       vad: resolved.vad ? resolved.vad.id : null,
     },
-    loaded: getLoadedEngineInfo(),
+    loaded,
     install: getAsrInstallStatus(),
     // 推荐模型下载：清单 + 任务快照（配置页一次拿到，不用额外请求）
     catalog: toPublicCatalog({ installedIds: resolved.models.map((m) => m.id) }),
@@ -341,11 +344,18 @@ export async function asrRouter(req, res, pathname, url, t, requestBody = {}) {
     }
 
     try {
-      const result = transcribeWav(buffer, {
-        offlineModel: resolved.offline,
-        vadModel: resolved.vad,
-        language: config.language,
-        idleUnloadMs: config.idleUnloadMs,
+      // offline 定稿在 worker 线程里跑：HTTP 请求等待期间主线程仍能响应探活/聊天流
+      const result = await runOfflineTask({
+        kind: 'wav',
+        buffer,
+        opts: {
+          offlineModel: resolved.offline,
+          vadModel: resolved.vad,
+          language: config.language,
+          idleUnloadMs: config.idleUnloadMs,
+        },
+        idleMs: config.idleUnloadMs,
+        modelId: resolved.offline.id,
       });
       return jsonResponse(res, 200, { success: true, text: result.text, durationMs: result.durationMs });
     } catch (err) {
@@ -366,7 +376,7 @@ export async function asrRouter(req, res, pathname, url, t, requestBody = {}) {
       return jsonResponse(res, 409, { success: false, code: 'model_missing', error: t('asr.modelMissing') });
     }
     const config = getAsrConfig();
-    const result = warmupEngines(resolved, { idleUnloadMs: config.idleUnloadMs });
+    const result = await warmupAsrEngines(resolved, { idleUnloadMs: config.idleUnloadMs });
     logSystem('asr_warmup', { warmed: result.warmed, failed: result.failed.length });
     return jsonResponse(res, 200, { success: true, ...result });
   }
