@@ -1,14 +1,18 @@
-// agent/src/directory-picker.js - 系统原生目录选择框（多后端兜底 + 完整诊断）
+// agent/src/directory-picker.js - 系统原生目录选择框（多后端兜底 + 窗口可见性探测）
 //
 // 供扩展端「切换工作目录」弹窗的「浏览…」按钮调用，仅本机代理（loopback）才有意义：
 // 工作目录本就是代理端机器上的路径，远端弹窗用户也看不到（server.js 另有来源 IP 门控）。
 //
-// Windows 企业环境里「点了没窗口」的常见成因：
-//   1) Defender ASR「Block execution of potentially obfuscated scripts」拦截 -EncodedCommand
-//   2) Constrained Language Mode / AppLocker 拦截 Add-Type 加载 .NET 程序集
-//   3) 从 Git Bash 等非原生终端启动时 PATH / 环境变量被改写，PATH 查找不到 powershell.exe
-// 因此按「内联 -Command（绝对路径）→ EncodedCommand → cscript + WSH」顺序兜底，
-// 每个后端的失败原因都记录在 attempts 里；全部失败时把摘要回传给扩展端，避免“不知道怎么回事”。
+// 实测发现：Windows 上从 CMD 启动 agent 时能弹窗，从 PowerShell / Git Bash 启动时弹不出来。
+// 这说明 powershell.exe + System.Windows.Forms 这条通道本身可用（不是企业策略拦截），
+// 问题在父进程环境/进程属性差异。为此这里的兜底必须满足两条：
+//   1) 一个后端「窗口没出现」时不能在原地等满 120s，必须快速切到下一个后端；
+//   2) 命令查找不能依赖 PATH，也不能依赖环境变量名的大小写。
+//
+// 后端按序尝试（Windows）：
+//   powershell-inline（内联 -Command）→ powershell-encoded（-EncodedCommand）→ cscript-vbs（WSH）
+// 每个后端在弹出窗口前先输出 SHOWN_MARKER：收到标记说明窗口已经走到 ShowDialog，
+// 收不到说明进程卡在更早的阶段（加载程序集/创建窗口失败），此时杀掉进程换下一个后端。
 //
 // 稳定性约束（任何一条都不允许打破，否则会拖垮常驻的 agent 进程）：
 //   - 本模块对外只 resolve 结果对象，绝不 reject / 绝不抛异常
@@ -20,10 +24,16 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-// 选择框悬挂超时：用户长时间不选视为放弃，避免子进程常驻
+// 用户不选时的最长等待
 const PICK_TIMEOUT_MS = 120 * 1000;
+// 「窗口是否真的弹出来」的判定时限：超时即认为该后端不可用，立刻换下一个
+const SHOWN_TIMEOUT_MS = 12 * 1000;
+// 整次选择的总预算：3 个后端串行时不能无限拖长（扩展端 200s 兜底在此之后）
+const PICK_TOTAL_BUDGET_MS = 180 * 1000;
 // 强杀后等待 close 的兜底时长：某些后端被杀后不触发 close，不能因此让请求挂着
 const KILL_SETTLE_MS = 2000;
+// 窗口已进入显示流程的标记（子进程 stdout 中出现即认为窗口会出现）
+const SHOWN_MARKER = '@@AI_HELPER_PICK_SHOWN@@';
 // 单个子进程输出上限（字符）
 const MAX_STREAM_CHARS = 64 * 1024;
 // 回传给扩展端的错误摘要上限（toast 能展示的长度）
@@ -44,18 +54,40 @@ function toBase64Utf8(text) {
 }
 
 /**
+ * 大小写不敏感地读环境变量
+ * Windows 环境变量名不区分大小写，但 Node 的 process.env 是普通 JS 对象（区分大小写）：
+ * 不同终端下同一个变量可能是 SystemRoot / SYSTEMROOT / systemroot，
+ * 只认一种写法会让绝对路径解析失败并静默退化到 PATH 查找（Git Bash 下 PATH 是 POSIX 形式，必然找不到）。
+ */
+export function readEnvVar(env, name) {
+  if (!env || !name) return '';
+  const direct = env[name];
+  if (typeof direct === 'string' && direct) return direct;
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === lower) {
+      const value = env[key];
+      if (typeof value === 'string' && value) return value;
+    }
+  }
+  return '';
+}
+
+/**
  * 解析 Windows 可执行文件的绝对路径
- * 优先用 %SystemRoot% 拼绝对路径，彻底摆脱 Git Bash/MSYS 对 PATH 与环境变量的改写；
- * 取不到 SystemRoot 时退回裸命令名，交由 PATH 查找。
+ * 优先用 %SystemRoot%（大小写不敏感）拼绝对路径，彻底摆脱 Git Bash/MSYS 对 PATH 的改写；
+ * 取不到时退回裸命令名，交由 PATH 查找。
  */
 function resolveWindowsExe(name, env) {
-  const root = (env && (env.SystemRoot || env.windir || env.WINDIR)) || '';
+  const root = readEnvVar(env, 'SystemRoot') || readEnvVar(env, 'windir');
   if (root) {
+    // 混用 / 与 \ 会让部分 Windows API 解析失败，统一成反斜杠
+    const normalizedRoot = String(root).replace(/\//g, '\\');
     if (name === 'powershell') {
-      return path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+      return path.win32.join(normalizedRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     }
     if (name === 'cscript') {
-      return path.win32.join(root, 'System32', 'cscript.exe');
+      return path.win32.join(normalizedRoot, 'System32', 'cscript.exe');
     }
   }
   return `${name}.exe`;
@@ -68,9 +100,9 @@ function resolveWindowsExe(name, env) {
  */
 export function resolveTmpDir(platform, env = process.env) {
   if (platform === 'win32') {
-    const local = env.LOCALAPPDATA || env.LocalAppData;
-    if (local) return path.win32.join(local, 'Temp');
-    const tmp = env.TEMP || env.TMP;
+    const local = readEnvVar(env, 'LOCALAPPDATA');
+    if (local) return path.win32.join(String(local).replace(/\//g, '\\'), 'Temp');
+    const tmp = readEnvVar(env, 'TEMP') || readEnvVar(env, 'TMP');
     // 只接受驱动器绝对路径，避开 MSYS 风格的 /tmp
     if (tmp && /^[A-Za-z]:[\\/]/.test(tmp)) return tmp;
   }
@@ -81,33 +113,34 @@ export function resolveTmpDir(platform, env = process.env) {
  * Windows PowerShell 脚本主体（共享给 -Command / -EncodedCommand 两个后端）
  * - 标题以 base64 传入并在脚本内解码：内联调用时命令行可保持纯 ASCII，避开代码页乱码
  * - 选中路径以 UTF-8 base64 写 stdout：避开中文 Windows 控制台 GBK 输出被按 UTF-8 解码的乱码
+ * - 弹出窗口前先输出 SHOWN_MARKER：让调用方能区分「窗口没出现」与「用户还没选」
+ * - owner 窗口只用于置顶，拿不到句柄时退回无 owner 调用，不能因此判定整体失败
  * - 退出码约定：0=选中 / 2=用户取消 / 1=异常（异常信息写 stderr）
  */
 function buildPowerShellScript(title) {
   const titleB64 = toBase64Utf8(sanitizeTitle(title));
   return [
-    '$ErrorActionPreference = \'Stop\'',
     `$t = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${titleB64}'))`,
-    'try {',
-    'Add-Type -AssemblyName System.Windows.Forms',
+    // 注意：各行以 ';' 拼接，块起始行必须直接跟首条语句，不能留下 `{;` 这样的空语句
+    '$ErrorActionPreference = \'Stop\'; try { Add-Type -AssemblyName System.Windows.Forms',
     '$f = New-Object System.Windows.Forms.FolderBrowserDialog',
     '$f.Description = $t',
-    '$owner = New-Object System.Windows.Forms.Form',
-    '$owner.TopMost = $true',
-    '$null = $owner.Handle',
-    'if ($f.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($f.SelectedPath))); exit 0 }',
+    // owner 只是为了让对话框置顶；某些会话下 Form 句柄创建会失败，这时必须降级而不是整体报错
+    '$owner = $null',
+    'try { $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $null = $owner.Handle } catch { $owner = $null }',
+    `[Console]::Out.Write('${SHOWN_MARKER}'); [Console]::Out.Flush()`,
+    '$r = $null',
+    'if ($null -ne $owner) { $r = $f.ShowDialog($owner) } else { $r = $f.ShowDialog() }',
+    'if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($f.SelectedPath))); exit 0 }',
     'exit 2',
-    '} catch {',
-    '[Console]::Error.Write($_.Exception.GetType().Name + \': \' + $_.Exception.Message)',
-    'exit 1',
-    '}',
+    '} catch { [Console]::Error.Write($_.Exception.GetType().Name + \': \' + $_.Exception.Message); exit 1 }',
   ].join('; ');
 }
 
 /**
  * VBScript 兜底后端：走 WSH + Shell.Application.BrowseForFolder
  * 与 PowerShell 完全不同的执行通道（不受 PowerShell 执行策略/语言模式影响），
- * 是 -Command 与 -EncodedCommand 双双被拦时的第三通路。
+ * 是 -Command 与 -EncodedCommand 双双失效时的第三通路。
  * 脚本本身保持纯 ASCII（英文标题），避免 .vbs 文件编码解析问题；
  * 选中路径写入临时文件（FSO Unicode = UTF-16LE），读回时不依赖控制台代码页。
  */
@@ -121,6 +154,7 @@ function buildVbsScript(outputFile) {
     'Set sh = CreateObject("Shell.Application")',
     'If Err.Number <> 0 Then WScript.Quit 1',
     'Err.Clear',
+    `WScript.Echo "${SHOWN_MARKER}"`,
     'Set folder = sh.BrowseForFolder(0, "Select working directory", 65, 0)',
     'If Err.Number <> 0 Then WScript.Quit 1',
     'Err.Clear',
@@ -155,7 +189,7 @@ function looksLikePath(value) {
   return /[\\/]/.test(s);
 }
 
-/** PowerShell 后端：stdout 为 UTF-8 base64 编码的路径 */
+/** PowerShell 后端：stdout 为 UTF-8 base64 编码的路径（SHOWN_MARKER 行会被自动跳过） */
 function decodePowerShellOutput(stdout) {
   const raw = String(stdout || '').trim();
   if (!raw) return '';
@@ -187,9 +221,9 @@ function readPickedFile(file) {
 
 /**
  * 构造各平台的目录选择执行计划（按顺序尝试）
- * 每个条目：{ backend, kind, command, args?, prepare? }
+ * 每个条目：{ backend, kind, command, args?, expectShown, prepare? }
+ *   - expectShown：该后端会在弹窗前输出 SHOWN_MARKER，可据此判定「窗口没出现」
  *   - prepare() 用于需要落临时文件的后端，返回 { args, decode, cleanup, meta } 或 null（准备失败）
- *   - 无 prepare 的条目直接用 args + decode
  * @param {string} title - 选择框提示文案
  * @param {string} [platform] - 平台标识（默认 process.platform，测试可注入）
  * @param {object} [options] - { env, tmpDir }
@@ -204,6 +238,7 @@ export function buildPickPlan(title, platform = process.platform, options = {}) 
     return [{
       backend: 'osascript',
       kind: 'posix',
+      expectShown: false,
       command: 'osascript',
       args: ['-e', `POSIX path of (choose folder with prompt "${safeTitle}")`],
       decode: (r) => (looksLikePath(r.stdout) ? normalizePickedPath(r.stdout) : ''),
@@ -222,6 +257,7 @@ export function buildPickPlan(title, platform = process.platform, options = {}) 
         // 同时不经过 -EncodedCommand，绕开 ASR「可疑混淆脚本」规则的拦截。
         backend: 'powershell-inline',
         kind: 'powershell',
+        expectShown: true,
         command: psExe,
         args: [...psCommon, '-Command', psScript],
         decode: (r) => decodePowerShellOutput(r.stdout),
@@ -230,14 +266,16 @@ export function buildPickPlan(title, platform = process.platform, options = {}) 
         // 后端 2：-EncodedCommand（base64 UTF-16LE），兼容极端转义场景，但可能被安全策略拦
         backend: 'powershell-encoded',
         kind: 'powershell',
+        expectShown: true,
         command: psExe,
         args: [...psCommon, '-EncodedCommand', Buffer.from(psScript, 'utf16le').toString('base64')],
         decode: (r) => decodePowerShellOutput(r.stdout),
       },
       {
-        // 后端 3：cscript + WSH。完全独立的执行通道，用来覆盖 PowerShell 被策略整体封杀的情况
+        // 后端 3：cscript + WSH。完全独立的执行通道，用来覆盖 PowerShell 通道整体不可用的情况
         backend: 'cscript-vbs',
         kind: 'vbs',
+        expectShown: true,
         command: cscriptExe,
         prepare() {
           try {
@@ -267,6 +305,7 @@ export function buildPickPlan(title, platform = process.platform, options = {}) 
     {
       backend: 'zenity',
       kind: 'posix',
+      expectShown: false,
       command: 'zenity',
       args: ['--file-selection', '--directory', `--title=${safeTitle}`],
       decode: (r) => (looksLikePath(r.stdout) ? normalizePickedPath(r.stdout) : ''),
@@ -274,6 +313,7 @@ export function buildPickPlan(title, platform = process.platform, options = {}) 
     {
       backend: 'kdialog',
       kind: 'posix',
+      expectShown: false,
       command: 'kdialog',
       args: ['--getexistingdirectory', '~', '--title', safeTitle],
       decode: (r) => (looksLikePath(r.stdout) ? normalizePickedPath(r.stdout) : ''),
@@ -302,7 +342,7 @@ function classifyPickResult(runResult, item) {
       path: null,
       available: true,
       exitCode: code ?? null,
-      error: `exit ${code === null || code === undefined ? 'unknown' : code}${errText ? `: ${errText}` : '（无 stderr，可能被安全策略拦截）'}`,
+      error: `exit ${code === null || code === undefined ? 'unknown' : code}${errText ? `: ${errText}` : '（无 stderr）'}`,
     };
   }
 
@@ -315,8 +355,13 @@ function classifyPickResult(runResult, item) {
 /**
  * 运行单个选择命令，收集 stdout/stderr
  * spawn 失败（ENOENT 等）、超时、被信号杀死等一律以结果对象返回，不抛异常
+ * @param {object} opts - { timeoutMs, shownTimeoutMs, expectShown }
+ * @returns {Promise<{code?, stdout?, stderr?, timedOut?: boolean, shown?: boolean,
+ *   noWindow?: boolean, spawnError?: boolean}>}
  */
-function runPickOnce(command, args, timeoutMs, spawnImpl) {
+function runPickOnce(command, args, opts, spawnImpl) {
+  const timeoutMs = opts.timeoutMs;
+  const shownTimeoutMs = opts.expectShown ? opts.shownTimeoutMs : 0;
   return new Promise((resolve) => {
     let child;
     try {
@@ -328,33 +373,54 @@ function runPickOnce(command, args, timeoutMs, spawnImpl) {
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let shown = !shownTimeoutMs;
     let settled = false;
     let timer = null;
+    let shownTimer = null;
+    // 强杀时预期的结论（noWindow/超时）：被杀进程通常会立刻触发 close，
+    // close 分支必须把这层结论合并进去，否则「窗口没出现」会被误当成普通退出
+    let pendingExtra = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (shownTimer) clearTimeout(shownTimer);
       resolve(result);
+    };
+    // 强杀后兜底 settle：被杀进程若始终不触发 close，也不能让 HTTP 请求挂着
+    const killAndSettle = (extra) => {
+      pendingExtra = extra;
+      try { child.kill(); } catch { /* 进程可能已退出 */ }
+      setTimeout(() => finish({ code: null, stdout, stderr, ...extra }), KILL_SETTLE_MS);
     };
     timer = setTimeout(() => {
       timedOut = true;
-      try { child.kill(); } catch { /* 进程可能已退出 */ }
-      // 兜底 settle：被杀进程若始终不触发 close，也不能让 HTTP 请求挂着
-      setTimeout(() => finish({ code: null, stdout, stderr, timedOut: true }), KILL_SETTLE_MS);
+      killAndSettle({ timedOut: true, shown });
     }, timeoutMs);
+    if (shownTimeoutMs) {
+      // 窗口迟迟不出现：立刻杀掉换下一个后端，而不是干等满 120s
+      shownTimer = setTimeout(() => {
+        if (shown) return;
+        killAndSettle({ noWindow: true, shown: false });
+      }, shownTimeoutMs);
+    }
     // 管道自身的 error（EPIPE/ECONNRESET，进程被杀或管道先行关闭时可能出现）必须监听：
     // EventEmitter 的 'error' 事件若无监听者会被抛成 uncaughtException
     child.stdout?.on?.('error', () => {});
     child.stderr?.on?.('error', () => {});
     child.stdout?.on?.('data', (chunk) => {
       if (stdout.length < MAX_STREAM_CHARS) stdout += chunk.toString();
+      if (!shown && stdout.includes(SHOWN_MARKER)) {
+        shown = true;
+        if (shownTimer) clearTimeout(shownTimer);
+      }
     });
     child.stderr?.on?.('data', (chunk) => {
       if (stderr.length < MAX_STREAM_CHARS) stderr += chunk.toString();
     });
     // spawn 失败（命令不存在等）以异步 error 事件呈现
     child.on?.('error', (err) => finish({ spawnError: true, stderr: String(err?.message || err) }));
-    child.on?.('close', (code) => finish({ code, stdout, stderr, timedOut }));
+    child.on?.('close', (code) => finish({ code, stdout, stderr, timedOut, shown, ...(pendingExtra || {}) }));
   });
 }
 
@@ -367,6 +433,23 @@ function summarizeAttempts(attempts) {
   return text.length > MAX_ERROR_CHARS ? `${text.slice(0, MAX_ERROR_CHARS)}…` : text;
 }
 
+/**
+ * 环境快照：失败时随结果返回，便于在没有 Windows 测试机的情况下定位
+ * （stdoutIsTTY 是判断「父终端是 mintty 还是 conhost」的关键信号）
+ */
+function buildEnvironmentSnapshot(platform, env, plan) {
+  const pathValue = readEnvVar(env, 'PATH') || readEnvVar(env, 'Path');
+  return {
+    platform,
+    systemRoot: readEnvVar(env, 'SystemRoot') || readEnvVar(env, 'windir') || '(unset)',
+    localAppData: readEnvVar(env, 'LOCALAPPDATA') || '(unset)',
+    pathStartsWithPosix: Boolean(pathValue) && pathValue.startsWith('/'),
+    stdoutIsTTY: Boolean(process.stdout && process.stdout.isTTY),
+    tmpDir: resolveTmpDir(platform, env),
+    commands: plan.map((p) => p.command),
+  };
+}
+
 /** 进行中的选择：同一时刻只允许一个窗口，避免连点拉起多个弹窗把 agent 拖住 */
 let inFlight = null;
 
@@ -375,21 +458,33 @@ async function doPickDirectory(title, options) {
   const env = options.env || process.env;
   const spawnImpl = options.spawnImpl || spawn;
   const timeoutMs = options.timeoutMs ?? PICK_TIMEOUT_MS;
+  const shownTimeoutMs = options.shownTimeoutMs ?? SHOWN_TIMEOUT_MS;
+  const totalBudgetMs = options.totalBudgetMs ?? PICK_TOTAL_BUDGET_MS;
+  const startedAt = Date.now();
 
   // 无图形会话的 Linux 直接降级（zenity/kdialog 起不来，只会白白报错）
   if (platform === 'linux') {
-    const hasDisplay = options.hasDisplay ?? Boolean(env.DISPLAY || env.WAYLAND_DISPLAY);
+    const hasDisplay = options.hasDisplay ?? Boolean(readEnvVar(env, 'DISPLAY') || readEnvVar(env, 'WAYLAND_DISPLAY'));
     if (!hasDisplay) {
       return { success: false, path: null, available: false, error: 'no-display', attempts: [] };
     }
   }
 
   const plan = buildPickPlan(title, platform, { env, tmpDir: options.tmpDir });
+  const environment = buildEnvironmentSnapshot(platform, env, plan);
 
   const attempts = [];
   let lastTimeout = null;
 
   for (const item of plan) {
+    // 总预算控制：串行三后端最坏情况下也不能无限拖长
+    const elapsed = Date.now() - startedAt;
+    const remaining = totalBudgetMs - elapsed;
+    if (remaining <= 1000) {
+      attempts.push({ backend: item.backend, error: 'skipped: 总预算已耗尽' });
+      continue;
+    }
+
     let prepared = null;
     try {
       prepared = item.prepare
@@ -405,20 +500,31 @@ async function doPickDirectory(title, options) {
     }
 
     try {
-      const r = await runPickOnce(item.command, prepared.args, timeoutMs, spawnImpl);
+      const r = await runPickOnce(item.command, prepared.args, {
+        // 「窗口未出现」的判定时限不能超过剩余预算
+        shownTimeoutMs: Math.min(shownTimeoutMs, remaining),
+        timeoutMs: Math.min(timeoutMs, remaining),
+        expectShown: Boolean(item.expectShown),
+      }, spawnImpl);
+
       if (r.spawnError) {
         // 该命令不可用（未安装/路径不对/无法执行），记录原因后尝试下一个后端
         attempts.push({ backend: item.backend, error: `spawn-failed: ${String(r.stderr || '').slice(0, 160)}` });
         continue;
       }
+      if (r.noWindow) {
+        // 进程活着但窗口始终没出现（加载程序集失败/会话无桌面等）：换下一个后端，不在这里干等
+        attempts.push({ backend: item.backend, error: `no-window-in-${shownTimeoutMs}ms` });
+        continue;
+      }
       if (r.timedOut) {
-        // 进程起来了却没有结果：多见于「窗口被策略挡住/不可见」或用户一直没选
+        // 能走到这里说明窗口已经进入显示流程，是用户没在时限内选完
         lastTimeout = {
           backend: item.backend,
           detail: String(r.stderr || '').trim().slice(0, 160),
         };
-        attempts.push({ backend: item.backend, error: `timeout${lastTimeout.detail ? `: ${lastTimeout.detail}` : '（窗口未在时限内返回，可能被安全策略拦截或不可见）'}` });
-        // 超时意味着窗口可能真的弹出来了，不再继续拉第二个窗口
+        attempts.push({ backend: item.backend, error: 'timeout: 窗口已显示但未在时限内返回' });
+        // 窗口已经出现，继续拉第二个窗口会让人困惑，直接结束
         break;
       }
       const result = classifyPickResult(r, { kind: item.kind, decode: prepared.decode });
@@ -445,6 +551,7 @@ async function doPickDirectory(title, options) {
       detail: lastTimeout.detail || '',
       attempts,
       diagnostics: summary,
+      environment,
     };
   }
   // 全部后端都没能弹出窗口：区分「根本没有可用工具」与「工具在但执行失败」
@@ -457,15 +564,17 @@ async function doPickDirectory(title, options) {
     error: noTool ? `no-dialog-tool: ${summary}` : `all-backends-failed: ${summary}`,
     attempts,
     diagnostics: summary,
+    environment,
   };
 }
 
 /**
  * 弹出系统原生目录选择框
  * @param {string} [title] - 选择框提示文案
- * @param {object} [options] - spawnImpl / timeoutMs / platform / env / tmpDir / hasDisplay（均为可注入，便于测试）
+ * @param {object} [options] - spawnImpl / timeoutMs / shownTimeoutMs / totalBudgetMs / platform /
+ *   env / tmpDir / hasDisplay（均可注入，便于测试）
  * @returns {Promise<{success: boolean, path: string|null, available: boolean, backend?: string,
- *   error?: string, attempts?: Array<object>, diagnostics?: string}>}
+ *   error?: string, attempts?: Array<object>, diagnostics?: string, environment?: object}>}
  *   - 选中：{ success: true, path, available: true, backend }
  *   - 用户取消：{ success: true, path: null, available: true }
  *   - 环境不支持：{ success: false, path: null, available: false, error: 'no-dialog-tool: …' | 'no-display' }
@@ -499,3 +608,6 @@ export async function pickDirectoryNative(title = '', options = {}) {
 export function isPickInFlight() {
   return Boolean(inFlight);
 }
+
+/** 测试用：窗口标记常量 */
+export const SHOWN_MARKER_FOR_TEST = SHOWN_MARKER;

@@ -317,7 +317,9 @@ export async function removeAllowedPath(path) {
 
 // 目录选择要等用户操作：agent 端最多等 120s，扩展端留出更长的窗口，
 // 避免 agent 端超时返回时扩展端早已放弃；两者都配超时，按钮不会永远停在“等待选择…”
-const PICK_DIRECTORY_CLIENT_TIMEOUT_MS = 150 * 1000;
+// 必须大于 agent 端的多后端总预算（180s：窗口未出现的快速切换 + 用户选择时长），
+// 否则扩展端会先放弃，把一次正常的选择判成超时
+export const PICK_DIRECTORY_CLIENT_TIMEOUT_MS = 200 * 1000;
 
 /**
  * 弹出 Agent 端系统原生目录选择框（仅本机代理支持，远端/无桌面环境返回 available:false）

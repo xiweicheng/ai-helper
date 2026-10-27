@@ -1026,12 +1026,16 @@ export function startServer() {
             // busy 是并发保护的正常分支（已有窗口在等），不算失败
             // 其余记录各后端真实失败原因（无桌面会话 / 被安全策略拦截 / 超时等），
             // 用户端只看得到摘要，完整 attempts 落到日志里备查
+            // environment 快照记录父进程环境特征（SystemRoot/pathStartsWithPosix/stdoutIsTTY）：
+            // 实测同一个 Windows 上 CMD 启动能弹窗、PowerShell/Git Bash 启动弹不出来，
+            // 这三项是区分各终端的直接证据
             logError('config', 'pick_directory_failed', {
               error: result.error,
               backend: result.backend || '',
               exitCode: result.exitCode,
               available: result.available,
               attempts: Array.isArray(result.attempts) ? result.attempts : [],
+              environment: result.environment || null,
               extId,
             });
           }
