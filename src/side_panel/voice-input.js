@@ -997,6 +997,21 @@ async function initShortcutKeys() {
     st.shortcutCfg = cfg;
     applyShortcutHint();
   });
+
+  // 兜底：storage 事件不应被当成唯一通道 —— 面板被隐藏、SW 刚重启等情况下
+  // 事件可能没送到，表现为「勾了要重开面板才生效」。回到面板时再与存储对一次。
+  const resyncShortcutConfig = async () => {
+    try {
+      const cfg = await loadVoiceShortcutConfig();
+      if (cfg.rightAlt === st.shortcutCfg.rightAlt && cfg.rightCtrl === st.shortcutCfg.rightCtrl) return;
+      st.shortcutCfg = cfg;
+      applyShortcutHint();
+    } catch { /* 读不到就维持现状 */ }
+  };
+  window.addEventListener('focus', () => { resyncShortcutConfig(); });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) resyncShortcutConfig();
+  });
 }
 
 // ==================== 初始化 ====================

@@ -114,6 +114,16 @@ window.addEventListener('keyup', (e) => {
 // 切窗口 / 页面失焦时可能收不到 keyup：丢掉未结算的按下状态，避免下次松开莫名开录
 window.addEventListener('blur', () => { voiceSingleKey.reset(); });
 
+// 兜底：storage 事件可能没送到（扩展刚重启、页面长期驻留），回到页面时再与存储对一次，
+// 不然会表现为「在配置页勾了，网页里要刷新才生效」。
+const resyncVoiceShortcut = () => {
+  loadVoiceShortcutConfig().then((cfg) => { voiceShortcutCfg = cfg; }).catch(() => { /* 维持现状 */ });
+};
+window.addEventListener('focus', resyncVoiceShortcut);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) resyncVoiceShortcut();
+});
+
 // ==================== 消息路由表（Map 查找，O(1)） ====================
 //
 // HANDLERS Map: message.type → handler 的键值映射

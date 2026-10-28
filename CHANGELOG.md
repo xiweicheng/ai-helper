@@ -26,6 +26,8 @@
 - **配置块不随总开关收起**：独立 `#asrShortcutSection`（不带 `disabled-section`），代理离线 / 还没装模型时也能先配好；🎤 的 `title` / `aria-label` 跟着配置列出可用键位。
 - **验证**：新增 `test/unit/voice-shortcut-single-key.unit.test.js`（24 例：配置归一化 / 左键与 AltGr 不认 / 组合作废 / repeat 不作废 / 松开时已关不触发 / 合并写入 / watch 只听 local）+ `test/unit/voice-shortcut-panel.unit.test.js`（3 例，jsdom 真事件）→ `npx vitest run` **201 文件 / 3032 例全绿**；Playwright 探针 `test-results-probes/_asr-shortcut-section.mjs` 7 项全过（勾选落盘、合并写入、总开关关闭时仍可见）；真实扩展探针 `test-results-probes/_voice-single-key-panel.mjs` 10 项全过（真实 Chromium + dist 包：配置页勾选 → 已打开面板的 tooltip 经 `chrome.storage.onChanged` 立即更新；面板页与宿主网页上右 Alt 的 keydown 被拦（= 已武装）、左 Alt 不受影响；关掉后两处都不再拦）；`npm run build:silent` → BUILD_SUCCESS，`npx eslint` 六个文件无输出。
 
+- **生效不依赖单一事件**：除了 `chrome.storage.onChanged`，侧边栏与 content script 还挂 `window.focus` / 可见性变化，回到面板或网页时再与存储对一次 —— 面板被隐藏、SW 刚重启等情况下事件可能没送到，表现就是「勾了要重开插件才生效」；新增真实扩展探针 `test-results-probes/_voice-shortcut-live-sync.mjs`，按「先开页面与面板、再回配置页勾选」的真实顺序复现，6 项全过。
+
 ### 知识库：本地向量改独立子进程（修 Windows 装完语音输入后 onnxruntime 抢句柄）
 > 来源：用户在 Windows 机器上先装知识库、后装语音输入，之后所有检索报 `检索失败: The operating system cannot run %1. ...\onnxruntime_binding.node`。用户在公司机器上手工验证过修复方向（删嵌套副本 + 子进程），要求回收到源码。
 

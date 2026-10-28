@@ -73,3 +73,38 @@ describe('侧边栏：右侧 Alt 单键触发', () => {
     expect(isVoiceRecording()).toBe(false);
   });
 });
+
+// storage 事件不是唯一通道：面板被隐藏 / SW 刚重启等情况下 onChanged 可能没送到，
+// 回到面板（focus / 可见）时要再与存储对一次 —— 用户报的就是「勾了要重开面板才生效」。
+describe('侧边栏：回到面板时重读配置（storage 事件没送达的兜底）', () => {
+  it('onChanged 丢失：focus 后新开的单键也能立即生效', async () => {
+    const cfg = { rightAlt: false, rightCtrl: false };
+    stubShortcutStorage(cfg);
+    await initVoiceInput({ adjustInputHeight: () => {} });
+
+    cfg.rightAlt = true; // 模拟配置页确实写进去了，但事件没送到面板
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 60));
+
+    press('AltRight', { altKey: true });
+    release('AltRight', { altKey: true });
+
+    expect(await waitFor(() => isVoiceRecording())).toBe(true);
+  });
+
+  it('onChanged 丢失：focus 后取消勾选也立即失效', async () => {
+    const cfg = { rightAlt: true, rightCtrl: false };
+    stubShortcutStorage(cfg);
+    await initVoiceInput({ adjustInputHeight: () => {} });
+
+    cfg.rightAlt = false;
+    window.dispatchEvent(new Event('focus'));
+    await new Promise((r) => setTimeout(r, 60));
+
+    press('AltRight', { altKey: true });
+    release('AltRight', { altKey: true });
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(isVoiceRecording()).toBe(false);
+  });
+});
