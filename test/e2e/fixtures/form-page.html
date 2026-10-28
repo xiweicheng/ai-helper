@@ -20,7 +20,9 @@
     <label><input type="radio" name="plan" value="pro" id="plan-pro"> Pro</label><br>
     <div id="editor" contenteditable="true"></div><br>
     <button id="submit-btn" type="button" onclick="document.getElementById('status').textContent='submitted'">Submit</button>
-    <button id="cancel-btn">Cancel</button>
+    <!-- type="button" 必须显式：在 form 内缺省是 submit，点击会提交表单导致页面导航，
+         让 clickByText 的 page.evaluate 拿到「执行上下文已销毁」而假失败 -->
+    <button id="cancel-btn" type="button">Cancel</button>
     <div id="status"></div>
   </form>
   <a href="http://example.com/help">Help Link</a>

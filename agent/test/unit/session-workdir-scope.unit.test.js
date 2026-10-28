@@ -114,6 +114,30 @@ describe('checkPath - realpath 复查（符号链接不能借会话目录跳出�
     assert.equal(r.allowed, false, '链接指向硬阻止文件，必须拒绝');
   });
 
+  test('会话目录内的符号链接下「尚不存在的文件」也不能写穿', async () => {
+    // 已实测的逃逸路径：link 指向会话外，link/new.txt 自身不存在 → realpath 抛 ENOENT。
+    // 旧实现把 ENOENT 当「无法通过链接绕过」直接放行，写入却会跟随链接落到会话外。
+    const link = join(SESSION_A, 'escape-new');
+    try {
+      symlinkSync(SESSION_B, link, 'dir');
+    } catch {
+      return;
+    }
+    const r = await security.checkPath(join(link, 'created.txt'), null, { workdir: SESSION_A });
+    assert.equal(r.allowed, false, '链接下不存在的新文件同样必须拒绝');
+  });
+
+  test('符号链接指向会话内的新文件仍放行（不误伤正常新建）', async () => {
+    const link = join(SESSION_A, 'inner-link');
+    try {
+      symlinkSync(SESSION_A, link, 'dir');
+    } catch {
+      return;
+    }
+    const r = await security.checkPath(join(link, 'brand-new.txt'), null, { workdir: SESSION_A });
+    assert.equal(r.allowed, true, '真实路径仍在会话目录内，应放行');
+  });
+
   test('会话目录内的普通文件仍然放行（不误伤）', async () => {
     const r = await security.checkPath(join(SESSION_A, 'a.txt'), null, { workdir: SESSION_A });
     assert.equal(r.allowed, true);

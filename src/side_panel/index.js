@@ -4067,6 +4067,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 刷新工具栏工具配置按钮上的已启用数量数字
     updateToolsToggleState();
+    // chip 的显隐依赖 enabledTools（未启用 agent_exec 时整块隐藏），
+    // 而这里比 updateAgentIndicator 晚一步：不补刷的话，首次打开面板
+    // 目录 chip 要等到下一次会话/代理事件才出现（实测就是这么丢的）
+    updateWorkdirTag();
 
     refreshSelectionInterval();
   });

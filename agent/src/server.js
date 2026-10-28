@@ -1084,6 +1084,15 @@ export function startServer() {
           return jsonResponse(res, 403, { success: false, error: t('error.workdirIsSystemDir') });
         }
 
+        // 目标已存在但不是目录（选到了文件）：后面 mkdir 会抛 EEXIST 变成 500，
+        // 用户只能看到一句“切换失败”，分不清是权限还是选错了路径
+        try {
+          if (!statSync(resolvedWorkdir).isDirectory()) {
+            logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: t('error.workdirNotDirectory') });
+            return jsonResponse(res, 400, { success: false, error: t('error.workdirNotDirectory') });
+          }
+        } catch { /* 不存在：按“待创建目录”继续 */ }
+
         if (targetSessionId) {
           try {
             await mkdir(resolvedWorkdir, { recursive: true });
@@ -1903,14 +1912,19 @@ export function startServer() {
         const cwdCheck = await resolveExecCwd(cwd, scope, t);
         if (!cwdCheck.allowed) {
           logSecurity('exec_cwd_blocked', { command, cwd: cwdCheck.cwd, reason: cwdCheck.reason, sessionId: scope.sessionId });
+          // 会话目录被删/被改名的常见情形：只说「越界」用户会去查权限配置，
+          // 这里先区分出来，提示重新选择目录
+          const scopeDirMissing = !!scope.workdir && !existsSync(scope.workdir);
           // hint 带上本会话有效目录：模型拿到 403 后能自我纠正，而不是反复猜旧路径
           return jsonResponse(res, 403, {
             success: false,
             // 模型显式给了 cwd 却被拒：用「不在本会话目录内」的措辞，比笼统的校验失败更好自我纠正
-            error: cwd
-              ? t('error.workdirNotInSessionScope', { workdir: scope.workdir })
-              : t('error.execDirCheckFailed', { reason: cwdCheck.reason }),
-            reason: cwdCheck.reason,
+            error: scopeDirMissing
+              ? t('error.sessionWorkdirMissing', { workdir: scope.workdir })
+              : (cwd
+                ? t('error.workdirNotInSessionScope', { workdir: scope.workdir })
+                : t('error.execDirCheckFailed', { reason: cwdCheck.reason })),
+            reason: scopeDirMissing ? 'session_workdir_missing' : cwdCheck.reason,
             hint: cwdCheck.hint,
           });
         }

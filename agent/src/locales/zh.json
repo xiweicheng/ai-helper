@@ -12,6 +12,8 @@
     "workdirNotInSessionScope": "路径不在本会话的工作目录内（{workdir}）",
     "workdirNotAbsolute": "workdir 必须是绝对路径",
     "workdirIsSystemDir": "不能将 Agent 系统目录设为工作目录",
+    "workdirNotDirectory": "目标路径已存在但不是目录",
+    "sessionWorkdirMissing": "本会话的工作目录不存在或已被删除（{workdir}），请重新选择目录",
     "pathNotAbsolute": "path 必须是绝对路径",
     "cannotRemoveWorkdir": "不能移除当前工作目录，请先切换到其它目录",
     "pathNotInAllowedList": "该目录不在允许列表中",

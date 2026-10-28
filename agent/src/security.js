@@ -1,5 +1,5 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
-import { resolve, normalize, sep, isAbsolute, join, dirname } from 'path';
+import { resolve, normalize, sep, isAbsolute, join, dirname, basename } from 'path';
 import { realpath } from 'fs/promises';
 import { homedir, platform } from 'os';
 import { loadConfig, MEMORY_DIR } from './config.js';
@@ -102,6 +102,34 @@ function isHardBlocked(normalizedPath, platformOverride) {
 }
 
 /**
+ * 解析真实路径；尾部尚不存在时用「最近存在的祖先」的 realpath 拼接剩余段。
+ *
+ * 为什么不能遇到 ENOENT 就直接放行：会话目录里可以存在指向沙箱外的符号链接
+ * （`link -> /outside`），此时 `link/new.txt` 自身不存在会让 realpath 抛 ENOENT，
+ * 但写入会跟随链接落到沙箱外——「路径不存在」≠「没有符号链接逃逸」。
+ * 因此必须把存在的祖先解析出来，拼上不存在的尾段后再做前缀判定。
+ *
+ * @param {string} target 已 resolve 的绝对路径
+ * @returns {Promise<string|null>} 归一后的真实路径；连根都解析不到时返回 null
+ */
+async function realpathLoose(target) {
+  let existing = target;
+  const tail = [];
+  while (true) {
+    try {
+      const real = await realpath(existing);
+      return tail.length ? join(real, ...tail.reverse()) : real;
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+      const parent = dirname(existing);
+      if (parent === existing) return null;
+      tail.push(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/**
  * 检查路径是否在白名单内
  * 使用 realpath 防止符号链接绕过
  * @param {string} pathStr - 待检查的路径
@@ -160,38 +188,49 @@ async function checkPath(pathStr, tFn, ctx = {}) {
         // realpath 复查：符号链接不能借会话目录跳出沙箱
         // 1) 命中硬阻止项一律拒绝（workdir 内链接指向代理系统文件）
         // 2) 真实路径必须仍在有效目录 / allowedPaths / 记忆目录内，否则视为越界
-        try {
-          const realPath = await realpath(resolved);
-          if (isHardBlocked(realPath)) {
-            return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
-          }
-          const sameOrInside = (child, root) => {
-            const prefix = root.endsWith(sep) ? root : root + sep;
-            return child === root || child.startsWith(prefix);
-          };
-          // 基准自身也可能挂在符号链接路径上（macOS 的 /var → /private/var），
-          // 只比较原始字符串会把正常文件误判成越界，因此两边都做一次 realpath 归一
+        const sameOrInside = (child, root) => {
+          const prefix = root.endsWith(sep) ? root : root + sep;
+          return child === root || child.startsWith(prefix);
+        };
+        /**
+         * 真实路径是否仍在允许面内（有效目录 / allowedPaths / 记忆目录）
+         * 基准自身也可能挂在符号链接路径上（macOS 的 /var → /private/var），
+         * 只比较原始字符串会把正常文件误判成越界，因此两边都做一次 realpath 归一
+         * @param {string} realPath
+         * @returns {Promise<boolean>}
+         */
+        const insideAllowed = async (realPath) => {
           const realWorkdir = await realpath(workdirResolved).catch(() => workdirResolved);
-          let inside = sameOrInside(realPath, realWorkdir) || sameOrInside(realPath, workdirResolved);
-          if (!inside) {
-            for (const allowed of (config.allowedPaths || [])) {
-              const allowedResolved = resolve(normalizePathFormat(allowed));
-              const realAllowed = await realpath(allowedResolved).catch(() => allowedResolved);
-              if (sameOrInside(realPath, realAllowed) || sameOrInside(realPath, allowedResolved)) {
-                inside = true;
-                break;
-              }
-            }
+          if (sameOrInside(realPath, realWorkdir) || sameOrInside(realPath, workdirResolved)) return true;
+          for (const allowed of (config.allowedPaths || [])) {
+            const allowedResolved = resolve(normalizePathFormat(allowed));
+            const realAllowed = await realpath(allowedResolved).catch(() => allowedResolved);
+            if (sameOrInside(realPath, realAllowed) || sameOrInside(realPath, allowedResolved)) return true;
           }
-          if (!inside && sameOrInside(realPath, normalize(MEMORY_DIR))) inside = true;
-          if (!inside) {
-            return { allowed: false, reason: tr('security.pathOutOfRange', undefined, tFn) };
-          }
+          return sameOrInside(realPath, normalize(MEMORY_DIR));
+        };
+
+        let realPath;
+        try {
+          realPath = await realpath(resolved);
         } catch (err) {
           if (err.code !== 'ENOENT') {
             return { allowed: false, reason: tr('security.cannotResolvePath', { message: err.message }, tFn) };
           }
-          // ENOENT：路径尚不存在（如待创建的文件），无法通过符号链接绕过，放行
+          // 路径尚不存在（如待创建的文件）：不能直接放行。
+          // 会话目录里可以有指向沙箱外的符号链接，`link/new.txt` 本身不存在但写入会跟随链接，
+          // 因此仍要拿「最近存在的祖先」的真实路径复查（见 realpathLoose）。
+          realPath = await realpathLoose(resolved);
+          if (!realPath) {
+            return { allowed: false, reason: tr('security.pathCheckError', { message: 'realpath unavailable' }, tFn) };
+          }
+        }
+
+        if (isHardBlocked(realPath)) {
+          return { allowed: false, reason: tr('security.forbiddenAgentFile', undefined, tFn) };
+        }
+        if (!(await insideAllowed(realPath))) {
+          return { allowed: false, reason: tr('security.pathOutOfRange', undefined, tFn) };
         }
         return { allowed: true, resolved: normalized };
       }
@@ -218,29 +257,18 @@ async function checkPath(pathStr, tFn, ctx = {}) {
     try {
       realPath = await realpath(resolved);
     } catch (err) {
-      if (err.code === 'ENOENT') {
-        let existing = resolved;
-        while (true) {
-          const parent = dirname(existing);
-          if (parent === existing) {
-            break;
-          }
-          try {
-            realPath = await realpath(parent) + sep + normalized.slice(resolve(parent).length).replace(/^[/\\]/, '');
-            break;
-          } catch (parentErr) {
-            if (parentErr.code === 'ENOENT') {
-              existing = parent;
-              continue;
-            }
-            return { allowed: false, reason: tr('security.cannotResolvePath', { message: parentErr.message }, tFn) };
-          }
-        }
-        if (!realPath) {
-          return { allowed: false, reason: tr('security.pathCheckError', { message: err.message }, tFn) };
-        }
-      } else {
+      if (err.code !== 'ENOENT') {
         return { allowed: false, reason: tr('security.cannotResolvePath', { message: err.message }, tFn) };
+      }
+      // 尾部尚不存在：用最近存在的祖先 realpath 拼尾段后再判前缀，
+      // 否则「链接目录 + 新文件名」会绕过符号链接检查
+      try {
+        realPath = await realpathLoose(resolved);
+      } catch (parentErr) {
+        return { allowed: false, reason: tr('security.cannotResolvePath', { message: parentErr.message }, tFn) };
+      }
+      if (!realPath) {
+        return { allowed: false, reason: tr('security.pathCheckError', { message: err.message }, tFn) };
       }
     }
 

@@ -4,6 +4,16 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：模拟用户实测收口（5 处真实缺陷）
+> 来源：用户要求「代码测试、端到端测试、模拟用户的测试都试一试，发现问题就修掉并直接推远端」。前四层（单测/冒烟/Playwright/真实 HTTP 边缘矩阵）之外补了**真实 MV3 扩展 + 真实代理进程**的整套用户链路，缺陷是这一层跑出来的。
+
+- **符号链接下新文件写穿沙箱**（安全）：`checkPath` 的 realpath 复查遇到 `ENOENT` 直接放行，理由是「路径尚不存在，无法通过链接绕过」。但会话目录里可以有 `link -> /outside`，`link/new.txt` 自身不存在 → `realpath` 抛 ENOENT → 放行 → 写入跟随链接落到沙箱外。新增 `realpathLoose()`（最近存在祖先的 realpath + 拼尾段）后再做前缀判定，并把「硬阻止 + 允许面」复查统一收拢成 `insideAllowed()` 供两处复用。
+- **绑定到已存在的文件返回 500**：`/api/config/workdir` 对目标只判「在不在允许面内」，选到文件时后续 `mkdir` 抛 `EEXIST` → 500「切换失败」，用户分不清是权限还是选错了路径。改为 `statSync().isDirectory()` 预检，返回 400 + `error.workdirNotDirectory`。
+- **会话目录被删后 exec 文案误导**：会话绑定的目录被删/改名后，`/api/exec` 一律回「路径不在本会话目录内」，用户去查权限配置也查不出所以然。现在先判作用域目录是否存在，缺失时回 `error.sessionWorkdirMissing` + `reason: 'session_workdir_missing'`，直接提示重新选择目录。
+- **面板目录 chip 首次加载永不出现**（功能可用性）：`updateWorkdirTag()` 只在 DOMContentLoaded、`updateAgentIndicator`、`session-workdir-changed`、`agent-model-changed` 时触发，而 `state.enabledTools` 是更晚的异步回调才填充；填充完成没有任何补刷 → 首次打开面板 chip 一直隐藏，要等下一次会话/代理事件才出现。在工具状态加载回调末尾补一次 `updateWorkdirTag()`。
+- **Playwright 夹具点「取消」导致假失败**：`form-page.html` 的 `#cancel-btn` 缺 `type="button"`，在 form 内缺省即 `submit`，点击触发页面导航，`clickByText` 的 `page.evaluate` 拿到「执行上下文已销毁」。补 `type="button"`。
+- **验证**：真实扩展链路探针 **25 项全过**（真实配对 → 新会话 → chip（默认）→ 弹窗切目录 → 请求带 `X-AIH-Session-Id` + `scope=session` → 注册表落盘 → 全局 `config`/`allowedPaths` 未污染 → chip 变（本会话）→ 该会话 `exec` pwd 落绑定目录、未绑定会话仍落默认目录 → 恢复默认后 chip 回落）；代理端 `node --test` → **776 例全绿**（新增符号链接逃逸 2 例）；扩展端 `npx vitest run` → **197 文件 / 2992 例全绿**；Playwright → **67 例全过**；真 HTTP 冒烟 → **44 项全过**；`npx eslint src/ agent/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：多会话权限审计 + 目录边界与调用链修正
 > 来源：多会话并行后，代理端所有路径判定必须拿到「本会话」的目录上下文，否则会把合法操作误判成越界。用户要求「好好处理权限判断，别到时候出现问题」。
 
