@@ -4,6 +4,14 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：目录 chip 补齐「新建会话」这条切换路径
+> 来源：用户反馈「面板现在是联动了，但输入框下方的目录 chip 又不动了」。
+
+- **根因（事件契约不对称）**：chip 只监听 `session-workdir-changed`（`switchToSession` 派发），而 `newSession()`（点 + 新建）、`reloadAfterDelete()`（删完自动补一个空会话）、首次打开的自动建会话都只派发 `session-switched`。上一版让面板也监听 `session-switched` 之后，面板跟上了、chip 掉队，差异才暴露出来；点 tab 切会话因为走 `switchToSession` 一直是好的。
+- **修法（在 chip 这一侧收口，不新增事件）**：`initWorkdirTag()` 增加 `session-switched` 监听，与既有的 `session-workdir-changed` / `agent-model-changed` 一起都只调 `updateWorkdirTag()`。这样任何「活跃会话变了」的路径（现有与将来新增的）都能刷新，不需要每个建会话的地方各派一次 workdir 事件。
+- **并发刷新取最后一次**：两个事件会连着来，而 `updateWorkdirTag()` 是异步的（`resolveWorkdirForSession` + 与代理权威值比对），先发的旧会话结果可能后落地并覆盖新会话。新增模块级 `workdirTagToken`，每次刷新自增，两处 `await` 之后判一次陈旧即返回；陈旧判定排在写文案/标题之前。
+- **验证**：新增 `test/unit/workdir-tag-session-sync.unit.test.js`（10 例源码守卫：三条监听都在、token 在模块级、陈旧判定不少于两处且早于写 UI、取值仍只走 `resolveWorkdirForSession`、`newSession`/`reloadAfterDelete` 必须派发 `session-switched`）；真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 补 4 项（切到未绑定新会话后 chip 回到默认目录且 title 标注「（默认）」、切回绑定会话后 chip 复现绑定目录）→ **49 项全过**；回归 `npx vitest run` **203 文件 / 3058 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：切会话时文件面板跟着换目录（+ 顺带清掉上个会话的预览）
 > 来源：用户实测反馈「切会话后，输入框下方的目录 chip 变了，但侧边栏靠边的文件面板没跟着变，展示的仍是最近一次会话设置的目录」。
 

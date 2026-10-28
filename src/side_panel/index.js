@@ -582,7 +582,12 @@ function updateCurrentModelTag() {
 // 代理切换导致绑定失效只需提示一次：按「会话 + 代理」记账，避免每次刷新都弹
 const workdirAgentSwitchNotified = new Set();
 
+// 会话切换会同时触发 session-workdir-changed + session-switched，刷新是异步的：
+// 用递增 token 丢弃陈旧结果，避免先发的旧会话解析结果覆盖后发的新会话
+let workdirTagToken = 0;
+
 async function updateWorkdirTag() {
+  const token = ++workdirTagToken;
   const el = document.getElementById('workdirTag');
   const nameEl = document.getElementById('workdirTagName');
   if (!el || !nameEl) return;
@@ -599,6 +604,7 @@ async function updateWorkdirTag() {
   } catch (err) {
     logger.debug('[WorkdirTag] resolve failed:', err && err.message);
   }
+  if (token !== workdirTagToken) return;
   const workdir = (resolved && resolved.workdir) || '';
   if (!workdir) {
     el.style.display = 'none';
@@ -617,6 +623,7 @@ async function updateWorkdirTag() {
   } catch {
     el.dataset.invalid = 'false';
   }
+  if (token !== workdirTagToken) return;
   const scopeSuffix = resolved.scope === 'session'
     ? t('workdirTag.sessionScope')
     : t('workdirTag.defaultScope');
@@ -649,6 +656,9 @@ function initWorkdirTag() {
   }
   updateWorkdirTag();
   // 会话切换 / 本会话目录切换 / 代理切换 / 平台信息刷新都走这几条事件
+  // 注意：新建会话(newSession)、删除后重建只派发 session-switched，没有 session-workdir-changed，
+  // 只监听后者会让 chip 停在上一个会话的目录（面板修好后这里就露馅了）
+  document.addEventListener('session-switched', () => { updateWorkdirTag(); });
   document.addEventListener('session-workdir-changed', () => { updateWorkdirTag(); });
   document.addEventListener('agent-model-changed', () => { updateWorkdirTag(); });
 }
