@@ -4,6 +4,36 @@
 
 ## 2026-10-29
 
+### 会话归档区 + 执行中会话左侧停靠条
+
+> 来源：用户提出两件事——①「会话开太多会产生干扰，有些我觉得不会再问答了，可又不敢删，万一还用得上」→ 要能把会话移入归档区、随时调回、也能彻底删除；②「执行中的任务夹杂在很多会话中间，要选来选去很麻烦」→ 想在左侧边缘给正在跑的会话一个小图标，悬停看标题、点击进入，跑完给个完成提示。
+
+**归档（可逆移出视野，不是删数据）**
+- 数据层落 `session.archivedAt`（`session-store.js` 新增 `archiveSession` / `unarchiveSession` / `listArchivedSessions` / `nextSessionOrder`），消息、目录绑定、ReAct checkpoint 全部原样保留；`loadSessions()` 默认过滤归档会话，`{ includeArchived: true }` 才拿全量。
+- 三处「用户能翻到会话」的入口统一隐藏：标签栏（走 `loadSessions`）、「全部会话」下拉、全局消息搜索（`db.searchActiveSessionsMessages` 与 `search-panel` 的 `visibleSessions` 都过滤）。
+- 入口只有一个且不占常驻空间：「全部会话」面板底部 `归档区 (N)` → 全屏归档面板（层级 10004，高于会话列表）。面板内按归档时间分组、可搜索、点行=恢复并进入、右侧 hover 出「恢复 / 彻底删除」，底部一句「归档只是移出视野，随时可以恢复」。
+- 三个归档入口（列表行按钮、标签右键菜单、归档面板）都走同一个 `archiveSessionFlow`；**执行中 / 有排队任务时拒绝归档**并说明原因（`isSessionArchivable`），避免把正在写结果的会话藏起来。
+- 归档掉当前会话后自动切到最近更新的会话（一个不剩就新建），否则用户会停在一个标签栏里看不见的会话上；`switchToSession` 另加一道兜底——切到归档会话先自动解档（收藏、旧入口、定时任务都可能直达）。
+- 彻底删除复用普通删除的清理路径（队列条目 / 附件 / 完成标记 / checkpoint），并二次确认文案明说「消息与执行记录都无法恢复」。
+- **与旧的 `archiveCurrentSession()` 划清边界**：「清空当前对话」写的是独立 `archivedSessions` 表（上限 20、仅 RAG 检索可见、随后删会话），和本次「归档区」不是同一件事；两处都加了辨析注释，防止后续维护把两条通道搞混。
+
+**停靠条（`src/side_panel/session-dock.js`，新模块）**
+- 不新建运行状态，只消费既有信号：后台 `QUERY_SESSION_RUNNING` 回执（权威）+ `state.generatingSessionIds` / `pendingCallApiSessionIds`（面板跨会话派发记账）+ `state.completedSessionIds`（完成待查看，已持久化）+ `queue-store`（排队条数）+ `EXECUTION_STATUS_UPDATE`（当前节点/子任务进度）+ `SCHEDULED_TASK_RUN_STATE`（定时任务来源）。
+- 三态芯片（26px 圆）：**执行中**品牌色 + 呼吸光环 + 外圈旋转弧，tooltip 显示「正在执行：Write · 子任务 2/3」；**排队中**琥珀色 + 条数徽标；**完成**绿色 ✓ + 一次性弹出脉冲 + `HH:mm` 完成时间。
+- 完成态不自动消失（自动消失等于把提示价值丢掉）：点进会话由 `session-switched` 自动移除；也可悬停点 `×` —— 只对完成态给 `×`，执行态给 `×` 会被误读成「取消任务」。`×` 结果持久化到 `chrome.storage.local[sessionDockDismissed]`，该会话下次开跑自动解除。
+- 当前位置：贴左缘、从聊天区顶部向下堆叠（左侧垂直中心已被消息跳转热区 `.chat-nav-hotzone` 占住，停在那里会互相遮挡）；出现时给 `.chat-container` 留 34px 左侧走廊，让排版让位而不是把芯片透明叠在正文上；层级 10002，会话面板一开就整条被盖住。
+- 面板不可见时暂停校准（`document.hidden` 跳过），切回立即补一次；`EXECUTION_STATUS_UPDATE` 一轮能来几十条，渲染 250ms 去抖。
+- **定时任务配套**：`scheduler.resolveHostSession` 把归档会话视为不可用并重建专属会话（否则执行结果写进用户看不见的会话）；`SCHEDULED_TASK_RUN_STATE` 补发 `sessionId`（原先只有 `taskId`，入口图标能转但停靠条无从按会话归位）。
+
+**可访问性与动效**
+- 芯片是 `<button>`（可 Tab、可 Enter），`aria-label` 带标题与状态；`×` 有独立 `aria-label` 且 `:focus-within` 也显示；三态颜色对软底均取 `-700` / `-strong` 档过 4.5:1（`--brand-500` 在 `--brand-soft-bg` 上只有约 3.6:1）。
+- `prefers-reduced-motion: reduce` 下呼吸、旋转弧、完成脉冲全部关闭。
+
+**验证**
+- 新增 `test/unit/session-archive.unit.test.js`（20 例：内存版 IDB 验 `loadSessions` 默认过滤 / 归档保留消息与 order / 幂等 / 恢复落位末尾 / 归档列表倒序 / 归档再恢复回到列表；另含执行中拒归档、切归档自动解档、搜索过滤、三入口接线、二次确认、定时任务自愈等源码守卫）与 `test/unit/session-dock.unit.test.js`（20 例：`buildDockEntries` 的当前会话排除、优先级、排队、`×` 只对完成态生效、来源标记、排序、Set/数组入参，以及面板初始化与样式接线）。
+- 视觉探针 `test-results-probes/_session-archive-dock-ui.mjs`：用真实 `theme.css` / `styles.css` 渲染真实 DOM 结构，断言浏览器算出来的值（芯片 26×26、三态动画名、等距堆叠不重叠、`×` 悬停才显、tooltip 不挡点击、34px 走廊、z 序 停靠条 < 会话列表 < 归档区、归档面板全屏、悬停归档行才出操作按钮、无页面异常）→ 亮色 / 暗色各 **25 项全过 / EXT_UI_PASS**。
+- 回归：`npx vitest run` **209 文件 / 3161 例**全过、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 语音输入：可自选输入设备（麦克风）
 
 > 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。

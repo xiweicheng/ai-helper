@@ -403,10 +403,12 @@ async function searchCurrentSession(query, content, count) {
 async function searchAllSessions(query, content, count) {
   const currentSessionId = state.activeSessionId;
   const allSessions = await getAllSessions();
+  // 归档会话不在搜索结果里出现（它们只在归档区可见，与 loadSessions 的默认过滤对齐）
+  const visibleSessions = (allSessions || []).filter((s) => !s.archivedAt);
   
   if (cancelSearch) return;
 
-  if (!allSessions || allSessions.length === 0) {
+  if (!visibleSessions || visibleSessions.length === 0) {
     content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noSessionData')}</div>`;
     return;
   }
@@ -435,8 +437,8 @@ async function searchAllSessions(query, content, count) {
     renderSearchResults(searchResults, query, content, true);
   }
 
-  // 逐个搜索其他会话
-  const otherSessions = allSessions.filter(s => s.id !== currentSessionId);
+  // 逐个搜索其他会话（归档会话已被 visibleSessions 过滤掉）
+  const otherSessions = visibleSessions.filter(s => s.id !== currentSessionId);
 
   for (const session of otherSessions) {
     if (cancelSearch) return;
