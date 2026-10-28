@@ -8,6 +8,7 @@
     "missingPath": "缺少 path 参数",
     "missingWorkdir": "缺少 workdir 参数",
     "invalidSessionId": "会话标识格式无效",
+    "invalidScope": "scope 只能是 session 或 global",
     "workdirNotInSessionScope": "路径不在本会话的工作目录内（{workdir}）",
     "workdirNotAbsolute": "workdir 必须是绝对路径",
     "workdirIsSystemDir": "不能将 Agent 系统目录设为工作目录",

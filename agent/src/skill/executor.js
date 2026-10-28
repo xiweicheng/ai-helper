@@ -64,8 +64,12 @@ function cleanupActiveExecutions() {
 /**
  * 内部工具调用函数
  * 每个 Skill 步骤都是一个 Agent 工具调用
+ * @param {string} toolName
+ * @param {object} args
+ * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文
+ *   会话绑定不写 allowedPaths，不传 ctx 会把该会话目录里的文件一律判成越界（误拦截）
  */
-async function executeToolCall(toolName, args) {
+async function executeToolCall(toolName, args, ctx = {}) {
   // 映射 Skill 步骤中的 tool 到实际 Agent API
   try {
     switch (toolName) {
@@ -83,7 +87,7 @@ async function executeToolCall(toolName, args) {
           toolName === 'agent_download_file' ? 'download' :
           (args.content ? 'write' : 'read')
         );
-        const check = await checkPath(args.path);
+        const check = await checkPath(args.path, undefined, ctx);
         if (!check.allowed) return { success: false, error: check.reason };
         switch (action) {
           case 'read': {
@@ -124,9 +128,15 @@ async function executeToolCall(toolName, args) {
         if (cmdCheck.level === 'confirm') {
           return { success: false, error: tr('skill.commandNeedsConfirm', { reason: cmdCheck.reason }) };
         }
+        // cwd 必须过同一套沙箱：Skill 是用户自定义内容，args.cwd 不可信；
+        // 未指定时用本会话有效目录（无会话头时回落代理默认），不能用 process.cwd()
+        const cwdCheck = await checkPath(args.cwd || '.', undefined, ctx);
+        if (!cwdCheck.allowed) {
+          return { success: false, error: cwdCheck.reason };
+        }
         // 走统一命令执行器（支持 Git Bash 等环境下 Bash 花括号扩展等特性）
         const { executeCommandSync } = await import('../executor.js');
-        const result = await executeCommandSync(args.command, args.cwd || process.cwd());
+        const result = await executeCommandSync(args.command, cwdCheck.resolved);
         const stdout = result.stdout || '';
         const stderr = result.stderr || '';
         if (result.error) {
@@ -153,14 +163,18 @@ async function executeToolCall(toolName, args) {
             args.caseSensitive || false,
             args.recursive !== false,
             Math.min(args.maxResults || 100, 5000),
-            args.contextLines || 2
+            args.contextLines || 2,
+            tr,
+            ctx
           );
         }
         return await searchFiles(
           args.path || '.',
           args.pattern || '*',
           args.recursive !== false,
-          Math.min(args.maxResults || 200, 5000)
+          Math.min(args.maxResults || 200, 5000),
+          tr,
+          ctx
         );
       }
 
@@ -208,8 +222,9 @@ function buildStepDag(steps) {
  * @param {Object} params - 用户传入的参数
  * @param {string} execId - 执行 ID
  * @param {Function} onStepUpdate - 步骤状态回调
+ * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文
  */
-async function executeSkillSteps(skill, params, execId, onStepUpdate) {
+async function executeSkillSteps(skill, params, execId, onStepUpdate, ctx = {}) {
   const { graph, inDegree } = buildStepDag(skill.steps);
   const stepResults = {};
   const completed = new Set();
@@ -262,7 +277,7 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
         }
 
         // 执行工具调用
-        const result = await executeToolCall(step.tool, renderedParams);
+        const result = await executeToolCall(step.tool, renderedParams, ctx);
 
         // 存储结果到变量上下文
         stepResults[step.id] = result;
@@ -312,9 +327,10 @@ async function executeSkillSteps(skill, params, execId, onStepUpdate) {
  * @param {Object} skill - Skill 定义（从 registry 获取）
  * @param {Object} params - 用户传入的参数
  * @param {Function} [onStepUpdate] - 步骤状态回调 (stepId, status, message)
+ * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文
  * @returns {Promise<{success: boolean, execId: string, results: Object}>}
  */
-export async function executeSkill(skill, params = {}, onStepUpdate) {
+export async function executeSkill(skill, params = {}, onStepUpdate, ctx = {}) {
   const execId = `skill_${++execIdCounter}`;
 
   // 参数校验
@@ -360,7 +376,7 @@ export async function executeSkill(skill, params = {}, onStepUpdate) {
   try {
     // 带超时的执行
     const results = await Promise.race([
-      executeSkillSteps(skill, params, execId, notify),
+      executeSkillSteps(skill, params, execId, notify, ctx),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error(tr('skill.skillExecTimeout'))), EXECUTION_TIMEOUT)
       )

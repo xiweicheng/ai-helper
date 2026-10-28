@@ -244,15 +244,116 @@ try {
   check('unbind 后 status/detail 回落 default 且 sessionWorkdir 为空',
     statusAfterUnbind.body.scope === 'default' && !statusAfterUnbind.body.sessionWorkdir);
 
-  // ── 8) 非法 sessionId 不污染注册表 ──
+  // ── 8) 工作目录目标边界：Agent 根目录拒、其下子目录放行 ──
+  //  用户实测反馈：切回默认目录（Agent 下的 workspace）曾被误判为系统目录而 403
+  const setDefaultAgain = await json(await api('/api/config/workdir', { body: { workdir: GLOBAL_WORKDIR } }));
+  check('全局切换到 Agent 子目录（即默认 workspace）不被拦',
+    setDefaultAgain.status === 200 && setDefaultAgain.body.success === true,
+    `status=${setDefaultAgain.status}, error=${setDefaultAgain.body.error || ''}`);
+
+  const setAgentRoot = await json(await api('/api/config/workdir', { body: { workdir: agentDir } }));
+  check('全局切换到 Agent 根目录本身仍被 403',
+    setAgentRoot.status === 403, `status=${setAgentRoot.status}`);
+
+  // 判据与 checkPath 同源：绑定后必然全被拦的敏感子目录，设置时就该拒
+  for (const name of ['logs', '.trash']) {
+    const blocked = await json(await api('/api/config/workdir', { body: { workdir: join(agentDir, name) } }));
+    check(`全局切换到硬阻止子目录 ${name} 被 403`,
+      blocked.status === 403, `status=${blocked.status}`);
+  }
+
+  const bindSubdir = await bind(SESSION_A, GLOBAL_WORKDIR);
+  check('会话级绑定同样允许 Agent 子目录',
+    bindSubdir.status === 200 && bindSubdir.body.scope === 'session',
+    `status=${bindSubdir.status}`);
+  await api('/api/config/workdir/unbind', { body: { sessionId: SESSION_A } });
+
+  const bindAgentRoot = await bind(SESSION_A, agentDir);
+  check('会话级绑定 Agent 根目录被 403',
+    bindAgentRoot.status === 403, `status=${bindAgentRoot.status}`);
+
+  const bindLogs = await bind(SESSION_A, join(agentDir, 'logs'));
+  check('会话级绑定硬阻止子目录同样被 403',
+    bindLogs.status === 403, `status=${bindLogs.status}`);
+
+  // ── 9) 非法 sessionId 不污染注册表 ──
   const badBind = await bind('has.dot', DIR_A);
   check('非法 sessionId 绑定被 400 拒绝（不静默降级成全局切换）',
     badBind.status === 400 && badBind.body.success === false, `status=${badBind.status}`);
 
+  // ── 9b) 绑定意图显式化：scope 声明与实际参数不符必须报错 ──
+  //  上层漏传 sessionId 时，旧规则会静默变成全局切换 → 把所有未绑定会话的目录一起改掉
+  const scopeNoSid = await json(await api('/api/config/workdir', {
+    body: { workdir: DIR_A, scope: 'session' },
+  }));
+  check('scope=session 但没 sessionId → 400（拒绝静默改全局）',
+    scopeNoSid.status === 400, `status=${scopeNoSid.status}`);
+
+  // 拼写/大小写错误不能被当成「没传 scope」而静默走全局切换
+  const badScope = await json(await api('/api/config/workdir', {
+    body: { workdir: DIR_A, scope: 'Session' },
+  }));
+  check('非法 scope 值 → 400（不静默降级成全局切换）',
+    badScope.status === 400, `status=${badScope.status}`);
+
+  // 断言「注册值原封不动」（此时 A 的注册值已被上一步改绑，不能写死 DIR_A）
+  const beforeGlobal = await statusDetail(SESSION_A);
+  const scopeGlobal = await json(await api('/api/config/workdir', {
+    body: { workdir: GLOBAL_WORKDIR, scope: 'global', sessionId: SESSION_A },
+  }));
+  const afterGlobal = await statusDetail(SESSION_A);
+  check('scope=global 时忽略 sessionId，不写会话注册表',
+    scopeGlobal.status === 200 && scopeGlobal.body.scope !== 'session'
+      && String(afterGlobal.body.sessionWorkdir || '') === String(beforeGlobal.body.sessionWorkdir || ''),
+    `scope=${scopeGlobal.body.scope} before=${beforeGlobal.body.sessionWorkdir} after=${afterGlobal.body.sessionWorkdir}`);
+
+  // ── 10) 全局 config 未被污染 ──
   const diskConfigFinal = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
   check('整轮流程结束后全局 config 仍未被会话目录污染',
     samePath(diskConfigFinal.workdir, GLOBAL_WORKDIR)
       && !diskConfigFinal.allowedPaths.some((p) => samePath(p, DIR_A) || samePath(p, DIR_B)));
+  // ── 11) 技能链路：命令 / 文件 / 搜索都按本会话目录（回归：曾用 process.cwd()、无 ctx） ──
+  const probeSkill = 'smoke-cwd-probe';
+  const impSkill = await json(await api('/api/skill/import', {
+    body: {
+      name: probeSkill,
+      description: 'smoke probe',
+      version: '1.0',
+      type: 'workflow',
+      steps: [{ id: 's1', tool: 'agent_exec', args: { command: 'pwd' } }],
+    },
+  }));
+  check('导入探针技能', impSkill.status === 200 && impSkill.body.success === true,
+    `status=${impSkill.status}, error=${impSkill.body.error || ''}`);
+
+  await bind(SESSION_A, DIR_A);
+  const skillRun = await json(await api('/api/skill/run', { body: { name: probeSkill }, sessionId: SESSION_A }));
+  const pwdOut = String(skillRun.body?.results?.s1?.stdout || '').trim();
+  check('技能里的 agent_exec 跑在本会话目录（不再用代理进程 cwd）',
+    skillRun.body?.success === true && samePath(pwdOut, DIR_A),
+    `pwd=${pwdOut}, err=${skillRun.body?.results?.s1?.error || skillRun.body?.error || ''}`);
+
+  // 技能里的文件工具：相对路径同样按会话目录解析（会话目录刻意不在 allowedPaths 里）
+  const probeReadSkill = 'smoke-read-probe';
+  writeFileSync(join(DIR_A, 'probe.txt'), 'hello-from-a');
+  await api('/api/skill/import', {
+    body: {
+      name: probeReadSkill,
+      description: 'smoke probe',
+      version: '1.0',
+      type: 'workflow',
+      steps: [{ id: 's1', tool: 'agent_file', args: { action: 'read', path: 'probe.txt' } }],
+    },
+  });
+  const readRun = await json(await api('/api/skill/run', { body: { name: probeReadSkill }, sessionId: SESSION_A }));
+  check('技能里的 agent_file 相对路径按会话目录解析',
+    readRun.body?.results?.s1?.success === true && String(readRun.body?.results?.s1?.content || '').includes('hello-from-a'),
+    `path=${readRun.body?.results?.s1?.path || ''}`);
+
+  await api('/api/skill/delete', { body: { name: probeSkill } });
+  await api('/api/skill/delete', { body: { name: probeReadSkill } });
+  await api('/api/config/workdir/unbind', { body: { sessionId: SESSION_A } });
+
 } catch (err) {
   check('冒烟执行', false, err.message);
 } finally {
@@ -266,5 +367,10 @@ try {
 }
 
 const failed = results.filter((r) => !r.ok);
+// console.log 在捕获配对码时被接管，失败明细必须走 realLog，否则只看得到一句汇总
+if (failed.length) {
+  realLog('\n失败明细：');
+  for (const f of failed) realLog(`  ✗ ${f.name}${f.detail ? '  — ' + f.detail : ''}`);
+}
 realLog(`\n合计 ${results.length} 项，失败 ${failed.length} 项`);
 process.exit(failed.length === 0 ? 0 : 1);

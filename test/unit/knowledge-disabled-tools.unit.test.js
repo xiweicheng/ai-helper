@@ -89,6 +89,27 @@ describe('knowledge_ingest - 导入停用库拒绝', () => {
       'tc-ingest-2'
     );
     expect(res.success).toBe(true);
-    expect(AgentClient.ragIngest).toHaveBeenCalledWith('kb_on', { type: 'text', content: 'x', name: undefined, metadata: undefined });
+    // 第三个参数是会话作用域：不传时为 null（旧行为），传了就让代理端按该会话目录校验
+    expect(AgentClient.ragIngest).toHaveBeenCalledWith(
+      'kb_on',
+      { type: 'text', content: 'x', name: undefined, metadata: undefined },
+      null
+    );
+  });
+
+  test('导入时透传会话作用域（会话目录内的文件不能被判越界）', async () => {
+    AgentClient.ragListCollections.mockResolvedValue({ success: true, collections: [ON_KB] });
+    AgentClient.ragIngest.mockResolvedValue({ success: true, chunkCount: 1 });
+    const res = await RAG_TOOL_HANDLERS.knowledge_ingest(
+      { collectionId: 'kb_on', type: 'file', content: '/proj/a.md' },
+      'tc-ingest-3',
+      'sess-123'
+    );
+    expect(res.success).toBe(true);
+    expect(AgentClient.ragIngest).toHaveBeenCalledWith(
+      'kb_on',
+      { type: 'file', path: '/proj/a.md', metadata: undefined },
+      'sess-123'
+    );
   });
 });

@@ -881,7 +881,7 @@ async function getDisabledCollectionMessage(collectionId, messageKey) {
 /**
  * knowledge_ingest - 导入内容到知识库（text/file/url）
  */
-async function executeKnowledgeIngest(args, toolCallId) {
+async function executeKnowledgeIngest(args, toolCallId, sessionId = null) {
   const { collectionId, type, content, name, metadata } = args || {};
   if (!collectionId || !type || !content) {
     return makeResult(false, t('toolExec.knowledgeIngestParamsRequired'), { tool_call_id: toolCallId });
@@ -905,7 +905,9 @@ async function executeKnowledgeIngest(args, toolCallId) {
     return makeResult(false, t('toolExec.knowledgeIngestBadType', { type }), { tool_call_id: toolCallId });
   }
 
-  const res = await AgentClient.ragIngest(collectionId, payload);
+  // 带会话作用域：type=file 时代理端按该会话目录做沙箱校验，
+  // 否则会话绑定目录里的文件会被判成越界（会话绑定故意不写 allowedPaths）
+  const res = await AgentClient.ragIngest(collectionId, payload, sessionId);
   if (!res || res.success !== true) {
     return makeResult(false, t('toolExec.knowledgeIngestFailed', { error: res?.error || t('toolExec.unknownError') }), { tool_call_id: toolCallId });
   }
@@ -4149,14 +4151,14 @@ export function clearSkillLoadCache() {
   skillLoadCache.clear();
 }
 
-async function executeAgentSkill(args, toolCallId) {
+async function executeAgentSkill(args, toolCallId, sessionId = null) {
   const { action, name, params = {} } = args;
   if (!name) return { success: false, error: t('toolExec.missingNameParam'), tool_call_id: toolCallId };
 
   // action=run: 执行 Workflow Skill
   if (action === 'run') {
     try {
-      const result = await AgentClient.runSkill(name, params);
+      const result = await AgentClient.runSkill(name, params, sessionId);
       if (result.success) {
         return {
           success: true,

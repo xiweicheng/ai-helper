@@ -241,8 +241,9 @@ export function getSkill(name) {
  * @param {string} name - Skill 名称
  * @param {Object} params - 参数
  * @param {Function} [onStepUpdate] - 步骤回调
+ * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文（会话级工作目录）
  */
-export async function runSkill(name, params = {}, onStepUpdate) {
+export async function runSkill(name, params = {}, onStepUpdate, ctx = {}) {
   const skill = skills.get(name);
   if (!skill) {
     return { success: false, error: T('skill.skillNotExistOrDisabled', { name }) };
@@ -252,7 +253,7 @@ export async function runSkill(name, params = {}, onStepUpdate) {
     return { success: false, error: `"${name}" 是 Agent Skill，无法直接执行。Agent Skill 由 AI 在对话中根据 SKILL.md 描述自主调用。` };
   }
 
-  return await executeSkill(skill, params, onStepUpdate);
+  return await executeSkill(skill, params, onStepUpdate, ctx);
 }
 
 /**

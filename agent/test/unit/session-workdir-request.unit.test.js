@@ -10,9 +10,9 @@
 // 必须先改 HOME 再动态 import，避免读到本机真实配置。
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const TMP_HOME = mkdtempSync(join(tmpdir(), 'aih-req-scope-'));
@@ -30,6 +30,7 @@ const OTHER_SESSION = 'sess_b_1';
 let registry;
 let resolveRequestScope;
 let resolveExecCwd;
+let isWorkdirTargetAllowed;
 
 /** 构造请求：node 会把头名小写化，这里直接给小写键 */
 const req = (headers = {}) => ({ headers });
@@ -46,7 +47,7 @@ before(async () => {
   }, null, 2));
 
   registry = await import('../../src/session-workdirs.js');
-  ({ resolveRequestScope, resolveExecCwd } = await import('../../src/server.js'));
+  ({ resolveRequestScope, resolveExecCwd, isWorkdirTargetAllowed } = await import('../../src/server.js'));
   await registry.bindSessionWorkdir(SESSION, SESSION_A);
 });
 
@@ -202,6 +203,51 @@ describe('resolveExecCwd - /api/exec 的 cwd 语义', () => {
   });
 });
 
+describe('isWorkdirTargetAllowed - 只拦 Agent 根目录，子目录合法', () => {
+  test('Agent 根目录本身：拒绝（含尾部分隔符与大小写变体）', () => {
+    assert.equal(isWorkdirTargetAllowed(AGENT_DIR), false);
+    assert.equal(isWorkdirTargetAllowed(AGENT_DIR + sep), false);
+  });
+
+  test('默认工作目录（Agent 子目录 workspace）必须可设', () => {
+    // 回归重点：曾经把整棵 Agent 目录一起封掉，用户连默认目录都切不回去
+    assert.equal(isWorkdirTargetAllowed(GLOBAL_WORKDIR), true);
+    assert.equal(isWorkdirTargetAllowed(GLOBAL_WORKDIR + sep), true);
+  });
+
+  test('Agent 下更深的子目录可设，不存在的也放行（待创建）', () => {
+    assert.equal(isWorkdirTargetAllowed(join(GLOBAL_WORKDIR, 'proj', 'x')), true);
+    assert.equal(isWorkdirTargetAllowed(join(AGENT_DIR, 'scratch-new')), true);
+  });
+
+  test('硬阻止的敏感子目录：拒绝（判据与 checkPath 同源）', () => {
+    // 绑定到 logs/ 之后每次读写都会被 HARD_BLOCKED_PATHS 拦成 403，不如设置时就拒
+    for (const name of ['logs', '.trash']) {
+      assert.equal(isWorkdirTargetAllowed(join(AGENT_DIR, name)), false, `${name} 应被拒`);
+      assert.equal(isWorkdirTargetAllowed(join(AGENT_DIR, name, 'nested')), false, `${name}/nested 应被拒`);
+    }
+    assert.equal(isWorkdirTargetAllowed(join(AGENT_DIR, 'config.json')), false);
+  });
+
+  test('合法子目录（skills / memory / 任意新建目录）仍可设', () => {
+    for (const name of ['skills', 'memory', 'scratch']) {
+      assert.equal(isWorkdirTargetAllowed(join(AGENT_DIR, name)), true, `${name} 应允许`);
+    }
+  });
+
+  test('符号链接指向 Agent 根目录：仍判为根目录', () => {
+    const link = join(TMP_HOME, 'agent-dir-link');
+    try { symlinkSync(AGENT_DIR, link, 'dir'); } catch { /* 已存在或不支持时用原路径断言 */ }
+    assert.equal(isWorkdirTargetAllowed(link), false);
+  });
+
+  test('普通项目目录可设；空值拒绝', () => {
+    assert.equal(isWorkdirTargetAllowed(SESSION_A), true);
+    assert.equal(isWorkdirTargetAllowed(''), false);
+    assert.equal(isWorkdirTargetAllowed(null), false);
+  });
+});
+
 describe('路由契约（源码守卫：状态详情 / 解绑 / 403 提示）', () => {
   const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const serverSrc = readFileSync(join(ROOT, 'src', 'server.js'), 'utf-8');
@@ -218,6 +264,15 @@ describe('路由契约（源码守卫：状态详情 / 解绑 / 403 提示）', 
     assert.match(serverSrc, /bindSessionWorkdir/);
     assert.match(serverSrc, /\/api\/config\/workdir\/unbind/);
     assert.match(serverSrc, /unbindSessionWorkdir/);
+  });
+
+  test('绑定意图必须显式声明 scope，避免漏传 sessionId 静默改全局', () => {
+    // 只凭「有没有 sessionId」推断太脆：上层漏一个字段就会把并行会话的目录一起改掉
+    assert.match(serverSrc, /rawScope !== 'session' && rawScope !== 'global'/);
+    assert.match(serverSrc, /declaredScope === 'session' && !hasSessionParam/);
+    // 拼写错误（'Session' / 'sess'）不能静默降级成全局切换
+    assert.match(serverSrc, /error\.invalidScope/);
+    assert.match(serverSrc, /error\.invalidSessionId/);
   });
 
   test('exec 越界的 403 带 hint，便于模型自我纠正', () => {

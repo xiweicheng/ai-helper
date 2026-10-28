@@ -8,6 +8,7 @@
     "missingPath": "Missing path parameter",
     "missingWorkdir": "Missing workdir parameter",
     "invalidSessionId": "Invalid session identifier",
+    "invalidScope": "scope must be either session or global",
     "workdirNotInSessionScope": "Path is outside this session's working directory ({workdir})",
     "workdirNotAbsolute": "workdir must be an absolute path",
     "workdirIsSystemDir": "Cannot set the Agent system directory as working directory",

@@ -1,7 +1,7 @@
 // agent/src/server.js - HTTP Router + WebSocket 服务器
 import http from 'http';
 import { WebSocketServer } from 'ws';
-import { readFileSync, writeFileSync, createWriteStream, createReadStream, statSync, existsSync, watch } from 'fs';
+import { readFileSync, writeFileSync, createWriteStream, createReadStream, statSync, existsSync, realpathSync, watch } from 'fs';
 import { readFile, writeFile, readdir, stat, unlink, rmdir, chmod, mkdir, rename } from 'fs/promises';
 import { join, dirname, basename, resolve, isAbsolute, relative, sep } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -13,7 +13,7 @@ import os from 'os';
 import { loadConfig, saveConfig, setConfigLang } from './config.js';
 import { getSessionWorkdir, bindSessionWorkdir, unbindSessionWorkdir, isValidSessionId, getBaseSessionId } from './session-workdirs.js';
 import { verifyToken, startPairCodeRotation, stopPairCodeRotation, handlePairRequest, setAuthLang } from './auth.js';
-import { checkPath, checkCommand, normalizePathFormat, setSecurityLang } from './security.js';
+import { checkPath, checkCommand, normalizePathFormat, setSecurityLang, isHardBlocked } from './security.js';
 import { moveToTrash, restoreFromTrash, listTrash, startPeriodicCleanup, stopPeriodicCleanup, setTrashLang } from './trash.js';
 import { executeCommand, executeCommandSync, addWsClient, disconnectWsClient, killProcess, detachProcess, getRunningProcesses, setExecutorLang } from './executor.js';
 import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity, logSystem, logError, queryLogs, getLogDates } from './logger.js';
@@ -478,6 +478,53 @@ export async function resolveExecCwd(cwd, scope, tFn) {
     reason: checked.reason,
     hint: scope.workdir,
   };
+}
+
+/**
+ * 工作目录目标是否允许（全局切换与会话级绑定共用同一判据）
+ *
+ * 只禁止 **Agent 根目录本身**（`~/.ai-helper-agent`）与 **HARD_BLOCKED_PATHS 声明的敏感面**
+ * （`config.json` / `pairings.json` / `logs` / `.trash` …）。
+ * 其下其余子目录是合法工作区：默认 workdir 就是 `~/.ai-helper-agent/workspace`，
+ * 若在此处把整棵子树一起封掉，用户连默认目录都切不回去。
+ *
+ * 判据与 checkPath 同源（复用 isHardBlocked）："能设为工作目录" ⊆ "设完后能读写"。
+ * 否则绑定到 logs/ 这类目录会成功，但之后每次读写都被 403，用户只能看到一片报错。
+ *
+ * 大小写与符号链接变体（macOS 上 `.AI-HELPER-AGENT` 指向同一目录）也算根目录。
+ *
+ * @param {string} workdir 已 resolve 过的绝对路径
+ * @returns {boolean}
+ */
+export function isWorkdirTargetAllowed(workdir) {
+  const raw = String(workdir || '').trim();
+  if (!raw) return false;
+
+  const agentDir = resolve(join(homedir(), '.ai-helper-agent'));
+  const target = resolve(normalizePathFormat(raw));
+
+  // 目标可能尚不存在（待创建的目录），realpath 失败就按原路径判；
+  // 两侧都归一，才能处理 macOS 的 /var → /private/var 与指向根目录的短链
+  let targetReal = target;
+  let agentReal = agentDir;
+  try { agentReal = realpathSync(agentDir); } catch { /* 保留原值 */ }
+  try { targetReal = realpathSync(target); } catch { /* 保留原值 */ }
+
+  // 相对 Agent 目录的位置：'' = 根目录本身，'logs/x' = 其下子路径，null = 不在其内
+  const insideAgent = (p, base) => {
+    if (p === base) return '';
+    return p.startsWith(base + sep) ? p.slice(base.length + 1) : null;
+  };
+  const rel = insideAgent(targetReal, agentReal) ?? insideAgent(target, agentDir);
+
+  if (rel === '') return false; // Agent 根目录本身（含符号链接 / 大小写变体）
+  if (rel) {
+    // 与 checkPath 同源：HARD_BLOCKED_PATHS 里的敏感面设为 workdir 后每次读写都会被拦，
+    // 不如在设置时就拒；其余子目录（workspace / skills / 自建目录）照旧放行
+    return !isHardBlocked(join(agentDir, rel));
+  }
+  // 不在 Agent 目录内：仍用同一份清单兜底（如符号链接指向某个敏感文件）
+  return !isHardBlocked(target) && !isHardBlocked(targetReal);
 }
 
 /**
@@ -997,7 +1044,22 @@ export function startServer() {
         if (hasSessionParam && !isValidSessionId(body.sessionId)) {
           return jsonResponse(res, 400, { success: false, error: t('error.invalidSessionId') });
         }
-        const targetSessionId = hasSessionParam ? body.sessionId : null;
+
+        // 意图显式化：scope 声明「只改本会话」还是「改全局默认」。
+        // 只靠「有没有传 sessionId」推断太脆——上层漏传一个字段就会静默变成全局切换，
+        // 把并行会话（含正在跑和排队的任务）的目录一起改掉。显式声明后能直接 400。
+        // 未传 scope（undefined/null/空串）= 旧客户端，保留旧推断；传了就必须是合法值，
+        // 否则拼写错误（如 'Session'）会静默降到全局切换，正是本条要防的失效模式。
+        const rawScope = body.scope;
+        const hasScopeParam = rawScope !== undefined && rawScope !== null && rawScope !== '';
+        if (hasScopeParam && rawScope !== 'session' && rawScope !== 'global') {
+          return jsonResponse(res, 400, { success: false, error: t('error.invalidScope') });
+        }
+        const declaredScope = hasScopeParam ? rawScope : null;
+        if (declaredScope === 'session' && !hasSessionParam) {
+          return jsonResponse(res, 400, { success: false, error: t('error.invalidSessionId') });
+        }
+        const targetSessionId = declaredScope === 'global' ? null : (hasSessionParam ? body.sessionId : null);
 
         // 展开 ~ 到用户主目录
         let resolvedWorkdir = newWorkdir.trim();
@@ -1016,9 +1078,8 @@ export function startServer() {
         }
         resolvedWorkdir = resolve(resolvedWorkdir);
 
-        // 禁止设为 Agent 系统目录本身（防敏感文件暴露）
-        const AGENT_DIR_PATH = join(homedir(), '.ai-helper-agent');
-        if (resolvedWorkdir === AGENT_DIR_PATH || resolvedWorkdir.startsWith(AGENT_DIR_PATH + sep)) {
+        // 禁止设为 Agent 根目录本身（子目录合法：默认 workdir 就是其下的 workspace）
+        if (!isWorkdirTargetAllowed(resolvedWorkdir)) {
           logSecurity('workdir_switch_blocked', { path: resolvedWorkdir, reason: t('error.workdirIsSystemDir') });
           return jsonResponse(res, 403, { success: false, error: t('error.workdirIsSystemDir') });
         }
@@ -1969,7 +2030,9 @@ export function startServer() {
       // 执行 Skill
       if (pathname === '/api/skill/run') {
         if (!body.name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
-        const result = await runSkill(body.name, body.params || {});
+        // 技能的 agent_file / agent_exec / agent_search 步骤走同一套沙箱，
+        // 必须带本会话的目录上下文，否则会话目录会被判成越界
+        const result = await runSkill(body.name, body.params || {}, undefined, scope);
         logSystem('skill_run', { skillName: body.name, success: result.success });
         return jsonResponse(res, result.success ? 200 : 400, result);
       }
@@ -2305,7 +2368,7 @@ export function startServer() {
         logError('system', 'rag_route_load_failed', { error: err.message });
         return jsonResponse(res, 500, { success: false, error: t('error.ragLoadFailed', { message: err.message }) });
       }
-      return ragRouter(req, res, pathname, url, t, requestBody);
+      return ragRouter(req, res, pathname, url, t, requestBody, scope);
     }
 
     // ========== 语音输入（本地 STT）接口（可选组件，默认不装不启用） ==========

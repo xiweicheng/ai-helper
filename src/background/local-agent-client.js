@@ -841,8 +841,10 @@ async function ragSearch(params) {
  * @param {string} collectionId
  * @param {object} params - 按 type 区分：text→{content,name}，file→{path}，url→{url}；通用 {metadata, chunkConfig}
  */
-async function ragIngest(collectionId, params) {
-  return agentRequest(`/api/rag/collections/${encodeURIComponent(collectionId)}/ingest`, params, 'POST', 600000);
+async function ragIngest(collectionId, params, scope = null) {
+  // scope 必须带：ingestFile 的沙箱校验按「本会话有效目录」放行，
+  // 不带会话头时一律回落全局目录，会话目录内的文件会被判成越界
+  return agentRequest(`/api/rag/collections/${encodeURIComponent(collectionId)}/ingest`, params, 'POST', 600000, scope);
 }
 
 // ========== Skill 相关 API ==========
@@ -864,8 +866,10 @@ async function getSkillDetail(name) {
 /**
  * 执行 Skill
  */
-async function runSkill(name, params) {
-  return agentRequest('/api/skill/run', { name, params });
+async function runSkill(name, params, scope = null) {
+  // 技能步骤里的 agent_file / agent_exec / agent_search 走同一套沙箱，
+  // 不带会话头时相对路径会按全局目录解析 → 读错文件或 403（会话级目录的核心诉求）
+  return agentRequest('/api/skill/run', { name, params }, 'POST', 60000, scope);
 }
 
 /**

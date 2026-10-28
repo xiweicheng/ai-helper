@@ -4,6 +4,16 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：多会话权限审计 + 目录边界与调用链修正
+> 来源：多会话并行后，代理端所有路径判定必须拿到「本会话」的目录上下文，否则会把合法操作误判成越界。用户要求「好好处理权限判断，别到时候出现问题」。
+
+- **修掉目录边界误拦截**：`/api/config/workdir` 原判据 `startsWith(AGENT_DIR + sep)` 把 Agent 整棵子树都封了，而默认工作目录就是 `~/.ai-helper-agent/workspace` —— 选默认目录或任意子目录都被 403。抽出 `isWorkdirTargetAllowed()` 与 `checkPath`/`isHardBlocked` 同源：只拒根目录本身与硬阻止敏感面（`config.json`/`pairings.json`/`logs`/`.trash`），其余子目录放行；`realpath` + 大小写归一处理符号链接与 `.AI-HELPER-AGENT` 变体。全局切换与会话级绑定共用同一判据。
+- **技能链补会话上下文**：`runSkill → executeSkill → executeSkillSteps → executeToolCall` 全程传 `ctx`；`agent_file`/`agent_search` 的 `checkPath` 带上会话作用域；`agent_exec` 的默认 cwd 由 `process.cwd()` 改为本会话有效目录，且 `args.cwd` 必须过同一套沙箱（技能是用户自定义内容，参数不可信）。
+- **RAG 导入补会话上下文**：`ragRouter(..., ctx)` → `RagManager.ingestFile(collectionId, input, ctx)` → `checkPath(input.path, undefined, ctx)`。会话绑定刻意不写 `allowedPaths`（为了删会话能真正回收授权），不带 ctx 时会话目录内的文件一律被判越界。
+- **扩展端调用方补齐作用域**（代码评审发现）：`local-agent-client.js` 的 `runSkill`/`ragIngest` 原先从不传第 5 参 `scope`，代理端 `resolveRequestScope()` 拿到的 sessionId 恒为 null —— 代理端的 ctx 形同虚设，技能与 RAG 仍按全局目录判定。现由 `tool-executor.js` 的 `executeAgentSkill`/`executeKnowledgeIngest` 接住分发时传入的 `sessionId` 并下传。
+- **绑定意图显式化**：`/api/config/workdir` 新增 `body.scope`（`session`|`global`）。原先只按「有没有传 sessionId」推断，上层漏一个字段就会静默走全局切换，把并行会话（含正在执行和排队中的任务）的目录一起改掉。现在声明 `session` 却没 id → 400；传了非法值（如 `Session`）→ 400 `error.invalidScope`；完全不传的旧客户端行为不变。
+- **验证**：代理端 `node --test` → **774 例全绿**；真 HTTP 冒烟 → **44 项全过**（新增目录边界、scope 三态、非法值）；真实并发压测 **20 项**（A 跑长任务期间改绑自己的目录、B 改绑自己的目录，产物仍落原目录；跨会话读写/exec 403 且带 hint）；扩展端 `npx vitest run` → **197 文件 / 2992 例全绿**；`npx eslint src/ agent/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：按 sessionId 解析 + 执行期冻结 + 信息带目录 chip
 > 来源：工作目录原本是代理 `config.json` 里的单一全局值，切一次所有会话跟着变。用户要求「并行会话里切走改目录，不能影响别的会话正在跑或排队的任务」，且「注入到上下文的目录必须跟着会话走，不能沿用全局旧值」。
 

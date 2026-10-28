@@ -745,14 +745,17 @@ export class RagManager {
    *   - contentBase64 + fileName：前端上传内容（落临时文件解析后清理）
    * @param {string} collectionId
    * @param {{path?: string, fileName?: string, contentBase64?: string, metadata?: object, chunkConfig?: object}} input
+   * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文（会话级工作目录）
    */
-  async ingestFile(collectionId, input = {}) {
+  async ingestFile(collectionId, input = {}, ctx = {}) {
     return this._runIngest(collectionId, async () => {
       // 来源 1：agent 本地文件
       if (input.path) {
         // 文件沙箱：与 /api/fs/read 同一套规则（allowedPaths 白名单 + 硬阻止清单），
         // 防止经 RAG 导入绕过沙箱读取宿主任意文件（如代理自身敏感文件）
-        const check = await checkPath(input.path);
+        // ctx = 请求级会话上下文：会话绑定不写 allowedPaths，
+        // 不带会话上下文时从会话目录导入会被误判为越界
+        const check = await checkPath(input.path, undefined, ctx);
         if (!check.allowed) {
           throw new RagError('pathNotAllowed', { reason: check.reason });
         }

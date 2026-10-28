@@ -130,7 +130,7 @@ export async function resolveTestEmbeddingInput(payload = {}) {
  * @param {Function} t - 请求级翻译函数
  * @param {object} [body] - 已解析的 JSON body（GET 请求为 null）
  */
-export async function ragRouter(req, res, pathname, url, t, body = {}) {
+export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {}) {
   const method = req.method;
   const payload = body || {};
   // 业务处理包装（绑定请求级翻译函数）
@@ -239,12 +239,14 @@ export async function ragRouter(req, res, pathname, url, t, body = {}) {
           return manager.ingestText(collectionId, { content: payload.content, name: payload.name, ...common });
         }
         if (type === 'file') {
+          // ctx 透传到 ingestFile 的 checkPath：会话绑定不写 allowedPaths，
+          // 不带会话上下文时从会话目录导入文档会被误判为越界
           return manager.ingestFile(collectionId, {
             path: payload.path,
             fileName: payload.fileName,
             contentBase64: payload.contentBase64,
             ...common,
-          });
+          }, ctx);
         }
         if (type === 'url') {
           return manager.ingestUrl(collectionId, { url: payload.url, ...common });

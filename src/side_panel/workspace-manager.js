@@ -334,7 +334,9 @@ export async function getAgentStatusDetail(sessionId) {
  */
 export async function switchWorkspace(newWorkdir, options = {}) {
   const sid = options.sessionId === undefined ? currentSessionId() : options.sessionId;
-  const body = { workdir: newWorkdir };
+  // scope 显式声明意图：代理端据此区分「只绑本会话」与「改全局默认」，
+  // 漏传 sessionId 时不会静默降级成全局切换（那会改掉所有未绑定会话的目录）
+  const body = { workdir: newWorkdir, scope: sid ? 'session' : 'global' };
   if (sid) body.sessionId = sid;
   const result = await agentRequest('/api/config/workdir', body, sid);
   if (result.success) {
