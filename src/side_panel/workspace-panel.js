@@ -773,6 +773,12 @@ export function initWorkspacePanel() {
     if (sid && sid !== state.activeSessionId) return;
     syncWorkspaceToSession().catch(err => logger.warn('[WorkspacePanel] sync after workdir change failed', err));
   });
+  // 启动补对齐：面板可能先于会话水合完成就解析了根目录（那时 activeSessionId 仍是 null，
+  // 代理端按全局默认目录回包），而 currentPath 落定后不会自行重解析
+  // —— 表现为「刷新后 chip 对、面板显示全局默认，收起再展开也不变，只有切会话才恢复」
+  document.addEventListener('session-hydrated', () => {
+    syncWorkspaceToSession().catch(err => logger.warn('[WorkspacePanel] sync after session hydrated failed', err));
+  });
   loadSearchHistory();
   updateWorkspaceAgentName();
   setupEmbedDivider();
@@ -5411,11 +5417,14 @@ export function updateWorkspacePanelVisibility(connected) {
   if (connected) {
     container.style.display = '';
     // 断开期间嵌入模式保留：重连后自动重新展开面板
-    if (embedMode) {
-      const panel = document.getElementById('workspacePanel');
-      if (panel && !panel.classList.contains('expanded')) {
-        openPanel().catch(err => logger.warn('[WorkspacePanel] reopen panel after reconnect failed', err));
-      }
+    const panelEl = document.getElementById('workspacePanel');
+    const expanded = !!(panelEl && panelEl.classList.contains('expanded'));
+    if (embedMode && panelEl && !expanded) {
+      openPanel().catch(err => logger.warn('[WorkspacePanel] reopen panel after reconnect failed', err));
+    } else if (expanded && !currentPath) {
+      // 已展开但没有浏览位置（会话水合/断线时复位过）：重连后补一次导航，
+      // 否则面板会停在空白，用户只能靠切会话救回来
+      navigateToRoot().catch(err => logger.warn('[WorkspacePanel] navigate after reconnect failed', err));
     }
     // Agent 连接后补恢复之前因未连接而挂起的嵌入模式
     if (pendingRestoreEmbed) {

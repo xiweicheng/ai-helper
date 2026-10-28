@@ -380,6 +380,23 @@ export function clearSelectedContext() {
 let resolveChatHistoryReady;
 const chatHistoryReady = new Promise(resolve => { resolveChatHistoryReady = resolve; });
 
+/**
+ * 广播「会话已水合」信号（activeSessionId / sessionWorkdir 此刻才可信）
+ *
+ * 启动阶段各 UI 是独立并行的：文件面板若先于本函数解析根目录，`state.activeSessionId`
+ * 还是 null，代理端会按全局默认目录回包；而面板的 currentPath 一旦落定就不会自行重解析
+ * ——表现为「刷新后目录 chip 是对的、面板却显示全局默认，收起再展开也不变，只有切会话才恢复」。
+ * 只有本模块知道「会话什么时候真的就绪」，所以在这里显式发信号，让面板补一次对齐。
+ *
+ * 不复用 session-switched：那条事件会重建聊天区（启动阶段重建代价高且会打架）。
+ */
+function notifySessionHydrated() {
+  if (!state.activeSessionId) return;
+  document.dispatchEvent(new CustomEvent('session-hydrated', {
+    detail: { sessionId: state.activeSessionId, workdir: state.sessionWorkdir || null }
+  }));
+}
+
 export async function loadChatHistory() {
   try {
     await _loadChatHistoryImpl();
@@ -403,6 +420,7 @@ async function _loadChatHistoryImpl() {
       state.activeCompaction = activeSession.contextCompaction || null;
       // 恢复会话级工作目录绑定：漏了这句，首次保存就会把库里的绑定写成 null
       hydrateSessionWorkdir(activeSession);
+      notifySessionHydrated();
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
       // enabledTools 由智能体独立 key 管理，不再从会话恢复（此处可能导致竞态条件覆盖正确值）
@@ -562,6 +580,7 @@ async function _loadChatHistoryImpl() {
       state.activeSessionId = refreshedData.activeSessionId;
       state.sessions = refreshedData.list;
       hydrateSessionWorkdir(refreshedData.list.find(s => s.id === refreshedData.activeSessionId));
+    notifySessionHydrated();
     }
     
     renderSessionTabs(refreshedData);

@@ -154,3 +154,35 @@ describe('chip 不再把「漂移」误报成目录不可用', () => {
     expect(body).toContain("el.dataset.invalid = mismatch ? 'true' : 'false';");
   });
 });
+
+describe('会话水合信号：启动阶段让面板补一次对齐', () => {
+  const chatBody = bodyOf(chatCode, 'async function _loadChatHistoryImpl()');
+  const notifyBody = bodyOf(chatCode, 'function notifySessionHydrated()');
+  const panel = readCode('src/side_panel/workspace-panel.js');
+
+  test('水合后广播 session-hydrated（带会话 id 与绑定目录）', () => {
+    expect(notifyBody).toContain("new CustomEvent('session-hydrated'");
+    expect(notifyBody).toContain('sessionId: state.activeSessionId');
+    expect(notifyBody).toContain('workdir: state.sessionWorkdir || null');
+  });
+
+  test('会话未就绪时不广播（避免把默认目录当成结论）', () => {
+    expect(notifyBody).toContain('if (!state.activeSessionId) return;');
+  });
+
+  test('两条激活路径都在水合之后紧邻广播', () => {
+    expect(chatBody).toMatch(/hydrateSessionWorkdir\(activeSession\);\s*\n\s*notifySessionHydrated\(\);/);
+    expect(chatBody).toMatch(/hydrateSessionWorkdir\(refreshedData\.list\.find[^;]*\);\s*\n\s*notifySessionHydrated\(\);/);
+  });
+
+  test('不复用 session-switched（那条会重建聊天区）', () => {
+    expect(notifyBody).not.toContain('session-switched');
+  });
+
+  test('面板监听 session-hydrated 并走 syncWorkspaceToSession 单一入口', () => {
+    expect(panel).toMatch(/addEventListener\('session-hydrated'/);
+    const body = bodyOf(panel, "addEventListener('session-hydrated'");
+    expect(body).toContain('syncWorkspaceToSession');
+    expect(body).not.toContain('loadDirectory');
+  });
+});

@@ -4,6 +4,14 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：刷新后文件面板不再停在全局默认目录（启动竞态补对齐）
+> 来源：用户反馈「刷新插件后自动恢复上次会话，输入框下方的目录是对的，但侧边栏文件面板显示的是全局默认目录；关掉再展开也没用，只有切走再切回来才正常」。
+
+- **根因（启动时序竞态 + 浏览位置一锤定音）**：侧边栏各模块在 `DOMContentLoaded` 各自并行初始化。文件面板的嵌入模式恢复会**立即** `openPanel()` → `navigateToRoot()` → `getWorkspaceRoot()`，而此刻会话层的 `loadChatHistory()` 还没跑到 `state.activeSessionId = ...`（它前面有一长串 `await`）。`getWorkspaceRoot()` 拿 `currentSessionId()` 得到 `null`，请求就不带 `X-AIH-Session-Id`，代理端按**全局默认目录**回包。更糟的是 `currentPath` / `workspaceRoot` 是模块级单例、一旦落定就只会走 `openPanel()` 的 `if (!currentPath)` 分支短路，所以**收起再展开也不会重新解析**；只有 `session-switched` / `session-workdir-changed` 才会触发 `syncWorkspaceToSession()` 复位重解析 —— 这就是「切走再切回来才好」。chip 之所以是对的，是因为它在 `_loadChatHistoryImpl` 里被 `agent-model-changed` 顺带刷新了一次，而面板没有这个后置触发点。
+- **修法（谁掌握「会话就绪」谁发信号）**：`chat-manager` 新增 `notifySessionHydrated()`，在两条激活路径的 `hydrateSessionWorkdir()` 之后**紧邻**广播 `session-hydrated`（带 `sessionId` + `workdir`，`activeSessionId` 为空时不广播）。`workspace-panel` 监听该事件并复用既有的 `syncWorkspaceToSession()` 单一入口 —— 目录由「默认」变成「本会话」时会复位并重导航，收起态只清缓存、下次打开自动解析。特意**不复用** `session-switched`：那条会重建聊天区，启动阶段代价高且易打架。
+- **顺带补一处同类缺口**：`updateWorkspacePanelVisibility(true)`（重连）原本只在「嵌入模式且未展开」时 `openPanel()`；若面板已展开但 `currentPath` 已被复位（水合/断线时清过），重连后会停在空白。现在补一条 `else if (expanded && !currentPath) navigateToRoot()`。
+- **验证（先复现、再修、并证明守护测试能抓住它）**：真实 MV3 探针新增 5f 段 —— 存好嵌入模式与宽度（真实用户态，面板会立即恢复展开）→ 重载 → 断言「启动竞态确实发生（面板抢跑时列过全局默认目录）」+「水合后自动纠正到会话绑定目录（不需要切会话）」+「收起再展开仍正确」→ 探针扩到 **62 项全过**。为证明这条守护能抓到 bug，**只**把构建产物里监听端的 `session-hydrated` 改名（派发端不动）再跑：恰好这两项 FAIL、面板停在全局默认目录，与用户描述的症状完全一致；恢复后全绿。单测新增 5 例（信号函数定义与字段、未就绪不广播、两条路径紧邻广播、不得复用 `session-switched`、面板监听必须走 `syncWorkspaceToSession`）。回归 `npx vitest run` **204 文件 / 3080 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：修掉「重载后绑定被保存链路抹掉」导致 chip 误报目录不可用
 > 来源：用户反馈「鼠标移上去，工作目录上显示『…/workspace（默认）目录不存在或不可访问，请重新选择』」。
 
