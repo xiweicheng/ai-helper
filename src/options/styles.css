@@ -3962,6 +3962,35 @@ textarea {
   100% { box-shadow: 0 0 0 12px rgba(var(--brand-rgb, 59, 130, 246), 0); }
 }
 
+/* ==================== 语音输入：输入设备（麦克风） ==================== */
+/* 同「快捷触发」：独立成块、不随总开关收起（纯扩展侧偏好） */
+.asr-device-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+/* 全局 select 是 width:100%，这里限宽：设备名再长也不该把整行撑爆 */
+.asr-device-row select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 460px;
+}
+.asr-device-row .toolbox-add-btn {
+  flex: 0 0 auto;
+}
+.asr-device-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.7;
+}
+.asr-device-note.warn {
+  opacity: 1;
+  color: var(--danger-600, #dc2626);
+}
+
 /* ==================== 语音输入：快捷触发（单键） ==================== */
 /* 独立成块、不随总开关收起：这是纯扩展侧偏好（chrome.storage.local），
    代理离线或还没装模型时也应该能先把键位配好 */

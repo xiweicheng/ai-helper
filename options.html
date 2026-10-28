@@ -834,6 +834,23 @@
         </div>
       </div>
 
+      <!-- 输入设备：纯扩展侧偏好（chrome.storage.local），不依赖代理端，所以独立成块、
+           不跟随语音总开关收起 —— 代理离线 / 还没装模型时也能先把设备配好。
+           默认「跟随系统默认」：不指定设备时浏览器用系统默认麦，插拔自动跟随 -->
+      <div class="toolbox-section" id="asrDeviceSection">
+        <div class="toolbox-section-header">
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title" data-i18n="toolbox.asrDeviceTitle">🎧 输入设备</h2>
+          </div>
+          <span class="toolbox-section-desc" data-i18n="toolbox.asrDeviceDesc">默认跟随系统默认的录音设备；接了新麦克风（USB / 蓝牙 / 声卡）可以在这里指定，改完立即生效。选中的设备被拔掉时会自动回退系统默认并提示。</span>
+        </div>
+        <div class="asr-device-row">
+          <select id="asrDeviceSelect" aria-label="输入设备"></select>
+          <button class="toolbox-add-btn" id="asrDeviceRefreshBtn" type="button" data-i18n="toolbox.asrDeviceRefresh">刷新列表</button>
+        </div>
+        <div class="asr-device-note" id="asrDeviceNote" data-i18n="toolbox.asrDeviceNoteLoading">正在读取设备列表…</div>
+      </div>
+
       <!-- 快捷触发：纯扩展侧偏好（chrome.storage.local），不依赖代理端，所以独立成块、
            不跟随语音总开关收起 —— 代理离线 / 还没装模型时也能先把键位配好
            Alt+V 不在可配范围内：它是既定习惯，这里的勾选只决定「额外的单键」 -->

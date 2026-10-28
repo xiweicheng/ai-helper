@@ -2,6 +2,18 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-29
+
+### 语音输入：可自选输入设备（麦克风）
+
+> 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。
+
+- **原来写死系统默认**：采集侧 `getUserMedia({ audio: { channelCount: 1, echoCancellation, noiseSuppression, autoGainControl } })` 不带 `deviceId`，永远走系统默认录音设备，插了 USB / 蓝牙麦克风也没法指定。
+- **新增 `src/shared/audio-input-device.js`**：设备列表（只留 `audioinput`，滤掉 Chrome 的 `default` / `communications` 伪设备与重复项，`label` 为空时回落占位名）；选择读写落 `chrome.storage.local[voiceInputDevice]`（空串 = 跟随系统默认，不删键，语义更明确）；`watchAudioInputDevices()` 监听 `devicechange`；`acquireAudioStream()` 选了就 `deviceId: { exact }`，仅 `OverconstrainedError` / `NotFoundError` / `NotReadableError` 回退默认并返回 `fellBack: true`，`NotAllowedError` 不吞（仍走「去授权」）。
+- **选项页新增「输入设备」块**：在语音 Tab 里但位于 `#asrSection` 之外（纯扩展侧偏好，代理离线也能先配好），下拉 + 「刷新列表」+ 一行状态说明（未授权提示去授权、设备已拔出标黄）；设备拔掉时下拉回落显示「跟随系统默认」，但**不清存储**——蓝牙断连后 `deviceId` 会回来，抹掉等于逼用户重选。
+- **不静默换设备**：录音开始后若真的发生了回退，录音条显示「原麦克风不可用，已改用系统默认」4 秒再恢复「正在听…」。
+- **验证**：新增 `test/unit/audio-input-device.unit.test.js`（20 例）、`test/unit/voice-input-device.unit.test.js`（4 例），`voice-tab-structure` 补 1 例（设备块不得被包回 `#asrSection`）；真实 MV3 探针 `test-results-probes/_voice-device-select.mjs`（`--use-fake-device-for-media-stream`）**10 项全过**，其中两项只有浏览器能回答——`exact` 取到的确实是选中的设备、不存在的 `deviceId` 报 `OverconstrainedError`（回退分支的前提）。回归 `npx vitest run` **207 文件 / 3117 例**、`npx eslint` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ## 2026-10-28
 
 ### 会话级工作目录：刷新后文件面板不再停在全局默认目录（启动竞态补对齐）

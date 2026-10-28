@@ -7,6 +7,13 @@ import { state, agentApi, getAgentConnection, escapeHtml, showToast, showCustomC
 import { t } from '../shared/i18n.js';
 import { queryMicState, requestMicAccess, watchMicState } from '../shared/mic-permission.js';
 import { loadVoiceShortcutConfig, saveVoiceShortcutConfig } from '../shared/voice-shortcut.js';
+import {
+  loadSelectedDeviceId,
+  saveSelectedDeviceId,
+  listAudioInputDevices,
+  hasAudioInputDevice,
+  watchAudioInputDevices,
+} from '../shared/audio-input-device.js';
 import logger from '../shared/logger.js';
 
 /** 安装状态轮询间隔（毫秒） */
@@ -18,6 +25,7 @@ const DOWNLOAD_POLL_INTERVAL_MS = 1500;
 let installPollTimer = null;
 let eventsBound = false;
 let shortcutBound = false;
+let deviceBound = false;
 let lastStatus = null;
 // 轮询期间连续取不到状态的次数（防一次网络抖动就误报安装失败）
 let installPollFailures = 0;
@@ -298,6 +306,8 @@ export async function refreshAsrSection() {
   const container = document.getElementById('asrSectionContent');
   if (!container) return;
   const section = document.getElementById('asrSection');
+  // 设备列表独立于代理端：放在最前面，代理离线/未装模型时也要能列
+  void refreshDeviceList();
 
   await getAgentConnection();
   if (!state.agentConnected) {
@@ -395,6 +405,8 @@ async function grantMicAccess() {
   } finally {
     // 不管结果如何都回到真实状态（按钮文案与可用性由 refreshMicState 统一重置）
     await refreshMicState();
+    // 授权后设备名（label）才拿得到：立刻重枚举一次，用户就不用再手动刷新
+    refreshDeviceList();
   }
   if (res?.ok) showToast(t('toolbox.asrMicGrantedToast'));
   else if (res?.state === 'denied') showToast(t('toolbox.asrMicDeniedToast'), 'error');
@@ -466,6 +478,72 @@ function initShortcutSection() {
   };
   bind('rightAlt', rightAlt);
   bind('rightCtrl', rightCtrl);
+}
+
+// ==================== 输入设备（麦克风） ====================
+//
+// 与「快捷触发」同一定位：纯扩展侧偏好（chrome.storage.local），不走代理端，
+// 也不跟随语音总开关收起。语义与 shared/audio-input-device.js 一致：空串 = 跟随系统默认。
+//
+// 注意 enumerateDevices 在未授权时 label 是空串（只能靠 deviceId 分辨），
+// 所以这里要在授权之后（或进 Tab 时）重新枚举一次才能看到设备名。
+
+/**
+ * 刷新下拉列表：列表来自 enumerateDevices，选中值以存储为准（存储是唯一真源）
+ */
+async function refreshDeviceList() {
+  const sel = document.getElementById('asrDeviceSelect');
+  if (!sel) return;
+  const note = document.getElementById('asrDeviceNote');
+  const list = await listAudioInputDevices();
+  const selected = await loadSelectedDeviceId();
+
+  const options = [`<option value="">${escapeHtml(t('toolbox.asrDeviceFollowSystem'))}</option>`];
+  list.forEach((device, index) => {
+    const name = device.label || t('toolbox.asrDeviceUnnamed', { index: index + 1 });
+    options.push(`<option value="${escapeHtml(device.deviceId)}">${escapeHtml(name)}</option>`);
+  });
+  sel.innerHTML = options.join('');
+
+  // 设备不在了（拔掉 / 禁用）时先回落到「跟随系统默认」显示，但**不清存储**：
+  // 蓝牙耳机断开再连上时同一个 deviceId 会回来，直接抹掉反而让用户要重选一次
+  const present = hasAudioInputDevice(list, selected);
+  sel.value = present ? selected : '';
+
+  let msg = '';
+  let warn = false;
+  if (list.length === 0) {
+    msg = t('toolbox.asrDeviceEmpty');
+  } else if (selected && !present) {
+    msg = t('toolbox.asrDeviceMissing');
+    warn = true;
+  } else if (list.every((device) => !device.label)) {
+    msg = t('toolbox.asrDeviceNeedPermission');
+  }
+  if (note) {
+    note.textContent = msg;
+    note.hidden = !msg;
+    note.classList.toggle('warn', warn);
+  }
+}
+
+/** 首次进入时挂上：选择即时落盘；插拔设备自动刷新列表 */
+function initDeviceSection() {
+  const sel = document.getElementById('asrDeviceSelect');
+  if (!sel) return;
+  refreshDeviceList();
+  if (deviceBound) return;
+  deviceBound = true;
+
+  sel.addEventListener('change', async () => {
+    const next = await saveSelectedDeviceId(sel.value);
+    // 以落盘结果回写：存储失败时下拉不能骗人
+    await refreshDeviceList();
+    showToast(next ? t('toolbox.asrDeviceSaved') : t('toolbox.asrDeviceFollowSystemSaved'));
+  });
+  document.getElementById('asrDeviceRefreshBtn')?.addEventListener('click', () => { refreshDeviceList(); });
+  // USB 麦插上 / 蓝牙耳机连上 / 设备被拔：列表跟着变（devicechange 是全局事件，只绑一次）
+  watchAudioInputDevices(() => { refreshDeviceList(); });
 }
 
 // ==================== 事件 ====================
@@ -780,6 +858,7 @@ export function initAsrEvents() {
   if (eventsBound) return;
   eventsBound = true;
   initMicSection();
+  initDeviceSection();
   initShortcutSection();
   // 语言下拉：点击区域外收起。全局只绑一次（每次重渲染都会重建 DOM，
   // 若在 bindSectionEvents 里绑会不断累积监听）

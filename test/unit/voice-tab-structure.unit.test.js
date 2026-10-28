@@ -52,14 +52,32 @@ describe('语音输入独立成 Tab', () => {
 
   test('语音面板承载 ASR 的全部节点', () => {
     const panel = panelSlice('voice');
-    for (const id of ['asrSection', 'asrSectionContent', 'asrEnableToggle', 'asrMicBlock']) {
+    for (const id of [
+      'asrSection', 'asrSectionContent', 'asrEnableToggle', 'asrMicBlock',
+      // 输入设备：纯扩展侧偏好，独立成块且不随总开关收起（代理离线也要能选）
+      'asrDeviceSection', 'asrDeviceSelect', 'asrDeviceNote',
+    ]) {
       expect(panel, `语音面板缺少 #${id}`).toContain(`id="${id}"`);
     }
   });
 
+  test('输入设备与快捷触发都不在 #asrSection 里面（不跟随总开关收起）', () => {
+    const panel = panelSlice('voice');
+    const sectionStart = panel.indexOf('id="asrSection"');
+    const deviceStart = panel.indexOf('id="asrDeviceSection"');
+    // #asrSection 的结束靠后面这些独立块的位置反推：#asrDeviceSection / #asrShortcutSection
+    // 必须在同一层级（都在 #asrSection 外面），即出现在它的结束标签之后
+    expect(sectionStart).toBeGreaterThan(-1);
+    expect(deviceStart).toBeGreaterThan(-1);
+    const asrSectionChunk = panel.slice(sectionStart, deviceStart);
+    expect(asrSectionChunk, '设备块又被包回了 #asrSection（会被总开关收起）')
+      .toContain('id="asrMicBlock"');
+    expect(panel.indexOf('id="asrShortcutSection"')).toBeGreaterThan(deviceStart);
+  });
+
   test('「扩展」面板里不再残留任何 ASR 节点', () => {
     const panel = panelSlice('toolbox');
-    for (const id of ['asrSection', 'asrEnableToggle', 'asrMicBlock']) {
+    for (const id of ['asrSection', 'asrEnableToggle', 'asrMicBlock', 'asrDeviceSection']) {
       expect(panel, `「扩展」面板里仍有 #${id}`).not.toContain(`id="${id}"`);
     }
   });

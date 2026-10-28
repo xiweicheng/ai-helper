@@ -19,6 +19,7 @@ import {
   watchVoiceShortcutConfig,
   DEFAULT_VOICE_SHORTCUT_CONFIG,
 } from '../shared/voice-shortcut.js';
+import { loadSelectedDeviceId, acquireAudioStream } from '../shared/audio-input-device.js';
 
 registerTranslations('zh', {
   voice: {
@@ -47,6 +48,7 @@ registerTranslations('zh', {
     keyRightAlt: '右侧 Alt',
     keyRightCtrl: '右侧 Ctrl',
     btnTitle: '语音输入（{keys}）',
+    deviceFallback: '原麦克风不可用，已改用系统默认',
   },
 });
 registerTranslations('en', {
@@ -76,6 +78,7 @@ registerTranslations('en', {
     keyRightAlt: 'Right Alt',
     keyRightCtrl: 'Right Ctrl',
     btnTitle: 'Voice input ({keys})',
+    deviceFallback: 'Selected microphone unavailable — using the system default',
   },
 });
 
@@ -127,6 +130,8 @@ const st = {
   shortcutCfg: { ...DEFAULT_VOICE_SHORTCUT_CONFIG },
   shortcutTrigger: null,
   shortcutBound: false,
+  // 本次录音是否因「选中的设备不可用」回落到了系统默认（用于录音条提示一次）
+  deviceFellBack: false,
 };
 
 // ==================== 小工具 ====================
@@ -603,15 +608,12 @@ async function startCapture() {
     setBarStatus(t('voice.unsupported'), 'warn');
     throw new Error('unsupported');
   }
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      channelCount: 1,
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
-  });
-  st.stream = stream;
+  // 设备选择每次开录都从存储重读：用户可能刚插了个麦，也可能刚在配置页改过
+  // （存储是唯一真源，不在这里缓存一份 —— 缓存的代价是改了配置却还在用旧设备）
+  const selectedDeviceId = await loadSelectedDeviceId();
+  const acquired = await acquireAudioStream(selectedDeviceId);
+  st.stream = acquired.stream;
+  st.deviceFellBack = acquired.fellBack === true;
 
   const Ctx = window.AudioContext || window.webkitAudioContext;
   // 尽量让浏览器直接给 16k，省一次重采样；拿不到就在回调里线性插值
@@ -626,7 +628,7 @@ async function startCapture() {
   }
   st.ctx = ctx;
 
-  const source = ctx.createMediaStreamSource(stream);
+  const source = ctx.createMediaStreamSource(acquired.stream);
   st.source = source;
 
   try {
@@ -751,6 +753,14 @@ async function startRecording(opts = {}) {
   st.startedAt = Date.now();
   st.phase = 'recording';
   setBarStatus(t('voice.listening'));
+  // 回落提示：只在本次录音的开头亮几秒，随后回到正常状态（不影响后续的静音提醒）
+  if (st.deviceFellBack) {
+    st.deviceFellBack = false;
+    setBarStatus(t('voice.deviceFallback'), 'warn');
+    setTimeout(() => {
+      if (st.phase === 'recording') setBarStatus(t('voice.listening'));
+    }, 4000);
+  }
   startTimer();
 
   try {
