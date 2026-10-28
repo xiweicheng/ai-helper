@@ -4,6 +4,17 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：切会话时文件面板跟着换目录（+ 顺带清掉上个会话的预览）
+> 来源：用户实测反馈「切会话后，输入框下方的目录 chip 变了，但侧边栏靠边的文件面板没跟着变，展示的仍是最近一次会话设置的目录」。
+
+- **根因（静默错目录）**：面板的浏览位置 `currentPath` / `workspaceRoot` 是 `workspace-panel.js` 的模块级单例，切会话时没人复位它；而 `openPanel()` 只在 `!currentPath` 时才解析根目录，所以关掉再开也修不回来。更隐蔽的是新旧目录通常都在 `allowedPaths` 内，`/api/fs/list` 不报 403，连刷新按钮也只是把错误目录再列一遍 —— 用户看到的是「有内容、但不对」。chip 与上下文估算各自监听了 `session-workdir-changed`，所以只有它们跟着变。
+- **单一同步入口**：新增 `syncWorkspaceToSession()`，负责「清 `workspace-manager` 会话级缓存 → 清面板导航态（`currentPath` / 历史 / 搜索 / `dirCache`）→ 目录真的变了才 `navigateToRoot()`」。`initWorkspacePanel()` 里注册 `session-switched` 与 `session-workdir-changed` 两个监听；后者按 `detail.sessionId` 过滤，别的会话改目录不动本面板。
+- **不丢用户位置**：先取目标会话的根再比较，**目录没变（多个会话共用同一目录，含都未绑定）直接短路**，不重导航、不跳回根目录；只有目录真的换了才复位重列。
+- **收起态也安全**：收起时只清缓存不导航，靠 `openPanel()` 既有的 `if (!currentPath)` 分支在下次打开时按新会话重新解析。
+- **预览不串会话**：切会话时若正开着文件预览，强关（`closePreview(true)` 跳过「未保存」确认，避免切会话被模态框拦住），并先清 `previewAutoClosePanel`，防止产物预览展开的面板被顺手收起。
+- **收敛重复入口**：`afterWorkdirChanged()` 改为只广播 `session-workdir-changed`，复位/重导航统一交给监听，避免「自己导航一次 + 监听再导航一次」连续列两遍目录；`sessionSyncToken` 让同一批事件只让最后一次真正导航。
+- **验证**：新增 `test/unit/workspace-panel-session-sync.unit.test.js`（14 例源码守卫：两个监听必须走单一入口、复位在导航之前、同目录短路、`afterWorkdirChanged` 不得再自行导航、收起态依赖 `!currentPath`）；真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 从 36 项扩到 **45 项全过**，新增「切会话 → 面板换目录（面包屑 + `/api/fs/list` 换新会话头）→ 旧会话预览被关闭 → 面板保持展开 → 收起态切回后重开定位回绑定目录」9 项；回归 `npx vitest run` **202 文件 / 3046 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 语音输入：右侧 Alt / 右侧 Ctrl 单键触发（可配置，AltGr 不误触）
 > 来源：用户反馈「Alt+V 有时候按起来不方便」，希望把一般闲置的右侧 Alt / 右侧 Ctrl 也做成触发键，且要能配、能两个都开、也能只开一个。
 

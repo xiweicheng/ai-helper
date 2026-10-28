@@ -762,6 +762,17 @@ export function initWorkspacePanel() {
   getSideRailSlot('workspace').appendChild(container);
 
   bindEvents();
+  // 会话切换 / 本会话目录变更：面板浏览位置必须按目标会话重解析
+  // （currentPath 是模块级单例，不复位就会停在上一个会话的目录上）
+  document.addEventListener('session-switched', () => {
+    syncWorkspaceToSession().catch(err => logger.warn('[WorkspacePanel] sync after session switch failed', err));
+  });
+  document.addEventListener('session-workdir-changed', (e) => {
+    const sid = e.detail?.sessionId;
+    // 别的会话改目录不影响本面板；无 sessionId（旧事件/删会话）按当前会话处理
+    if (sid && sid !== state.activeSessionId) return;
+    syncWorkspaceToSession().catch(err => logger.warn('[WorkspacePanel] sync after workdir change failed', err));
+  });
   loadSearchHistory();
   updateWorkspaceAgentName();
   setupEmbedDivider();
@@ -6330,17 +6341,70 @@ function resetPanelNavigationState() {
   }
 }
 
+// 会话同步的序号：同一批事件（切会话会同时触发目录变更与会话切换）只让最后一次导航
+let sessionSyncToken = 0;
+
 /**
- * 目录变更后的统一收尾：清缓存 + 复位面板 + 重导航 + 通知其余 UI
- * 目录 chip / 上下文估算缓存 / 系统提示词缓存都靠 session-workdir-changed 对齐
+ * 会话切换 / 本会话目录变更后，把面板对齐到目标会话的目录（唯一入口）
+ *
+ * 为什么必须复位：currentPath / workspaceRoot 是模块级单例，且旧目录通常仍在
+ * allowedPaths 里，`/api/fs/list` 不会报错——不复位就表现为「静默显示上一个会话的目录」。
+ * 收起态只清缓存不导航：openPanel() 的 `if (!currentPath)` 会在下次打开时重新解析根目录。
+ *
+ * 目录 chip / 上下文估算缓存 / 系统提示词缓存都靠 session-workdir-changed 对齐，
+ * 本函数只负责面板自己的浏览位置。
+ */
+async function syncWorkspaceToSession() {
+  const token = ++sessionSyncToken;
+
+  // 代理未连接：只复位缓存，等重连/下次打开再解析（避免这里弹「未连接」错误）
+  if (state.agentPlatform?.connected !== true) {
+    resetWorkspaceRoot();
+    resetPanelNavigationState();
+    return;
+  }
+
+  // 会话绑定的代理可能不同，面板标题上的代理名一并跟随
+  await updateWorkspaceAgentName();
+
+  const prevRoot = workspaceRoot;
+  resetWorkspaceRoot();
+  let nextRoot = null;
+  try {
+    nextRoot = await getWorkspaceRoot();
+  } catch (err) {
+    logger.warn('[WorkspacePanel] resolve root for session failed:', err?.message || err);
+  }
+  if (token !== sessionSyncToken) return;
+
+  // 目录没变（多个会话共用同一目录，含都未绑定）：保留浏览位置，不重导航
+  if (prevRoot && nextRoot && prevRoot === nextRoot) return;
+
+  resetPanelNavigationState();
+
+  // 预览里的文件属于上一个会话：强关（force=true 跳过「未保存」确认，
+  // 否则切会话会被模态框拦住）。先清 previewAutoClosePanel，
+  // 否则产物预览展开的面板会在关闭预览时被一并收起。
+  const previewArea = document.getElementById('workspacePreviewArea');
+  if (previewArea && previewArea.dataset.previewPath) {
+    previewAutoClosePanel = false;
+    await closePreview(true);
+  }
+
+  // 让同一批事件先跑完，只让最后一次真正导航（避免连续列两次目录的闪烁）
+  await Promise.resolve();
+  if (token !== sessionSyncToken) return;
+
+  const panel = document.getElementById('workspacePanel');
+  if (!panel || !panel.classList.contains('expanded')) return;
+  await navigateToRoot();
+}
+
+/**
+ * 目录变更后的统一收尾：只广播事件，面板复位/重导航交给 syncWorkspaceToSession()
+ * 单一入口负责（这里再导航会与监听重复，连续列两次目录）
  */
 async function afterWorkdirChanged(sessionId, workdir) {
-  resetWorkspaceRoot();
-  resetPanelNavigationState();
-  const panel = document.getElementById('workspacePanel');
-  if (panel && panel.classList.contains('expanded')) {
-    await navigateToRoot();
-  }
   document.dispatchEvent(new CustomEvent('session-workdir-changed', {
     detail: { sessionId, workdir }
   }));
