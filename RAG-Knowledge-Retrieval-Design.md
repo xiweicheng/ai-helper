@@ -107,6 +107,27 @@ Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
 
 > 说明：`officeparser` 覆盖 .docx/.pptx/.xlsx/.pdf/.rtf/.odt 等 Office 与 PDF 格式，作为完整解析能力引入；实施时按 5.6 的"格式覆盖矩阵"确定最终保留的解析器与依赖（xlsx 也可直接复用 agent 现有的核心依赖 `xlsx`，见 5.6）。
 
+**进程隔离：本地 embedding 必须在子进程里跑（v1.4 实测补充，Windows）**：
+
+语音输入（`sherpa-onnx-node`）与本地向量（`onnxruntime-node`）各自捆绑一份 onnxruntime 原生库。Windows 的 `LoadLibrary` **按「模块基名」复用模块**——同一进程里出现第二份 `onnxruntime.dll` 时，后来者直接拿到先加载那份的句柄；两份版本不同就会出现 binding 要的 API 版本在旧 dll 里不存在：
+
+```
+检索失败: The operating system cannot run %1.
+\\?\C:\Users\...\node_modules\onnxruntime-node\bin\napi-v6\win32\x64\onnxruntime_binding.node
+```
+
+（Win32 193 `ERROR_BAD_EXE_FORMAT`；另一种表现是 `API version [N] is not available`。）用户「先装知识库、后装语音输入」必现：ASR 在线识别在主进程加载 sherpa 的 dll，随后 RAG 在主进程加载 onnxruntime-node 的 dll。
+
+修复由两层组成，缺一不可：
+
+1. **进程隔离**（根治）：`agent/src/rag/embedding/embed-worker.mjs` 是**整个安装里唯一 import `@huggingface/transformers` 的地方**，通过 `worker-client.js` 以子进程 + NDJSON（stdin/stdout 单行 JSON）驱动；`local.js` 只做透传，主进程与 ASR 的 worker_threads 都不再加载 onnxruntime-node。`worker_threads` 与主线程共享地址空间，**隔离不了**，只能用子进程。
+2. **副本去重**（防复发）：`agent/src/native-lib-guard.js` 在每次一键安装（RAG / ASR 都会重算包目录依赖树）之后，把嵌套的 `node_modules/@huggingface/transformers/node_modules/onnxruntime-node` 删掉，只保留顶层（= overrides 钉的版本）。npm 在部分版本/安装顺序下不合并冲突版本，只靠 overrides 不可靠。`onnxruntime-common` 不进清理名单（纯 JS、`onnxruntime-web` 正常自带 dev 版）。
+
+配套错误码：`rag.err_ortConflict` —— 命中 `cannot run %1` / `ERROR_BAD_EXE_FORMAT` / `API version [N]` / `onnxruntime_binding.node` 时提示「重启代理」，因为已加载的 DLL 在进程退出前无法卸载，热修无效。
+
+手工验收：`node agent/test/manual/rag-embed-isolation.mjs`（真实推理 512 维 + 断言主进程零 onnxruntime 加载 + 打印副本与 common 版本）。
+
+
 ### 3.3 Agent 端：运行时能力检测
 
 复用 `search.js` 中检测 `fd`/`rg` 的模式，新增 `agent/src/rag/detect.js`：
