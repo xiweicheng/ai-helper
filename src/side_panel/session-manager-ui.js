@@ -16,7 +16,8 @@ import {
   saveCurrentSession,
   reorderSessions,
   duplicateSession,
-  clearSessionCompleted
+  clearSessionCompleted,
+  hydrateSessionWorkdir
 } from './session-manager.js';
 import { getQueuedCount, getRecent } from './queue-store.js';
 import logger from '../shared/logger.js';
@@ -321,6 +322,8 @@ export async function newSession() {
   state.messageHistory = [];
   // 新会话无压缩记录
   state.activeCompaction = null;
+  // 新会话未绑定目录：必须显式清空，否则会把上一个会话的绑定带进新会话
+  hydrateSessionWorkdir(newSession);
   document.dispatchEvent(new CustomEvent('session-switched', {
     detail: { sessionId: newSession.id, previousSessionId }
   }));
@@ -1279,6 +1282,8 @@ async function reloadAfterDelete() {
   state.messageHistory = active ? (active.messageHistory || []) : [];
   // 恢复会话级上下文压缩记录（无则置 null）
   state.activeCompaction = active?.contextCompaction || null;
+  // 恢复新活跃会话的目录绑定（否则后续保存会把绑定抹掉）
+  hydrateSessionWorkdir(active);
 
   // 恢复新活跃会话的 Agent 绑定，避免被关闭会话的 Agent 覆盖
   state.activeAgentId = active ? (active.agentId || null) : null;

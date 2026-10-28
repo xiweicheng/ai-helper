@@ -38,6 +38,7 @@ import { initQueueRunner, bindDispatcher, enqueueFromInput, injectAdHocText, mar
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { initVoiceInput, toggleVoiceInput, handleVoiceEscape, matchVoiceShortcut } from './voice-input.js';
 import { resolveWorkdirForSession, formatWorkdirLabel } from '../shared/workdir-scope.js';
+import { reconcileSessionWorkdir } from './workdir-reconcile.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -615,11 +616,22 @@ async function updateWorkdirTag() {
   nameEl.textContent = formatWorkdirLabel(workdir, { homeDir });
   // 同会话任务执行中：禁止切换（点击只提示，不弹窗）
   el.dataset.locked = (state.generatingSessionIds?.has(sid) || hasQueuedItems(sid)) ? 'true' : 'false';
-  // 与代理端权威值比对：注册表被剪枝 / 目录被改名时不静默回落，chip 标异常并在 title 说明
+  // 与代理端权威值比对。两种不一致要分开处理：
+  //   1) 本会话目录解析成功、但与代理端不符 → 目录被改名/删除，chip 标异常（如实提示）
+  //   2) 扩展端解析为「默认」、代理端还留着本会话旧绑定 → 两侧记录漂移（历史 bug 抹过绑定），
+  //      不是目录不可用：静默按代理端修复，修好后 chip 会随事件自动刷新
   try {
     const { getWorkspaceRoot } = await import('./workspace-manager.js');
     const agentRoot = await getWorkspaceRoot(sid);
-    el.dataset.invalid = (agentRoot && agentRoot !== workdir) ? 'true' : 'false';
+    const mismatch = !!(agentRoot && agentRoot !== workdir);
+    if (mismatch && resolved.scope === 'default') {
+      el.dataset.invalid = 'false';
+      reconcileSessionWorkdir(sid)
+        .then((result) => { if (result) updateWorkdirTag(); })
+        .catch((err) => logger.debug('[WorkdirTag] reconcile failed:', err && err.message));
+    } else {
+      el.dataset.invalid = mismatch ? 'true' : 'false';
+    }
   } catch {
     el.dataset.invalid = 'false';
   }

@@ -8,7 +8,7 @@ import { showToast, adjustInputHeight, getSystemPrompt, getApiParams, ensureChat
 import { getCurrentAgentPrompt, getCurrentAgentToolIds } from './agent-manager.js';
 import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents, applyFilePathLinks, bindFileLinkDelegate, stripArtifactMarkers } from './markdown-render.js';
-import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted, persistSessionState } from './session-manager.js';
+import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted, persistSessionState, hydrateSessionWorkdir } from './session-manager.js';
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
@@ -401,6 +401,8 @@ async function _loadChatHistoryImpl() {
       state.messageHistory = activeSession.messageHistory || [];
       // 恢复会话级上下文压缩记录（无则置 null）
       state.activeCompaction = activeSession.contextCompaction || null;
+      // 恢复会话级工作目录绑定：漏了这句，首次保存就会把库里的绑定写成 null
+      hydrateSessionWorkdir(activeSession);
       state.currentModel = activeSession.model || state.currentModel;
       state.useTools = activeSession.useTools !== undefined ? activeSession.useTools : state.useTools;
       // enabledTools 由智能体独立 key 管理，不再从会话恢复（此处可能导致竞态条件覆盖正确值）
@@ -559,6 +561,7 @@ async function _loadChatHistoryImpl() {
     if (refreshedData.activeSessionId) {
       state.activeSessionId = refreshedData.activeSessionId;
       state.sessions = refreshedData.list;
+      hydrateSessionWorkdir(refreshedData.list.find(s => s.id === refreshedData.activeSessionId));
     }
     
     renderSessionTabs(refreshedData);

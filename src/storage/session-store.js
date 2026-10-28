@@ -126,6 +126,19 @@ function getTextContent(content) {
 }
 
 /**
+ * 把会话记录里的工作目录绑定水合进内存态。
+ * 所有「让某个会话变成当前会话」的路径都必须调用：只恢复 messageHistory / model
+ * 而漏掉目录，会让 saveCurrentSession 把库里的真实绑定覆盖成 null
+ * （代理端注册表与扩展端记录从此漂移，chip 回落默认并误报目录不可用）。
+ * @param {{ id?: string, workdir?: string|null, workdirAgentId?: string|null }|null} session
+ */
+export function hydrateSessionWorkdir(session) {
+  state.sessionWorkdir = session?.workdir || null;
+  state.workdirAgentId = session?.workdirAgentId || null;
+  state.sessionWorkdirOwner = session?.id || null;
+}
+
+/**
  * 保存当前会话状态
  */
 export async function saveCurrentSession() {
@@ -149,8 +162,11 @@ export async function saveCurrentSession() {
 
   // 会话级工作目录绑定：只写本会话自己的值（null = 跟随代理默认）
   // workdirAgentId 是「绑定时生效的代理」，换代理后绑定仍保留（切回原代理仍生效）
-  currentSession.workdir = state.sessionWorkdir || null;
-  currentSession.workdirAgentId = state.sessionWorkdir ? (state.workdirAgentId || null) : null;
+  // 只有内存态确实属于本会话时才回写，避免部分水合的路径把真实绑定抹成 null
+  if (state.sessionWorkdirOwner === state.activeSessionId) {
+    currentSession.workdir = state.sessionWorkdir || null;
+    currentSession.workdirAgentId = state.sessionWorkdir ? (state.workdirAgentId || null) : null;
+  }
 
   currentSession.messageHistory = serializeMessageHistory(state.messageHistory);
 
@@ -417,8 +433,7 @@ export async function switchToSession(sessionId) {
   state.activeAgentId = targetSession.agentId || null;
   // 会话级工作目录：只恢复目标会话自己的绑定，不触碰代理全局 workdir。
   // 绑定是否生效由 resolveWorkdirForSession 判定（代理不匹配时回落默认，记录保留）
-  state.sessionWorkdir = targetSession.workdir || null;
-  state.workdirAgentId = targetSession.workdirAgentId || null;
+  hydrateSessionWorkdir(targetSession);
   // 面板缓存按会话维度失效：$ 文件选择器/目录面板下次取值会重新按本会话解析
   try {
     const { resetWorkspaceRoot } = await import('../side_panel/workspace-manager.js');
@@ -582,6 +597,7 @@ export async function setSessionWorkdirBinding(sessionId, workdir, workdirAgentI
   if (state.activeSessionId === sessionId) {
     state.sessionWorkdir = target.workdir;
     state.workdirAgentId = target.workdirAgentId;
+    state.sessionWorkdirOwner = sessionId;
   }
 
   const ok = await idb.putSession(target);

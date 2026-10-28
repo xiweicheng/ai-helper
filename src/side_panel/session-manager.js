@@ -97,6 +97,13 @@ export async function saveCurrentSession() {
 }
 
 /**
+ * 把会话记录里的目录绑定水合进内存态（所有激活会话的路径都要调）
+ */
+export function hydrateSessionWorkdir(session) {
+  return store.hydrateSessionWorkdir(session);
+}
+
+/**
  * 把一份会话态写回指定会话（跨会话接力用，不依赖 activeSessionId）
  */
 export async function persistSessionState(sessionId, snapshot) {

@@ -64,6 +64,11 @@ export let agentPlatform = {
 export let sessionWorkdir = null;
 // 绑定时生效的代理 id；换代理后绑定仍保留（切回原代理仍生效），是否生效由 resolveWorkdirForSession 判定
 export let workdirAgentId = null;
+// 上面两个字段当前属于哪个会话（水合标记）。
+// saveCurrentSession 只在本标记 === activeSessionId 时回写 workdir / workdirAgentId，
+// 否则保留库里已有值 —— 历史上「启动只恢复了消息和模型、没恢复目录」的路径
+// 会用 null 覆盖掉真实绑定，导致扩展端回落到默认目录、代理端注册表还留着旧绑定。
+export let sessionWorkdirOwner = null;
 // 代理全局默认工作目录（/api/status/detail 的 defaultWorkdir），未绑定会话的兜底与展示用
 export let defaultWorkdir = '';
 
@@ -255,6 +260,8 @@ export default {
   set sessionWorkdir(v) { sessionWorkdir = v; },
   get workdirAgentId() { return workdirAgentId; },
   set workdirAgentId(v) { workdirAgentId = v; },
+  get sessionWorkdirOwner() { return sessionWorkdirOwner; },
+  set sessionWorkdirOwner(v) { sessionWorkdirOwner = v; },
   get defaultWorkdir() { return defaultWorkdir; },
   set defaultWorkdir(v) { defaultWorkdir = v; },
   get inputHistory() { return inputHistory; },

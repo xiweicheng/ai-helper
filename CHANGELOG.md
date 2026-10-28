@@ -4,6 +4,16 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：修掉「重载后绑定被保存链路抹掉」导致 chip 误报目录不可用
+> 来源：用户反馈「鼠标移上去，工作目录上显示『…/workspace（默认）目录不存在或不可访问，请重新选择』」。
+
+- **真实故障（不是文案问题）**：侧边栏启动走的是 `_loadChatHistoryImpl()`，它恢复了 `messageHistory / model / useTools / agentId / contextCompaction`，**唯独没恢复 `state.sessionWorkdir`**；而 `saveCurrentSession()` 是整段覆盖（`currentSession.workdir = state.sessionWorkdir || null`），于是重载后面板里的第一次保存（新建会话、切助手、上下文压缩、可见性变化…十几处都会调）就把库里的真实绑定写成 `null`。结果扩展端按默认目录解析、代理端 `session-workdirs.json` 还留着旧绑定，`updateWorkdirTag()` 的「与代理端权威值比对」判定不一致，把这种**记录漂移**翻译成了「目录不存在或不可访问」。`reloadAfterDelete()` 同样漏了水合；`newSession()` 反过来会把上一个会话的绑定带进新会话。
+- **统一水合入口**：新增 `session-store.hydrateSessionWorkdir(session)`（一次写 `sessionWorkdir / workdirAgentId / sessionWorkdirOwner`），`switchToSession` 改走它；启动加载、首次自动建会话、新建会话、删除后重载全部调用，杜绝「只恢复一半」。
+- **保存闸门**：`state` 新增 `sessionWorkdirOwner`（目录状态属于哪个会话），`saveCurrentSession()` 只在 `owner === activeSessionId` 时才回写 workdir 字段，其余情况保留库里原值 —— 将来再冒出部分水合的路径也不会再抹数据。
+- **提示说实话**：`updateWorkdirTag()` 区分两种不一致 —— `scope === 'session'` 且与代理端不符才是真「目录不可用」（保留异常标记）；`scope === 'default'` 但代理端仍有本会话绑定属于**两侧记录漂移**，不再标红。
+- **历史数据自愈**：新增 `src/side_panel/workdir-reconcile.js`（幂等，每会话只试一次）——扩展端没绑定而代理端还留着 → 以代理端为准**恢复绑定**（代理端能返回该目录即证明目录在这台机器上存在，且正是用户当初选的）；扩展端有绑定但属于别的代理（换代理回落）→ **清掉代理端残留**，避免命令跑在旧目录。修好后 chip 随事件自动刷新回「（本会话）」。
+- **验证**：新增 `test/unit/session-workdir-hydration.unit.test.js`（17 例源码守卫：水合入口、保存闸门位置、四条激活路径、自愈分支与幂等、chip 两种不一致的处理）；真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 补 5d 段（**重载面板** → chip 仍是本会话且无「目录不存在」→ 新建会话回到默认且不继承 → 切回绑定会话绑定仍在 → 代理注册表仍在）→ 扩到 **54 项全过**，这正是此前漏掉的关键场景（旧探针全程不重载，所以一直绿）；回归 `npx vitest run` **204 文件 / 3075 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：目录 chip 补齐「新建会话」这条切换路径
 > 来源：用户反馈「面板现在是联动了，但输入框下方的目录 chip 又不动了」。
 
@@ -40,12 +50,26 @@
 > 来源：用户在 Windows 机器上先装知识库、后装语音输入，之后所有检索报 `检索失败: The operating system cannot run %1. ...\onnxruntime_binding.node`。用户在公司机器上手工验证过修复方向（删嵌套副本 + 子进程），要求回收到源码。
 
 - **根因**：`sherpa-onnx-node`（语音输入）与 `onnxruntime-node`（本地向量）各自捆绑一份 onnxruntime 原生库，而 Windows 的 `LoadLibrary` **按「模块基名」复用模块** —— 同一进程出现第二份 `onnxruntime.dll` 时后来者直接拿到先加载那份的句柄。ASR 在线识别在主进程加载 sherpa 的 dll，RAG 随后在主进程加载 onnxruntime-node 的 dll，版本不同即报 Win32 193（另一种表现是 `API version [N] is not available`）。
-- **根治（进程隔离）**：新增 `agent/src/rag/embedding/embed-worker.mjs` 作为**整个安装唯一 import `@huggingface/transformers` 的地方**，跑在独立子进程里，stdin/stdout 单行 JSON（`load` / `embed` / `countTokens`）驱动；配套 `worker-client.js`（串行队列、未加载 180s / 已加载 60s 超时即杀、连续 3 次失败熔断 5 分钟、空闲 10 分钟回收、退出时拒绝在途请求）。`local.js` 只做透传，对外签名不变，RAG 检索与长期记忆无感。`worker_threads` 与主线程共享地址空间，隔离不了，所以必须是子进程。
+- **根治（进程隔离）**：新增 `agent/src/rag/embedding/embed-worker.mjs` 作为**主进程之外唯一的 `@huggingface/transformers` 加载点**（主进程一行都不 import，可用性探测的 `probe-child.mjs` 也跑在独立子进程里），stdin/stdout 单行 JSON（`load` / `embed` / `countTokens`）驱动；配套 `worker-client.js`（串行队列、未加载 180s / 已加载 60s 超时即杀、连续 3 次失败熔断 5 分钟、空闲 10 分钟回收、退出时拒绝在途请求）。`local.js` 只做透传，对外签名不变，RAG 检索与长期记忆无感。`worker_threads` 与主线程共享地址空间，隔离不了，所以必须是子进程。
 - **防复发（副本去重）**：新增 `agent/src/native-lib-guard.js`，RAG / ASR 每次一键安装之后（两者都会重算包目录依赖树）扫一遍 `node_modules`，把嵌套的 `@huggingface/transformers/node_modules/onnxruntime-node` 删掉、只留顶层（= overrides 钉的 1.23.x）。**只清 `onnxruntime-node`**：`onnxruntime-common` 是纯 JS 胶水层，`onnxruntime-web` 正常自带 dev 版，删它只制造风险。清理结果写进安装日志（`rag_native_dedupe` / `asr_native_dedupe`），删除失败（文件被占）不判安装失败。
-- **可诊断**：`errors.js` 识别 `cannot run %1` / `ERROR_BAD_EXE_FORMAT` / `API version [N]` / `onnxruntime_binding.node` 四类特征串，统一映射为新错误码 `rag.err_ortConflict`，文案直接告诉用户「重启代理」—— 已加载的 DLL 在进程退出前无法卸载，热修无效。`RagError` 的 message 现在带上底层原因（此前只剩 `RAG error: <code>`，排障时看不到任何线索）。
+- **可诊断**：`errors.js` 识别 onnxruntime 抢句柄的**强特征**（`cannot run %1` / `ERROR_BAD_EXE_FORMAT` / `not a valid Win32 application` / `API version [N] is not available`）并映射为新错误码 `rag.err_ortConflict`，文案直接告诉用户「重启代理」—— 已加载的 DLL 在进程退出前无法卸载，热修无效。`RagError` 的 message 现在带上底层原因（此前只剩 `RAG error: <code>`，排障时看不到任何线索）。
 - **收尾**：`server.js` 的 shutdown 关闭 embedding 子进程（它跑在独立进程，父进程退出不会自动回收）；新增手工验收 `agent/test/manual/rag-embed-isolation.mjs`（真实 512 维推理 + 断言主进程零 onnxruntime 加载 + 打印副本与 common 版本）。
 - **不变式守卫（审计 + 单测）**：`agent/src` 全域 grep 复核 import 点 —— 真的加载这个包的**只有** `rag/embedding/embed-worker.mjs`；`rag/probe-child.mjs`（可用性探测）是唯一另一处字面量，但它是 `detect.js` 用 `spawn(process.execPath)` 起的独立进程，且 `import(name)` 走变量名、不在包加载期求值；`rag/detect.js` 只做 `detail['@huggingface/transformers']` 键访问；`test-embedding` 路由（`rag/routes.js`）与长期记忆（`memory/service.js`、`memory/routes.js`）全部经 `createEmbeddingProvider` → `LocalEmbedding` → `getEmbedWorker()`。新增 `test/unit/rag-no-mainprocess-transformers.unit.test.js`（12 例）三层锁死：源码静态扫描（剥注释后只允许 worker import、只允许三处字面量、禁止绕过工厂 `new LocalEmbedding`）+ 子进程契约（必须 `process.execPath` spawn、禁 `worker_threads`、probe 只被 spawn）+ **运行时证据**（`test/fixtures/rag-main-module-graph.mjs` 在干净子进程里加载 9 个主进程模块并走通一次本地档往返，断言 `process.report().sharedObjects` 中 onnxruntime 为 0；另带 `--control` 反向对照，先 import transformers 必须能看到 ort 共享库，防止「探不到」造成空转通过）。
 - **验证**：代理端 `node --test test/unit/*.test.js` → **812 例全绿**（新增 32 例：子进程往返/超时/崩溃/熔断/空闲回收/错误映射 + 去重扫描/幂等/不动 `.pnpm` 与 web 的 common + 主进程不 import transformers 的 12 例不变式）；`node test/manual/rag-embed-isolation.mjs` → embed `2 x 512`、countTokens `{counts:[6],window:512}`、主进程 ort/sherpa 原生库 **0 个**；`npx eslint agent/src agent/test` 无输出。
+
+### 知识库：进程隔离首版代码评审修复（全修）
+> 来源：「修改的代码，做一下代码评审」—— Blocker 0 / Major 3 / Minor 5 / Nit 5，逐条复核实锤后全修（其中两条在实现时又挖出真问题，见 M4）。
+
+- **M1 取证可能空转**：不变式单测靠 `process.report().sharedObjects` 枚举已加载共享库，而这是 Node **未文档化**字段（官方 process 文档里没有它），部分平台/版本不提供。旧实现把「探不到」当成「没加载」→ 单测永远绿、`--control` 反向对照在探不到的平台硬失败、手工脚本恒 PASS。改为**能力探测**：fixture 上报 `sharedObjectsAvailable`，探不到时单测 `t.skip` 并写明理由、手工脚本 `exit 2`（「无证据」不是「通过」）。
+- **M2 安装期去重可能与子进程抢文件**：`pruneNativeDuplicates()` 在 daemon 内同步执行，而 embedding 子进程可能仍映射着 `onnxruntime.dll` → Windows 上删除拿 EPERM/EBUSY，只落进 `failed`，安装依旧显示 success，重启也不收敛。两个 install 在 prune 前先 `await closeEmbedWorker()`，并新增 `rag_native_dedupe_failed` / `asr_native_dedupe_failed` 日志把失败抬到可诊断层面。
+- **M3 管道断裂会打崩 daemon**：`child.stdin.write` 只有同步 try/catch，而 EPIPE 是以**异步 `'error'` 事件**报的，没有监听就升级成 `uncaughtException`。给三条管道各挂一个空 `'error'` 监听（真正的失败仍由 `exit` / `_dropChild` 统一收敛）。
+- **M4 `close()` 只「发起」退出**：旧实现 kill 完立即返回，Windows 上紧接着删 dll 必失败。改为「关 stdin → 等 `exit`（2s 未退强杀）」，返回即代表进程已消失。实现时踩到两个坑，都已写进代码注释：① 队列空了以后子进程是被 `unref` 的，若等 `exit` 的定时器也 `unref`，事件循环会直接排空 → 进程带 **unsettled top-level await** 以退出码 13 结束、子进程还在跑，所以等 `exit` 前必须把子进程 `ref` 回来；② 子进程收尾不能用 `process.exit(0)`：模型加载后进程里有 onnxruntime 原生线程，强退会在静态析构阶段撞 `mutex lock failed: Invalid argument` 并以 **SIGABRT** 结束（macOS 实测退出码 134），日志里看着像崩溃 → 改为让事件循环自然排空 + 5s 兜底强退。
+- **m1 冷却退化**：冷却到点只清 `_cooldownUntil` 不清 `_failures`，「连续 3 次」会退化成「冷却结束后第一次失败就再锁 5 分钟」。到期时两者一起归零。
+- **m2 冲突识别过宽**：`/onnxruntime_binding\.node/` 单独成条，会把「包没装全 / 架构不对 / Cannot find module」都判成抢句柄，给用户「重启代理」是误诊。拆成**强特征**（上面四类）与**弱特征**（`dlopen` / `LoadLibrary` / `cannot open shared object` / `DLL load failed` 等加载失败措辞，且 300 字符内与 `onnxruntime` 共现）。
+- **m3 错误信息丢现场**：`ortConflict` 分支不传 params，Win32 193 的唯一线索丢了；`err_embedWorkerFailed` 又无条件让用户重启代理。现在统一 `errorDetail()`（压成一行 + 截断 300 字符）后带进 message；`ortConflict` 文案补「若重启后仍失败，请重新安装一次知识库依赖」，`embedWorkerFailed` 去掉误导性的重启建议。
+- **m5 / Nit**：协议行超 1MB 视为协议错乱，直接丢子进程（不再留着半截 buffer 等到 60s 超时）；`MAX_DEPTH` 注释写 4 实为 6；「整个安装唯一 import」措辞不准（`probe-child.mjs` 也 import，只是跑在独立子进程里）→ 统一改为「主进程唯一加载点」。
+- **测试补齐（8 例）**：`close()` 有在途请求 → `embed_worker_closed` 且 `waitGone(pid)` 证明进程真退出；**空闲态 close 在独立进程里验**（`node --test` 的测试运行器句柄会掩掉事件循环排空问题，这条用 `spawn(process.execPath, ['--input-type=module', '--eval', …])` 跑）；错 id 回包 → 超时不串包；worker 脚本不存在 → 毫秒级失败不吊死；冲突识别拆成「强特征 / 只有 binding 路径不算 / 弱特征需共现」三例 + `errorDetail` 截断；`native-lib-guard` 补「删不掉时落入 failed 而不抛错」（chmod 只读父目录，Windows 与 root 下 skip）。
+- **验证**：`node --test test/unit/*.test.js` → **820 例全绿**；`npx eslint agent/src agent/test` 无输出；`node test/manual/rag-embed-isolation.mjs` → embed `2 x 512`、countTokens `{counts:[6],window:512}`、主进程 ort/sherpa 原生库 **0 个**、退出码 0（收尾不再有 SIGABRT 噪声）。
 
 ### 会话级工作目录：会话头覆盖收口（13 处漏传 + 源码守卫）
 > 来源：用户追问「设计目录的一些 API 都会传会话 ID 吗，有没有遗漏」。审计发现代理端已经全部按会话作用域校验，但扩展端有一批请求绕过了统一拼头入口。
