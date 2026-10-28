@@ -133,6 +133,9 @@ export let tocHideTimer = null;
 // 消息收藏
 export let bookmarks = [];
 
+// 待办事项（全局一份，不随会话切换）
+export let todos = [];
+
 // 划词问答弹出菜单状态
 export let lastSelectedText = '';
 export let currentSelectionRange = null;
@@ -332,6 +335,8 @@ export default {
   set tocHideTimer(v) { tocHideTimer = v; },
   get bookmarks() { return bookmarks; },
   set bookmarks(v) { bookmarks = v; },
+  get todos() { return todos; },
+  set todos(v) { todos = v; },
   get lastSelectedText() { return lastSelectedText; },
   set lastSelectedText(v) { lastSelectedText = v; },
   get currentSelectionRange() { return currentSelectionRange; },

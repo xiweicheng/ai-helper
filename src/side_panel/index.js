@@ -18,6 +18,8 @@ import { initSearchPanel } from './search-panel.js';
 import { initSchedulePanel } from './schedule-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
 import { loadBookmarks } from './bookmark-manager.js';
+import { loadTodos } from './todo-manager.js';
+import { initTodoPanel } from './todo-panel.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import { initVersionInfo } from './version-info.js';
@@ -4565,10 +4567,12 @@ document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
 document.addEventListener('DOMContentLoaded', async () => {
-  // 入口轨道需先于各面板初始化：五个入口容器挂入轨道槽位
+  // 入口轨道需先于各面板初始化：六个入口容器挂入轨道槽位
   initSideRail();
   await loadBookmarks();
   initBookmarkPanel();
+  await loadTodos();
+  initTodoPanel();
   initSearchPanel();
   initSchedulePanel();
   initAgentDropdown();

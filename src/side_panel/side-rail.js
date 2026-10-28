@@ -1,14 +1,14 @@
 /**
  * 右侧功能入口轨道（side-rail）
  *
- * 背景：工作目录/收藏/消息目录/搜索/定时任务五个入口原先是各自独立的
+ * 背景：工作目录/收藏/消息目录/搜索/待办/定时任务六个入口原先是各自独立的
  * position: fixed 容器，垂直位置硬编码（150px / 50%-80px / 50% / 50%+80px / 50%+160px），
  * 间距不随侧边栏高度自适应，矮窗口下入口会互相重叠。
  *
  * 方案：
  * - 统一轨道容器固定在视口右缘，上下边界与聊天区可视区实时对齐
  *   （ResizeObserver 观察 chatContainer + window resize）；
- * - 五个槽位 flex 纵向 space-evenly 布局，gap 为间距下限：窗口高度变化时
+ * - 六个槽位 flex 纵向 space-evenly 布局，gap 为间距下限：窗口高度变化时
  *   间距自动均分，入口按钮永不重叠；
  * - 各功能模块通过 getSideRailSlot(name) 把容器挂入对应槽位，容器由 fixed
  *   改为 relative 定位；弹出面板仍锚定自己的入口按钮（right:26px / 垂直居中），
@@ -17,10 +17,10 @@
 
 import { clampPanelToViewport } from './utils.js';
 
-const SLOT_ORDER = ['workspace', 'bookmark', 'toc', 'search', 'schedule'];
+const SLOT_ORDER = ['workspace', 'bookmark', 'toc', 'search', 'todo', 'schedule'];
 
 // 处于打开态的浮层面板：尺寸变化后需重新夹取入视口
-const OPEN_PANEL_SELECTOR = '.workspace-panel.expanded, .bookmark-panel.expanded, .message-toc-panel.expanded, .search-panel.expanded, .schedule-panel.open';
+const OPEN_PANEL_SELECTOR = '.workspace-panel.expanded, .bookmark-panel.expanded, .message-toc-panel.expanded, .search-panel.expanded, .todo-panel.expanded, .schedule-panel.open';
 
 let railEl = null;
 let reclampTimer = null;
@@ -49,7 +49,7 @@ export function initSideRail() {
 }
 
 /**
- * 获取指定功能的挂载槽位（workspace/bookmark/toc/search/schedule）
+ * 获取指定功能的挂载槽位（workspace/bookmark/toc/search/todo/schedule）
  * @param {string} name - 槽位名
  * @returns {HTMLElement} 槽位元素
  */

@@ -4,6 +4,18 @@
 
 ## 2026-10-29
 
+### 侧边栏待办（todo）：右侧轨道第 6 个入口 + 浮层清单
+
+> 来源：用户提出「侧边栏对话面板右侧边缘加一个待办入口，弹窗里能快速增删改、拖拽排序、分待处理/处理中/已完成，备注默认折叠，还能一键把清单填进输入框让我接着问『怎么实施』」。
+
+- **入口接入既有轨道，不新造定位**：各入口已统一在 `src/side_panel/side-rail.js` 的 `SLOT_ORDER`（`flex column` + `space-evenly` + `gap:10px`，槽高 34px）里，本次只加一条槽位名 `todo`（排在「检索」之后、「定时任务」之前），位置由轨道自动均分，无任何手写定位；配色用主题里唯一没被占用的 `--brand-violet-500` / `--brand-violet-rgb`（brand=消息目录 / warning=收藏 / info=工作目录+搜索 / success=定时任务），入口容器、按钮尺寸语法（`position:relative` 容器 + 右对齐 + `padding: 8px 4px` 得到 24×34）与收藏/搜索逐项对齐，不撑满 28px 轨道。
+- **矮窗口兜底**：6 个入口在 `max-height: 620px` 下把槽高压到 30px、间距压到 8px（254px → 220px），避免挤压聊天区；面板本身也加 `max-width: calc(100vw - 44px)`，窄侧边栏下不会把聊天区全盖住。
+- **三层拆分（可单测）**：`todo-model.js` 纯逻辑（状态流转 `nextStatus`、两段式分组 `groupTodos`（进行中按 `order` 升序、已完成按 `completedAt` 倒序）、`reorderList`/`withOrder`、时间格式化、`buildTodoDigest` 生成 Markdown）；`todo-manager.js` 编排（state 缓存 + IndexedDB 落库 + 失败回滚 + `subscribeTodos` 广播）；`todo-panel.js` 只渲染和收事件。存储侧 `src/storage/db.js` 升级 DB_VERSION 6→7，新增 `todos` store（keyPath `id`，索引 `status`/`createdAt`）与 `getAllTodos`/`putTodo`/`putTodos`/`deleteTodo`/`deleteTodos`。
+- **交互按「清爽」取舍**：行内常驻只有「状态圈 + 标题 + 时间」，编辑/复制/⋯ 靠 `:hover, :focus-within` 浮现（键盘 Tab 也能看见）；低频动作（编辑标题、备注、截止日、删除）收进行尾 `⋯`，批量动作（复制 Markdown、复制并附提问、清除已完成）收进头部 `⋯`。状态圈点一次「待处理 → 处理中」仍在进行中组（打 ⏳ 标记），点两次移入「已完成」并默认折叠组；备注编辑结束即收起，只留一条「备注」折叠条；拖拽只在进行中组内生效，插入位置用虚线段提示，跨组改状态只走状态圈。
+- **一键填入输入框**：`fillInput()` 把清单转成 `**进行中** / **已完成**` 的 Markdown **追加**到原草稿之后（不覆盖、不自动发送），再 `adjustInputHeight()` 撑高并自动收起面板；破坏性操作（删除、清除已完成）优先走全局 `window.showCustomConfirm`，弹窗不可用时**不做**动作。
+- **踩坑与修复**：第一版 `initTodoPanel()` 只建了容器却漏了 `getSideRailSlot('todo').appendChild(containerEl)`，真实扩展里轨道有 6 个槽位但入口永远不出现（单测只看结构、看不出来）—— 已补挂载并加结构守卫；同时把入口从 `width/height:100%` 改成靠 `padding` 决定尺寸，与其它入口同为 24×34（原来撑满 28px 宽，视觉上比邻居胖一圈）。
+- **验证**：新增 `test/unit/todo-model.unit.test.js`（24 例）+ `test/unit/todo-panel-structure.unit.test.js`（16 例：槽位顺序、打开态夹取名单、pointer-events、矮窗兜底、tinted 配色无硬编码色值、入口尺寸语法、行内操作默认 `opacity:0`+`pointer-events:none`、`:focus-within` 键盘可达、菜单 `position: fixed`、纯逻辑/编排层不碰 DOM、填入保留草稿正则）；真实 MV3 探针 `test-results-probes/_todo-panel-visual.mjs` **26 项全过**（入口尺寸/槽内偏移与邻居逐个比对、快速添加后焦点保持、两次点击状态流转、组默认折叠、行内按钮 hover 前后 `opacity` 0→1、真鼠标序列驱动的 HTML5 拖拽改序 + 重载后持久化、填入输入框保留草稿且自动关闭、暗色主题截图、全程无 pageerror），并据此修掉 3 个只有真扩展才暴露的问题（漏挂载、入口偏宽、`page.dragAndDrop` 不触发 `dragover` 的探针误判）。回归 `npx vitest run` **209 文件 / 3161 例**、`npx eslint` 无输出、`npm run theme:check` 通过、`npm run build:silent` → BUILD_SUCCESS。
+
 ### 语音输入：可自选输入设备（麦克风）
 
 > 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。

@@ -19,7 +19,7 @@ registerTranslations('en', {
 });
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 // ReAct Checkpoint TTL：7 天
 export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -88,6 +88,13 @@ function openDB() {
         const tasksStore = db.createObjectStore('scheduledTasks', { keyPath: 'id' });
         tasksStore.createIndex('nextRunAt', 'nextRunAt', { unique: false });
         tasksStore.createIndex('enabled', 'enabled', { unique: false });
+      }
+
+      // 待办事项存储（keyPath: id）—— 侧边栏待办面板，全局一份
+      if (!db.objectStoreNames.contains('todos')) {
+        const todosStore = db.createObjectStore('todos', { keyPath: 'id' });
+        todosStore.createIndex('status', 'status', { unique: false });
+        todosStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
     };
 
@@ -902,5 +909,64 @@ export function deleteScheduledTask(id) {
     const request = store.delete(id);
     request.onsuccess = () => resolve(true);
     request.onerror = () => resolve(false);
+  });
+}
+
+// ==================== Todo CRUD ====================
+
+/**
+ * 获取全部待办
+ */
+export function getAllTodos() {
+  return withStore('todos', 'readonly', (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => resolve([]);
+  });
+}
+
+/**
+ * 保存/更新单条待办（put = insert or update）
+ */
+export function putTodo(todo) {
+  return withStore('todos', 'readwrite', (store, resolve) => {
+    const request = store.put(todo);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+  });
+}
+
+/**
+ * 批量保存待办（拖拽重排等场景，同一个事务内写完）
+ * @param {Array<Object>} todos
+ */
+export function putTodos(todos) {
+  if (!Array.isArray(todos) || todos.length === 0) return Promise.resolve(true);
+  return withStore('todos', 'readwrite', (store, resolve) => {
+    todos.forEach(todo => store.put(todo));
+    resolve(true);
+  });
+}
+
+/**
+ * 删除单条待办
+ */
+export function deleteTodo(id) {
+  return withStore('todos', 'readwrite', (store, resolve) => {
+    const request = store.delete(id);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+  });
+}
+
+/**
+ * 批量删除待办（清除已完成）
+ * @param {Array<string>} ids
+ */
+export function deleteTodos(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return Promise.resolve(true);
+  return withStore('todos', 'readwrite', (store, resolve) => {
+    ids.forEach(id => store.delete(id));
+    resolve(true);
   });
 }
