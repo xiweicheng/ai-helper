@@ -38,10 +38,24 @@ const OPTIONAL = [
   'rag/routes.js',
 ];
 
+/**
+ * 本进程的共享库清单。sharedObjects 是 Node 的未文档化字段（process 文档里没有），
+ * 部分平台/版本不提供 → 返回 null，由调用方报「无证据」而不是当成「没加载」。
+ * @returns {string[]|null}
+ */
+function sharedObjects() {
+  try {
+    const report = process.report.getReport();
+    return Array.isArray(report.sharedObjects) ? report.sharedObjects : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 本进程已加载的 onnxruntime 共享库（darwin .dylib / win32 .dll / linux .so 都按名字匹配） */
 function onnxLibs() {
-  const report = process.report.getReport();
-  return (report.sharedObjects || []).filter((p) => /onnxruntime/i.test(p));
+  const shared = sharedObjects();
+  return shared ? shared.filter((p) => /onnxruntime/i.test(p)) : [];
 }
 
 /** @param {unknown} err */
@@ -69,6 +83,7 @@ async function main() {
     mode: CONTROL ? 'control' : 'main',
     loaded: [],
     embed: null,
+    sharedObjectsAvailable: sharedObjects() !== null,
     onnxBefore: onnxLibs(),
     onnxAfter: [],
   };
@@ -111,5 +126,6 @@ async function main() {
 }
 
 const result = await main();
-process.stdout.write(`${JSON.stringify(result)}\n`);
+// 等 flush 再退出：不等的话 stdout 被截断 → 上层解析失败 → 用例变 skip（测试静默变少）
+await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result)}\n`, resolve));
 process.exit(0);

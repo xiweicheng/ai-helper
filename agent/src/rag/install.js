@@ -429,12 +429,26 @@ async function runInstall(task, t) {
   // 嵌套装进 node_modules/@huggingface/transformers/node_modules/onnxruntime-node，
   // 同进程两份 onnxruntime.dll 会让 embedding 加载失败（cannot run %1）。
   // 详见 native-lib-guard.js 文件头。
+  //
+  // 先关掉 embedding 子进程：Windows 上已被映射的 onnxruntime.dll 在进程退出前删不掉，
+  // 子进程还活着（在途请求 / 空闲回收窗口内）时，下面的删除会拿到 EPERM/EBUSY，
+  // → 嵌套副本没清掉 → 用户「重启代理」也不收敛。
+  try {
+    const { closeEmbedWorker } = await import('./embedding/worker-client.js');
+    await closeEmbedWorker();
+  } catch { /* 从未启动或已关闭 */ }
+
   const repair = pruneNativeDuplicates(getAgentRoot());
   const repairSummary = summarizePruneReport(repair);
   if (repairSummary) {
     task.logTail.push(`[deps] ${repairSummary}`);
     if (task.logTail.length > LOG_TAIL_LIMIT) task.logTail = task.logTail.slice(-LOG_TAIL_LIMIT);
     logSystem('rag_native_dedupe', { removed: repair.removed.length, failed: repair.failed.length });
+  }
+  if (repair.failed.length > 0) {
+    // 删除失败（文件被占/权限）不判安装失败，但必须留下可诊断痕迹：
+    // 否则安装显示 success、磁盘上依旧是两份，问题只能靠用户反馈才能发现
+    logSystem('rag_native_dedupe_failed', { failed: repair.failed });
   }
 
   // npm 退出码 0 → 重新检测依赖可用性（以 detect 结果为准，避免假成功）

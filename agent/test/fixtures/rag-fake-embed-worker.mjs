@@ -3,7 +3,8 @@
 // 协议与 src/rag/embedding/embed-worker.mjs 完全一致；行为由请求 params 驱动：
 //   failMessage: 以该 message 返回失败（用于覆盖错误映射）
 //   delayMs:     延迟后再响应（用于覆盖超时/串行队列）
-//   crash:       直接退出进程（用于覆盖子进程崩溃后拒绝在途请求）
+//   crash:       直接退出进程（用于覆盖子进程崩溃时在途请求全部失败）
+//   wrongId:     回包 id 故意对不上（用于覆盖「未知 id 不串包」）
 //   dims:        向量维度（默认 3）
 
 import { createInterface } from 'readline';
@@ -28,27 +29,29 @@ rl.on('line', async (line) => {
     return;
   }
   const { id, method, params = {} } = request;
+  // 错配 id 模式：父进程应「找不到 pending → 不串包 → 自己超时失败」
+  const outId = params.wrongId ? Number(id) + 1000 : id;
   if (params.crash) process.exit(1);
   if (params.delayMs) await sleep(Number(params.delayMs));
   if (params.failMessage) {
-    reply({ id, ok: false, error: { message: String(params.failMessage), code: params.failCode || null } });
+    reply({ id: outId, ok: false, error: { message: String(params.failMessage), code: params.failCode || null } });
     return;
   }
   const texts = Array.isArray(params.texts) ? params.texts : [];
   if (method === 'load') {
-    reply({ id, ok: true, result: { model: params.modelName || 'fake-model', window: 512 } });
+    reply({ id: outId, ok: true, result: { model: params.modelName || 'fake-model', window: 512 } });
     return;
   }
   if (method === 'embed') {
     const dims = Number(params.dims) > 0 ? Number(params.dims) : 3;
-    reply({ id, ok: true, result: texts.map((t) => new Array(dims).fill(String(t).length)) });
+    reply({ id: outId, ok: true, result: texts.map((t) => new Array(dims).fill(String(t).length)) });
     return;
   }
   if (method === 'countTokens') {
-    reply({ id, ok: true, result: { counts: texts.map((t) => String(t).length), window: 512 } });
+    reply({ id: outId, ok: true, result: { counts: texts.map((t) => String(t).length), window: 512 } });
     return;
   }
-  reply({ id, ok: false, error: { message: `unknown method: ${method}`, code: null } });
+  reply({ id: outId, ok: false, error: { message: `unknown method: ${method}`, code: null } });
 });
 
 rl.on('close', () => process.exit(0));

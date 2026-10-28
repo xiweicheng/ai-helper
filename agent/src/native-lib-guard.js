@@ -26,7 +26,7 @@ import { join } from 'path';
 // 会正常地嵌套一份自己钉的 dev 版，删它只会制造风险，不做。
 export const NATIVE_DEDUPE_PACKAGES = ['onnxruntime-node'];
 
-// 依赖树扫描深度上限（node_modules 嵌套超过 4 层的场景极罕见，避免异常目录把扫描拖死）
+// 依赖树扫描深度上限（最多深入 6 层嵌套 node_modules；再深的依赖树极罕见，也避免异常目录把扫描拖死）
 const MAX_DEPTH = 6;
 
 // 隐藏目录（.pnpm / .bin / .cache / .yarn 等）一律不进入：

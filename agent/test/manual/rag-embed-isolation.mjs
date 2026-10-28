@@ -33,10 +33,22 @@ function readPackage(dir) {
   }
 }
 
-/** 主进程已加载的原生库（含 onnxruntime / sherpa 关键字） */
+/**
+ * 主进程已加载的原生库。
+ * sharedObjects 是 Node 的**未文档化**字段，部分平台/版本不提供：探不到就必须报「无证据」
+ * 而不是当成「没加载」——否则这个脚本在出问题的平台上会永远 PASS。
+ * @returns {{ available: boolean, libs: string[] }}
+ */
 function nativeLibs() {
-  const report = process.report.getReport();
-  return (report.sharedObjects || []).filter((p) => /onnxruntime|sherpa/i.test(p));
+  let shared = null;
+  try {
+    const report = process.report.getReport();
+    shared = Array.isArray(report.sharedObjects) ? report.sharedObjects : null;
+  } catch { shared = null; }
+  return {
+    available: shared !== null,
+    libs: shared ? shared.filter((p) => /onnxruntime|sherpa/i.test(p)) : [],
+  };
 }
 
 function fail(message) {
@@ -45,7 +57,10 @@ function fail(message) {
 }
 
 const before = nativeLibs();
-console.log(`main-process native libs before: ${before.length}`, before);
+console.log(`main-process native libs before: ${before.libs.length}`, before.libs);
+if (!before.available) {
+  console.warn('⚠ 本平台/Node 版本不提供 sharedObjects：无法枚举已加载的共享库，隔离性结论不成立（不是通过）');
+}
 
 // 1. 副本去重现状（Windows 上装过语音输入后重点看这里）
 const copies = listNativeCopies(AGENT_ROOT);
@@ -87,11 +102,15 @@ if (!(counted.window > 0) || counted.counts.length !== 1) fail(`countTokens 异�
 
 // 3. 主进程隔离
 const after = nativeLibs();
-console.log(`main-process native libs after: ${after.length}`, after);
+console.log(`main-process native libs after: ${after.libs.length}`, after.libs);
 await closeEmbedWorker();
 
-if (after.length > 0) {
+if (after.libs.length > 0) {
   fail('主进程加载了 onnxruntime/sherpa 原生库：embedding 必须在子进程里跑');
+}
+if (!after.available) {
+  console.error('✖ 无法取证：本平台不支持 sharedObjects 枚举，请改用文件头的 PowerShell dll 计数核对');
+  process.exit(2);
 }
 console.log('✔ 通过：推理在子进程完成，主进程零 onnxruntime 加载');
 process.exit(0);

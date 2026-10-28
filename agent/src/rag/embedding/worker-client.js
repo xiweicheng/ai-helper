@@ -39,6 +39,12 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const COOLDOWN_MS = 5 * 60 * 1000;
 // 子进程 stderr 单行长度上限（防止进度条把日志刷爆）
 const STDERR_LINE_MAX = 500;
+// 协议行长度上限：超过即视为协议错乱（正常响应远小于此），直接丢子进程而不是静默吞数据
+const PROTOCOL_LINE_MAX = 1_000_000;
+// close() 的宽限：先关 stdin 让子进程自己退，超时才强杀。
+// 安装期去重要删被这个进程映射着的 onnxruntime.dll（Windows 上没退就删不掉），
+// 所以 close() 必须等到进程真的没了才返回，不能只是「发起了退出」
+const CLOSE_GRACE_MS = 2000;
 
 export class EmbedWorkerClient {
   /**
@@ -77,6 +83,14 @@ export class EmbedWorkerClient {
   }
 
   /**
+   * 当前子进程 pid（未启动为 null）——排查泄漏/残留进程用
+   * @returns {number|null}
+   */
+  get pid() {
+    return this._child ? this._child.pid : null;
+  }
+
+  /**
    * 加载（或确认已加载）模型
    * @param {{ modelName?: string, remoteHost?: string, cacheDir?: string }} [params]
    * @returns {Promise<{ model: string, window: number }>}
@@ -106,7 +120,8 @@ export class EmbedWorkerClient {
   }
 
   /**
-   * 关闭子进程（停服路径）：先关 stdin 让它自己退，2s 未退再强杀
+   * 关闭子进程（停服 / 安装前清理）：先关 stdin 让它自己退，2s 未退再强杀，
+   * **返回时子进程已经退出**（或已被强杀）—— 调用方可以放心去删它映射过的 dll。
    * @returns {Promise<void>}
    */
   async close() {
@@ -117,12 +132,26 @@ export class EmbedWorkerClient {
     this._buffer = '';
     this._rejectAll(this._makeError('embed_worker_closed', 'embedding worker closed'));
     if (!child) return;
-    const killer = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
-    }, 2000);
-    if (typeof killer.unref === 'function') killer.unref();
-    child.once('exit', () => clearTimeout(killer));
+    // 已经退出（exitCode/signalCode 已置）就不必再等
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        // 异常平台/极端场景下别把调用方吊死：发出强杀后即视为已关闭
+        try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
+        resolve();
+      }, CLOSE_GRACE_MS);
+      if (typeof timer.unref === 'function') timer.unref();
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    // 队列空了之后子进程是被 unref 的（空闲的子进程不该吊住 daemon），但 close() 承诺
+    // 「返回时进程已退出」—— 这里必须临时 ref 回来：否则事件循环会在等 exit 时直接排空，
+    // 进程带着「unsettled top-level await」退出（退出码 13），子进程根本没被杀。
+    this._refChild(child);
     try { child.stdin.end(); } catch { /* 管道已断 */ }
+    await exited;
   }
 
   /**
@@ -150,6 +179,12 @@ export class EmbedWorkerClient {
         'embed_worker_cooldown',
         `embedding worker paused after ${MAX_CONSECUTIVE_FAILURES} consecutive failures, retry in ${Math.ceil(remaining / 1000)}s`
       );
+    }
+    if (this._cooldownUntil) {
+      // 冷却到点：计数必须一起归零。否则「连续 3 次」会退化成
+      // 「冷却结束后第一次失败就再锁 5 分钟」（计数已停在 3，一失败就是 4）
+      this._cooldownUntil = 0;
+      this._failures = 0;
     }
 
     const child = this._ensureChild();
@@ -213,6 +248,12 @@ export class EmbedWorkerClient {
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { if (this._child === child) this._onStdout(chunk); });
     child.stderr.on('data', (chunk) => this._forwardStderr(chunk));
+    // 管道断裂是以**异步 'error' 事件**报的（EPIPE / ERR_STREAM_DESTROYED），try/catch 拦不住；
+    // 三条管道任一没有 error 监听就会升级成 uncaughtException，把整个 daemon 带走。
+    // 真正的失败由 exit / _dropChild 统一收敛，这里只负责不让它升级成进程级异常。
+    for (const pipe of [child.stdin, child.stdout, child.stderr]) {
+      pipe.on('error', () => {});
+    }
     // 监听器必须按「哪一个子进程」判定：close()/超时丢弃后可能已经起了新子进程，
     // 旧进程的退出事件不能把新进程当成崩溃处理（否则下一次请求会被错误拒绝）
     child.on('error', (err) => { if (this._child === child) this._dropChild('embed_worker_spawn_failed', err); });
@@ -262,8 +303,11 @@ export class EmbedWorkerClient {
       if (line) this._handleLine(line);
       index = this._buffer.indexOf('\n');
     }
-    // 单行过长（非法协议）时丢弃，避免 buffer 无上限增长
-    if (this._buffer.length > 1_000_000) this._buffer = '';
+    // 单行过长 = 协议错乱（正常响应远小于此）：直接丢子进程，让在途请求立刻失败，
+    // 而不是留着半截 buffer 一直等到超时（那会表现为「检索卡 60s」而非「报错」）
+    if (this._buffer.length > PROTOCOL_LINE_MAX) {
+      this._dropChild('embed_worker_protocol_overflow');
+    }
   }
 
   /**

@@ -355,12 +355,26 @@ async function runInstall(task, t) {
   // 安装后收口（Windows 必做）：ASR 安装会重算整个包目录的依赖树，可能把 onnxruntime-node
   // 嵌套装进 @huggingface/transformers/node_modules；两份 onnxruntime.dll 同进程会抢句柄，
   // 把知识库的本地向量打挂（cannot run %1）。详见 native-lib-guard.js 文件头。
+  //
+  // 先关掉 embedding 子进程：Windows 上已被映射的 onnxruntime.dll 在进程退出前删不掉，
+  // 子进程还活着（在途请求 / 空闲回收窗口内）时删除会拿到 EPERM/EBUSY，
+  // → 嵌套副本没清掉 → 用户「重启代理」也不收敛。
+  try {
+    const { closeEmbedWorker } = await import('../rag/embedding/worker-client.js');
+    await closeEmbedWorker();
+  } catch { /* 从未启动或已关闭 */ }
+
   const repair = pruneNativeDuplicates(getAgentRoot());
   const repairSummary = summarizePruneReport(repair);
   if (repairSummary) {
     task.logTail.push(`[deps] ${repairSummary}`);
     if (task.logTail.length > LOG_TAIL_LIMIT) task.logTail = task.logTail.slice(-LOG_TAIL_LIMIT);
     logSystem('asr_native_dedupe', { removed: repair.removed.length, failed: repair.failed.length });
+  }
+  if (repair.failed.length > 0) {
+    // 删除失败（文件被占/权限）不判安装失败，但必须留下可诊断痕迹：
+    // 否则安装显示 success、磁盘上依旧是两份，问题只能靠用户反馈才能发现
+    logSystem('asr_native_dedupe_failed', { failed: repair.failed });
   }
 
   // npm 退出码 0 → 子进程重新探测（以真实加载结果为准，避免假成功）

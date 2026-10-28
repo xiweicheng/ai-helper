@@ -1,4 +1,4 @@
-// agent/src/rag/embedding/embed-worker.mjs - 本地 embedding 子进程（整个安装里唯一 import transformers 的地方）
+// agent/src/rag/embedding/embed-worker.mjs - 本地 embedding 子进程（transformers 只允许在子进程里加载）
 //
 // 为什么必须是「独立进程」（Windows，2026-10 实测）：
 //   语音输入（sherpa-onnx-node）与本地向量（onnxruntime-node）各自捆绑一份 onnxruntime
@@ -11,8 +11,10 @@
 //   RAG 的 embedding 在主进程加载 onnxruntime-node 的 dll → 冲突。
 //   worker_threads 与主线程共享地址空间，隔离不了，只能用子进程（ASR 的 offline 线程同理，
 //   但它加载的是同一份 sherpa，不构成冲突）。
-//   推论：本文件必须保持「全安装唯一 import transformers 处」，主进程（以及 ASR 的 worker
-//   线程）任何地方 import 都会把第二份 dll 拽回主进程，把这个修复打回原形。
+//   推论：transformers 只能在独立子进程里加载 —— 本文件负责推理，probe-child.mjs 负责
+//   可用性探测（它在 detect.js 起的临时子进程里跑）；主进程（以及 ASR 的 worker 线程）
+//   任何地方 import 都会把第二份 dll 拽回主进程，把这个修复打回原形。这条不变式由单测
+//   rag-no-mainprocess-transformers 锁着（静态扫描 + 子进程运行时取证）。
 //
 // 协议（stdin/stdout 均为单行 JSON，stdout 只允许出现协议数据）：
 //   请求 {"id":1,"method":"load|embed|countTokens","params":{...}}
@@ -159,8 +161,16 @@ rl.on('line', (line) => {
   }
   chain = chain.then(() => handle(request), () => handle(request));
 });
-// 父进程关闭 stdin（正常退出/空闲回收）即收工：不留原生句柄让进程挂住
-rl.on('close', () => process.exit(0));
+// 父进程关闭 stdin（正常退出/空闲回收）即收工：不留原生句柄让进程挂住。
+// 不能用 process.exit(0)：模型加载后进程里有 onnxruntime 的原生线程，强退会在静态析构
+// 阶段撞 "mutex lock failed: Invalid argument" 并以 SIGABRT 结束（macOS 实测，退出码 134），
+// 日志里看起来像崩溃，父进程那边也是 signal 而不是 code 0。改为让事件循环自己排空；
+// 万一有残留句柄把进程吊住，再用兜底定时器强退（那时已经没有别的选择了）。
+rl.on('close', () => {
+  process.exitCode = 0;
+  const timer = setTimeout(() => process.exit(0), 5000);
+  if (typeof timer.unref === 'function') timer.unref();
+});
 
 process.on('uncaughtException', (err) => {
   console.error(`[RAG][embed-worker] uncaught: ${err?.stack || err?.message || err}`);

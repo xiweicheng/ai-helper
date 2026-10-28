@@ -4,7 +4,7 @@
 // 同时锁住「只管 onnxruntime-node」——onnxruntime-web 自带的 dev 版 common 是正常嵌套，动了就是新风险。
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -102,6 +102,33 @@ describe('pruneNativeDuplicates', () => {
     assert.equal(report.removed.length, 0);
     assert.equal(report.failed.length, 0);
     assert.equal(report.kept.length, 1);
+  });
+
+  test('删不掉时落入 failed 而不抛错（Windows 上 dll 被映射时的真实形态）', async (t) => {
+    if (process.platform === 'win32' || process.getuid?.() === 0) {
+      t.skip('Windows 的只读目录/root 用户无法复现 EACCES');
+      return;
+    }
+    const locked = mkdtempSync(join(tmpdir(), 'aha-native-guard-locked-'));
+    const nestedParent = join(locked, 'node_modules', 'foo', 'node_modules');
+    try {
+      writePackage(join(locked, 'node_modules', 'onnxruntime-node'), '1.23.2');
+      writePackage(join(nestedParent, 'onnxruntime-node'), '1.30.0');
+      // 去掉父目录写权限 → 删不掉子目录（等价于 Windows 上文件被占用）
+      chmodSync(nestedParent, 0o500);
+
+      const report = pruneNativeDuplicates(locked);
+      assert.equal(report.removed.length, 0);
+      assert.equal(report.failed.length, 1);
+      assert.equal(report.failed[0].version, '1.30.0');
+      assert.ok(report.failed[0].error.length > 0);
+      // 失败不影响「保留者」的结论，安装流程也不该因此判定失败
+      assert.deepEqual(report.kept.map((c) => c.version), ['1.23.2']);
+      assert.match(summarizePruneReport(report), /failed to remove onnxruntime-node/);
+    } finally {
+      chmodSync(nestedParent, 0o755);
+      rmSync(locked, { recursive: true, force: true });
+    }
   });
 
   test('摘要可读（安装日志用）', () => {

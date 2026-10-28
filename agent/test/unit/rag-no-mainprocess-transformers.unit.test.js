@@ -193,7 +193,13 @@ describe('运行时证据：主进程零 onnxruntime 加载', () => {
   test('主进程模块图加载后，已加载的 onnxruntime 共享库数量为 0', (t) => {
     if (!runs.main) {
       const raw = runs.raw.main;
-      return t.skip(`取证脚本未跑通: ${raw?.stderr?.slice(0, 500) || raw?.error || '无输出'}`);
+      // 取证脚本跑不通 = 没证据。不能静默当通过（此处直接 fail 而不是 skip）
+      assert.fail(`取证脚本执行失败: ${raw?.stderr?.slice(0, 500) || raw?.error || '无输出'}`);
+    }
+    // sharedObjects 是 Node 的未文档化字段：探不到时必须报「无证据」，
+    // 不能把「探不到」当成「没加载」（否则这条断言在目标平台上恒真 = 空转）
+    if (runs.main.sharedObjectsAvailable !== true) {
+      return t.skip('本平台/Node 版本不提供 sharedObjects：运行时取证不成立（不是通过），主防线是源码静态扫描');
     }
     assert.deepEqual(runs.main.onnxBefore, [], '模块加载前就不该有 onnxruntime');
     assert.deepEqual(runs.main.onnxAfter, [], `主进程加载了 onnxruntime: ${runs.main.onnxAfter.join(', ')}`);
@@ -209,13 +215,18 @@ describe('运行时证据：主进程零 onnxruntime 加载', () => {
     if (!runs.main) return t.skip('取证脚本未跑通');
     assert.equal(runs.main.embed?.ok, true, `本地 embedding 失败: ${JSON.stringify(runs.main.embed)}`);
     assert.ok(runs.main.embed.dims > 0, '假 worker 应返回非空向量');
-    // 关键：往返成功但主进程仍为零 onnxruntime
-    assert.deepEqual(runs.main.onnxAfter, []);
+    // 能往返 + （能取证时）主进程仍为零 onnxruntime
+    if (runs.main.sharedObjectsAvailable === true) {
+      assert.deepEqual(runs.main.onnxAfter, []);
+    }
   });
 
   test('反向对照：显式 import transformers 会让探测器看见 onnxruntime（证明上一条不是空转）', (t) => {
     if (!runs.control) return t.skip('对照脚本未跑通');
-    if (runs.control.controlOk !== true) return t.skip('本机未安装 transformers，跳过我证明力对照');
+    if (runs.control.sharedObjectsAvailable !== true) {
+      return t.skip('本平台不提供 sharedObjects，无法做反向对照；请用 Windows 侧的 dll 计数核对补齐证据');
+    }
+    if (runs.control.controlOk !== true) return t.skip('本机未安装 transformers，跳过对照');
     assert.ok(
       runs.control.onnxAfter.length > 0,
       '该平台 sharedObjects 看不到 onnxruntime，运行时不变式在本机失去证明力（需改用平台专用探测）'

@@ -129,8 +129,8 @@
     "err_invalidEmbeddingEndpoint": "Invalid remote embedding endpoint (must be an http/https base URL, e.g. https://api.siliconflow.cn/v1)",
     "err_invalidEmbeddingDimensions": "Invalid embedding dimensions: {dimensions}",
     "err_embeddingDimensionMismatch": "Embedding dimension mismatch: configured {expected}, got {actual}. Check the embedding model and dimension settings",
-    "err_ortConflict": "Local embedding engine failed to load: two copies of the onnxruntime native library ended up in one process (Windows reports cannot run %1). Restart the agent and retry — loaded DLLs cannot be unloaded before the process exits, so a hot fix cannot work",
-    "err_embedWorkerFailed": "Local embedding subprocess failed: {message} (retry after restarting the agent)"
+    "err_ortConflict": "Local embedding engine failed to load: two copies of the onnxruntime native library ended up in one process (Windows reports cannot run %1). Restart the agent and retry — loaded DLLs cannot be unloaded before the process exits, so a hot fix cannot work. If it still fails after restarting, reinstall the knowledge-base dependencies (installation removes the duplicate copy)",
+    "err_embedWorkerFailed": "Local embedding subprocess failed: {message}. Check network and disk space; reinstall the knowledge-base dependencies if it persists"
   },
   "message": {
     "shuttingDown": "Agent is shutting down...",
