@@ -120,7 +120,7 @@ Agent 启动时检测：Node 22+ 版本检查 → RAG 依赖是否可用
 
 修复由两层组成，缺一不可：
 
-1. **进程隔离**（根治）：`agent/src/rag/embedding/embed-worker.mjs` 是**整个安装里唯一 import `@huggingface/transformers` 的地方**，通过 `worker-client.js` 以子进程 + NDJSON（stdin/stdout 单行 JSON）驱动；`local.js` 只做透传，主进程与 ASR 的 worker_threads 都不再加载 onnxruntime-node。`worker_threads` 与主线程共享地址空间，**隔离不了**，只能用子进程。
+1. **进程隔离**（根治）：`agent/src/rag/embedding/embed-worker.mjs` 是**唯一在子进程里加载 `@huggingface/transformers` 的地方**（主进程一行都不 import；可用性探测的 `probe-child.mjs` 也由 `detect.js` 起在独立子进程里），通过 `worker-client.js` 以子进程 + NDJSON（stdin/stdout 单行 JSON）驱动；`local.js` 只做透传，主进程与 ASR 的 worker_threads 都不再加载 onnxruntime-node。`worker_threads` 与主线程共享地址空间，**隔离不了**，只能用子进程。
 2. **副本去重**（防复发）：`agent/src/native-lib-guard.js` 在每次一键安装（RAG / ASR 都会重算包目录依赖树）之后，把嵌套的 `node_modules/@huggingface/transformers/node_modules/onnxruntime-node` 删掉，只保留顶层（= overrides 钉的版本）。npm 在部分版本/安装顺序下不合并冲突版本，只靠 overrides 不可靠。`onnxruntime-common` 不进清理名单（纯 JS、`onnxruntime-web` 正常自带 dev 版）。
 
 配套错误码：`rag.err_ortConflict` —— 命中 `cannot run %1` / `ERROR_BAD_EXE_FORMAT` / `API version [N]` / `onnxruntime_binding.node` 时提示「重启代理」，因为已加载的 DLL 在进程退出前无法卸载，热修无效。
