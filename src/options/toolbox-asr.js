@@ -6,6 +6,7 @@
 import { state, agentApi, getAgentConnection, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
 import { t } from '../shared/i18n.js';
 import { queryMicState, requestMicAccess, watchMicState } from '../shared/mic-permission.js';
+import { loadVoiceShortcutConfig, saveVoiceShortcutConfig } from '../shared/voice-shortcut.js';
 import logger from '../shared/logger.js';
 
 /** 安装状态轮询间隔（毫秒） */
@@ -16,6 +17,7 @@ const DOWNLOAD_POLL_INTERVAL_MS = 1500;
 
 let installPollTimer = null;
 let eventsBound = false;
+let shortcutBound = false;
 let lastStatus = null;
 // 轮询期间连续取不到状态的次数（防一次网络抖动就误报安装失败）
 let installPollFailures = 0;
@@ -434,6 +436,38 @@ function initMicSection() {
   watchMicState(() => { refreshMicState(); });
 }
 
+/**
+ * 快捷触发（右侧 Alt / 右侧 Ctrl）
+ * 纯扩展侧偏好：存 chrome.storage.local，侧边栏与 content script 都直接读，
+ * 所以这里不走 agentApi（代理离线也能配），也不跟随语音总开关收起。
+ * 每次进 Tab 都以存储为准回填 —— 存储是唯一真源，不在这里缓存一份。
+ */
+function initShortcutSection() {
+  const rightAlt = document.getElementById('asrShortcutRightAlt');
+  const rightCtrl = document.getElementById('asrShortcutRightCtrl');
+  if (!rightAlt && !rightCtrl) return;
+
+  loadVoiceShortcutConfig().then((cfg) => {
+    if (rightAlt) rightAlt.checked = cfg.rightAlt;
+    if (rightCtrl) rightCtrl.checked = cfg.rightCtrl;
+  }).catch(() => { /* 读不到就保持未勾选（= 单键不开） */ });
+
+  if (shortcutBound) return;
+  shortcutBound = true;
+
+  const bind = (key, box) => {
+    box?.addEventListener('change', async () => {
+      const next = await saveVoiceShortcutConfig({ [key]: box.checked });
+      // 以落盘结果回写：存储失败时勾选状态不能骗人
+      if (rightAlt) rightAlt.checked = next.rightAlt;
+      if (rightCtrl) rightCtrl.checked = next.rightCtrl;
+      showToast(t('toolbox.asrShortcutSaved'));
+    });
+  };
+  bind('rightAlt', rightAlt);
+  bind('rightCtrl', rightCtrl);
+}
+
 // ==================== 事件 ====================
 
 function bindSectionEvents() {
@@ -746,6 +780,7 @@ export function initAsrEvents() {
   if (eventsBound) return;
   eventsBound = true;
   initMicSection();
+  initShortcutSection();
   // 语言下拉：点击区域外收起。全局只绑一次（每次重渲染都会重建 DOM，
   // 若在 bindSectionEvents 里绑会不断累积监听）
   document.addEventListener('click', (e) => {

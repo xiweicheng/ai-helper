@@ -13,6 +13,12 @@
 
 import { t, registerTranslations } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
+import {
+  createSingleKeyTrigger,
+  loadVoiceShortcutConfig,
+  watchVoiceShortcutConfig,
+  DEFAULT_VOICE_SHORTCUT_CONFIG,
+} from '../shared/voice-shortcut.js';
 
 registerTranslations('zh', {
   voice: {
@@ -38,6 +44,9 @@ registerTranslations('zh', {
     tooShort: '录音太短',
     maxDuration: '已达单次录音时长上限，正在转写…',
     unsupported: '当前浏览器不支持录音',
+    keyRightAlt: '右侧 Alt',
+    keyRightCtrl: '右侧 Ctrl',
+    btnTitle: '语音输入（{keys}）',
   },
 });
 registerTranslations('en', {
@@ -64,6 +73,9 @@ registerTranslations('en', {
     tooShort: 'Recording too short',
     maxDuration: 'Recording length limit reached, transcribing…',
     unsupported: 'Recording is not supported in this browser',
+    keyRightAlt: 'Right Alt',
+    keyRightCtrl: 'Right Ctrl',
+    btnTitle: 'Voice input ({keys})',
   },
 });
 
@@ -111,6 +123,10 @@ const st = {
   draftSupported: true,
   finishWaitTimer: null,
   adjustInputHeight: null,
+  // 单键快捷键（右侧 Alt / 右侧 Ctrl）：配置在 chrome.storage.local，配置页勾选后实时生效
+  shortcutCfg: { ...DEFAULT_VOICE_SHORTCUT_CONFIG },
+  shortcutTrigger: null,
+  shortcutBound: false,
 };
 
 // ==================== 小工具 ====================
@@ -926,6 +942,63 @@ async function consumePendingStart() {
   }
 }
 
+// ==================== 单键快捷键（右侧 Alt / 右侧 Ctrl） ====================
+
+/**
+ * 🎤 的 tooltip 跟着配置走：开了单键就把键位一起写出来，否则用户永远发现不了
+ * （配置页只负责存，提示得在真正能按的地方露出来）
+ */
+function applyShortcutHint() {
+  if (!st.btn) return;
+  const keys = ['Alt+V'];
+  if (st.shortcutCfg.rightAlt) keys.push(t('voice.keyRightAlt'));
+  if (st.shortcutCfg.rightCtrl) keys.push(t('voice.keyRightCtrl'));
+  const label = t('voice.btnTitle', { keys: keys.join(' / ') });
+  st.btn.title = label;
+  st.btn.setAttribute('aria-label', label);
+}
+
+/**
+ * 面板有焦点时生效的那一路。
+ * 与 content script 共用 shared/voice-shortcut.js 的同一套判定（含「按住期间按了别的键就作废」），
+ * 保证同一按键在面板与网页里行为一致。
+ */
+async function initShortcutKeys() {
+  // 配置每次初始化都重读（存储是唯一真源）；trigger 只建一次，靠闭包现读 st.shortcutCfg
+  st.shortcutCfg = await loadVoiceShortcutConfig();
+  if (!st.shortcutTrigger) {
+    st.shortcutTrigger = createSingleKeyTrigger(() => st.shortcutCfg);
+  }
+  applyShortcutHint();
+
+  if (st.shortcutBound) return;
+  st.shortcutBound = true;
+
+  document.addEventListener('keydown', (e) => {
+    if (st.shortcutTrigger?.onKeyDown(e) === 'cancel') {
+      // Windows 上裸按 Alt 会去聚焦浏览器菜单：不拦就会把焦点从输入框抢走
+      e.preventDefault();
+    }
+  }, true);
+
+  document.addEventListener('keyup', (e) => {
+    if (st.shortcutTrigger?.onKeyUp(e) !== 'trigger') return;
+    // 门控未就绪时不吞这个键：单键是「有需求才开」的，没开语音就不该抢用户的按键
+    if (!st.armed && st.phase === 'idle') return;
+    e.preventDefault();
+    toggleVoiceInput();
+  }, true);
+
+  // 窗口失焦时按下状态可能收不到 keyup：丢掉，避免下次松开莫名开录
+  window.addEventListener('blur', () => { st.shortcutTrigger?.reset(); });
+
+  // 配置页勾选后实时生效，不用重开面板
+  watchVoiceShortcutConfig((cfg) => {
+    st.shortcutCfg = cfg;
+    applyShortcutHint();
+  });
+}
+
 // ==================== 初始化 ====================
 
 /**
@@ -949,6 +1022,8 @@ export async function initVoiceInput(opts = {}) {
   buildWaveBars();
   setButtonState(false);
   setBarStatus(t('voice.listening'));
+  // 监听器无条件挂上：门控可能稍后才就绪（配完依赖 / 开总开关回来），那时不应该还要重开面板
+  await initShortcutKeys();
 
   st.btn.addEventListener('click', (e) => {
     e.preventDefault();

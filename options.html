@@ -833,6 +833,35 @@
           </div>
         </div>
       </div>
+
+      <!-- 快捷触发：纯扩展侧偏好（chrome.storage.local），不依赖代理端，所以独立成块、
+           不跟随语音总开关收起 —— 代理离线 / 还没装模型时也能先把键位配好
+           Alt+V 不在可配范围内：它是既定习惯，这里的勾选只决定「额外的单键」 -->
+      <div class="toolbox-section" id="asrShortcutSection">
+        <div class="toolbox-section-header">
+          <div class="toolbox-section-title-row">
+            <h2 class="toolbox-section-title" data-i18n="toolbox.asrShortcutTitle">⌨️ 快捷触发</h2>
+          </div>
+          <span class="toolbox-section-desc" data-i18n="toolbox.asrShortcutDesc">Alt+V 始终可用，不受下面勾选影响。勾上右侧单键后，单击（按下再松开）即可开始 / 结束录音；两个都勾 = 任一都能触发。侧边栏与网页里同时生效，改完立即生效、无需重启。</span>
+        </div>
+        <div class="asr-shortcut-list">
+          <label class="asr-shortcut-item">
+            <input type="checkbox" id="asrShortcutRightAlt">
+            <span class="asr-shortcut-text">
+              <span class="asr-shortcut-name" data-i18n="toolbox.asrShortcutRightAlt">右侧 Alt</span>
+              <span class="asr-shortcut-hint" data-i18n="toolbox.asrShortcutRightAltHint">macOS 上为右侧 Option ⌥；按住它再敲其它键不会触发</span>
+            </span>
+          </label>
+          <label class="asr-shortcut-item">
+            <input type="checkbox" id="asrShortcutRightCtrl">
+            <span class="asr-shortcut-text">
+              <span class="asr-shortcut-name" data-i18n="toolbox.asrShortcutRightCtrl">右侧 Ctrl</span>
+              <span class="asr-shortcut-hint" data-i18n="toolbox.asrShortcutRightCtrlHint">多数键盘的右侧 Ctrl 都是闲置的；同样只有单按才触发</span>
+            </span>
+          </label>
+        </div>
+        <div class="asr-shortcut-note" data-i18n="toolbox.asrShortcutNote">仅在语音输入已就绪（依赖 × 模型 × 开关）时响应；未就绪时按键不会开始录音。</div>
+      </div>
     </div><!-- /tab-voice -->
 
     <!-- 知识库管理 -->

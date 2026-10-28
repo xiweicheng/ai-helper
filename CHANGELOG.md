@@ -4,6 +4,17 @@
 
 ## 2026-10-28
 
+### 语音输入：右侧 Alt / 右侧 Ctrl 单键触发（可配置，AltGr 不误触）
+> 来源：用户反馈「Alt+V 有时候按起来不方便」，希望把一般闲置的右侧 Alt / 右侧 Ctrl 也做成触发键，且要能配、能两个都开、也能只开一个。
+
+- **纯加法，不动既有习惯**：`Alt+V` 仍默认可用，且**不提供改键**（它与 `Alt+S` / `Alt+Shift+S` 同族）；新增的只是两个可选单键，默认全关。
+- **一个模块三处共用**：新增 `src/shared/voice-shortcut.js`（无 DOM、chrome 惰性访问），判定（`matchSingleKeyDown`）、状态机（`createSingleKeyTrigger`）、存储（`load` / `save` / `watchVoiceShortcutConfig`）全放在这里；选项页、侧边栏、content script 都 import 同一份，避免三套语义漂移。配置落 `chrome.storage.local[voiceShortcutConfig]`，靠 `chrome.storage.onChanged` 实时同步，勾完即生效（不必重启扩展或重开面板）。
+- **语义是「按下 → 松开」**：`keydown` 武装（返回 `'cancel'` → 调用方 `preventDefault`，顺带压掉 Windows 裸按 Alt 抢浏览器菜单），`keyup` 结算；按住期间敲了任何别的键就整次作废 —— 右 Alt 在 AltGr 布局上是组合键，这样既不误开录音，也不截断 AltGr 的字符输入；`isComposing` 期间同样不认。
+- **捕获阶段 + `e.code`**：监听挂 `document` / `window` 的捕获阶段，页面脚本 `stopPropagation` 吞不掉；判定用 `AltRight` / `ControlRight`，与键盘布局无关，并要求「只有它自己」（AltGr 带的 `ctrlKey` 因此被排除）。
+- **面板与网页同时生效**：面板走 `toggleVoiceInput()`；网页仍走 `VOICE_TOGGLE_FROM_PAGE` → background（面板已开则广播 `VOICE_TOGGLE`，未开则写 `pendingVoiceStart` 并尝试把侧边栏拉起）。门控未就绪（依赖 × 模型 × 开关）时不 `preventDefault`、不触发，不抢用户的键。
+- **配置块不随总开关收起**：独立 `#asrShortcutSection`（不带 `disabled-section`），代理离线 / 还没装模型时也能先配好；🎤 的 `title` / `aria-label` 跟着配置列出可用键位。
+- **验证**：新增 `test/unit/voice-shortcut-single-key.unit.test.js`（24 例：配置归一化 / 左键与 AltGr 不认 / 组合作废 / repeat 不作废 / 松开时已关不触发 / 合并写入 / watch 只听 local）+ `test/unit/voice-shortcut-panel.unit.test.js`（3 例，jsdom 真事件）→ `npx vitest run` **201 文件 / 3032 例全绿**；Playwright 探针 `test-results-probes/_asr-shortcut-section.mjs` 7 项全过（勾选落盘、合并写入、总开关关闭时仍可见）；真实扩展探针 `test-results-probes/_voice-single-key-panel.mjs` 10 项全过（真实 Chromium + dist 包：配置页勾选 → 已打开面板的 tooltip 经 `chrome.storage.onChanged` 立即更新；面板页与宿主网页上右 Alt 的 keydown 被拦（= 已武装）、左 Alt 不受影响；关掉后两处都不再拦）；`npm run build:silent` → BUILD_SUCCESS，`npx eslint` 六个文件无输出。
+
 ### 会话级工作目录：会话头覆盖收口（13 处漏传 + 源码守卫）
 > 来源：用户追问「设计目录的一些 API 都会传会话 ID 吗，有没有遗漏」。审计发现代理端已经全部按会话作用域校验，但扩展端有一批请求绕过了统一拼头入口。
 

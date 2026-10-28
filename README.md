@@ -44,7 +44,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 - **Let AI touch your local files and terminal** — optional Agent service, with three-tier command safety and a 7-day trash bin as a safety net.
 - **Never miss a generated file** — files the AI produces via scripts (e.g. an exported spreadsheet) now surface in the Artifacts panel, and any file path it mentions in its answer is clickable to locate and highlight it in the sidebar's built-in workspace.
 - **Ask your own documents** — build a local knowledge base from PDF / Word / Excel / PPT / Markdown / HTML / CSV, then get retrieval-augmented answers with clickable citations; multiple bases can be searched together.
-- **Talk instead of typing** — click 🎤 in the input box or press `Alt+V` (works with page focus too): streaming draft as you speak, punctuation-aware final text when you stop, all transcribed locally by the Agent — the audio never leaves your machine and no cloud ASR is involved.
+- **Talk instead of typing** — click 🎤 in the input box or press `Alt+V` (works with page focus too; right Alt / right Ctrl can be enabled as single-key triggers under Options → Voice): streaming draft as you speak, punctuation-aware final text when you stop, all transcribed locally by the Agent — the audio never leaves your machine and no cloud ASR is involved.
 - **Bring any provider, switch in two clicks** — save multiple OpenAI-compatible provider profiles (endpoint / key / model list); pick provider first, then model, right in the chat panel.
 - **Never miss an unfinished task** — desktop notifications when a task completes or fails, when a scheduled task finishes, and when the AI is waiting for your confirmation or clarification; one click jumps back to the side panel.
 - **Light / Dark / Follow-system theme** — a semantic-token redesign across the whole UI, switchable instantly from the sidebar "More" menu and the Options "Appearance" card; a change anywhere syncs every page without a reload.
@@ -74,7 +74,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 - **Token-budget management.** Truncation is by token count, not message count, so `tool_calls` / `tool` message pairs never get split apart.
 - **Long-quote auto-compression.** Big page selections are summarized instead of squatting in your context forever.
 - **Built-in knowledge base (RAG).** Import your own documents and get hybrid-retrieval answers with source citations — the index lives on your machine and the files never leave it.
-- **Voice input that never leaves the machine.** Say it instead of typing it: the Agent runs a local ONNX speech recognizer (streaming draft + high-accuracy final pass), so the audio never leaves your machine and no cloud ASR key is needed. Comes with a 24-bar recorder strip, silence detection, one-shot `Alt+V` that also fires while the focus is on the page, and a switch to cancel with `Esc`.
+- **Voice input that never leaves the machine.** Say it instead of typing it: the Agent runs a local ONNX speech recognizer (streaming draft + high-accuracy final pass), so the audio never leaves your machine and no cloud ASR key is needed. Comes with a 24-bar recorder strip, silence detection, one-shot `Alt+V` that also fires while the focus is on the page (right Alt / right Ctrl can be enabled as single-key triggers), and a switch to cancel with `Esc`.
 - **Checkpoint resume + Service Worker restart recovery.** Long tasks survive SW silent restarts and can be resumed with one click after any interruption.
 - **Scheduled tasks + long-term memory + file trash bin + audit logs.** The unglamorous pieces that turn an AI chat toy into something you can actually rely on day after day.
 
@@ -88,7 +88,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 
 **D. Ask your own knowledge base.** Start the Agent, import documents into a knowledge base from Options → Knowledge Base, then ask away in the side panel — answers come back with citation bubbles pointing at the exact source chunks. [Technical details →](agent/README.md#knowledge-base-rag)
 
-**E. Speak instead of typing.** Enable the optional voice component (Options → Voice tab, one click) and drop a model pack into the Agent, then press `Alt+V` — anywhere, including while reading a page. A streaming draft appears as you speak; when you stop, a higher-accuracy pass adds punctuation and normalizes numbers. Nothing is sent automatically. [Setup & model pack →](docs/Voice-Input-Local-STT.md)
+**E. Speak instead of typing.** Enable the optional voice component (Options → Voice tab, one click) and drop a model pack into the Agent, then press `Alt+V` — anywhere, including while reading a page (or a single right Alt / right Ctrl once enabled under Options → Voice). A streaming draft appears as you speak; when you stop, a higher-accuracy pass adds punctuation and normalizes numbers. Nothing is sent automatically. [Setup & model pack →](docs/Voice-Input-Local-STT.md)
 
 ## 30-second quickstart
 

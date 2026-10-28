@@ -3961,3 +3961,54 @@ textarea {
   0% { box-shadow: 0 0 0 3px rgba(var(--brand-rgb, 59, 130, 246), 0.4); }
   100% { box-shadow: 0 0 0 12px rgba(var(--brand-rgb, 59, 130, 246), 0); }
 }
+
+/* ==================== 语音输入：快捷触发（单键） ==================== */
+/* 独立成块、不随总开关收起：这是纯扩展侧偏好（chrome.storage.local），
+   代理离线或还没装模型时也应该能先把键位配好 */
+.asr-shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.asr-shortcut-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle, rgba(var(--overlay-rgb, 0, 0, 0), 0.1));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.asr-shortcut-item:hover {
+  border-color: rgba(var(--brand-rgb, 59, 130, 246), 0.45);
+  background: rgba(var(--brand-rgb, 59, 130, 246), 0.04);
+}
+.asr-shortcut-item input[type="checkbox"] {
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+  accent-color: var(--brand-500, #3b82f6);
+}
+/* 只在文字列做 min-width:0：窄屏 / 长文案时收缩的是这段，不会把卡片撑破 */
+.asr-shortcut-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.asr-shortcut-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.asr-shortcut-hint {
+  font-size: 12px;
+  line-height: 1.55;
+  opacity: 0.72;
+}
+.asr-shortcut-note {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.7;
+}

@@ -730,6 +730,7 @@ Speak instead of typing — and the **audio never leaves your machine**. Recogni
 - **Three-part gating**: dependencies (`sherpa-onnx-node`) × models (`online` streaming / `offline` finalize) × the master switch. Only when all three are ready does 🎤 appear at the right of the input box; if any is missing the button is hidden outright rather than failing after a click.
 - **Two tempos**: a streaming draft appears as you speak (throttled to 150ms server-side, with VAD committing sentence ends as stable segments); once you stop, the offline model re-transcribes the whole clip to add punctuation and normalize numbers.
 - **Never lose the tail**: `Alt+V` wraps up even when focus sits on the page, and `Esc` cancels. The microphone grant must happen in a tab (Chromium will not prompt from a side panel), so the Voice tab offers a "Grant" shortcut.
+- **Single-key triggers (opt-in)**: right Alt and right Ctrl can each be enabled under Options → Voice → Quick trigger (both off by default; with both ticked either one fires), while `Alt+V` always works and is unaffected. "Press, then release" counts as one action, and pressing another key while held voids it, so AltGr layouts never misfire. Active in both the side panel and the page, and effective immediately after ticking.
 - **Draft only, never auto-sent**: the recognized text is inserted into the input box and you decide whether to send it.
 - **Reliable recorder strip**: 24 volume bars + timer + status text; focus is returned to the input box before the strip is hidden, and `aria-live` sits only on the status text so screen readers are not spammed by the timer.
 - **Bounded resources**: 5-minute recording cap, 30-second idle session reclaim, concurrency of 1, automatic fallback to the streaming text when RSS exceeds 3.5GB, and engine unload after 10 idle minutes; offline inference runs on a dedicated worker thread so the Agent's event loop keeps serving.
@@ -1131,6 +1132,8 @@ Model packs live in `~/.ai-helper-agent/asr/models/<id>/` (one directory per pac
 | `Alt+N` | New session |
 | `Alt+W` | Close current session |
 | `Alt+E` | Edit the latest user message |
+| `Alt+V` | Voice input: start / stop recording (also fires while focus is on the page) |
+| Right `Alt` / right `Ctrl` | Voice input single-key trigger (optional, off by default; enable under Options → Voice → Quick trigger) |
 | `Alt+↑/↓` | Jump between questions (previous / next) |
 | `Alt+Ctrl/Cmd+↑/↓` | Jump to top / bottom |
 | `Tab` (left handle) | Focus the handle and open the question list (keyboard reachable) |

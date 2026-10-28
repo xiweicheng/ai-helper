@@ -31,6 +31,12 @@ import { deepGetSelection } from './shadow-dom-utils.js';
 import { initSelectionToolbar, isExtensionValid } from './selection-toolbar.js';
 
 import { t, registerTranslations, initI18n } from '../shared/i18n.js';
+import {
+  createSingleKeyTrigger,
+  loadVoiceShortcutConfig,
+  watchVoiceShortcutConfig,
+  DEFAULT_VOICE_SHORTCUT_CONFIG,
+} from '../shared/voice-shortcut.js';
 
 registerTranslations('zh', {
   contentIndex: {
@@ -78,6 +84,35 @@ document.addEventListener('keydown', (e) => {
     try { chrome.runtime.sendMessage({ type: 'VOICE_TOGGLE_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
   }
 });
+
+// ==================== 单键语音快捷键（右侧 Alt / 右侧 Ctrl） ====================
+//
+// 配置在 chrome.storage.local（配置页「语音 → 快捷触发」勾选），默认全关。
+// 判定与侧边栏共用 shared/voice-shortcut.js，保证同一个键在面板和网页里行为一致
+// （包括「按住期间按了别的键就整次作废」——右 Alt 在 AltGr 布局上是组合键，不能误触发）。
+//
+// 为什么挂在 window 捕获阶段：页面自己的 keydown 处理器（尤其是会 stopPropagation 的富文本编辑器）
+// 不能把这两拍吞掉，否则焦点在网页里时按键会时灵时不灵。
+let voiceShortcutCfg = { ...DEFAULT_VOICE_SHORTCUT_CONFIG };
+loadVoiceShortcutConfig()
+  .then((cfg) => { voiceShortcutCfg = cfg; })
+  .catch(() => { /* 读不到就用默认全关 */ });
+watchVoiceShortcutConfig((cfg) => { voiceShortcutCfg = cfg; });
+const voiceSingleKey = createSingleKeyTrigger(() => voiceShortcutCfg);
+
+window.addEventListener('keydown', (e) => {
+  // Windows 上裸按 Alt 会去聚焦浏览器菜单：不拦就会把焦点从网页抢走
+  if (voiceSingleKey.onKeyDown(e) === 'cancel') e.preventDefault();
+}, true);
+
+window.addEventListener('keyup', (e) => {
+  if (voiceSingleKey.onKeyUp(e) !== 'trigger') return;
+  e.preventDefault();
+  try { chrome.runtime.sendMessage({ type: 'VOICE_TOGGLE_FROM_PAGE' }); } catch { /* 扩展上下文失效时静默忽略 */ }
+}, true);
+
+// 切窗口 / 页面失焦时可能收不到 keyup：丢掉未结算的按下状态，避免下次松开莫名开录
+window.addEventListener('blur', () => { voiceSingleKey.reset(); });
 
 // ==================== 消息路由表（Map 查找，O(1)） ====================
 //
