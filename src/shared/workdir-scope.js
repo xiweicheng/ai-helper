@@ -23,6 +23,30 @@ import { getSession } from '../storage/db.js';
 // 默认目录缓存 TTL：/api/status/detail 是网络请求，不能每个工具调用都打一次
 const DEFAULT_TTL_MS = 5000;
 
+/**
+ * 请求超时（毫秒）：代理进程「半挂」（TCP 已连上但不响应）时，
+ * 裸 fetch 的 promise 永不 settle —— 调用方会永久挂起（ReAct 迭代、恢复默认目录按钮）。
+ * 与 local-agent-client / workspace-manager 的既有做法保持一致。
+ */
+const FETCH_TIMEOUT_MS = 8000;
+
+/**
+ * 带超时的 fetch：超时按 AbortError 抛出，由调用方各自的降级分支处理
+ * @param {string} url
+ * @param {RequestInit} [options]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<Response>}
+ */
+export async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** @type {{ workdir: string|null, at: number }|null} */
 let _defaultCache = null;
 
@@ -79,7 +103,7 @@ export async function getAgentDefaultWorkdir({ force = false } = {}) {
   const cfg = await getProxyAgentConfig();
   if (!cfg) return _defaultCache ? _defaultCache.workdir : null;
   try {
-    const resp = await fetch(`${cfg.url}/api/status/detail`, {
+    const resp = await fetchWithTimeout(`${cfg.url}/api/status/detail`, {
       headers: { Authorization: `Bearer ${cfg.token}` },
     });
     if (!resp.ok) return _defaultCache ? _defaultCache.workdir : null;
@@ -107,7 +131,7 @@ async function agentApiFetch(pathname, { method = 'GET', body, sessionId } = {})
   if (body) headers['Content-Type'] = 'application/json';
   // 带 sessionId 时同时给请求头与 body：新旧代理都能取到
   if (sessionId) headers['X-AIH-Session-Id'] = sessionId;
-  const resp = await fetch(`${cfg.url}${pathname}`, {
+  const resp = await fetchWithTimeout(`${cfg.url}${pathname}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -253,6 +277,25 @@ export async function buildAgentScope(sessionId) {
 /** 供测试/切换代理时清理全部冻结态 */
 export function clearAllSessionRuns() {
   _runState.clear();
+}
+
+/**
+ * 编码 X-AIH-Workdir 头的目录值（代理端按 decodeURIComponent 还原，两端必须成对）
+ *
+ * HTTP 头只能承载 ByteString（latin-1）：含中文/emoji 的绝对路径直接赋值会在
+ * Headers.set 阶段抛 TypeError，被 agentRequest 的 catch 吞成「请求失败」——
+ * 表现为该会话所有 agent 读写全挂，而不是只丢一个头。
+ * 含 % 的目录同理：不编码时代理端 decode 会抛 URIError 并静默忽略声明。
+ * @param {string|null|undefined} workdir
+ * @returns {string|null}
+ */
+export function encodeWorkdirHeaderValue(workdir) {
+  const raw = String(workdir || '').trim();
+  if (!raw) return null;
+  // 用 encodeURI 而不是 encodeURIComponent：后者会把 / 也编码成 %2F，
+  // 头里就再也看不出是哪条路径（排障困难）；两者对非 ASCII 与 % 的转义一致，
+  // 代理端的 decodeURIComponent 都能还原。
+  return encodeURI(raw);
 }
 
 /**

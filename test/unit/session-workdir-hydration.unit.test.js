@@ -116,13 +116,17 @@ describe('所有激活会话的路径都必须水合目录', () => {
 describe('漂移自愈：只在「扩展端说默认、代理端还有绑定」时动手', () => {
   const body = bodyOf(reconcile, 'export async function reconcileSessionWorkdir(sessionId)');
 
-  test('幂等：同一会话只尝试一次', () => {
+  test('幂等：动作成功后才记账（失败要能重试）', () => {
     expect(body).toContain('attempted.has(base)');
-    expect(body).toContain('attempted.add(base)');
+    const addAt = body.indexOf('attempted.add(base)');
+    expect(addAt).toBeGreaterThan(-1);
+    // 记账必须在真正修复动作之后：写在动作之前会让一次失败变成永久放弃
+    expect(addAt).toBeGreaterThan(body.indexOf('setSessionWorkdirBinding(base'));
   });
 
   test('扩展端已是本会话作用域则不动', () => {
-    expect(body).toContain("if (resolved.scope === 'session') return null;");
+    // 允许提前返回时顺带记一条「探测结论」缓存（换行/大括号都算同一语义）
+    expect(body).toMatch(/if \(resolved\.scope === 'session'\)[\s\S]{0,120}?return null;/);
   });
 
   test('记录被抹过 → 以代理端为准恢复绑定', () => {
@@ -135,7 +139,7 @@ describe('漂移自愈：只在「扩展端说默认、代理端还有绑定」�
   });
 
   test('代理端本来就按默认目录 → 无需修复', () => {
-    expect(body).toContain('if (!registered || registered === agentDefault) return null;');
+    expect(body).toMatch(/if \(!registered \|\| registered === agentDefault\)[\s\S]{0,120}?return null;/);
   });
 });
 

@@ -1,7 +1,7 @@
 import logger from '../shared/logger.js';
 import { getLanguage, t, registerTranslations } from '../shared/i18n.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
-import { buildAgentScope } from '../shared/workdir-scope.js';
+import { buildAgentScope, encodeWorkdirHeaderValue } from '../shared/workdir-scope.js';
 
 // 内部工具：从存储读取的 agents 数组解密 token
 function _decodeAgents(agents) {
@@ -443,7 +443,10 @@ async function agentRequest(path, body = {}, method = 'POST', timeoutMs = 60000,
     // X-AIH-Workdir 只是执行期冻结值的声明，代理端只在与注册值一致时采纳
     if (requestScope?.sessionId) {
       headers['X-AIH-Session-Id'] = requestScope.sessionId;
-      if (requestScope.workdir) headers['X-AIH-Workdir'] = requestScope.workdir;
+      // 必须 URL 编码：非 ASCII 路径直接进 header 会在 Headers.set 抛 TypeError，
+      // 被下面的 catch 吞成「请求失败」，该会话所有 agent 读写全挂
+      const encodedWorkdir = encodeWorkdirHeaderValue(requestScope.workdir);
+      if (encodedWorkdir) headers['X-AIH-Workdir'] = encodedWorkdir;
     }
 
     const fetchOptions = {

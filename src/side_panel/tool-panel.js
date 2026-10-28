@@ -849,6 +849,11 @@ function saveToolsFromPopup() {
   });
   
   state.enabledTools = newEnabledTools;
+  // 工具勾选变化会影响依赖 agent_exec 的 UI（目录 chip 未启用时整块隐藏）：
+  // 由监听方自行刷新，避免把 chip 的显隐逻辑耦合进工具弹窗
+  if (typeof document !== 'undefined') {
+    document.dispatchEvent(new CustomEvent('agent-tools-changed'));
+  }
   
   // MCP 服务级开关：汇总为关闭列表（deny-list）
   // - 可见服务：checkbox 存在用勾选状态，否则保持原有状态

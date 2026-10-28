@@ -27,6 +27,8 @@ import {
   resolveScopeCwd,
   formatWorkdirLabel,
   getBaseSessionId,
+  encodeWorkdirHeaderValue,
+  fetchWithTimeout,
 } from '../../src/shared/workdir-scope.js';
 
 const AGENT_ID = 'agent-1';
@@ -260,5 +262,50 @@ describe('getBaseSessionId - 扩展端派生会话识别', () => {
     expect(getBaseSessionId('s1_sub_agent-x')).toBe('s1');
     expect(getBaseSessionId('s1')).toBe('s1');
     expect(getBaseSessionId(null)).toBe(null);
+  });
+});
+
+describe('X-AIH-Workdir 请求头编码：非 ASCII 目录不能直塞 header', () => {
+  test('中文目录编码后可由代理端 decodeURIComponent 原样还原', () => {
+    const raw = '/Users/u/Documents/项目 A';
+    const encoded = encodeWorkdirHeaderValue(raw);
+    expect(encoded).not.toBe(raw);
+    expect(decodeURIComponent(encoded)).toBe(raw);
+    // 头值必须是 ByteString 安全的：原值含非 latin-1 字符，塞进 Headers 会抛 TypeError
+    // （agentRequest 的 catch 会把它吞成「请求失败」，该会话所有 agent 读写全挂）
+    expect(/^[\x20-\x7E]*$/.test(encoded)).toBe(true);
+    if (typeof Headers === 'function') {
+      expect(() => new Headers({ 'X-AIH-Workdir': encoded })).not.toThrow();
+      expect(() => new Headers({ 'X-AIH-Workdir': raw })).toThrow();
+    }
+  });
+
+  test('含 % 的目录也必须编码（否则代理端 decode 抛 URIError 并静默忽略声明）', () => {
+    const raw = '/tmp/100%done';
+    expect(encodeWorkdirHeaderValue(raw)).toBe('/tmp/100%25done');
+    expect(decodeURIComponent(encodeWorkdirHeaderValue(raw))).toBe(raw);
+  });
+
+  test('纯 ASCII 路径保持原样（不改变既有冻结声明语义）', () => {
+    expect(encodeWorkdirHeaderValue('/proj/a')).toBe('/proj/a');
+  });
+
+  test('空值返回 null（调用方据此不设头）', () => {
+    expect(encodeWorkdirHeaderValue('')).toBeNull();
+    expect(encodeWorkdirHeaderValue(null)).toBeNull();
+    expect(encodeWorkdirHeaderValue(undefined)).toBeNull();
+  });
+});
+
+describe('fetchWithTimeout：代理半挂时不能永久挂起', () => {
+  test('超时按 AbortError 抛出，交给调用方各自的降级分支', async () => {
+    globalThis.fetch = vi.fn((url, opts) => new Promise((resolve, reject) => {
+      opts.signal.addEventListener('abort', () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    }));
+    await expect(fetchWithTimeout('http://127.0.0.1:9/api/status/detail', {}, 20)).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

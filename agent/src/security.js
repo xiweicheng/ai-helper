@@ -1,6 +1,7 @@
 // agent/src/security.js - 安全管控：文件沙箱 + 命令分级
 import { resolve, normalize, sep, isAbsolute, join, dirname, basename } from 'path';
 import { realpath } from 'fs/promises';
+import { realpathSync } from 'fs';
 import { homedir, platform } from 'os';
 import { loadConfig, MEMORY_DIR } from './config.js';
 import { t as translate } from './i18n.js';
@@ -75,6 +76,18 @@ const HARD_BLOCKED_PATHS = [
   join(AGENT_DIR, 'builtin_skills_state.json'), // 内置技能状态
   join(AGENT_DIR, 'disabled_skills.json'),      // 停用技能状态
 ];
+
+// ~/.ai-helper-agent 可能是符号链接（用户把代理数据目录挪到了别的盘）：
+// checkPath 用 realpath 之后的路径比对，清单里若只有符号链接形态，
+// 真实路径下的 config.json / session-workdirs.json 反而「不在硬阻止名单内」——
+// 能写 session-workdirs.json 就等于给自己扩权，所以两种形态都要覆盖。
+let AGENT_DIR_REAL = AGENT_DIR;
+try { AGENT_DIR_REAL = realpathSync(AGENT_DIR); } catch { /* 目录尚未创建：保持原值 */ }
+if (AGENT_DIR_REAL && AGENT_DIR_REAL !== AGENT_DIR) {
+  for (const blocked of [...HARD_BLOCKED_PATHS]) {
+    HARD_BLOCKED_PATHS.push(blocked.replace(AGENT_DIR, AGENT_DIR_REAL));
+  }
+}
 
 /**
  * 检查路径是否命中核心敏感文件

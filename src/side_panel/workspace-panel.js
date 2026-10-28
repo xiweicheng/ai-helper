@@ -6441,9 +6441,12 @@ async function performSwitchWorkdir(newWorkdir, options = {}) {
   // 绑定落到会话记录（唯一写入口：本会话显式切换）
   if (sessionId) {
     try {
-      const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
       const { setSessionWorkdirBinding } = await import('../storage/session-store.js');
-      await setSessionWorkdirBinding(sessionId, result.workdir, activeAgentId || null);
+      // 必须记录「本次请求实际使用的代理」：storage 里的 activeAgentId 可能已失效
+      // （代理被删除），而请求侧会回落 agents[0]，记成失效 id 会让这条绑定永远
+      // usable=false（静默失效，chip 显示默认目录）
+      const bindingAgentId = (await getAgentConfig())?.id || null;
+      await setSessionWorkdirBinding(sessionId, result.workdir, bindingAgentId);
     } catch (err) {
       logger.warn('[WorkspacePanel] persist session workdir failed:', err);
     }

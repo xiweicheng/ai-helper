@@ -673,6 +673,8 @@ function initWorkdirTag() {
   document.addEventListener('session-switched', () => { updateWorkdirTag(); });
   document.addEventListener('session-workdir-changed', () => { updateWorkdirTag(); });
   document.addEventListener('agent-model-changed', () => { updateWorkdirTag(); });
+  // 工具勾选会改变 chip 的显隐条件（未启用 agent_exec 时整块隐藏）
+  document.addEventListener('agent-tools-changed', () => { updateWorkdirTag(); });
 }
 
 /** 初始化模型名指示：绑定点击（打开模型设置）并首次刷新 */

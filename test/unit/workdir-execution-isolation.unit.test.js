@@ -182,3 +182,18 @@ describe('执行期隔离：改别的会话目录不影响正在执行的会话'
     expect(call.headers['X-AIH-Workdir']).toBeUndefined();
   });
 });
+
+describe('非 ASCII 目录：请求头必须编码（评审 P0-1）', () => {
+  test('中文会话目录在 header 里是编码值，代理端 decode 后仍是原目录', async () => {
+    const raw = '/proj/项目';
+    setBinding('s1', raw);
+
+    await execCommand('pwd', undefined, false, 1000, 's1');
+    const headerValue = lastExec().headers['X-AIH-Workdir'];
+
+    // 原值含非 latin-1 字符：直塞 header 会在 Headers.set 抛 TypeError（请求整体失败）
+    expect(/^[\x20-\x7E]*$/.test(headerValue)).toBe(true);
+    expect(decodeURIComponent(headerValue)).toBe(raw);
+    expect(headerValue).toBe(encodeURI(raw));
+  });
+});
