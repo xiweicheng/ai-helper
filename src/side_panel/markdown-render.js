@@ -1269,18 +1269,21 @@ export async function renderMessageMermaid(messageDiv) {
 let ctrlClickBound = false;
 
 /**
- * 设置 Ctrl+单击复制代码事件（委托在 #chatContainer 上，只绑定一次）
+ * 设置 Ctrl+单击复制代码事件（委托在 document 上，只绑定一次）
+ * 作用域限聊天区与全屏查看覆盖层：节点迁移会把消息移出 #chatContainer，
+ * 若仍绑在 #chatContainer 上则全屏里 Ctrl+单击失效（与按钮委托 R1 同源）。
  */
 function setupCodeCtrlClick() {
   if (ctrlClickBound) return;
   ctrlClickBound = true;
 
-  const chatContainer = document.getElementById('chatContainer');
-  if (!chatContainer) return;
-
-  chatContainer.addEventListener('click', (e) => {
+  document.addEventListener('click', (e) => {
     // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac），且必须是左键点击（排除右键/Ctrl+Click）
     if ((!e.ctrlKey && !e.metaKey) || e.button !== 0) return;
+
+    // 作用域：仅聊天消息区与全屏查看覆盖层（节点迁移后消息不在 #chatContainer 内）。
+    // 工作目录预览有各自的 Ctrl+单击处理，不在此列，避免重复复制/双 toast。
+    if (!e.target.closest?.('#chatContainer, .message-fullscreen-body')) return;
 
     // 点击目标是 <code> 元素，或代码块容器内的任意位置
     let codeEl = e.target.closest('code');
@@ -1327,7 +1330,7 @@ function setupCodeCtrlClick() {
     });
   });
 
-  logger.debug('[SidePanel] Ctrl+clickcopycodeeventbound');
+  logger.debug('[SidePanel] Ctrl+clickcopycodeeventbound (document delegate)');
 }
 
 /**
@@ -1337,7 +1340,7 @@ export function addCodeCopyButtons() {
   // PERF-10：由“每次渲染 document 全表扫描 + 逐钮 addEventListener + dataset.bound 防重复”
   // 改为 document 捕获阶段一次性事件委托（见 ensureToolbarDelegate）。这里只负责“确保委托已绑”。
   ensureToolbarDelegate();
-  // Ctrl+单击复制（本就是 #chatContainer 委托，只绑一次）
+  // Ctrl+单击复制（document 委托，作用域限聊天区与全屏覆盖层，只绑一次）
   setupCodeCtrlClick();
 }
 
