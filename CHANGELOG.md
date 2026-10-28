@@ -12,7 +12,7 @@
 - **保存闸门**：`state` 新增 `sessionWorkdirOwner`（目录状态属于哪个会话），`saveCurrentSession()` 只在 `owner === activeSessionId` 时才回写 workdir 字段，其余情况保留库里原值 —— 将来再冒出部分水合的路径也不会再抹数据。
 - **提示说实话**：`updateWorkdirTag()` 区分两种不一致 —— `scope === 'session'` 且与代理端不符才是真「目录不可用」（保留异常标记）；`scope === 'default'` 但代理端仍有本会话绑定属于**两侧记录漂移**，不再标红。
 - **历史数据自愈**：新增 `src/side_panel/workdir-reconcile.js`（幂等，每会话只试一次）——扩展端没绑定而代理端还留着 → 以代理端为准**恢复绑定**（代理端能返回该目录即证明目录在这台机器上存在，且正是用户当初选的）；扩展端有绑定但属于别的代理（换代理回落）→ **清掉代理端残留**，避免命令跑在旧目录。修好后 chip 随事件自动刷新回「（本会话）」。
-- **验证**：新增 `test/unit/session-workdir-hydration.unit.test.js`（17 例源码守卫：水合入口、保存闸门位置、四条激活路径、自愈分支与幂等、chip 两种不一致的处理）；真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 补 5d 段（**重载面板** → chip 仍是本会话且无「目录不存在」→ 新建会话回到默认且不继承 → 切回绑定会话绑定仍在 → 代理注册表仍在）→ 扩到 **54 项全过**，这正是此前漏掉的关键场景（旧探针全程不重载，所以一直绿）；回归 `npx vitest run` **204 文件 / 3075 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
+- **验证**：新增 `test/unit/session-workdir-hydration.unit.test.js`（17 例源码守卫：水合入口、保存闸门位置、四条激活路径、自愈分支与幂等、chip 两种不一致的处理）；真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 补 5d 段（**重载面板** → chip 仍是本会话且无「目录不存在」→ 新建会话回到默认且不继承 → 切回绑定会话绑定仍在 → 代理注册表仍在）→ 扩到 **58 项全过**（再加 5e 段：直接改 IDB 抹掉绑定模拟历史漂移 → 重载后 chip 自动恢复「（本会话）」且写回库），这正是此前漏掉的关键场景（旧探针全程不重载，所以一直绿）；回归 `npx vitest run` **204 文件 / 3075 例**、`npx playwright test` **67 例**、`node agent/test/smoke/session-workdir.smoke.mjs` **44 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
 
 ### 会话级工作目录：目录 chip 补齐「新建会话」这条切换路径
 > 来源：用户反馈「面板现在是联动了，但输入框下方的目录 chip 又不动了」。
