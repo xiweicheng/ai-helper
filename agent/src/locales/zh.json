@@ -128,7 +128,9 @@
     "err_invalidEmbeddingMode": "不支持的向量模式: {mode}",
     "err_invalidEmbeddingEndpoint": "远端向量服务地址无效（须为 http/https 的 Base URL，如 https://api.siliconflow.cn/v1）",
     "err_invalidEmbeddingDimensions": "向量维度无效: {dimensions}",
-    "err_embeddingDimensionMismatch": "向量维度不匹配：配置 {expected} 维，实际返回 {actual} 维，请检查向量模型与维度设置"
+    "err_embeddingDimensionMismatch": "向量维度不匹配：配置 {expected} 维，实际返回 {actual} 维，请检查向量模型与维度设置",
+    "err_ortConflict": "本地向量引擎加载失败：进程里同时存在两份 onnxruntime 原生库（Windows 报 cannot run %1）。重启代理后再试——已加载的 DLL 在进程退出前无法卸载，热修复无效",
+    "err_embedWorkerFailed": "本地向量子进程调用失败：{message}（重启代理后再试）"
   },
   "message": {
     "shuttingDown": "Agent 正在关闭...",

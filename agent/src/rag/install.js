@@ -25,6 +25,7 @@ import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resetRagDetection, detectRagAvailable, getLastRagProbeError, isNodeVersionSupported } from './detect.js';
 import { stopProcessTree } from '../process-tree.js';
+import { pruneNativeDuplicates, summarizePruneReport } from '../native-lib-guard.js';
 import { logSystem } from '../logger.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 import { getRegistryUrl } from '../install-mode.js';
@@ -422,6 +423,18 @@ async function runInstall(task, t) {
     savePersistedState();
     console.log(`[RAG] ${result.error}`);
     return;
+  }
+
+  // 安装后收口（Windows 必做）：npm 在部分版本/安装顺序下会把与 overrides 冲突的版本
+  // 嵌套装进 node_modules/@huggingface/transformers/node_modules/onnxruntime-node，
+  // 同进程两份 onnxruntime.dll 会让 embedding 加载失败（cannot run %1）。
+  // 详见 native-lib-guard.js 文件头。
+  const repair = pruneNativeDuplicates(getAgentRoot());
+  const repairSummary = summarizePruneReport(repair);
+  if (repairSummary) {
+    task.logTail.push(`[deps] ${repairSummary}`);
+    if (task.logTail.length > LOG_TAIL_LIMIT) task.logTail = task.logTail.slice(-LOG_TAIL_LIMIT);
+    logSystem('rag_native_dedupe', { removed: repair.removed.length, failed: repair.failed.length });
   }
 
   // npm 退出码 0 → 重新检测依赖可用性（以 detect 结果为准，避免假成功）

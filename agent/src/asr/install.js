@@ -21,6 +21,7 @@ import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resetAsrDetection, detectAsrAvailable, getLastAsrProbeError } from './detect.js';
 import { stopProcessTree } from '../process-tree.js';
+import { pruneNativeDuplicates, summarizePruneReport } from '../native-lib-guard.js';
 import { logSystem } from '../logger.js';
 import { t as translate, parseAcceptLanguage } from '../i18n.js';
 import { getRegistryUrl } from '../install-mode.js';
@@ -349,6 +350,17 @@ async function runInstall(task, t) {
     savePersistedState();
     console.log(`[ASR] ${result.error}`);
     return;
+  }
+
+  // 安装后收口（Windows 必做）：ASR 安装会重算整个包目录的依赖树，可能把 onnxruntime-node
+  // 嵌套装进 @huggingface/transformers/node_modules；两份 onnxruntime.dll 同进程会抢句柄，
+  // 把知识库的本地向量打挂（cannot run %1）。详见 native-lib-guard.js 文件头。
+  const repair = pruneNativeDuplicates(getAgentRoot());
+  const repairSummary = summarizePruneReport(repair);
+  if (repairSummary) {
+    task.logTail.push(`[deps] ${repairSummary}`);
+    if (task.logTail.length > LOG_TAIL_LIMIT) task.logTail = task.logTail.slice(-LOG_TAIL_LIMIT);
+    logSystem('asr_native_dedupe', { removed: repair.removed.length, failed: repair.failed.length });
   }
 
   // npm 退出码 0 → 子进程重新探测（以真实加载结果为准，避免假成功）

@@ -1,29 +1,31 @@
-// agent/src/rag/embedding/local.js - 本地 embedding（transformers.js）
+// agent/src/rag/embedding/local.js - 本地 embedding（transformers.js，跑在独立子进程里）
 // 默认模型 Xenova/bge-small-zh-v1.5（中文优化，512 维，q8 量化约 95MB）
 // 关键约束（实测）：
 //   1. 模型下载端点须走 hf-mirror 镜像（huggingface.co 国内直连超时）
 //   2. 缓存目录指向 ~/.ai-helper-agent/rag/models（默认在 node_modules 内，重装即丢）
+//   3. 推理必须在 embed-worker 子进程里做：主进程一旦 import transformers，就会和语音输入
+//      的 sherpa-onnx 抢同一份 onnxruntime.dll（Windows 报 "cannot run %1"），详见
+//      embed-worker.mjs 文件头的根因说明。本文件因此不出现任何 transformers 引用。
+//
+// 对外接口保持不变：embed(texts) / countTokens(texts)，调用方（RAG 检索、长期记忆）无感。
 
-import { MODELS_DIR } from '../config.js';
-
-// pipeline 单例（模型加载昂贵，进程内复用；按模型名缓存）
-let _pipeline = null;
-let _pipelineModel = null;
-// 加载锁：并发首次调用时避免重复加载同一模型
-let _loadingPromise = null;
+import { getEmbedWorker } from './worker-client.js';
+import { toEmbeddingError } from '../errors.js';
 
 /**
- * 本地 embedding 后端（transformers.js feature-extraction pipeline）
+ * 本地 embedding 后端（子进程内的 transformers.js feature-extraction pipeline）
  */
 export class LocalEmbedding {
   /**
    * @param {object} config - embedding 配置
    * @param {string} config.modelName - 模型名（如 Xenova/bge-small-zh-v1.5）
    * @param {string} [config.remoteHost] - 模型下载端点（默认 hf-mirror）
+   * @param {object} [deps] - 仅测试注入：{ worker }
    */
-  constructor(config = {}) {
+  constructor(config = {}, deps = {}) {
     this.modelName = config.modelName || 'Xenova/bge-small-zh-v1.5';
     this.remoteHost = config.remoteHost || 'https://hf-mirror.com/';
+    this.worker = deps.worker || null;
   }
 
   /**
@@ -33,73 +35,51 @@ export class LocalEmbedding {
    */
   async embed(texts) {
     if (!Array.isArray(texts) || texts.length === 0) return [];
-
-    const extractor = await this._getPipeline();
-
-    // 单次批量推理：pipeline 支持数组输入，输出为 [batch, seq, dim] 张量
-    const output = await extractor(texts, { pooling: 'mean', normalize: true });
-    // tolist() 转为嵌套数组；v4 中 Tensor 直接可迭代，但 tolist 语义更明确
-    return output.tolist();
+    try {
+      const vectors = await this._getWorker().embed(texts, this._workerParams());
+      return Array.isArray(vectors) ? vectors : [];
+    } catch (err) {
+      throw toEmbeddingError(err);
+    }
   }
 
   /**
    * 统计文本的真实 token 长度与模型上下文窗口（供调用方发现「会被截多」）。
    *
-   * 必须 `truncation: false`：feature-extraction pipeline 内部用的是 `truncation: true`，
-   * 实测在 `model_max_length`（本模型 512）处静默砍尾——跟着它的口径数只会永远数到窗口值，
-   * 看不见损失了多少。也不走 `embed()` 的反推：tolist 只给向量，给不出长度。
+   * 子进程侧必须 truncation: false：feature-extraction pipeline 内部用的是 truncation: true，
+   * 实测在 model_max_length（本模型 512）处静默砍尾——跟着它的口径数只会永远数到窗口值，
+   * 看不见损失了多少。也不走 embed() 的反推：只给向量，给不出长度。
    * 纯 tokenization 不跑推理，成本远低于嵌入本身。
    * @param {string[]} texts
    * @returns {Promise<{counts: number[], window: number}>} counts 与入参同序
    */
   async countTokens(texts) {
     if (!Array.isArray(texts) || texts.length === 0) return { counts: [], window: 0 };
-
-    const extractor = await this._getPipeline();
-    const tokenizer = extractor.tokenizer;
-    // 窗口值以 tokenizer 为准（实测 = tokenizer_config.model_max_length = 512），不自己写常量
-    const window = Number(tokenizer.model_max_length) || 0;
-    const counts = texts.map((t) => {
-      const encoded = tokenizer(String(t ?? ''), { padding: false, truncation: false });
-      const dims = encoded?.input_ids?.dims;
-      return Array.isArray(dims) && dims.length ? Number(dims[dims.length - 1]) : 0;
-    });
-    return { counts, window };
+    try {
+      const result = await this._getWorker().countTokens(texts, this._workerParams());
+      return {
+        counts: Array.isArray(result?.counts) ? result.counts : [],
+        window: Number(result?.window) || 0,
+      };
+    } catch (err) {
+      throw toEmbeddingError(err);
+    }
   }
 
   /**
-   * 获取（或加载）pipeline 单例
+   * 子进程请求参数（模型名与下载端点是每次请求都带的：子进程按模型名缓存 pipeline）
+   * @returns {{ modelName: string, remoteHost: string }}
    */
-  async _getPipeline() {
-    if (_pipeline && _pipelineModel === this.modelName) return _pipeline;
+  _workerParams() {
+    return { modelName: this.modelName, remoteHost: this.remoteHost };
+  }
 
-    // 加载中：等待现有加载完成（换模型时串行等待后重新加载）
-    if (_loadingPromise) {
-      await _loadingPromise.catch(() => {});
-      if (_pipeline && _pipelineModel === this.modelName) return _pipeline;
-    }
-
-    _loadingPromise = (async () => {
-      const { env, pipeline } = await import('@huggingface/transformers');
-
-      // 端点与缓存目录必须在模型加载前设置
-      env.remoteHost = this.remoteHost;
-      env.cacheDir = MODELS_DIR;
-
-      console.log(`[RAG] loading embedding model: ${this.modelName} (cache: ${MODELS_DIR})`);
-      const extractor = await pipeline('feature-extraction', this.modelName, {
-        dtype: 'q8', // v3+ 用 dtype 指定量化精度（替代已废弃的 quantized: true）
-      });
-      _pipeline = extractor;
-      _pipelineModel = this.modelName;
-      console.log(`[RAG] embedding model ready: ${this.modelName}`);
-    })();
-
-    try {
-      await _loadingPromise;
-    } finally {
-      _loadingPromise = null;
-    }
-    return _pipeline;
+  /**
+   * 取子进程客户端（进程级单例：RAG 与长期记忆共用，模型只加载一份）
+   * @returns {import('./worker-client.js').EmbedWorkerClient}
+   */
+  _getWorker() {
+    if (!this.worker) this.worker = getEmbedWorker();
+    return this.worker;
   }
 }

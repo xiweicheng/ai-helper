@@ -20,6 +20,7 @@ import { setConsoleOutput, setLoggerLocale, logAuth, logFs, logExec, logSecurity
 import { initSearchTools, getSearchToolsAvailable, searchFiles, searchContent, setSearchLang } from './search.js';
 import { detectRagAvailable, isRagAvailable, resetRagDetection, setRagLang, getLastRagProbeError } from './rag/detect.js';
 import { startRagInstall, getRagInstallStatus, stopRagInstall, maybeAutoRestoreRagDeps } from './rag/install.js';
+import { closeEmbedWorker } from './rag/embedding/worker-client.js';
 import { detectAsrAvailable, isAsrAvailable, resetAsrDetection, setAsrLang, getLastAsrProbeError } from './asr/detect.js';
 import { startAsrInstall, getAsrInstallStatus, stopAsrInstall } from './asr/install.js';
 import { asrRouter, isDepsIndependentPath as isAsrDepsIndependentPath, resolveAsrModels } from './asr/routes.js';
@@ -2692,6 +2693,8 @@ export function startServer() {
     try { asrSessions.closeAll(); } catch {}
     // offline 定稿线程也要收掉：native 会话持有几百 MB，进程退出前让它先 free
     try { await closeOfflinePool(); } catch {}
+    // 本地 embedding 子进程（onnxruntime）同样要收：它跑在独立进程里，父进程退出不会自动回收
+    try { await closeEmbedWorker(); } catch {}
 
     // 终止所有运行中的进程
     for (const entry of getRunningProcesses()) {
