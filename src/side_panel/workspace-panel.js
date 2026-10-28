@@ -2,6 +2,7 @@
 
 import {
   getWorkspaceRoot, resetWorkspaceRoot, getAgentConfig, getAgentStatusDetail, getHomeDir,
+  buildAgentHeaders,
   listDirectory, readFileContent, writeFileContent,
   downloadFileStream, downloadFilesStream,
   downloadFileStreamWithProgress, downloadFilesStreamWithProgress,
@@ -2000,7 +2001,9 @@ async function fetchFileArrayBuffer(filePath) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.token}`
+      // 不走 workspace-manager.agentRequest（需要原始字节），会话头不能漏：
+      // 代理端按会话目录做 checkPath，缺头会回 403
+      ...buildAgentHeaders(config)
     },
     body: JSON.stringify({ path: filePath })
   });
@@ -2852,7 +2855,7 @@ async function previewXlsx(fileName, previewContent, previewArea) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ path: filePath, maxRows: 500 })
     });
@@ -4879,7 +4882,10 @@ async function uploadFiles(fileList) {
         activeXhrs.add(xhr);
         const url = `${config.url}/api/fs/upload-stream?path=${encodeURIComponent(targetPath)}`;
         xhr.open('POST', url);
-        xhr.setRequestHeader('Authorization', `Bearer ${config.token}`);
+        // 同一个拼头入口：XHR 不能走 agentRequest，漏会话头会让会话绑定目录的上传被 403
+        for (const [name, value] of Object.entries(buildAgentHeaders(config))) {
+          xhr.setRequestHeader(name, value);
+        }
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             uploadedBytes[fileIdx] = e.loaded;
@@ -5807,7 +5813,7 @@ async function handleDeleteFile(path, name, type) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ path })
     });
@@ -5864,7 +5870,7 @@ async function handleBatchDelete() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.token}`
+            ...buildAgentHeaders(config)
           },
           body: JSON.stringify({ path })
         });
@@ -6607,7 +6613,7 @@ async function attachFilesForQuestion(paths) {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${config.token}`
+            ...buildAgentHeaders(config)
           },
           body: JSON.stringify({ path: img.path })
         });

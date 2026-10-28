@@ -540,47 +540,6 @@ async function writeFile(filePath, content, scope = null) {
 }
 
 /**
- * 上传文件到 Agent 工作目录
- * @param {File|Blob} file - 浏览器 File/Blob 对象
- * @returns {Promise<{success: boolean, path?: string, name?: string, size?: number, error?: string}>}
- */
-async function uploadFile(file) {
-  const config = await getAgentConfig();
-  if (!config.connected) {
-    return { success: false, error: t('agentClient.agentNotPaired') };
-  }
-  if (config.agentId && _agentReachability.get(config.agentId) === false) {
-    return { success: false, error: t('agentClient.proxyNotConnected') };
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-  try {
-    const response = await fetch(`${config.url}/api/files/upload`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept-Language': getLanguage()
-      },
-      body: formData,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return await response.json();
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      return { success: false, error: t('agentClient.uploadTimeout') };
-    }
-    return { success: false, error: t('agentClient.uploadFailed', { error: err.message }) };
-  }
-}
-
-/**
  * 在本地浏览器中打开文件
  * @param {string} filePath - 文件的绝对路径
  * @returns {Promise<{success: boolean, path?: string, error?: string}>}
@@ -1127,7 +1086,6 @@ export {
   readFile,
   statFile,
   writeFile,
-  uploadFile,
   openBrowser,
   listDir,
   deleteFile,

@@ -4,6 +4,16 @@
 
 ## 2026-10-28
 
+### 会话级工作目录：会话头覆盖收口（13 处漏传 + 源码守卫）
+> 来源：用户追问「设计目录的一些 API 都会传会话 ID 吗，有没有遗漏」。审计发现代理端已经全部按会话作用域校验，但扩展端有一批请求绕过了统一拼头入口。
+
+- **漏传的是「不能走 agentRequest」的通道**：会话头只有三个入口（`local-agent-client.agentRequest` 按需、`workspace-manager.agentRequest` 缺省取当前会话、`workdir-scope.agentApiFetch` 绑定专用）。凡是需要原始字节 / 表单 / 流式的调用都得手工拼 headers，一不留神只写了 `Authorization` → 代理端 `resolveRequestScope()` 拿不到 sessionId → 静默回落全局默认目录。会话绑定到非默认目录后，这类请求**全部 403**；附件上传更糟：文件写进默认目录，而模型后续是带会话头去读的，读它必然 403。
+- **面板侧收拢成唯一拼头入口**：`workspace-manager` 的私有 `agentHeaders` 提升为导出的 `buildAgentHeaders(config, sessionId = currentSessionId())`（缺省按面板当前会话，显式传 `null` 表示不带会话头，覆盖「不跟会话走」的场景）。替换 4 处流式下载（单文件 / 带进度 / 批量 / 批量带进度）+ `workspace-panel` 6 处（拖拽上传 XHR、单删、批量删、预览取字节、xlsx 预览、导出图片）。XHR 不能传 headers 对象，改为 `Object.entries(buildAgentHeaders(config))` 逐个 `setRequestHeader`。
+- **附件链路三处必须同改**：`file-extract` 新增 `sessionHeaders(token)`，覆盖上传（`/api/files/upload`，服务端按 `scope.workdir` 落盘）、抽图（`/api/documents/extract-images`）、取图（`/api/fs/download`）。只改一处会让「上传目录」与「读图目录」分处两地，docx 配图直接失效。
+- **删掉 background 的上传死代码**：`local-agent-client.uploadFile` 无任何调用方，且其实现不带会话头（写入全局默认目录）。留着就是下一次误用的入口。
+- **新增源码守卫单测**：`test/unit/workdir-session-header-coverage.unit.test.js`（9 例）把结构约束卡住——拼头入口必须存在于 `workspace-manager` 且缺省取当前会话；4 处 `download-stream`、6 处 `workspace-panel` 的 `/api/` 调用必须带 `buildAgentHeaders`；`workspace-panel` 不得再出现裸 `'Authorization'`；`file-extract` 只有 helper 自己能写 `Authorization`，上传/抽图/取图必须成对带会话头；background 不得再有 `/api/files/upload`。行为测试要真实 MV3 + 绑定会话才覆盖得到，源码守卫负责防回归。
+- **验证**：真实扩展链路探针从 25 项扩到 **36 项全过**——在会话已绑定 `proj-a` 的状态下打开工作目录面板（定位到会话目录）→ 上传（XHR）→ 图片预览（`download-stream`）→ 下载 → 删除（进回收站）→ 附件上传，每步既断言请求头里的 `X-AIH-Session-Id`，也断言磁盘落点（落在 `proj-a`、不落代理默认目录）；扩展端 `npx vitest run` → **198 文件 / 3001 例全绿**；代理端 `node --test` → **776 例全绿**；Playwright → **67 例全过**；真 HTTP 冒烟 → **44 项全过**；`npx eslint src/ agent/src/` 无输出；`npm run build:silent` → BUILD_SUCCESS。
+
 ### 会话级工作目录：模拟用户实测收口（5 处真实缺陷）
 > 来源：用户要求「代码测试、端到端测试、模拟用户的测试都试一试，发现问题就修掉并直接推远端」。前四层（单测/冒烟/Playwright/真实 HTTP 边缘矩阵）之外补了**真实 MV3 扩展 + 真实代理进程**的整套用户链路，缺陷是这一层跑出来的。
 

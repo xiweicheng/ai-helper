@@ -205,6 +205,21 @@ export async function getAgentConnectionInfo() {
 }
 
 /**
+ * 附件链路请求头（带会话头）
+ *
+ * 代理端 /api/files/upload 按 scope.workdir 落盘，/api/documents/extract-images 与
+ * /api/fs/download 按会话目录做 checkPath。缺会话头会落到「全局默认目录」，
+ * 而模型后续是带着会话头去读的 —— 会话绑定到别的目录时读它必然 403。
+ * @param {string} token 明文 token
+ */
+function sessionHeaders(token) {
+  const headers = { 'Authorization': `Bearer ${token}` };
+  const sid = state.activeSessionId;
+  if (sid) headers['X-AIH-Session-Id'] = sid;
+  return headers;
+}
+
+/**
  * 上传文件到 Agent 工作目录
  * @param {File} file - 浏览器 File 对象
  * @returns {Promise<{path: string, text?: string}>} Agent 返回的文件路径和可选文本
@@ -220,9 +235,7 @@ export async function uploadFileToAgent(file) {
 
   const response = await fetch(`${agent.url}/api/files/upload`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${agent.token}`
-    },
+    headers: sessionHeaders(agent.token),
     body: formData
   });
 
@@ -243,7 +256,7 @@ async function agentPostToActive(jsonPath, body) {
   if (!agent) throw new Error(t('fileExtract.agentNotPaired'));
   const resp = await fetch(`${agent.url}${jsonPath}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${agent.token}` },
+    headers: { 'Content-Type': 'application/json', ...sessionHeaders(agent.token) },
     body: JSON.stringify(body),
   });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -264,7 +277,7 @@ async function runAgentDocxImages(fileEntry) {
     try {
       const dl = await fetch(`${agent.url}/api/fs/download`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${agent.token}` },
+        headers: { 'Content-Type': 'application/json', ...sessionHeaders(agent.token) },
         body: JSON.stringify({ path: im.path }),
       }).then(r => r.json());
       if (dl.success && dl.content) {

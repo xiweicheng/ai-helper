@@ -181,8 +181,17 @@ function currentSessionId() {
   }
 }
 
-/** 代理请求头：带会话头，代理端据此把相对路径与权限校验绑到该会话的目录 */
-function agentHeaders(config, sessionId) {
+/**
+ * 代理请求头（唯一拼头入口）：带会话头，代理端据此把相对路径与权限校验绑到该会话的目录。
+ *
+ * 凡是不能走 agentRequest 的调用（stream / blob / XHR / multipart）都必须用它：
+ * 手工拼 `Authorization` 会漏掉会话头，而代理端会按全局默认目录校验——
+ * 会话一旦绑定到非默认目录，这些请求全部 403（上传/删除/预览/下载皆然）。
+ * @param {{ token: string }} config
+ * @param {string|null} [sessionId] 缺省用面板当前会话；显式 null 表示不带会话头
+ * @returns {Object<string, string>}
+ */
+export function buildAgentHeaders(config, sessionId = currentSessionId()) {
   const headers = { 'Authorization': `Bearer ${config.token}` };
   if (sessionId) headers['X-AIH-Session-Id'] = sessionId;
   return headers;
@@ -246,7 +255,7 @@ export async function getWorkspaceRoot(sessionId) {
   if (!config) return null;
   try {
     const resp = await fetch(`${config.url}/api/status/detail`, {
-      headers: agentHeaders(config, sid)
+      headers: buildAgentHeaders(config, sid)
     });
     if (resp.ok) {
       const data = await resp.json();
@@ -310,7 +319,7 @@ export async function getAgentStatusDetail(sessionId) {
   if (!config) return null;
   try {
     const resp = await fetch(`${config.url}/api/status/detail`, {
-      headers: agentHeaders(config, sid)
+      headers: buildAgentHeaders(config, sid)
     });
     if (resp.ok) {
       const data = await resp.json();
@@ -415,7 +424,7 @@ async function agentRequest(path, body = {}, sessionId = undefined) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...agentHeaders(config, sid)
+        ...buildAgentHeaders(config, sid)
       },
       body: JSON.stringify(body)
     });
@@ -520,7 +529,7 @@ export async function downloadFileStream(filePath) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ path: filePath })
     });
@@ -550,7 +559,7 @@ export async function downloadFileStreamWithProgress(filePath, onProgress, signa
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ path: filePath }),
       signal
@@ -599,7 +608,7 @@ export async function downloadFilesStream(paths) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ paths })
     });
@@ -629,7 +638,7 @@ export async function downloadFilesStreamWithProgress(paths, onProgress, signal)
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.token}`
+        ...buildAgentHeaders(config)
       },
       body: JSON.stringify({ paths }),
       signal
