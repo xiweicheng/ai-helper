@@ -488,27 +488,36 @@ function initShortcutSection() {
 // 注意 enumerateDevices 在未授权时 label 是空串（只能靠 deviceId 分辨），
 // 所以这里要在授权之后（或进 Tab 时）重新枚举一次才能看到设备名。
 
+/** 设备名兜底：未授权时 enumerateDevices 的 label 是空串（只能靠 deviceId 分辨） */
+function deviceOptionName(device, index) {
+  return device.label || t('toolbox.asrDeviceUnnamed', { index: index + 1 });
+}
+
 /**
  * 刷新下拉列表：列表来自 enumerateDevices，选中值以存储为准（存储是唯一真源）
+ * 与「识别语言」同一套下拉（.model-selector + readonly input + .model-dropdown）
  */
 async function refreshDeviceList() {
-  const sel = document.getElementById('asrDeviceSelect');
-  if (!sel) return;
+  const input = document.getElementById('asrDeviceInput');
+  const menu = document.getElementById('asrDeviceDropdown');
+  if (!input || !menu) return;
   const note = document.getElementById('asrDeviceNote');
   const list = await listAudioInputDevices();
   const selected = await loadSelectedDeviceId();
 
-  const options = [`<option value="">${escapeHtml(t('toolbox.asrDeviceFollowSystem'))}</option>`];
-  list.forEach((device, index) => {
-    const name = device.label || t('toolbox.asrDeviceUnnamed', { index: index + 1 });
-    options.push(`<option value="${escapeHtml(device.deviceId)}">${escapeHtml(name)}</option>`);
-  });
-  sel.innerHTML = options.join('');
-
-  // 设备不在了（拔掉 / 禁用）时先回落到「跟随系统默认」显示，但**不清存储**：
+  // 设备不在了（拔掉 / 禁用）时先回落到「跟随系统默认」，但**不清存储**：
   // 蓝牙耳机断开再连上时同一个 deviceId 会回来，直接抹掉反而让用户要重选一次
   const present = hasAudioInputDevice(list, selected);
-  sel.value = present ? selected : '';
+  const effective = present ? selected : '';
+
+  const items = [{ id: '', label: t('toolbox.asrDeviceFollowSystem') }]
+    .concat(list.map((device, index) => ({ id: device.deviceId, label: deviceOptionName(device, index) })));
+  menu.innerHTML = items.map((item) => {
+    const current = item.id === effective;
+    return `<div class="model-option${current ? ' selected' : ''}" role="option" aria-selected="${current ? 'true' : 'false'}" data-device-id="${escapeHtml(item.id)}">${escapeHtml(item.label)}</div>`;
+  }).join('');
+  const current = items.find((item) => item.id === effective) || items[0];
+  input.value = current.label;
 
   let msg = '';
   let warn = false;
@@ -529,14 +538,18 @@ async function refreshDeviceList() {
 
 /** 首次进入时挂上：选择即时落盘；插拔设备自动刷新列表 */
 function initDeviceSection() {
-  const sel = document.getElementById('asrDeviceSelect');
-  if (!sel) return;
+  const input = document.getElementById('asrDeviceInput');
+  const menu = document.getElementById('asrDeviceDropdown');
+  if (!input || !menu) return;
   refreshDeviceList();
   if (deviceBound) return;
   deviceBound = true;
 
-  sel.addEventListener('change', async () => {
-    const next = await saveSelectedDeviceId(sel.value);
+  bindDropdownDismissOnce();
+  bindDropdownSelect(input, menu, async (option) => {
+    // 列表每次刷新都整体重建 → 只读 data 属性，不缓存 DOM 引用
+    const deviceId = option.getAttribute('data-device-id') || '';
+    const next = await saveSelectedDeviceId(deviceId);
     // 以落盘结果回写：存储失败时下拉不能骗人
     await refreshDeviceList();
     showToast(next ? t('toolbox.asrDeviceSaved') : t('toolbox.asrDeviceFollowSystemSaved'));
@@ -592,6 +605,58 @@ function bindSectionEvents() {
 }
 
 /**
+ * 绑定一颗「只读输入框 + 浮层列表」的下拉（.model-selector / .model-dropdown）
+ *
+ * 「界面语言」「识别语言」「输入设备」外观是同一套，交互也必须一样：点触发器展开 / 收起，
+ * 点选项交给 onPick，Esc 收起。之前各处各写一份绑定，于是「点外面不收起」这类差异就冒出来了。
+ * @param {HTMLInputElement} input 触发器
+ * @param {HTMLElement} menu 浮层列表
+ * @param {(option: HTMLElement) => void} onPick 点中某一项（取值 / 落盘由调用方决定）
+ */
+function bindDropdownSelect(input, menu, onPick) {
+  const close = () => {
+    menu.classList.remove('show');
+    input.setAttribute('aria-expanded', 'false');
+  };
+  input.addEventListener('click', () => {
+    const shown = menu.classList.toggle('show');
+    input.setAttribute('aria-expanded', shown ? 'true' : 'false');
+  });
+  menu.addEventListener('click', (ev) => {
+    const option = ev.target instanceof Element ? ev.target.closest('.model-option') : null;
+    if (!option) return;
+    close();
+    onPick(option);
+  });
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') close();
+  });
+}
+
+/** 需要「点别处收起」的下拉（列表会整体重建，所以监听挂 document 上只挂一次、按 id 现查） */
+const DISMISSABLE_DROPDOWNS = [
+  { inputId: 'asrLangInput', menuId: 'asrLangDropdown' },
+  { inputId: 'asrDeviceInput', menuId: 'asrDeviceDropdown' },
+];
+let dropdownDismissBound = false;
+
+function bindDropdownDismissOnce() {
+  if (dropdownDismissBound) return;
+  dropdownDismissBound = true;
+  document.addEventListener('click', (ev) => {
+    DISMISSABLE_DROPDOWNS.forEach(({ inputId, menuId }) => {
+      const input = document.getElementById(inputId);
+      const menu = document.getElementById(menuId);
+      if (!input || !menu || !menu.classList.contains('show')) return;
+      // 点在自己的触发器上由 toggle 管，点在浮层里由选项自己管
+      if (input.contains(ev.target) || menu.contains(ev.target)) return;
+      menu.classList.remove('show');
+      input.setAttribute('aria-expanded', 'false');
+    });
+  });
+}
+
+/**
  * 识别语言下拉：展开 + 选择
  * 触发器与「界面语言」下拉完全同构（.model-selector + readonly input）
  */
@@ -599,31 +664,23 @@ function bindLangSelectEvents() {
   const trigger = document.getElementById('asrLangInput');
   const menu = document.getElementById('asrLangDropdown');
   if (!trigger || !menu) return;
+  bindDropdownDismissOnce();
 
-  trigger.addEventListener('click', () => {
-    const shown = menu.classList.toggle('show');
-    trigger.setAttribute('aria-expanded', shown ? 'true' : 'false');
-  });
-
-  menu.querySelectorAll('.model-option').forEach((option) => {
-    option.addEventListener('click', async () => {
-      const language = option.getAttribute('data-lang') || 'auto';
-      menu.classList.remove('show');
-      trigger.setAttribute('aria-expanded', 'false');
-      const res = await agentApi('POST', '/api/asr/config', { language });
-      if (res && res.success !== false) {
-        trigger.value = langLabel(language);
-        menu.querySelectorAll('.model-option').forEach((el) => {
-          const isCurrent = el.getAttribute('data-lang') === language;
-          el.classList.toggle('selected', isCurrent);
-          el.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
-        });
-        showToast(t('toolbox.asrLangSaved'));
-        notifyStatusChanged();
-      } else {
-        showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
-      }
-    });
+  bindDropdownSelect(trigger, menu, async (option) => {
+    const language = option.getAttribute('data-lang') || 'auto';
+    const res = await agentApi('POST', '/api/asr/config', { language });
+    if (res && res.success !== false) {
+      trigger.value = langLabel(language);
+      menu.querySelectorAll('.model-option').forEach((el) => {
+        const isCurrent = el.getAttribute('data-lang') === language;
+        el.classList.toggle('selected', isCurrent);
+        el.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      });
+      showToast(t('toolbox.asrLangSaved'));
+      notifyStatusChanged();
+    } else {
+      showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
+    }
   });
 }
 

@@ -840,15 +840,20 @@
       <div class="toolbox-section" id="asrDeviceSection">
         <div class="toolbox-section-header">
           <div class="toolbox-section-title-row">
-            <h2 class="toolbox-section-title" data-i18n="toolbox.asrDeviceTitle">🎧 输入设备</h2>
+            <h2 class="toolbox-section-title" id="asrDeviceTitle" data-i18n="toolbox.asrDeviceTitle">🎧 输入设备</h2>
           </div>
           <span class="toolbox-section-desc" data-i18n="toolbox.asrDeviceDesc">默认跟随系统默认的录音设备；接了新麦克风（USB / 蓝牙 / 声卡）可以在这里指定，改完立即生效。选中的设备被拔掉时会自动回退系统默认并提示。</span>
         </div>
-        <div class="asr-device-row">
-          <select id="asrDeviceSelect" aria-label="输入设备"></select>
-          <button class="toolbox-add-btn" id="asrDeviceRefreshBtn" type="button" data-i18n="toolbox.asrDeviceRefresh">刷新列表</button>
+        <!-- 与「识别语言」用同一套下拉组件：.model-selector + readonly input + .model-dropdown。
+             原生 <select> 的圆角 / 箭头 / 高度 / focus ring 都跟它不一样，两个并排一眼就能看出是两套 -->
+        <div class="model-selector asr-lang-field" id="asrDeviceField">
+          <input type="text" id="asrDeviceInput" readonly value="跟随系统默认" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="asrDeviceTitle">
+          <div class="model-dropdown asr-lang-menu" id="asrDeviceDropdown" role="listbox"></div>
         </div>
-        <div class="asr-device-note" id="asrDeviceNote" data-i18n="toolbox.asrDeviceNoteLoading">正在读取设备列表…</div>
+        <div class="asr-device-foot">
+          <div class="asr-device-note" id="asrDeviceNote" data-i18n="toolbox.asrDeviceNoteLoading">正在读取设备列表…</div>
+          <button class="asr-device-refresh" id="asrDeviceRefreshBtn" type="button" data-i18n="toolbox.asrDeviceRefresh">刷新列表</button>
+        </div>
       </div>
 
       <!-- 快捷触发：纯扩展侧偏好（chrome.storage.local），不依赖代理端，所以独立成块、

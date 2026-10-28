@@ -87,3 +87,32 @@ describe('识别语言下拉与「界面语言」下拉同构', () => {
     expect(field).not.toContain('max-width');
   });
 });
+
+describe('输入设备下拉与识别语言同构', () => {
+  // 背景：「输入设备」一开始是原生 <select>，和旁边的「识别语言」（.model-selector +
+  // readonly input）并排时，圆角 / 箭头 / 高度 / focus ring 全不一样。
+  // 改成复用同一套基类后，用规则存在性钉住，防止又退回去或另起一套。
+
+  test('触发器用 .model-selector + readonly input（与识别语言一致）', () => {
+    expect(OPTIONS_HTML).toContain('class="model-selector asr-lang-field" id="asrDeviceField"');
+    expect(OPTIONS_HTML).toMatch(/<input type="text" id="asrDeviceInput" readonly/);
+  });
+
+  test('浮层列表复用 .model-dropdown，且不再有原生 select', () => {
+    expect(OPTIONS_HTML).toContain('class="model-dropdown asr-lang-menu" id="asrDeviceDropdown"');
+    expect(OPTIONS_HTML).not.toContain('id="asrDeviceSelect"');
+    // 原生 select 的专属样式也必须一并消失（留着就说明还有第二套外观）
+    expect(STYLES).not.toContain('.asr-device-row');
+  });
+
+  test('两颗下拉共用同一套交互绑定（展开 / 收起 / 点外面收起不会分叉）', () => {
+    expect(TOOLBOX_ASR_JS).toMatch(/bindDropdownSelect\(trigger, menu/);
+    expect(TOOLBOX_ASR_JS).toMatch(/bindDropdownSelect\(input, menu/);
+    expect(TOOLBOX_ASR_JS).toContain("inputId: 'asrDeviceInput', menuId: 'asrDeviceDropdown'");
+  });
+
+  test('选项是纯文本 .model-option（不带额外包裹层）', () => {
+    expect(TOOLBOX_ASR_JS).toContain('class="model-option${current ? \' selected\' : \'\'}"');
+    expect(STYLES).not.toContain('.asr-device-menu .model-option');
+  });
+});

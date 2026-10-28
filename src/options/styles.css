@@ -3964,24 +3964,16 @@ textarea {
 
 /* ==================== 语音输入：输入设备（麦克风） ==================== */
 /* 同「快捷触发」：独立成块、不随总开关收起（纯扩展侧偏好） */
-.asr-device-row {
+/* 下拉本身不写任何样式：用 .model-selector / .model-dropdown / .asr-lang-field，
+   宽度、圆角、右侧箭头、focus ring 全部与「识别语言」来自同一基类（原生 select 已移除） */
+.asr-device-foot {
+  margin-top: 8px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 12px;
   flex-wrap: wrap;
 }
-/* 全局 select 是 width:100%，这里限宽：设备名再长也不该把整行撑爆 */
-.asr-device-row select {
-  flex: 1 1 260px;
-  min-width: 0;
-  max-width: 460px;
-}
-.asr-device-row .toolbox-add-btn {
-  flex: 0 0 auto;
-}
 .asr-device-note {
-  margin-top: 10px;
   font-size: 12px;
   line-height: 1.6;
   opacity: 0.7;
@@ -3989,6 +3981,22 @@ textarea {
 .asr-device-note.warn {
   opacity: 1;
   color: var(--danger-600, #dc2626);
+}
+/* 小号文字动作：列表本来就会随 devicechange 自动刷新，这颗只是兜底，
+   不该像主操作那样占一整行虚线按钮 */
+.asr-device-refresh {
+  margin-left: auto;
+  /* 文字按钮也要能点：上下各 4px 把命中区做到 ~26px，不要只剩 12px 行高 */
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  color: var(--brand-500);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.asr-device-refresh:hover {
+  text-decoration: underline;
 }
 
 /* ==================== 语音输入：快捷触发（单键） ==================== */

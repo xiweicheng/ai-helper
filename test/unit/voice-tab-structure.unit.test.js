@@ -55,7 +55,8 @@ describe('语音输入独立成 Tab', () => {
     for (const id of [
       'asrSection', 'asrSectionContent', 'asrEnableToggle', 'asrMicBlock',
       // 输入设备：纯扩展侧偏好，独立成块且不随总开关收起（代理离线也要能选）
-      'asrDeviceSection', 'asrDeviceSelect', 'asrDeviceNote',
+      // 下拉与「识别语言」同构：.model-selector + readonly input + .model-dropdown
+      'asrDeviceSection', 'asrDeviceInput', 'asrDeviceDropdown', 'asrDeviceNote',
     ]) {
       expect(panel, `语音面板缺少 #${id}`).toContain(`id="${id}"`);
     }
