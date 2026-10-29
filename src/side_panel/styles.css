@@ -16106,8 +16106,9 @@ body.voice-recording-active .input-container {
   display: flex;
   flex-direction: column;
   width: 320px;
-  /* 窄侧边栏兜底：面板不把聊天区完全盖住，右侧留出入口轨道的宽度 */
-  max-width: calc(100vw - 44px);
+  /* 窄侧边栏兜底：60 = 右入口轨 26 + 左走廊 34（与 body.has-session-dock 给聊天区留的
+     padding-left 对齐），保证面板不把左侧执行中会话停靠条压在自己底下 */
+  max-width: calc(100vw - 60px);
   max-height: min(72vh, 560px);
   background: rgba(var(--surface-rgb), 1);
   /* 浮层边界：与另外 5 个侧边浮层同一套 token（守卫见 side-rail-popup-border-theme） */
@@ -16123,6 +16124,9 @@ body.voice-recording-active .input-container {
 .todo-panel.expanded {
   opacity: 1;
   visibility: visible;
+  /* 待办是轨道里第 5 个槽位，后面的「定时任务」按树序会盖住它；提到轨内最上层，
+     保证同开时待办清单可见可点（其它 5 个浮层之间的叠放仍属既有全局行为，本次不扩散） */
+  z-index: 2;
 }
 
 .todo-panel-header {

@@ -16,6 +16,22 @@
 - **踩坑与修复**：第一版 `initTodoPanel()` 只建了容器却漏了 `getSideRailSlot('todo').appendChild(containerEl)`，真实扩展里轨道有 6 个槽位但入口永远不出现（单测只看结构、看不出来）—— 已补挂载并加结构守卫；同时把入口从 `width/height:100%` 改成靠 `padding` 决定尺寸，与其它入口同为 24×34（原来撑满 28px 宽，视觉上比邻居胖一圈）。
 - **验证**：新增 `test/unit/todo-model.unit.test.js`（24 例）+ `test/unit/todo-panel-structure.unit.test.js`（16 例：槽位顺序、打开态夹取名单、pointer-events、矮窗兜底、tinted 配色无硬编码色值、入口尺寸语法、行内操作默认 `opacity:0`+`pointer-events:none`、`:focus-within` 键盘可达、菜单 `position: fixed`、纯逻辑/编排层不碰 DOM、填入保留草稿正则）；真实 MV3 探针 `test-results-probes/_todo-panel-visual.mjs` **26 项全过**（入口尺寸/槽内偏移与邻居逐个比对、快速添加后焦点保持、两次点击状态流转、组默认折叠、行内按钮 hover 前后 `opacity` 0→1、真鼠标序列驱动的 HTML5 拖拽改序 + 重载后持久化、填入输入框保留草稿且自动关闭、暗色主题截图、全程无 pageerror），并据此修掉 3 个只有真扩展才暴露的问题（漏挂载、入口偏宽、`page.dragAndDrop` 不触发 `dragover` 的探针误判）。回归 `npx vitest run` **209 文件 / 3161 例**、`npx eslint` 无输出、`npm run theme:check` 通过、`npm run build:silent` → BUILD_SUCCESS。
 
+### 待办面板评审后修复：重渲染吞掉未提交编辑、并发写互踩、失败静默
+
+> 来源：功能完成后对本次全量改动（`git diff origin/main...HEAD`）发起代码评审，产出 1 Blocker + 2 重要 + 4 次要；逐条回源码独立复核后**修 6 条、判 1 条不修**，并补两层证据（源码守卫单测 + 真实 MV3 探针）。
+
+- **Blocker — 敲到一半的行内编辑会被别人的操作抹掉**：每一次落库成功都会 `emitChange()` → `render()` 重建整段列表，而标题/备注/截止日的未提交内容只活在 DOM 里。典型路径：正在给 A 敲备注，顺手点了一下 B 的状态圈 → A 的输入框被重建、草稿回退成库里的旧值，用户看到字还在、其实下一次渲染就没了。修法是给面板层加一套**草稿保护**：`drafts` Map（`id → {title|note|due}`）在 `bodyEl.innerHTML` 赋值**之前** `captureDrafts()` 抓取脏值，赋值之后按 `getFocusMarker()` 还原焦点与光标位置（`safeCaret()` 兜住 `date` 输入读 `selectionStart` 抛 `InvalidStateError` 的问题），三种编辑器一律以草稿为底稿渲染，`pruneDrafts()` 在条目消失时回收，保存/取消/切走才 `clearDraft()`。
+- **重要 — 并发写各自抓「整表快照」会互踩**：原回滚逻辑是失败时把 `state.todos` 整体还原成操作前的快照，两个操作重叠时后失败的那个会连别人已经落库成功的变更一起抹掉。改为 `writeChain` + `queueWrite()` 把落库排成串行链；单条操作（`addTodo`/`updateTodo`/`setTodoStatus`/`removeTodo`）失败时**只撤销本条**（`replaceTodo(current)` / `filter` 掉新条目 / 把本条补回）；reorder 失败只还原 `order` 字段（不把重排前抓的整份对象盖回去，否则期间改好的标题会被一次失败的重排抹掉）；clear-completed 失败只补回本次清掉的条目（不连带覆盖期间新增的条目）。
+- **重要 — 回滚不广播，界面和数据各说各话**：乐观值已经渲染给用户了，失败分支原先只改内存不 `emitChange()`，界面就停在那个假的值上。现在**所有**失败分支都补上广播。
+- **次要 — 状态圈点下去、截止日选完、删除后条目又回来了，全都一声不响**：把 `persist(promise, successMessage)` 做成面板层落库结果的**唯一出口**，失败一律弹 `todo.saveFailed`，成功按需弹提示。原先只有主交互走它，`cycle`／`due-clear`／`change`／标题回车经 `persist()`，本轮又把备注保存、**删除**（原 `if (removed) toast成功`）、**清除已完成**、**拖拽重排**四个同样会静默的分支收进来——它们失败时编排层已把数据回滚广播回来，界面上「东西又出现了」但没有任何原因，用户只能自己猜；`copyText` 的「剪贴板不可用」分支原来只在有输入框时才提示，现补 `todo.copyFailed`（中英各一条）并对两类失败都给提示。
+- **次要 — 窄侧边栏下面板把左侧停靠条走廊吃掉**：合并进来的执行中会话停靠条占左缘 26px、并给聊天区留 34px `padding-left`，而待办的 `max-width: calc(100vw - 44px)` 只减了右轨宽度。改为 `calc(100vw - 60px)`（右轨 26 + 左走廊 34），360px 窄窗实测面板 `left=34 / right=334`，不再压住芯片。
+- **次要 — 与定时任务同开时待办被盖住**：待办是轨道第 5 槽，树序在它后面的「定时任务」面板会按 DOM 顺序叠上来；`.todo-panel.expanded` 加 `z-index: 2` 提到轨内最上层，探针用 `elementFromPoint` 验证命中待办。其它 5 个浮层之间的叠放属 main 五入口既有的全局行为，本次不扩散改动。
+- **清理**：删掉无人调用的 `export function closeTodoPanel()`；`removeTodo` 对不存在的 id 提前返回，避免空跑一次删除。
+- **判定不修（附证据）**：评审提出 `getAllTodos` 的 `request.onerror = () => resolve([])`「会把读失败伪装成空清单」。核对 `src/storage/db.js`，同款写法共 7 处（第 270/380/471/772/819/890/925 行，覆盖 sessions、archivedSessions、bookmarks、scheduledTasks 等全部 store），是仓库既定的读降级约定——单独改待办一处反而制造不一致，要改得整体改，不属本次范围。
+- **文档同步**：`docs/zh|en/DOCUMENTATION.md` 的 IndexedDB 章节仍写「v6 / 八个对象存储」（合并后实际 v7 / 九个），已校正并补 `todos` store 行、持久化策略表加「侧边栏待办」行、项目结构树补 `side-rail.js` 与 `todo-model/todo-manager/todo-panel` 三件套、架构图 Side Panel 框增列「待办清单」，并新增功能章节「36. 侧边栏待办清单 / Sidebar Todo List」；设计文档 `docs/superpowers/specs/2026-10-29-side-panel-todo-design.md` 的截止显示口径（原写 `⏰ 今天 18:00`）改为与实现一致（日期粒度、逾期按天比较、告警图标）。
+- **验证**：新增 `test/unit/todo-manager.unit.test.js`（14 例：成功路径 3 + 每条失败路径「只撤销本条且必须广播」8 + 并发时序 3（串行排队、重排失败不抹期间改好的标题、清除失败不影响期间新增的条目），用 `vi.hoisted` 桩控制挂起与失败）；`todo-panel-structure.unit.test.js` 16 → **29 例**（新增重渲染存活、失败必走 `persist`（含删除/清除/重排不得只报成功）、`max-width` 留走廊与轨内层级、不留死导出四组守卫）；真实 MV3 探针 26 → **36 项全过**（新增 J1–J4：他人操作触发的重渲染中未提交备注存活、焦点保持、存完收起、重载后落库；K1–K2：360px 窄窗左缘 ≥ 34、与定时任务同开时命中待办且 `zIndex=2`；L1–L3：行「⋯」→ 删除→ 全局确认弹窗真实出现、确认后条目移出且仍弹「已删除」、重载后不复活）。全量回归 `npx vitest run` **218 文件 / 3346 例**全过、`npx eslint src/ agent/` 无输出、`npm run theme:check` 通过、`npm run build:silent` → BUILD_SUCCESS。
+- **如实记录、本次未修**：①六个轨道浮层之间没有互斥（点外不关、可同时打开），这是 main 五个入口共有的既有全局行为，要修得改 5 个模块；②`@media (max-height: 620px)` 把槽高压到 30px 而按钮 content 是 32px，svg 被压到 14px，全入口共有；③`.session-dock-tip`（z-index 10005）悬停提示会盖在待办浮层之上；④`.search-panel` 完全没有 `max-width` 兜底；⑤`.docsite-src/` 与已发布的 `docs/wiki/` 生成的文档站仍写「当前版本为 6」，需整站重生成才能刷新。
+
 ### 会话归档区 + 执行中会话左侧停靠条
 
 > 来源：用户提出两件事——①「会话开太多会产生干扰，有些我觉得不会再问答了，可又不敢删，万一还用得上」→ 要能把会话移入归档区、随时调回、也能彻底删除；②「执行中的任务夹杂在很多会话中间，要选来选去很麻烦」→ 想在左侧边缘给正在跑的会话一个小图标，悬停看标题、点击进入，跑完给个完成提示。

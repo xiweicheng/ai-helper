@@ -78,6 +78,7 @@ registerTranslations('zh', {
     copiedToast: '已复制到剪贴板',
     copiedPromptToast: '已复制（含提问模板）',
     emptyDigestToast: '暂无可复制的待办',
+    copyFailed: '复制失败',
     noInputToast: '未找到输入框',
     saveFailed: '保存失败，请重试',
     deletedToast: '已删除',
@@ -126,6 +127,7 @@ registerTranslations('en', {
     copiedToast: 'Copied to clipboard',
     copiedPromptToast: 'Copied with prompt',
     emptyDigestToast: 'Nothing to copy',
+    copyFailed: 'Copy failed',
     noInputToast: 'Input box not found',
     saveFailed: 'Failed to save, try again',
     deletedToast: 'Deleted',
@@ -168,6 +170,13 @@ let dueEditId = null;
 let expandedNoteIds = new Set();
 let dragState = null;
 let initialized = false;
+
+// 行内编辑的未提交内容只活在 DOM 里，而每一次落库成功都会 emitChange → render()
+// 重建整段列表。不在重建前把这些脏值抓下来，用户正在敲的备注/标题就会在下一次
+// 重渲染时静默回退成库里的旧值（例如敲备注中途顺手点另一条的状态圈）。
+const drafts = new Map();
+const EDITOR_CLASSES = ['todo-edit-input', 'todo-note-input', 'todo-due-input'];
+const DRAFT_KEY = { 'todo-edit-input': 'title', 'todo-note-input': 'note', 'todo-due-input': 'due' };
 
 // ==================== 初始化 ====================
 
@@ -274,15 +283,91 @@ function closePanel() {
   cancelInlineEdit();
 }
 
-/** 供其它模块（如快捷键）调用 */
-export function closeTodoPanel() {
-  if (isOpen()) closePanel();
+// ==================== 渲染 ====================
+
+/** 重渲染前采集正在编辑的未提交值 */
+function captureDrafts() {
+  EDITOR_CLASSES.forEach(cls => {
+    bodyEl.querySelectorAll(`.${cls}`).forEach(el => {
+      const id = el.dataset.id;
+      if (!id) return;
+      const draft = drafts.get(id) || {};
+      draft[DRAFT_KEY[cls]] = el.value;
+      drafts.set(id, draft);
+    });
+  });
 }
 
-// ==================== 渲染 ====================
+/** 丢弃已不在清单里的草稿（删除/清除已完成/整表重载后不留脏数据） */
+function pruneDrafts(aliveTodos) {
+  if (drafts.size === 0) return;
+  const alive = new Set(aliveTodos.map(item => item.id));
+  for (const id of [...drafts.keys()]) {
+    if (!alive.has(id)) drafts.delete(id);
+  }
+}
+
+function clearDraft(id) {
+  if (id) drafts.delete(id);
+  else drafts.clear();
+}
+
+/** 取未提交值；空字符串是合法输入，不能当成「没有草稿」 */
+function draftFor(id, key) {
+  const draft = drafts.get(id);
+  return draft && draft[key] !== undefined ? draft[key] : null;
+}
+
+/** 记下当前获焦的编辑器：重渲染后据此把焦点与光标送回原处 */
+function getFocusMarker() {
+  const el = document.activeElement;
+  if (!el || !bodyEl.contains(el)) return null;
+  const cls = EDITOR_CLASSES.find(c => el.classList.contains(c));
+  if (!cls || !el.dataset.id) return null;
+  return { cls, id: el.dataset.id, caret: safeCaret(el) };
+}
+
+/** date 等非文本输入读 selectionStart 会抛 InvalidStateError，统一兜住 */
+function safeCaret(el) {
+  try {
+    return el.selectionStart;
+  } catch (e) {
+    return null;
+  }
+}
+
+function editorEl(marker) {
+  return bodyEl.querySelector(`.${marker.cls}[data-id="${escapeAttr(marker.id)}"]`);
+}
+
+function restoreFocus(marker) {
+  const el = editorEl(marker);
+  if (!el) return;
+  el.focus();
+  if (marker.caret === null) return;
+  try {
+    el.selectionStart = el.selectionEnd = marker.caret;
+  } catch (e) { /* 不支持光标定位的输入类型 */ }
+}
+
+/** 本轮刚被打开、且重渲染后仍不持有焦点的编辑器 → 主动聚焦 */
+function focusFreshEditor() {
+  if (titleEditId) { focusTitleInput(); return; }
+  if (noteEditId) {
+    const el = editorEl({ cls: 'todo-note-input', id: noteEditId });
+    if (el) el.focus();
+    return;
+  }
+  if (dueEditId) {
+    const el = editorEl({ cls: 'todo-due-input', id: dueEditId });
+    if (el) el.focus();
+  }
+}
 
 function render() {
   if (!bodyEl) return;
+  captureDrafts();
+  const focusMarker = getFocusMarker();
   const { active, done, stats } = getTodoGroups();
 
   countEl.textContent = `${stats.done} / ${stats.total}`;
@@ -290,6 +375,7 @@ function render() {
   updateBadge(active.length);
 
   const parts = [];
+  pruneDrafts([...active, ...done]);
   parts.push(`<div class="todo-section">
       <span class="todo-section-name">${escapeHtml(t('todo.activeGroup'))}</span>
       <span class="todo-section-count">${active.length}</span>
@@ -316,7 +402,9 @@ function render() {
   }
 
   bodyEl.innerHTML = parts.join('');
-  if (titleEditId) focusTitleInput();
+  // 焦点在编辑器里 → 原处还原（含光标位置）；否则视为刚打开编辑器 → 主动聚焦
+  if (focusMarker) restoreFocus(focusMarker);
+  else focusFreshEditor();
 }
 
 function updateBadge(count) {
@@ -368,9 +456,10 @@ function renderNote(todo) {
   const hasNote = !!(todo.note && todo.note.trim());
 
   if (editing) {
+    const draft = draftFor(todo.id, 'note');
     return `<div class="todo-note-editor">
         <textarea class="todo-note-input" data-id="${escapeAttr(todo.id)}" rows="2"
-          placeholder="${escapeAttr(t('todo.notePlaceholder'))}">${escapeHtml(todo.note || '')}</textarea>
+          placeholder="${escapeAttr(t('todo.notePlaceholder'))}">${escapeHtml(draft !== null ? draft : (todo.note || ''))}</textarea>
         <div class="todo-note-editor-actions">
           <button class="todo-mini-btn" data-action="note-save" data-id="${escapeAttr(todo.id)}">${escapeHtml(t('todo.noteSave'))}</button>
           <button class="todo-mini-btn ghost" data-action="note-cancel" data-id="${escapeAttr(todo.id)}">${escapeHtml(t('todo.noteCancel'))}</button>
@@ -393,13 +482,15 @@ function renderItem(todo, group) {
   if (isDone) classes.push('done');
   if (dueEditId === todo.id) classes.push('editing-due');
 
+  const draftTitle = draftFor(todo.id, 'title');
   const titleHtml = editingTitle
-    ? `<input type="text" class="todo-edit-input" data-id="${escapeAttr(todo.id)}" value="${escapeAttr(todo.title)}" />`
+    ? `<input type="text" class="todo-edit-input" data-id="${escapeAttr(todo.id)}" value="${escapeAttr(draftTitle !== null ? draftTitle : todo.title)}" />`
     : `<div class="todo-name">${escapeHtml(todo.title)}</div>`;
 
+  const draftDue = draftFor(todo.id, 'due');
   const dueHtml = dueEditId === todo.id
     ? `<div class="todo-due-editor">
-        <input type="date" class="todo-due-input" data-id="${escapeAttr(todo.id)}" value="${toDateInputValue(todo.dueAt)}" />
+        <input type="date" class="todo-due-input" data-id="${escapeAttr(todo.id)}" value="${escapeAttr(draftDue !== null ? draftDue : toDateInputValue(todo.dueAt))}" />
         <button class="todo-mini-btn ghost" data-action="due-clear" data-id="${escapeAttr(todo.id)}">${escapeHtml(t('todo.clearDue'))}</button>
       </div>`
     : '';
@@ -441,6 +532,23 @@ function toDateInputValue(ts) {
 
 // ==================== 事件 ====================
 
+/**
+ * 落库结果的唯一出口：成功按需提示，失败必须说明。
+ * 状态圈、截止日、删除、清除、重排以前失败时一声不响 —— 乐观值已经被编排层
+ * 回滚广播回来，界面上「东西又出现了」但没有任何原因，用户只能自己猜。
+ * @param {Promise<boolean>} promise manager 写操作的结果
+ * @param {string} [successMessage] 成功时的提示（不传则不提示）
+ */
+function persist(promise, successMessage) {
+  Promise.resolve(promise).then(ok => {
+    if (ok) {
+      if (successMessage) showToast(successMessage, 'success');
+      return;
+    }
+    showToast(t('todo.saveFailed'), 'error');
+  });
+}
+
 function handleClick(e) {
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
@@ -471,7 +579,7 @@ function handleClick(e) {
       return;
     case 'cycle':
       e.stopPropagation();
-      cycleTodoStatus(id);
+      persist(cycleTodoStatus(id));
       return;
     case 'toggle-note':
       e.stopPropagation();
@@ -503,12 +611,14 @@ function handleClick(e) {
     case 'note-cancel':
       e.stopPropagation();
       noteEditId = null;
+      clearDraft(id);
       render();
       return;
     case 'due-clear':
       e.stopPropagation();
       dueEditId = null;
-      updateTodo(id, { dueAt: null });
+      clearDraft(id);
+      persist(updateTodo(id, { dueAt: null }));
       return;
     default:
       return;
@@ -538,15 +648,16 @@ function handleKeydown(e) {
       const value = e.target.value.trim();
       titleEditId = null;
       if (!value) {
+        clearDraft(id);
         render();
         return;
       }
-      updateTodo(id, { title: value }).then(ok => {
-        if (!ok) showToast(t('todo.saveFailed'), 'error');
-      });
+      clearDraft(id);
+      persist(updateTodo(id, { title: value }));
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       titleEditId = null;
+      clearDraft(e.target.dataset.id);
       render();
     }
     return;
@@ -561,6 +672,7 @@ function handleKeydown(e) {
     } else if (e.key === 'Escape') {
       e.stopPropagation();
       noteEditId = null;
+      clearDraft(e.target.dataset.id);
       render();
     }
     return;
@@ -579,12 +691,13 @@ function handleChange(e) {
   const id = e.target.dataset.id;
   const value = e.target.value;
   dueEditId = null;
+  clearDraft(id);
   if (!value) {
-    updateTodo(id, { dueAt: null });
+    persist(updateTodo(id, { dueAt: null }));
     return;
   }
   const d = new Date(value + 'T00:00:00');
-  updateTodo(id, { dueAt: isNaN(d.getTime()) ? null : d.getTime() });
+  persist(updateTodo(id, { dueAt: isNaN(d.getTime()) ? null : d.getTime() }));
 }
 
 /** 标题输入框失焦即保存，避免用户点别处后编辑内容丢失 */
@@ -595,9 +708,11 @@ function handleFocusOut(e) {
   const value = e.target.value.trim();
   titleEditId = null;
   if (!value) {
+    clearDraft(id);
     render();
     return;
   }
+  clearDraft(id);
   updateTodo(id, { title: value }).then(ok => {
     if (!ok) showToast(t('todo.saveFailed'), 'error');
     else render();
@@ -613,14 +728,14 @@ async function submitQuickAdd() {
   addInputEl.focus();
 }
 
-async function saveNote(id) {
-  const input = bodyEl.querySelector(`.todo-note-input[data-id="${id}"]`);
+function saveNote(id) {
+  const input = bodyEl.querySelector(`.todo-note-input[data-id="${escapeAttr(id)}"]`);
   const note = input ? input.value : '';
   noteEditId = null;
   // 备注编辑结束即收起：列表只留「备注」折叠条，不占正文空间
   expandedNoteIds.delete(id);
-  const ok = await updateTodo(id, { note });
-  if (!ok) showToast(t('todo.saveFailed'), 'error');
+  clearDraft(id);
+  persist(updateTodo(id, { note }));
 }
 
 function cancelInlineEdit() {
@@ -628,6 +743,7 @@ function cancelInlineEdit() {
   titleEditId = null;
   noteEditId = null;
   dueEditId = null;
+  clearDraft();
   if (had) render();
 }
 
@@ -746,8 +862,7 @@ async function handleMenuAction(action, id) {
         t('todo.deleteConfirmTitle'),
       );
       if (ok) {
-        const removed = await removeTodo(id);
-        if (removed) showToast(t('todo.deletedToast'), 'success');
+        persist(removeTodo(id), t('todo.deletedToast'));
       }
       return;
     }
@@ -763,8 +878,7 @@ async function handleMenuAction(action, id) {
         t('todo.clearCompletedConfirmTitle'),
       );
       if (ok) {
-        const cleared = await clearCompletedTodos();
-        if (cleared) showToast(t('todo.clearedToast'), 'success');
+        persist(clearCompletedTodos(), t('todo.clearedToast'));
       }
       return;
     }
@@ -815,10 +929,11 @@ function copyText(text, successMessage) {
       showToast(successMessage, 'success');
     }).catch((e) => {
       logger.warn('[Todo] copy failed:', e);
-      showToast(t('todo.noInputToast'), 'error');
+      showToast(t('todo.copyFailed'), 'error');
     });
   } catch (e) {
     logger.warn('[Todo] clipboard unavailable:', e);
+    showToast(t('todo.copyFailed'), 'error');
   }
 }
 
@@ -867,7 +982,7 @@ function ensureDragPlaceholder() {
   return el;
 }
 
-async function handleDrop(e) {
+function handleDrop(e) {
   if (!dragState) return;
   e.preventDefault();
   const list = dragState.list;
@@ -880,7 +995,7 @@ async function handleDrop(e) {
   }
   const from = dragState.from;
   cleanupDrag();
-  if (from !== to) await reorderActiveTodos(from, to);
+  if (from !== to) persist(reorderActiveTodos(from, to));
 }
 
 function cleanupDrag() {

@@ -1,8 +1,9 @@
 // 待办面板结构守卫
-// 守住三件容易被后续改动破坏的事：
+// 守住容易被后续改动破坏的事：
 // 1) 入口按轨道均分、配色沿用 tinted 语义族（不回退实心亮块/硬编码色值）；
 // 2) 行内操作默认隐藏、悬停或键盘聚焦才浮现（面板清爽的核心交互）；
-// 3) 纯逻辑与编排层不碰 DOM，保证可单测且不被渲染细节污染。
+// 3) 纯逻辑与编排层不碰 DOM，保证可单测且不被渲染细节污染；
+// 4) 行内编辑在重渲染中存活、**每一个**写操作失败都有反馈（代码评审的一主一拦路缺陷）。
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -135,5 +136,94 @@ describe('一键填入输入框', () => {
   test('Markdown 由模型层生成（面板不自己拼清单）', () => {
     expect(PANEL).toContain('buildTodoDigest');
     expect(MODEL).toContain('export function buildTodoDigest');
+  });
+});
+
+// 评审 Blocker：每一次落库成功都会 emitChange → render() 重建整段列表，
+// 不先把未提交的编辑值抓下来，用户敲了一半的备注就会静默退回库里的旧值。
+describe('行内编辑在重渲染中存活', () => {
+  test('重建 innerHTML 之前必须先采集草稿与焦点', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    const beforeWrite = render.slice(0, render.indexOf('bodyEl.innerHTML'));
+    expect(beforeWrite).toContain('captureDrafts()');
+    expect(beforeWrite).toContain('getFocusMarker()');
+  });
+
+  test('三种编辑器都以草稿为底稿，而不是库里的旧值', () => {
+    expect(PANEL).toMatch(/draftFor\(todo\.id, 'title'\)/);
+    expect(PANEL).toMatch(/draftFor\(todo\.id, 'note'\)/);
+    expect(PANEL).toMatch(/draftFor\(todo\.id, 'due'\)/);
+  });
+
+  test('重渲染后还原焦点与光标（date 输入读 selectionStart 会抛，必须兜住）', () => {
+    expect(PANEL).toContain('restoreFocus(focusMarker)');
+    expect(PANEL).toMatch(/function safeCaret[\s\S]*?try \{[\s\S]*?selectionStart/);
+  });
+
+  test('保存与取消都要丢草稿，避免脏值回流到下一次编辑', () => {
+    const saveNote = PANEL.slice(PANEL.indexOf('function saveNote'));
+    expect(saveNote.slice(0, saveNote.indexOf('\n}'))).toContain('clearDraft(id)');
+    const cancel = PANEL.slice(PANEL.indexOf('function cancelInlineEdit'));
+    expect(cancel.slice(0, cancel.indexOf('\n}'))).toContain('clearDraft()');
+  });
+
+  test('离开清单的条目必须连草稿一起清（删除/清除已完成不留脏数据）', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    expect(render.slice(0, render.indexOf('bodyEl.innerHTML'))).toContain('pruneDrafts(');
+  });
+});
+
+describe('落库失败必须有反馈', () => {
+  test('状态圈与截止日都不允许丢 Promise（静默失败等于假装成功）', () => {
+    expect(PANEL).toMatch(/persist\(cycleTodoStatus\(id\)\)/);
+    expect(PANEL).toMatch(/persist\(updateTodo\(id, \{ dueAt: null \}\)\)/);
+    expect(PANEL).not.toMatch(/^\s*cycleTodoStatus\(id\);$/m);
+    expect(PANEL).not.toMatch(/^\s*updateTodo\(id, \{ dueAt: null \}\);\s*$/m);
+  });
+
+  test('persist 失败走统一的 saveFailed 文案', () => {
+    const helper = PANEL.slice(PANEL.indexOf('function persist('));
+    expect(helper.slice(0, helper.indexOf('\n}'))).toContain("t('todo.saveFailed')");
+  });
+
+  test('删除 / 清除已完成 / 拖拽重排的写操作也必须过 persist（只报成功不报失败不算反馈）', () => {
+    expect(PANEL).toMatch(/persist\(removeTodo\(id\), t\('todo\.deletedToast'\)\)/);
+    expect(PANEL).toMatch(/persist\(clearCompletedTodos\(\), t\('todo\.clearedToast'\)\)/);
+    expect(PANEL).toMatch(/persist\(reorderActiveTodos\(from, to\)\)/);
+    // 不允许退回「拿布尔值只弹成功」的旧形态
+    expect(PANEL).not.toMatch(/const removed = await removeTodo/);
+    expect(PANEL).not.toMatch(/const cleared = await clearCompletedTodos/);
+  });
+
+  test('复制失败提示复制本身，不能借用「未找到输入框」', () => {
+    const copy = PANEL.slice(PANEL.indexOf('function copyText'));
+    const body = copy.slice(0, copy.indexOf('\n}\n'));
+    expect(body).toContain("t('todo.copyFailed')");
+    expect(body).not.toContain('noInputToast');
+  });
+
+  test('copyFailed 中英成对', () => {
+    const zh = PANEL.slice(PANEL.indexOf("registerTranslations('zh'"), PANEL.indexOf("registerTranslations('en'"));
+    const en = PANEL.slice(PANEL.indexOf("registerTranslations('en'"));
+    expect(zh).toContain('copyFailed');
+    expect(en).toContain('copyFailed');
+  });
+});
+
+describe('与左侧会话停靠条共存', () => {
+  test('窄窗宽度兜底给左走廊让位：60 = 右入口轨 26 + 停靠条走廊 34', () => {
+    const block = rule(STYLES, '.todo-panel {');
+    expect(block).toContain('max-width: calc(100vw - 60px)');
+  });
+
+  test('打开态在轨道内提层，不被后续槽位的定时任务面板按树序压住', () => {
+    const block = rule(STYLES, '.todo-panel.expanded {');
+    expect(block).toMatch(/z-index:/);
+  });
+});
+
+describe('不留无人调用的导出', () => {
+  test('closeTodoPanel 全仓无调用方，不得重新引入', () => {
+    expect(PANEL).not.toContain('export function closeTodoPanel');
   });
 });
