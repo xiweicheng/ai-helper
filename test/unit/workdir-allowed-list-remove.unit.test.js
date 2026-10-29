@@ -23,8 +23,8 @@ const panelSrc = read('src', 'side_panel', 'workspace-panel.js');
 
 /** 切换工作目录弹窗里「列表渲染 + 移除动作」那一段 */
 const listSegment = panelSrc.slice(
-  panelSrc.indexOf('listEl.innerHTML = allowedPaths.map'),
-  panelSrc.indexOf('// 列表事件委托')
+  panelSrc.indexOf('function renderList()'),
+  panelSrc.indexOf('// 移除允许目录')
 );
 const removeSegment = panelSrc.slice(
   panelSrc.indexOf('async function doRemove(targetPath)'),
@@ -56,22 +56,24 @@ describe('扩展端列表：任何列表项都能移除，默认/当前用徽标
   });
 
   test('默认目录有自己的徽标，且中英文案都存在', () => {
-    expect(listSegment).toMatch(/const isDefault = p === agentDefaultWorkdir;/);
+    expect(listSegment).toMatch(/const isDefault = samePathAs\(p, agentDefaultWorkdir\);/);
     expect(listSegment).toMatch(/t\('workspace\.defaultTag'\)/);
     // 中文与英文两份文案字典各有一条 defaultTag
     expect(panelSrc.match(/defaultTag: /g)?.length).toBe(2);
   });
 
-  test('移除按钮对所有项都渲染，不再按 isCurrent 二选一（旧写法会让人无路可走）', () => {
+  test('移除按钮不再按 isCurrent 二选一，而是按「是否真在白名单里」', () => {
     // 旧实现：isCurrent ? 徽标 : 移除按钮 → 当前项没有按钮、默认项有按钮但被 400 拒绝
     expect(listSegment).not.toMatch(/:\s*'<button class="switch-workdir-remove"/);
-    // 现在徽标与按钮并存
+    // 现在徽标与按钮可以并存
     expect(listSegment).toMatch(/\$\{isCurrent \? currentBadge : ''\}\$\{isDefault \? defaultBadge : ''\}/);
-    expect(listSegment).toMatch(/class="switch-workdir-remove"/);
+    // × 只给真在 allowedPaths 里的项：默认/会话目录是合并进来展示的，没有可移除的身份
+    expect(listSegment).toMatch(/const removable = allowedPaths\.some\(\(x\) => samePathAs\(x, p\)\);/);
+    expect(listSegment).toMatch(/\$\{removable \? `<button class="switch-workdir-remove"/);
   });
 
   test('移除默认/当前目录时确认文案与成功提示都改成「移出后仍可用」', () => {
-    expect(removeSegment).toMatch(/const stillUsable = targetPath === agentDefaultWorkdir \|\| targetPath === currentWorkdir;/);
+    expect(removeSegment).toMatch(/const stillUsable = samePathAs\(targetPath, agentDefaultWorkdir\) \|\| samePathAs\(targetPath, currentWorkdir\);/);
     expect(removeSegment).toMatch(/t\('workspace\.confirmRemoveStillUsable'/);
     expect(removeSegment).toMatch(/t\('workspace\.removedStillUsable'\)/);
     // 普通附加目录仍走原来那套「移除后无法访问」的文案

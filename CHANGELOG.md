@@ -4,6 +4,31 @@
 
 ## 2026-10-29
 
+### 切换工作目录：会话级切换不再弹「不在允许路径之内」，勾选「设为默认目录」对列表项生效
+> 来源：用户反馈两点——①「在会话里切换工作目录会弹窗说当前目录不在允许的路径之内，但会话绑定的工作目录本来就不需要加进允许路径吧，这个提示有问题」；②「设默认目录必须在输入框里填 + 勾选才行，如果我是从上面的目录列表里选一项，要怎么把它设为默认？勾一下再点列表项行不行，现在实现了吗」。
+
+- **①的根因（提示内容与真实后果不符）**：确认框那句「切换后将自动创建目录并加入允许列表」只对**全局切换**成立。代理端 `scope=session` 分支只 `bindSessionWorkdir()` 写 `session-workdirs.json`，**既不写 `allowedPaths` 也不 `saveConfig`**；而会话目录在 `checkPath` 的 0.6 分支无条件放行、根本不查白名单。所以「不在允许列表」对一次会话级切换既不是风险也不会发生，拿它劝阻用户纯属误导。修法：把确认门控从 `!isAllowed` 收紧为 `!isAllowed && willChangeGlobalDefault`（`willChangeGlobalDefault = !effectiveSessionId || setAsDefault`，即只有旧版代理端回落全局、或勾了「同时设为代理默认目录」才弹），文案同时改成讲清真实后果的「本次会把它设为代理默认目录…（影响未绑定的会话）」，标题改「确认切换到新默认目录」。
+- **②的核查结论（功能本来就在，缺的是可达性与反馈）**：列表项点击与「切换」按钮都走同一个 `doSwitch`，而 `doSwitch` 会读 `setDefaultCheckbox.checked`，所以「勾选 + 点列表项」一直是有效的；真正挡住用户的是三处缺口。修法：① 弹窗列表原本只渲染 `allowedPaths`，而会话级切换不写白名单 → 切到一个列表外目录后再打开弹窗，连「当前」那一项都看不见（这正是 ① 那句误导提示的土壤）；现在列表 = `白名单 ∪ 代理默认目录 ∪ 本会话有效目录`（跨平台判重、非 ASCII 安全比较），被合并进来的展示项不给「×」（它没有「附加授权」身份可移除）；② 标「当前」的项此前被 `:not(.current)` 一刀切禁点，于是「先把会话切到 X、再把 X 提为默认」这条最常见的路径点了没反应 → 现在勾选后该项可点且光标跟随变 `pointer`，点击走 `performSetAgentDefault()`（只做全局默认切换、不动会话绑定）；③ 复选框补 `title` 提示（中英各一份）说明「勾选后点列表里的目录或点『切换』都会同时把它设为代理默认目录」，成功 toast 按是否真的改了默认目录分两套（`switchedToAndSetDefault` / `setAsDefaultDone`），否则用户无从判断勾选有没有生效。
+- **顺手收口**：`performSwitchWorkdir` 里「代理默认目录变了要同步的三处缓存」抽成 `syncAgentDefaultWorkdirCache()`，与新增的 `performSetAgentDefault()` 共用（会话级切换不得写 `state.agentPlatform.workdir`，这条不变量现在只有一处写入口）；代理端移除接口的路由注释仍写着「不可移除当前工作目录」，与上一轮已删掉的守卫矛盾，一并改正。
+- **验证**：真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 新增 5h 段 23 项（会话级切到列表外目录 → **不出现** `#customConfirmOverlay` 且 `config.json` 的 `workdir`/`allowedPaths` 分毫未动；列表里能看见标「当前」的会话目录且不配「×」；勾选后点「当前」项 → `workdir` 落库且会话绑定不变；勾选后点列表非当前项 → 绑定 + 默认同时生效；不勾选切列表外目录不弹、勾选后切列表外目录**仍要弹**且文案含「设为代理默认目录」；确认后 `allowedPaths` 才真的追加）→ **89 项全过 / EXT_UI_PASS**。新增 `test/unit/workdir-switch-confirm.unit.test.js`（14 例：代理端会话分支无 `allowedPaths`/`saveConfig` 而全局分支有、`willChangeGlobalDefault` 门控、旧 `confirmSwitchToNew` 文案已删且新 key 唯一调用点、列表点击与按钮共用 `doSwitch`、`computeDisplayPaths` 三源合并与跨平台判重、× 仅给白名单项、光标跟随、`defaultApplied` 两套 toast、`state.defaultWorkdir` 只有一处写入口、tooltip 中英齐备）；`workdir-allowed-list-remove.unit.test.js` 的 3 处锚点与断言随列表渲染改造更新。回归 `npx vitest run` **212 文件 / 3182 例**、`node --test agent/test/unit/*.test.js` **825 例**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启、扩展需重新加载后生效。
+
+
+### 流式输出：切换会话后命令执行结果掉出工具折叠区
+
+> 来源：用户反馈「正在跑命令的会话切到别的会话，等它输出完再切回来，命令执行结果不在工具执行的折叠里，单独显示成一块」。
+
+- **根因**：`AGENT_STREAM` 首次创建输出块时，用 `if (!outputDiv.isConnected)` 判断「是否已成功放进工具卡片」，失败才退回 `.stream-content`。但切换会话时 `chatContainer` 会被重建，流式消息元素只由 `_streamingElements` 保活、**整体脱离文档** —— 此时它的整棵子树 `isConnected` 恒为 `false`，哪怕已经 `appendChild` 进 `.tool-call-body` 也会被再 `appendChild` 搬到 `.stream-content`，于是切回会话后结果落在折叠区外。
+- **修法**：`chat-streaming.js` 新增 `createAgentStreamOutput(card, streamContent)`，挂载位置**只由卡片查找结果决定**（卡片在 → 进 `.tool-call-body`；卡片缺失才退回 `.stream-content`），彻底不再用 `isConnected` 判定；`chat-manager` 的 `AGENT_STREAM` 分支改为调用它。
+- **验证**：新增 `test/unit/agent-stream-output-placement.unit.test.js`（6 例：脱离文档态输出仍落在 tool-call-body、文档内行为不变、卡片缺失才回落 stream-content、缺 `.tool-call-body` 时退化挂卡片、源码守卫禁止 `!outputDiv.isConnected` 回归）；回归 `npx vitest run` **212 文件 / 3182 例**、`npx eslint` 无输出、`npm run build:silent` → BUILD_SUCCESS。**需重新加载扩展**。
+
+### 侧边栏浮层：工作目录 / 收藏 / 消息目录 / 检索 / 定时任务补可见边框
+
+> 来源：用户反馈「右侧那些图标点开的弹框没有边框色，白色主题下跟背景糊在一起，分不清弹框边界；暗色主题也要照顾到」。
+
+- **根因**：5 个浮层的边框都写死成 `1px solid rgba(255,255,255,0.3)` 外加 `inset 0 1px 0 rgba(255,255,255,0.5)` 白色内高光，投影走 `--shadow-sm`。亮色下白框叠白底等于没有；暗色下白框刺眼且与主题无关。
+- **修法**：统一改用主题 token —— `border: 1px solid var(--border-strong)`（亮 `#ccc` / 暗 `#4a5160`）+ `box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18)`（暗色下自动翻成微光晕）。涉及 `styles.css` 的 `.workspace-panel` / `.bookmark-panel` / `.message-toc-panel` / `.search-panel` 与 `schedule-panel.js` 的内联样式；嵌入模式下工作目录面板的左右分栏边框不受影响。
+- **验证**：新增真实 MV3 探针 `test-results-probes/_side-rail-popup-border.mjs`（dist 包 + light/dark 双主题，逐面板断言 1px 描边存在、描边色与页面底色可区分、描边色等于 `--border-strong` 计算值）**31 项全过**，截图留档 `_side-rail-border-{theme}-*.png`；新增 `test/unit/side-rail-popup-border-theme.unit.test.js`（14 例源码守卫）；`npm run theme:check` 无违规。
+
 ### 切换工作目录：允许移除列表里的「默认目录」（此前被误判成「当前工作目录」）
 > 来源：用户反馈「删除列表项时提示『不能移除当前工作目录』，但我当前会话已经切到其它目录了，删不掉我没绑定的那个目录」。
 

@@ -223,10 +223,12 @@ registerTranslations('zh', {
     removeFailedWithError: '移除失败: {error}',
     selectOrInputPath: '请选择或输入目标路径',
     alreadyCurrentWorkdir: '该目录已是当前工作目录',
-    confirmSwitchToNew: '该路径不在允许列表内，切换后将自动创建目录并加入允许列表:\n{path}',
-    confirmSwitchToNewTitle: '确认切换到新目录',
+    confirmSwitchToNewDefault: '该路径不在允许列表内。本次会把它设为代理默认目录，切换后自动创建目录并加入允许列表（影响未绑定的会话）:\n{path}',
+    confirmSwitchToNewTitle: '确认切换到新默认目录',
     switchFailedWithError: '切换失败: {error}',
     switchedTo: '已切换到: {path}',
+    switchedToAndSetDefault: '已切换到: {path}，并设为代理默认目录',
+    setAsDefaultDone: '已设为代理默认目录: {path}',
     // 重命名/新建
     renameDir: '重命名目录',
     renameFile: '重命名文件',
@@ -458,10 +460,12 @@ registerTranslations('en', {
     removeFailedWithError: 'Remove failed: {error}',
     selectOrInputPath: 'Please select or enter a target path',
     alreadyCurrentWorkdir: 'This directory is already the current working directory',
-    confirmSwitchToNew: 'This path is not in the allowed list. Switching will automatically create the directory and add it to the allowed list:\n{path}',
-    confirmSwitchToNewTitle: 'Confirm Switch to New Directory',
+    confirmSwitchToNewDefault: 'This path is not in the allowed list. It will become the agent default, so switching also creates the directory and adds it to the allowed list (affects unbound sessions):\n{path}',
+    confirmSwitchToNewTitle: 'Confirm Switch to New Default Directory',
     switchFailedWithError: 'Switch failed: {error}',
     switchedTo: 'Switched to: {path}',
+    switchedToAndSetDefault: 'Switched to: {path} (set as agent default)',
+    setAsDefaultDone: 'Set as agent default: {path}',
     // Rename/New folder
     renameDir: 'Rename Directory',
     renameFile: 'Rename File',
@@ -6126,6 +6130,20 @@ export async function showSwitchWorkdirDialog(options = {}) {
   // 老代理端没有该字段时退回当前目录（此时二者等价）
   const agentDefaultWorkdir = detail.defaultWorkdir || currentWorkdir;
   let allowedPaths = Array.isArray(detail.allowedPaths) ? [...detail.allowedPaths] : [];
+  // 展示列表 = 白名单 ∪ 代理默认目录 ∪ 本会话有效目录
+  // 会话级绑定不写 allowedPaths（会话目录在 checkPath 的 0.6 分支无条件放行），所以切到一个
+  // 新目录后再打开弹窗，只渲染白名单会连「当前」那一项都看不见：用户既找不到自己现在在哪，
+  // 也没法把它提为默认目录 —— 「当前目录不在允许路径之内」这个误导提示的根源就在这。
+  // 不在白名单里的合并项只做展示与切换，不给「×」（它没有白名单身份可移除）。
+  const samePathAs = (a, b) =>
+    String(a || '').replace(/\\/g, '/').toLowerCase() === String(b || '').replace(/\\/g, '/').toLowerCase();
+  const computeDisplayPaths = () => {
+    const merged = [...allowedPaths];
+    const push = (p) => { if (p && !merged.some((x) => samePathAs(x, p))) merged.push(p); };
+    push(agentDefaultWorkdir);
+    push(currentWorkdir);
+    return merged;
+  };
 
   // 浏览按钮仅在回环本机代理时展示：原生目录选择框弹在代理端所在机器，
   // 远端机器可能无桌面环境（弹窗用户也看不到），且工作目录语义本就是代理端机器的路径
@@ -6156,7 +6174,7 @@ export async function showSwitchWorkdirDialog(options = {}) {
           <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="flex:1;min-width:0;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;" autofocus>
           ${browseAvailable ? `<button class="switch-workdir-browse" title="${t('workspace.browseBtn')}" style="flex-shrink:0;padding:6px 14px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap;">${t('workspace.browseBtn')}</button>` : ''}
         </div>
-        ${sessionSupported ? `<label style="display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;"><input type="checkbox" class="switch-workdir-set-default" style="margin-top:1px;flex-shrink:0;"><span>${t('workdirTag.setAsAgentDefault')}</span></label>` : ''}
+        ${sessionSupported ? `<label title="${t('workdirTag.setAsAgentDefaultHint')}" style="display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;"><input type="checkbox" class="switch-workdir-set-default" style="margin-top:1px;flex-shrink:0;"><span>${t('workdirTag.setAsAgentDefault')}</span></label>` : ''}
         <div style="display:flex;justify-content:flex-end;gap:8px;">
           <button class="switch-workdir-cancel" style="padding:6px 16px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);cursor:pointer;">${t('workspace.cancel')}</button>
           <button class="switch-workdir-confirm" style="padding:6px 16px;border:none;border-radius:6px;background:var(--info-500);color:var(--text-inverse);cursor:pointer;">${t('workspace.switchBtn')}</button>
@@ -6220,13 +6238,17 @@ export async function showSwitchWorkdirDialog(options = {}) {
 
     // 渲染允许目录列表（删除后复用）
     function renderList() {
-      if (!allowedPaths.length) {
+      const displayPaths = computeDisplayPaths();
+      if (!displayPaths.length) {
         listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-disabled);font-size:13px;">' + t('workspace.noAllowedPaths') + '</div>';
         return;
       }
-      listEl.innerHTML = allowedPaths.map(p => {
-        const isCurrent = p === currentWorkdir;
-        const isDefault = p === agentDefaultWorkdir;
+      listEl.innerHTML = displayPaths.map(p => {
+        const isCurrent = samePathAs(p, currentWorkdir);
+        const isDefault = samePathAs(p, agentDefaultWorkdir);
+        // 只有真在白名单里的那几项才有「×」：默认目录/会话目录是被合并进来展示的，
+        // 它们没有「附加授权」这层身份，去掉也没有任何效果
+        const removable = allowedPaths.some((x) => samePathAs(x, p));
         // 徽标负责解释「删了为什么还能用」：当前目录与默认目录在 checkPath 里本来就无条件放行，
         // 移出列表只是去掉「附加授权」身份。移除按钮对所有项都保留 —— 之前当前项没有按钮、
         // 默认项有按钮却会被代理端 400 拒绝，两者都是死路。
@@ -6237,17 +6259,27 @@ export async function showSwitchWorkdirDialog(options = {}) {
               <span style="flex-shrink:0;">📁</span>
               <span style="flex:1;">${escapeHtml(p)}</span>
               ${isCurrent ? currentBadge : ''}${isDefault ? defaultBadge : ''}
-              <button class="switch-workdir-remove" data-remove-path="${escapeHtml(p)}" title="${t('workspace.removeFromAllowed')}" style="flex-shrink:0;background:none;border:none;color:var(--danger-500);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>
+              ${removable ? `<button class="switch-workdir-remove" data-remove-path="${escapeHtml(p)}" title="${t('workspace.removeFromAllowed')}" style="flex-shrink:0;background:none;border:none;color:var(--danger-500);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>` : ''}
             </div>`;
       }).join('');
     }
     renderList();
 
+    // 勾选「设为默认目录」后，「当前」项也变成可点的（把它提为默认）：光标必须跟上，
+    // 否则它一直保持 default，用户看不出这一项其实能点
+    if (setDefaultCheckbox) {
+      setDefaultCheckbox.addEventListener('change', () => {
+        listEl.querySelectorAll('.switch-workdir-item.current').forEach((el) => {
+          el.style.cursor = canPromoteCurrent(el.dataset.path) ? 'pointer' : 'default';
+        });
+      });
+    }
+
     // 移除允许目录
     async function doRemove(targetPath) {
       // 当前目录 / 默认目录移出列表后依然能读写（checkPath 0.6 无条件放行），
       // 这两类必须换一套文案，否则「移除后 AI 将无法访问该目录」就是假话
-      const stillUsable = targetPath === agentDefaultWorkdir || targetPath === currentWorkdir;
+      const stillUsable = samePathAs(targetPath, agentDefaultWorkdir) || samePathAs(targetPath, currentWorkdir);
       const ok = await window.showCustomConfirm(
         stillUsable
           ? t('workspace.confirmRemoveStillUsable', { path: targetPath })
@@ -6265,6 +6297,13 @@ export async function showSwitchWorkdirDialog(options = {}) {
       }
     }
 
+    // 勾了「设为默认目录」且该项还不是代理默认 → 「当前」项也应当可点（提为默认）
+    const canPromoteCurrent = (p) => {
+      if (!(setDefaultCheckbox && setDefaultCheckbox.checked)) return false;
+      const norm = (s) => String(s || '').replace(/\\/g, '/').toLowerCase();
+      return !agentDefaultWorkdir || norm(p) !== norm(agentDefaultWorkdir);
+    };
+
     // 列表事件委托：点击项切换、点击删除按钮移除
     listEl.addEventListener('click', (e) => {
       const removeBtn = e.target.closest('.switch-workdir-remove');
@@ -6273,10 +6312,12 @@ export async function showSwitchWorkdirDialog(options = {}) {
         doRemove(removeBtn.dataset.removePath);
         return;
       }
-      const item = e.target.closest('.switch-workdir-item:not(.current)');
-      if (item) {
-        doSwitch(item.dataset.path);
-      }
+      const item = e.target.closest('.switch-workdir-item');
+      if (!item) return;
+      // 「当前」项平时点了没意义（切到自己），但勾了「设为默认目录」时点它就是
+      // 「把本会话这个目录提为代理默认」—— 否则「先切到某目录、再想设它为默认」根本点不动
+      if (item.classList.contains('current') && !canPromoteCurrent(item.dataset.path)) return;
+      doSwitch(item.dataset.path);
     });
 
     async function doSwitch(targetPath) {
@@ -6285,32 +6326,44 @@ export async function showSwitchWorkdirDialog(options = {}) {
         return;
       }
       targetPath = targetPath.trim();
-      if (targetPath === currentWorkdir) {
+      // 跨平台路径比较：统一分隔符为 / + 大小写不敏感（Windows 盘符大小写不敏感、支持 / 和 \ 混用）
+      const normPath = s => s.replace(/\\/g, '/').toLowerCase();
+      const isSamePath = (a, b) => !!a && !!b && normPath(a) === normPath(b);
+      const setAsDefault = !!(setDefaultCheckbox && setDefaultCheckbox.checked);
+      if (isSamePath(targetPath, currentWorkdir)) {
+        // 已在本目录：再「切换」没意义。但勾了「设为默认目录」且它还只是会话目录时，
+        // 用户的意思是「把它提为代理默认」—— 这条路径必须能走通，否则勾选形同虚设
+        if (setAsDefault && !isSamePath(targetPath, agentDefaultWorkdir)) {
+          cleanup();
+          resolve(await performSetAgentDefault(targetPath));
+          return;
+        }
         showToast(t('workspace.alreadyCurrentWorkdir'), 'info');
         cleanup();
         resolve(false);
         return;
       }
-      // 超出 allowedPaths 的路径给一次确认（自定义弹窗，非原生 confirm）
-      // 跨平台路径比较：统一分隔符为 / + 大小写不敏感（Windows 盘符大小写不敏感、支持 / 和 \ 混用）
-      const normPath = s => s.replace(/\\/g, '/').toLowerCase();
+      // 只有「会改全局默认目录」的切换才需要确认「不在允许列表」（自定义弹窗，非原生 confirm）：
+      // 会话级绑定只写会话注册表、绝不写 allowedPaths，而会话目录在 checkPath 的 0.6 分支
+      // 本来就无条件放行 —— 拿「不在允许列表」劝阻正常的会话级切换纯属误导；
+      // 只有旧版代理端回落全局（sessionId=null）或勾了「设为默认目录」才会真的追加入授权。
+      const effectiveSessionId = sessionSupported ? sessionId : null;
+      const willChangeGlobalDefault = !effectiveSessionId || setAsDefault;
       const isAllowed = allowedPaths.some(p => {
         const tp = normPath(targetPath);
         const lp = normPath(p);
         return tp === lp || tp.startsWith(lp + '/');
       });
-      if (!isAllowed) {
+      if (!isAllowed && willChangeGlobalDefault) {
         const ok = await window.showCustomConfirm(
-          t('workspace.confirmSwitchToNew', { path: targetPath }),
+          t('workspace.confirmSwitchToNewDefault', { path: targetPath }),
           t('workspace.confirmSwitchToNewTitle')
         );
         if (!ok) return;
       }
       cleanup();
-      const setAsDefault = !!(setDefaultCheckbox && setDefaultCheckbox.checked);
       const result = await performSwitchWorkdir(targetPath, {
-        // 旧版代理端不支持会话级目录：退回全局切换语义
-        sessionId: sessionSupported ? sessionId : null,
+        sessionId: effectiveSessionId,
         setAsDefault
       });
       resolve(result);
@@ -6438,6 +6491,47 @@ async function afterWorkdirChanged(sessionId, workdir) {
 }
 
 /**
+ * 代理默认目录变了：同步单例缓存、代理下拉列表里那一列
+ * @param {string} workdir
+ */
+async function syncAgentDefaultWorkdirCache(workdir) {
+  state.defaultWorkdir = workdir;
+  if (state.agentPlatform) {
+    state.agentPlatform = { ...state.agentPlatform, workdir };
+  }
+  try {
+    const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
+    if (activeAgentId) {
+      state.agentWorkdirs.set(activeAgentId, workdir);
+      if (typeof window.updateAgentItemWorkdir === 'function') {
+        window.updateAgentItemWorkdir(activeAgentId, workdir);
+      }
+    }
+  } catch (e) {
+    logger.debug('[WorkspacePanel] sync dropdown column table workdir failed:', e);
+  }
+}
+
+/**
+ * 只把目录设为代理默认目录，不动会话绑定
+ * 场景：「设为默认目录」勾选后点列表里已标「当前」的那一项 —— 本会话已经在这，
+ * 差的只是把全局默认提上去，没必要再切一次
+ * @param {string} path
+ * @returns {Promise<boolean>}
+ */
+async function performSetAgentDefault(path) {
+  const result = await switchWorkspace(path, { sessionId: null });
+  if (!result.success) {
+    showToast(t('workspace.switchFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
+    return false;
+  }
+  await syncAgentDefaultWorkdirCache(result.workdir);
+  await afterWorkdirChanged(null, result.workdir);
+  showToast(t('workspace.setAsDefaultDone', { path: result.workdir }), 'success');
+  return true;
+}
+
+/**
  * 执行切换（会话级）：调后端接口 + 写会话绑定 + 同步所有前端缓存 + 重新导航
  * @param {string} newWorkdir
  * @param {Object} [options]
@@ -6471,35 +6565,27 @@ async function performSwitchWorkdir(newWorkdir, options = {}) {
   }
 
   // 勾选「同时设为代理默认目录」：再走一次全局切换（影响所有未绑定会话）
+  let defaultApplied = false;
   if (setAsDefault) {
     const defResult = await switchWorkspace(result.workdir, { sessionId: null });
-    if (!defResult.success) {
-      showToast(t('workspace.switchFailedWithError', { error: defResult.error || t('workspace.unknownError') }), 'error');
-    }
+    if (defResult.success) defaultApplied = true;
+    else showToast(t('workspace.switchFailedWithError', { error: defResult.error || t('workspace.unknownError') }), 'error');
   }
 
   // 只有全局语义才会改代理默认目录：此时同步单例缓存与代理下拉列表
   // 会话级绑定不得写 state.agentPlatform.workdir（它是「代理默认目录缓存」，改了会串到别的会话）
   if (!sessionId || setAsDefault) {
-    state.defaultWorkdir = result.workdir;
-    if (state.agentPlatform) {
-      state.agentPlatform = { ...state.agentPlatform, workdir: result.workdir };
-    }
-    try {
-      const { activeAgentId } = await chrome.storage.local.get(['activeAgentId']);
-      if (activeAgentId) {
-        state.agentWorkdirs.set(activeAgentId, result.workdir);
-        if (typeof window.updateAgentItemWorkdir === 'function') {
-          window.updateAgentItemWorkdir(activeAgentId, result.workdir);
-        }
-      }
-    } catch (e) {
-      logger.debug('[WorkspacePanel] sync dropdown column table workdir failed:', e);
-    }
+    await syncAgentDefaultWorkdirCache(result.workdir);
   }
 
   await afterWorkdirChanged(sessionId, result.workdir);
-  showToast(t('workspace.switchedTo', { path: result.workdir }), 'success');
+  // 勾选「设为默认目录」时必须说清楚「默认目录也变了」，否则用户无从判断勾选有没有生效
+  showToast(
+    defaultApplied
+      ? t('workspace.switchedToAndSetDefault', { path: result.workdir })
+      : t('workspace.switchedTo', { path: result.workdir }),
+    'success'
+  );
   return true;
 }
 

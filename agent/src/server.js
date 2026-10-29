@@ -1165,7 +1165,7 @@ export function startServer() {
         }
       }
 
-      // === 移除允许访问的目录（需认证，不可移除当前工作目录） ===
+      // === 移除允许访问的目录（需认证；默认目录/本会话目录也可移除，只去掉「附加授权」） ===
       if (pathname === '/api/config/allowed-paths/remove' && req.method === 'POST') {
         const targetPath = body.path;
         if (!targetPath || typeof targetPath !== 'string') {
