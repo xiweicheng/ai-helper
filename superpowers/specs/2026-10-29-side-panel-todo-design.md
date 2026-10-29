@@ -32,6 +32,8 @@
 
 **结构**：Header（图标 + 「待办」 + `3 / 8` 计数 + 进度条 + 「填入输入框」+ `⋯` + `×`）→ 快速添加行 → 「进行中」组 → 「已完成」组。
 
+> 本节的「两组同列 + 折叠」结构已在 2026-10-30 的 UX 重做中被双 Tab 取代，见 §9。
+
 **行**：`状态圈 + 标题（2 行截断）+ 备注折叠条 + 元信息（截止 / 相对时间）`。
 
 - 状态圈点击循环 `pending → doing → done`；`doing` 额外显示左侧 2px 竖条与实心点；`done` 移入已完成组并记录 `completedAt`。
@@ -104,3 +106,22 @@
 
 - DB 版本升级：SW 与 side panel 可能同时持有旧连接；既有 `onversionchange`/`onblocked`/`withStore` 重试已覆盖，新增 store 沿用同一升级回调，`withStore` 的 store 缺失重试也会兜底。
 - 入口增至 6 个：仅在极矮窗口有挤压风险，已加媒体查询兜底。
+
+## 9. 2026-10-30 UX 重做（实现记录）
+
+上线后用户实测反馈四个硬伤：只看到一堆「进行中」（组名误导）、`0 / 11` 看不出分子、**找不到「标记完成」入口**（只有删除）、已完成条目被顶到屏幕外。另外要求菜单不换行、要优先级、要能关联外部链接、面板底部不能盖住问答输入框。以下为本轮实际落地的变更，与本节冲突处以本节为准。
+
+1. **双 Tab 取代折叠分组**：`待办` / `已完成` 一次只渲染一组，各自带条数（`data-group="active|done"`）；折叠偏好不再使用。在已完成 Tab 里添加会自动切回待办 Tab。
+2. **进度文案自解释**：头部写 `完成 1 / 3`（`progressLabel`），不再只给 `1 / 3`。
+3. **状态入口两条路径**：状态圈依旧循环点击，但行尾 `⋯` 菜单里必须有文字版 `开始处理 / 标记完成 / 退回待办`。
+4. **撤销与智能恢复**：`done` 时记录 `prevStatus`，离开 `done` 清除；标记完成后弹面板内联撤销条（6s，`showToast` 是 `textContent` 实现、塞不了按钮），撤销走 `restoreTodo` 并**保持 `order` 原位**而不是落到末尾；已完成 Tab 的恢复目标由 `restoreTarget()` 决定（完成前是处理中就回处理中，否则回待处理）。
+5. **优先级**：`priority: 'high'|'medium'|'low'|null`，模型层 `normalizePriority` 白名单过滤；行首 3px 竖条只表优先级，`doing` 改用圈内实心点 + 淡底，两者不抢同一个位置。
+6. **外部链接**：`link` 存绝对地址；`normalizeLink` 剔前导斜杠、缺协议补 `https://`、协议白名单 `http:/https:`，返回 `{url, host, valid}`。非法链接在编排层就拒（`reason:'invalid'`），不进乐观更新。胶囊是普通 `button`（**`href` 不写进 DOM**），点击才 `chrome.tabs.create({url})`；清空回车即移除。摘要只写合法链接。
+7. **菜单不换行**：`.todo-menu` 为 `width: max-content` + `white-space: nowrap`，按视口右缘/高度夹取，超长可滚动。
+8. **底部锚定不遮输入框**：不再复用共享的 `clampPanelToViewport`（它只按视口底 -8px 夹，正好会把面板压到输入框上），`todo-panel` 从 `OPEN_PANEL_SELECTOR` 名单移除；改为量 `.input-container` 顶边，写私有 `--todo-max-h` 与 `--fit-y`（仅负值），并用 `ResizeObserver` 跟输入区增高；量不到时回退 `innerHeight - 160`。
+
+**与设计稿的两处偏差**（实现时纠正）：① 优先级不做二级菜单，直接在行 `⋯` 里给四个色块档位（二级菜单在 320px 浮层里难用）；② 色条 token 用仓库**实际存在**的 `--danger-500` / `--warning-500` / `--brand-500`，而非设计稿写的 `--brand-red/amber/blue-500`（不存在）。
+
+**两个实现缺陷由探针暴露**（单测看不见）：① `handleChange` 的 link 分支缺 `linkEditId` 守卫，重渲染拆掉脏输入框时浏览器补发 `change` → 双写双 toast；② 「取消」按钮点下去时 `change`/`focusout` 都比 `click` 早，自动保存抢跑使取消变成死按钮 → 改为在 `pointerdown` 就 `cancelLinkEdit()`。两条都已补源码守卫单测与探针 O3b/O6b。
+
+**验证面新增**：单测 `todo-model` 39 例 / `todo-manager` 29 例 / `todo-panel-structure` 56 例（双 Tab、状态动作可见、优先级色条、外部链接、菜单不换行、几何夹取、i18n 中英成对）；探针新增 M（标记完成入口+撤销+智能恢复+菜单不换行实测）、N（色条真实渲染色与 token 同值）、O（胶囊/开标签/非法拒收/移除/取消/重载持久）、P（面板底边与输入区上沿的几何不变量、输入区增高跟随、矮窗口）四组，整轮跑 ALL CHECKS PASSED。
