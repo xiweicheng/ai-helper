@@ -4,13 +4,14 @@
 // 结构、类名与 toast 行为对齐 toolbox-rag.js。
 
 import { state, agentApi, getAgentConnection, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
-import { t } from '../shared/i18n.js';
+import { t, subscribe } from '../shared/i18n.js';
 import { queryMicState, requestMicAccess, watchMicState } from '../shared/mic-permission.js';
 import { loadVoiceShortcutConfig, saveVoiceShortcutConfig } from '../shared/voice-shortcut.js';
 import {
   loadSelectedDeviceId,
   saveSelectedDeviceId,
-  listAudioInputDevices,
+  probeAudioInputDevices,
+  warmupAudioInputDevices,
   hasAudioInputDevice,
   watchAudioInputDevices,
 } from '../shared/audio-input-device.js';
@@ -22,6 +23,9 @@ const INSTALL_POLL_INTERVAL_MS = 2000;
 /** 模型下载进度轮询间隔（毫秒） */
 const DOWNLOAD_POLL_INTERVAL_MS = 1500;
 
+/** devicechange 防抖：Windows 上音频服务抖动会连发，每次枚举要 2.5s，不防抖会一直排不上 */
+const DEVICE_REFRESH_DEBOUNCE_MS = 400;
+
 let installPollTimer = null;
 let eventsBound = false;
 let shortcutBound = false;
@@ -31,6 +35,8 @@ let lastStatus = null;
 let installPollFailures = 0;
 // 模型下载轮询句柄
 let downloadPollTimer = null;
+// devicechange 防抖句柄（详见 initDeviceSection）
+let deviceWatchTimer = null;
 
 // ==================== 数据 ====================
 
@@ -493,46 +499,120 @@ function deviceOptionName(device, index) {
   return device.label || t('toolbox.asrDeviceUnnamed', { index: index + 1 });
 }
 
+// 状态行的文案由 JS 管理（HTML 上没挂 data-i18n）：applyI18n 只认静态标签，
+// 若让它也管这一行，任何一次 applyI18n 都会把状态冲回初始文案 ——
+// 外观上就是「已经列完了还写着正在读取」。语言切走切回时由 subscribe 重渲。
+let deviceNoteState = { key: '', warn: false };
+// 是否已经拿到过一次确定结果：刷新时不再把状态行冲回「正在读取」（反复闪 loading 在
+// Windows 上观感就是「永远没读完」）。用户手动点「刷新列表」时会重置，保留点击反馈。
+let deviceNoteSettled = false;
+// 并发保护：初始化 / 授权 / 插拔 / 语言切换都可能同时触发重列，旧结果不能覆盖新结果
+let deviceRefreshToken = 0;
+
+function renderDeviceNote() {
+  const note = document.getElementById('asrDeviceNote');
+  if (!note) return;
+  note.textContent = deviceNoteState.key ? t(deviceNoteState.key) : '';
+  note.hidden = !deviceNoteState.key;
+  note.classList.toggle('warn', deviceNoteState.warn);
+}
+
+function setDeviceNote(key, warn = false) {
+  deviceNoteState = { key: key || '', warn: Boolean(key) && warn };
+  renderDeviceNote();
+}
+
+/** 只在「列不出来 / 名字看不到」时露出授权入口（已拒绝就别再弹，点了也不会有框） */
+function setDeviceGrantVisible(visible) {
+  const btn = document.getElementById('asrDeviceGrantBtn');
+  if (btn) btn.hidden = !visible;
+}
+
+/**
+ * 枚举设备，超时时先「唤醒」音频子系统再试一次。
+ *
+ * Windows 上真实存在这种形态：麦克风已授权，但音频服务刚启动 / 隐私设置半开，
+ * enumerateDevices() 永不 resolve。先成功开一次流（拿完立刻停）之后，枚举通常立刻返回。
+ * 未授权时不试：预热会弹授权框，不能在后台偷偷弹。
+ */
+async function probeDevicesWithWarmup() {
+  const first = await probeAudioInputDevices();
+  if (!first.timedOut) return first;
+  if (await queryMicState() !== 'granted') return first;
+  const warmed = await warmupAudioInputDevices();
+  if (!warmed) return first;
+  return probeAudioInputDevices();
+}
+
 /**
  * 刷新下拉列表：列表来自 enumerateDevices，选中值以存储为准（存储是唯一真源）
  * 与「识别语言」同一套下拉（.model-selector + readonly input + .model-dropdown）
+ *
+ * 无论成功、空列表、没授权、超时还是抛错，都必须落到一个确定的状态文案，
+ * 不能停在 loading —— 否则用户只能看到一个永远转不完的「正在读取设备列表」
+ *
+ * @param {{ showLoading?: boolean }} [opts]
  */
-async function refreshDeviceList() {
+async function refreshDeviceList(opts = {}) {
   const input = document.getElementById('asrDeviceInput');
   const menu = document.getElementById('asrDeviceDropdown');
   if (!input || !menu) return;
-  const note = document.getElementById('asrDeviceNote');
-  const list = await listAudioInputDevices();
-  const selected = await loadSelectedDeviceId();
+  const token = ++deviceRefreshToken;
+  if (opts.showLoading) deviceNoteSettled = false;
+  if (!deviceNoteSettled) setDeviceNote('toolbox.asrDeviceNoteLoading');
 
-  // 设备不在了（拔掉 / 禁用）时先回落到「跟随系统默认」，但**不清存储**：
-  // 蓝牙耳机断开再连上时同一个 deviceId 会回来，直接抹掉反而让用户要重选一次
-  const present = hasAudioInputDevice(list, selected);
-  const effective = present ? selected : '';
+  try {
+    const { devices: list, timedOut, unsupported } = await probeDevicesWithWarmup();
+    const selected = await loadSelectedDeviceId();
+    if (token !== deviceRefreshToken) return;
 
-  const items = [{ id: '', label: t('toolbox.asrDeviceFollowSystem') }]
-    .concat(list.map((device, index) => ({ id: device.deviceId, label: deviceOptionName(device, index) })));
-  menu.innerHTML = items.map((item) => {
-    const current = item.id === effective;
-    return `<div class="model-option${current ? ' selected' : ''}" role="option" aria-selected="${current ? 'true' : 'false'}" data-device-id="${escapeHtml(item.id)}">${escapeHtml(item.label)}</div>`;
-  }).join('');
-  const current = items.find((item) => item.id === effective) || items[0];
-  input.value = current.label;
+    // 设备不在了（拔掉 / 禁用）时先回落到「跟随系统默认」，但**不清存储**：
+    // 蓝牙耳机断开再连上时同一个 deviceId 会回来，直接抹掉反而让用户要重选一次
+    const present = hasAudioInputDevice(list, selected);
+    const effective = present ? selected : '';
 
-  let msg = '';
-  let warn = false;
-  if (list.length === 0) {
-    msg = t('toolbox.asrDeviceEmpty');
-  } else if (selected && !present) {
-    msg = t('toolbox.asrDeviceMissing');
-    warn = true;
-  } else if (list.every((device) => !device.label)) {
-    msg = t('toolbox.asrDeviceNeedPermission');
-  }
-  if (note) {
-    note.textContent = msg;
-    note.hidden = !msg;
-    note.classList.toggle('warn', warn);
+    const items = [{ id: '', label: t('toolbox.asrDeviceFollowSystem') }]
+      .concat(list.map((device, index) => ({ id: device.deviceId, label: deviceOptionName(device, index) })));
+    menu.innerHTML = items.map((item) => {
+      const current = item.id === effective;
+      return `<div class="model-option${current ? ' selected' : ''}" role="option" aria-selected="${current ? 'true' : 'false'}" data-device-id="${escapeHtml(item.id)}">${escapeHtml(item.label)}</div>`;
+    }).join('');
+    const current = items.find((item) => item.id === effective) || items[0];
+    input.value = current.label;
+
+    // 没授权时 Chrome 可能只给很少甚至空的列表 → 「先授权再看」是唯一有效的引导
+    const unlabeled = list.length > 0 && list.every((device) => !device.label);
+    const needGrant = !timedOut && !unsupported && (list.length === 0 || unlabeled);
+    const micState = needGrant ? await queryMicState() : 'unknown';
+    if (token !== deviceRefreshToken) return;
+
+    if (timedOut) {
+      setDeviceNote('toolbox.asrDeviceTimeout', true);
+      setDeviceGrantVisible(true);
+    } else if (unsupported) {
+      setDeviceNote('toolbox.asrDeviceUnsupported', true);
+      setDeviceGrantVisible(false);
+    } else if (needGrant) {
+      setDeviceNote(micState === 'denied'
+        ? 'toolbox.asrDeviceDenied'
+        : (unlabeled ? 'toolbox.asrDeviceNeedPermission' : 'toolbox.asrDeviceEmpty'), true);
+      setDeviceGrantVisible(micState !== 'denied');
+    } else if (selected && !present) {
+      setDeviceNote('toolbox.asrDeviceMissing', true);
+      setDeviceGrantVisible(false);
+    } else {
+      setDeviceNote('');
+      setDeviceGrantVisible(false);
+    }
+    deviceNoteSettled = true;
+  } catch (err) {
+    if (token !== deviceRefreshToken) return;
+    // 任何没预料到的异常也必须落成一个可读状态：只留一个「正在读取」等于骗人。
+    // 常踩的雷是 storage 回调 / escapeHtml 在奇怪输入上抛错，别让整块静默。
+    logger.warn?.('[asr] 读取输入设备失败', err);
+    setDeviceNote('toolbox.asrDeviceReadFailed', true);
+    setDeviceGrantVisible(true);
+    deviceNoteSettled = true;
   }
 }
 
@@ -554,9 +634,42 @@ function initDeviceSection() {
     await refreshDeviceList();
     showToast(next ? t('toolbox.asrDeviceSaved') : t('toolbox.asrDeviceFollowSystemSaved'));
   });
-  document.getElementById('asrDeviceRefreshBtn')?.addEventListener('click', () => { refreshDeviceList(); });
+
+  document.getElementById('asrDeviceRefreshBtn')?.addEventListener('click', () => {
+    // 手动刷新要看到反馈：主动把状态行打回「正在读取」
+    refreshDeviceList({ showLoading: true });
+  });
+
+  // 就地授权：未授权时设备列表可能只给很少/空列表，名字也拿不到。
+  // 授权入口不能只放在「麦克风权限」小节（那块跟着语音总开关收起，关着时用户找不到）
+  document.getElementById('asrDeviceGrantBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('asrDeviceGrantBtn');
+    if (btn) { btn.disabled = true; btn.textContent = t('toolbox.asrMicGranting'); }
+    let res;
+    try {
+      res = await requestMicAccess();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = t('toolbox.asrMicGrantBtn'); }
+      await refreshMicState();
+      refreshDeviceList();
+    }
+    if (res?.ok) showToast(t('toolbox.asrMicGrantedToast'));
+    else if (res?.state === 'denied') showToast(t('toolbox.asrMicDeniedToast'), 'error');
+    else showToast(t('toolbox.asrMicNotGrantedToast'), 'error');
+  });
+
   // USB 麦插上 / 蓝牙耳机连上 / 设备被拔：列表跟着变（devicechange 是全局事件，只绑一次）
-  watchAudioInputDevices(() => { refreshDeviceList(); });
+  // 必须防抖：Windows 上音频服务抖动会连发多次，每次枚举要 2.5s，不防抖则旧结果持续被 token 丢掉、
+  // 状态行反复被冲回「正在读取」 —— 用户看到的就是永远在读取
+  watchAudioInputDevices(() => {
+    if (deviceWatchTimer !== null) clearTimeout(deviceWatchTimer);
+    deviceWatchTimer = setTimeout(() => {
+      deviceWatchTimer = null;
+      refreshDeviceList();
+    }, DEVICE_REFRESH_DEBOUNCE_MS);
+  });
+  // 语言切换：列表项与状态行都是 JS 拼的，applyI18n 碰不到 → 自己重渲一次
+  subscribe(() => { refreshDeviceList(); });
 }
 
 // ==================== 事件 ====================

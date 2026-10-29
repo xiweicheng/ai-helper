@@ -3970,10 +3970,13 @@ textarea {
   margin-top: 8px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 }
 .asr-device-note {
+  /* 状态行在左、动作在右：隐藏时由 justify-content 把动作留在右边 */
+  margin-right: auto;
   font-size: 12px;
   line-height: 1.6;
   opacity: 0.7;
@@ -3982,10 +3985,9 @@ textarea {
   opacity: 1;
   color: var(--danger-600, #dc2626);
 }
-/* 小号文字动作：列表本来就会随 devicechange 自动刷新，这颗只是兜底，
-   不该像主操作那样占一整行虚线按钮 */
-.asr-device-refresh {
-  margin-left: auto;
+/* 小号文字动作（刷新列表 / 授权麦克风）：列表本来就会随 devicechange 自动刷新，
+   这两频只是兵底 + 排障，不该像主操作那样占一整行虚线按钮 */
+.asr-device-action {
   /* 文字按钮也要能点：上下各 4px 把命中区做到 ~26px，不要只剩 12px 行高 */
   padding: 4px 2px;
   border: none;
@@ -3995,8 +3997,12 @@ textarea {
   font-size: 12px;
   cursor: pointer;
 }
-.asr-device-refresh:hover {
+.asr-device-action:hover {
   text-decoration: underline;
+}
+/* [hidden] 会被部分基类盒模型盖掉，这里显式兜底 */
+.asr-device-action[hidden] {
+  display: none;
 }
 
 /* ==================== 语音输入：快捷触发（单键） ==================== */

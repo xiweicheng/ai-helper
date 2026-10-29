@@ -9,9 +9,12 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   VOICE_INPUT_DEVICE_KEY,
   FOLLOW_SYSTEM_DEVICE,
+  DEVICE_ENUM_TIMEOUT_MS,
   sanitizeDeviceId,
   buildAudioConstraints,
   listAudioInputDevices,
+  probeAudioInputDevices,
+  warmupAudioInputDevices,
   hasAudioInputDevice,
   loadSelectedDeviceId,
   saveSelectedDeviceId,
@@ -106,6 +109,74 @@ describe('listAudioInputDevices：只列真实输入设备', () => {
     expect(await listAudioInputDevices(nav({
       enumerateDevices: async () => { throw nameOf(new Error('boom'), 'NotAllowedError'); },
     }))).toEqual([]);
+  });
+});
+
+describe('probeAudioInputDevices：列不出来时要说清原因', () => {
+  it('正常：返回设备 + 不是超时/不支持', async () => {
+    const res = await probeAudioInputDevices(nav({
+      enumerateDevices: async () => ([
+        { kind: 'audioinput', deviceId: 'mic-usb', label: 'USB Mic' },
+      ]),
+    }));
+    expect(res).toEqual({ devices: [{ deviceId: 'mic-usb', label: 'USB Mic' }], timedOut: false, unsupported: false });
+  });
+
+  it('环境没有 mediaDevices → unsupported（不是超时，不是空列表）', async () => {
+    expect(await probeAudioInputDevices(nav(undefined))).toEqual({ devices: [], timedOut: false, unsupported: true });
+  });
+
+  it('enumerateDevices 永不 resolve（Windows 音频服务半挂）→ 超时兑底，不卡死', async () => {
+    // 关键：以前直接 await enumerateDevices，配置页就永远停在「正在读取设备列表」
+    const res = await probeAudioInputDevices(nav({ enumerateDevices: () => new Promise(() => {}) }), 20);
+    expect(res).toEqual({ devices: [], timedOut: true, unsupported: false });
+  });
+
+  it('enumerateDevices 抛错 → 空列表，但不算超时（不能谎报成「服务没就绪」）', async () => {
+    const res = await probeAudioInputDevices(nav({
+      enumerateDevices: async () => { throw nameOf(new Error('boom'), 'NotAllowedError'); },
+    }));
+    expect(res).toEqual({ devices: [], timedOut: false, unsupported: false });
+  });
+
+  it('默认超时是个有限值（不允许等于 Infinity / 0）', () => {
+    expect(Number.isFinite(DEVICE_ENUM_TIMEOUT_MS)).toBe(true);
+    expect(DEVICE_ENUM_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('warmupAudioInputDevices：先开一次流再枚举', () => {
+  const streamOf = (stopped) => ({ getTracks: () => [{ stop: () => stopped.push(1) }] });
+
+  it('成功开流 → true，并且立刻把轨道停掉（不占着麦克风）', async () => {
+    const stopped = [];
+    const res = await warmupAudioInputDevices(nav({
+      getUserMedia: async () => streamOf(stopped),
+    }));
+    expect(res).toBe(true);
+    expect(stopped).toHaveLength(1);
+  });
+
+  it('没 getUserMedia / 被拒绝 → false（不抛错）', async () => {
+    expect(await warmupAudioInputDevices(nav(undefined))).toBe(false);
+    expect(await warmupAudioInputDevices(nav({}))).toBe(false);
+    expect(await warmupAudioInputDevices(nav({
+      getUserMedia: async () => { throw nameOf(new Error('denied'), 'NotAllowedError'); },
+    }))).toBe(false);
+  });
+
+  it('getUserMedia 挂住 → 超时返回 false；迟到的流也要自己收掉', async () => {
+    const stopped = [];
+    let release;
+    const res = await warmupAudioInputDevices(nav({
+      getUserMedia: () => new Promise((resolve) => { release = () => resolve(streamOf(stopped)); }),
+    }), 20);
+    expect(res).toBe(false);
+    expect(stopped).toHaveLength(0);
+    // 超时之后才 resolve：麦克风不能被一直占着（指示灯会亮）
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toHaveLength(1);
   });
 });
 

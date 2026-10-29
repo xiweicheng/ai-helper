@@ -92,6 +92,94 @@ export function hasAudioInputDevice(list, deviceId) {
   return (Array.isArray(list) ? list : []).some((d) => d?.deviceId === id);
 }
 
+/** enumerateDevices 的超时（Windows 上音频服务半挂时它可能永不 resolve） */
+export const DEVICE_ENUM_TIMEOUT_MS = 2500;
+
+const TIMED_OUT = Symbol('device-enum-timeout');
+
+/**
+ * 带超时的设备枚举：除了设备列表，还要告诉调用方「为什么列不出来」。
+ *
+ * 纯返回空数组是不够的：配置页分不清「没插麦克风」「没授权」「枚举卡死」，
+ * 只能干看一个「正在读取设备列表…」。Windows 上两种形态都真实存在：
+ *   1) 未授权时 enumerateDevices() 可能只给很少甚至空的列表 → 先授权一次再列；
+ *   2) 音频服务状态异常（远程桌面 / 驱动半挂）时它可能永不 resolve → 必须超时兑底。
+ * @param {{navigator?: object}} [deps]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<{devices: Array<{deviceId: string, label: string}>, timedOut: boolean, unsupported: boolean}>}
+ */
+export async function probeAudioInputDevices(deps = {}, timeoutMs = DEVICE_ENUM_TIMEOUT_MS) {
+  const media = mediaDevices(deps);
+  if (!media || typeof media.enumerateDevices !== 'function') {
+    return { devices: [], timedOut: false, unsupported: true };
+  }
+  const wait = Math.max(0, Number(timeoutMs) || DEVICE_ENUM_TIMEOUT_MS);
+  let timer = null;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), wait);
+  });
+  try {
+    const result = await Promise.race([listAudioInputDevices(deps), timeout]);
+    if (result === TIMED_OUT) return { devices: [], timedOut: true, unsupported: false };
+    return { devices: result, timedOut: false, unsupported: false };
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
+/** getUserMedia 预热开的超时（它和 enumerateDevices 一样可能在 Windows 上挂住） */
+export const DEVICE_WARMUP_TIMEOUT_MS = 1500;
+
+/**
+ * 用 getUserMedia 唤醒一次音频子系统，拿到流后立刻把轨道停掉（不占着麦克风）。
+ *
+ * 为什么需要：Windows 上「已授权但音频服务刚启动 / 系统隐私设置半开」时，
+ * enumerateDevices() 会一直不 resolve —— 配置页就只能看到「正在读取设备列表」。
+ * 先成功开一次流，随后的枚举通常立刻返回（Chrome 自己的设置页也是这个套路）。
+ * 只在已授权时作为超时兜底调用；未授权时它会弹授权框，不该在后台偷偷触发。
+ *
+ * @param {{navigator?: object}} [deps]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<boolean>} 是否成功开过一次流
+ */
+export async function warmupAudioInputDevices(deps = {}, timeoutMs = DEVICE_WARMUP_TIMEOUT_MS) {
+  const media = mediaDevices(deps);
+  if (!media || typeof media.getUserMedia !== 'function') return false;
+  const wait = Math.max(0, Number(timeoutMs) || DEVICE_WARMUP_TIMEOUT_MS);
+  const stop = (stream) => {
+    try {
+      stream?.getTracks?.().forEach((track) => track.stop());
+    } catch {
+      /* 清理失败不影响「唤起过」这个结论 */
+    }
+  };
+  // 超时之后才迟到的流必须自己收掉，否则麦克风指示灯会一直亮着
+  let done = false;
+  let stream = null;
+  let timer = null;
+  const opening = Promise.resolve()
+    .then(() => media.getUserMedia({ audio: true }))
+    .then((got) => {
+      if (done) stop(got);
+      else stream = got;
+      return Boolean(got);
+    })
+    .catch(() => false);
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), wait);
+  });
+  let ok;
+  try {
+    ok = await Promise.race([opening, timeout]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    done = true;
+    stop(stream);
+    stream = null;
+  }
+  return ok === true;
+}
+
 function storageArea() {
   try {
     return globalThis.chrome?.storage?.local || null;

@@ -20,6 +20,15 @@
 - **修法**：① 脚本改用 `[Console]::Out.WriteLine('标记')`，标记独占一行（`Console.Out` 自动 flush，`shownTimeout` 的快速探测不受影响）；② `decodePowerShellOutput` 先按标记切行再逐行找 base64，兼容旧脚本/被污染的 stdout；③ `classifyPickResult` 在 `exit 0/2` 且去掉标记后仍有输出却解不出路径时返回 `decode-failed: <片段>`（不再谎报取消），扩展端会走既有的「浏览失败：<原因>」toast，下次出问题能直接看到原因而不是「点了没反应」。
 - **验证**：把 HEAD 版本与修复后版本对同一份真实 stdout（`标记+base64` 同行）做对比 → 修复前 `""`、修复后 `C:\Users\me\ws`；`agent/test/unit/directory-picker.unit.test.js` 37 例全过，新增 5 例（真实形态同行解码、标记换行解码、无标记纯 base64 兼容、脚本标记必须 `WriteLine`、`exit 0` 但解不出 → `decode-failed`）。回归 `node --test agent/test/unit/*.test.js` **825 例**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启后生效。
 
+### 语音输入：输入设备一直显示「正在读取设备列表」（Windows 上枚举不返回）
+
+> 来源：用户反馈「在公司的 Windows 电脑上看语音输入配置，输入设备那里一直显示『读取设备列表』，但列表里只有一个默认值，其他值也看不到」。
+
+- **根因**：`refreshDeviceList()` 里第一个语句就是 `await listAudioInputDevices()`，而它直接 `await navigator.mediaDevices.enumerateDevices()` **没有任何超时**。Windows 上这个调用并不保证会返回（麦克风已授权但系统音频服务刚启动 / 隐私设置半开 / 驱动半挂，远程桌面与公司域机器上尤其常见）—— Promise 永不 settle，函数就永远卡在第一行 await 上：后面的 `menu.innerHTML = …`、`input.value = …`、状态文案赋值**全都没机会执行**。于是两个现象是同一个原因：下拉里只剩 `options.html` 写死的那一项「跟随系统默认」（看起来就是“只有一个默认值”），状态行一直停在初始文案「正在读取设备列表…」。macOS 上枚举总是立即返回，所以只有 Windows 复现。
+- **三个会把它“拖更久”的隐藏诱因**：① 状态行挂了 `data-i18n="toolbox.asrDeviceNoteLoading"`，任何一次 `applyI18n()` 都会把已经刷好的状态文案冲回「正在读取」（外观上就是卡死）；② `devicechange` 在 Windows 音频服务抖动时会连发，每次都重新走一遍枚举，旧结果被并发丢弃、状态行反复被冲回 loading；③ 授权入口只存在于「麦克风权限」小节，而那节跟着语音总开关收起，关着时用户在设备块里根本找不到自救入口。
+- **修法**：① 新增 `probeAudioInputDevices()`，用 `Promise.race` 给枚举加 2.5s 超时兑底，并区分 `timedOut` / `unsupported` / 空列表三种「列不出来」的原因（只回一个空数组，页面就分不清该提示“没插麦克风”还是“枚举卡死”）；② 新增 `warmupAudioInputDevices()`：超时且**已授权**时先用 `getUserMedia` 开一次流（拿完立即 `stop`，超时后迟到的流也自己收掉，不占着麦克风）把音频子系统唤醒，再枚举一次 —— 这是真正把设备列回来的那一步，不只是把卡死换成报错；③ `refreshDeviceList()` 整体 `try/catch`，**任何**异常都必须落成一个可读文案，不再允许停在 loading；④ 状态行去掉 `data-i18n`（改由 JS 管），并只在「尚未拿到过确定结果」时显示 loading，后台刷新不再闪回；⑤ `devicechange` 防抖 400ms；⑥ 设备块内就地补「授权麦克风」按钮（超时 / 读失败 / 未授权时露出，已拒绝则不弹），不再依赖收起的那一节；⑦ 文案补 `asrDeviceTimeout` / `asrDeviceUnsupported` / `asrDeviceReadFailed` / `asrDeviceDenied` 四条（中英文各一份）。
+- **验证**：新增真机探针 `test-results-probes/_voice-device-stall.mjs`（真实 Chromium + dist 包，用 `addInitScript` 在页面脚本前把 `enumerateDevices` 打成永不返回）——**11 项全过**：状态行不再停在「正在读取」、落到确定超时文案、下拉仍渲染出「跟随系统默认」、连点两次刷新后依旧回到确定文案、`devicechange` 连发 6 次后状态行不变回 loading；第二个场景把枚举打成「第一次挂住、之后正常」，验证预热兜底确实把 2 个真实设备列了回来（`enumCalls=3`）。新增 `test/unit/asr-device-loading-guard.unit.test.js`（12 例）把上面的契约钉住：超时常量必须有限、页面不得再裸 `await enumerateDevices`、必须有 catch 兜底、五种失败文案必须中英各一份、状态行不得挂 `data-i18n`、`devicechange` 必须防抖、预热不得占着麦克风；并做了变异验证——把三处契约改回旧写法，对应 4 条守卫如预期失败（确认不是恒真断言）。`audio-input-device.unit.test.js` 补 9 例（超时兑底 / 抛错不误报超时 / `unsupported` 区分 / 默认超时必须是有限值 / 预热成功就停轨 / 预热被拒不抛 / 预热超时时迟到的流也要 `stop`）。既有探针 `_voice-device-select.mjs` **16 项无回退**。回归 `npx vitest run` **212 文件 / 3182 例**全绿、`npx eslint` 无输出、`npm run build:silent` → BUILD_SUCCESS。**需重新加载扩展**（纯扩展侧代码，不涉及代理进程）。
+
 ### 语音输入：可自选输入设备（麦克风）
 
 > 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。

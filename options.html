@@ -851,8 +851,10 @@
           <div class="model-dropdown asr-lang-menu" id="asrDeviceDropdown" role="listbox"></div>
         </div>
         <div class="asr-device-foot">
-          <div class="asr-device-note" id="asrDeviceNote" data-i18n="toolbox.asrDeviceNoteLoading">正在读取设备列表…</div>
-          <button class="asr-device-refresh" id="asrDeviceRefreshBtn" type="button" data-i18n="toolbox.asrDeviceRefresh">刷新列表</button>
+          <!-- 状态行由 JS 管理，不能挂 data-i18n：applyI18n 会把状态文字冲回初始文案（看起来就像卡在「正在读取」） -->
+          <div class="asr-device-note" id="asrDeviceNote" hidden></div>
+          <button class="asr-device-action" id="asrDeviceGrantBtn" type="button" data-i18n="toolbox.asrMicGrantBtn" hidden>授权麦克风</button>
+          <button class="asr-device-action" id="asrDeviceRefreshBtn" type="button" data-i18n="toolbox.asrDeviceRefresh">刷新列表</button>
         </div>
       </div>
 
