@@ -65,6 +65,7 @@ import {
   appendToolCallItems,
   createCodeBlockHtml,
   appendToolResult,
+  createAgentStreamOutput,
   createPreSelectCard,
   finalizeStreamingMessage,
   cancelStreamingTask,
@@ -4163,26 +4164,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
         if (_se() && message.execId) {
           let agentEntry = _agentStreams[message.execId];
           if (!agentEntry) {
-            const outputDiv = document.createElement('div');
-            outputDiv.className = 'agent-stream-output';
-            outputDiv.innerHTML = `
-              <div class="tool-result-title">${t('chatMsg.toolResultTitle')}</div>
-              ${createCodeBlockHtml('', 'agent-stream-content')}
-            `;
-            if (message.toolCallId) {
-              const card = _se().querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`);
-              if (card) {
-                // 放入 body 内，使折叠时输出一并隐藏
-                const body = card.querySelector('.tool-call-body');
-                if (body) body.appendChild(outputDiv); else card.appendChild(outputDiv);
-              }
-            }
-            if (!outputDiv.isConnected) {
-              const sc = _se().querySelector('.stream-content');
-              if (sc) {
-                sc.appendChild(outputDiv);
-              }
-            }
+            const se = _se();
+            // 挂载位置由查找结果决定，不能用 outputDiv.isConnected 判定：
+            // 切换会话期间流式消息元素整体脱离文档，此时保活节点 isConnected 恒为 false
+            const card = message.toolCallId
+              ? se.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
+              : null;
+            const outputDiv = createAgentStreamOutput(card, se.querySelector('.stream-content'));
             agentEntry = { element: outputDiv, stdout: '', stderr: '' };
             _agentStreams[message.execId] = agentEntry;
             addCodeCopyButtons();
