@@ -36,7 +36,7 @@
 
 - 状态圈点击循环 `pending → doing → done`；`doing` 额外显示左侧 2px 竖条与实心点；`done` 移入已完成组并记录 `completedAt`。
 - 备注：仅当存在备注时出现一行「› 备注」，点击就地展开；默认收起，不占空间。
-- 时间：创建时间用相对时间（`2 小时前`）；有截止显示 `⏰ 今天 18:00`；已完成显示 `10-28 完成`。
+- 时间：创建时间用相对时间（`2 小时前`）；截止按**日粒度**设置（`<input type="date">`，落库为当日 00:00 本地时间），显示 `今天` / `明天` / `11-3`；逾期判定也按天比较（`startOfDay(dueAt) < startOfDay(now)`，今日到期不算逾期），逾期时前置告警图标并写作 `已逾期 {日}`；已完成显示 `10-28 完成`。
 - 拖拽：整行 `draggable`，插入位置画紫色虚线，仅组内排序；已完成组不可拖。
 
 **按钮分层（清爽的关键）**
@@ -95,9 +95,10 @@
 ## 7. 测试
 
 - `test/unit/todo-model.unit.test.js`：分组边界（空表 / 全完成）、`order` 缺失回退、状态循环、重排结果、digest 文案与 `withPrompt`、时间格式化（今天/昨天/本年/跨年）。
-- `test/unit/todo-panel-structure.unit.test.js`：入口槽位数为 6；`.todo-item-actions` 默认 `opacity: 0` 且 `:hover/:focus-within` 为 1；样式零硬编码色值（只用 `var(--token)` / `rgba(var(--x-rgb), a)`）；面板复用 `clampPanelToViewport`；`todo-model.js` 不引入 DOM 依赖。
+- `test/unit/todo-manager.unit.test.js`：编排层行为（14 例：成功新增/载入补齐；每条失败路径只撤销本条且必须广播回滚；不存在 id 一律拒绝；并发时序 3 例——串行排队、重排失败不抹期间改好的标题、清除失败不影响期间新增的条目）。
+- `test/unit/todo-panel-structure.unit.test.js`：入口槽位数为 6；`.todo-item-actions` 默认 `opacity: 0` 且 `:hover/:focus-within` 为 1；样式零硬编码色值（只用 `var(--token)` / `rgba(var(--x-rgb), a)`）；面板复用 `clampPanelToViewport`；`todo-model.js` 不引入 DOM 依赖；重渲染前必须先采集草稿与焦点、失败分支必须走 `persist()`、`max-width` 为停靠条留走廊、不留无人调用的导出。
 - 回归：全量 `vitest run` + `npm run build:silent`。
-- 真实 MV3 探针 `test-results-probes/_todo-panel-visual.mjs`：入口尺寸/槽内偏移与兄弟入口逐个比对、快速添加、两次点击状态流转、组默认折叠、hover 前后 `opacity`、真鼠标拖拽改序 + 重载持久化、填入输入框保留草稿、暗色截图、无 `pageerror`。
+- 真实 MV3 探针 `test-results-probes/_todo-panel-visual.mjs`（36 项）：入口尺寸/槽内偏移与兄弟入口逐个比对、快速添加、两次点击状态流转、组默认折叠、hover 前后 `opacity`、真鼠标拖拽改序 + 重载持久化、填入输入框保留草稿、暗色截图、无 `pageerror`；以及代码评审后的回归项：未提交行内编辑在他人操作触发的重渲染中存活、焦点与光标保持、保存后编辑器收起、重载后落库正确，以及 360px 窄窗下面板左缘不把停靠条走廊吃掉、与定时任务同开时 `elementFromPoint` 命中待办，以及删除链路 L1–L3（全局确认弹窗真实出现 → 条目移出且仍弹「已删除」→ 重载后不复活）。
 
 ## 8. 风险
 

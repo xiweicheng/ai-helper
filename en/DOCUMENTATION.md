@@ -39,7 +39,7 @@ The project uses a **five-layer architecture**, communicating via Chrome Extensi
 │  Session Export/Import | Skill Selector | MCP Service Selector│
 │  Chat Export (Word/PDF) | Checkpoint Resume | Message Copy    │
 │  Workspace Management | File Preview | Message Search         │
-│  Message Bookmarks | @ Web Page Selector                      │
+│  Message Bookmarks | @ Web Page Selector | Todo List          │
 │  Context Usage Indicator | Completion Feedback | Notifications│
 └──────────────┬──────────────────────────────┬────────────────┘
                │  chrome.runtime.sendMessage   │
@@ -268,6 +268,10 @@ ai-helper/
 │   │   ├── bookmark-panel.js           # Bookmark UI panel (search, grouped view)
 │   │   ├── search-panel.js             # Message search UI (full-text, dual-mode)
 │   │   ├── schedule-panel.js           # Scheduled task panel (create/edit/history)
+│   │   ├── side-rail.js                # Right entry rail (6 slots, viewport clamp, pointer whitelist)
+│   │   ├── todo-model.js               # Todo pure logic (grouping, date math, Markdown digest)
+│   │   ├── todo-manager.js             # Todo orchestration (optimistic update, serialized writes, rollback)
+│   │   ├── todo-panel.js               # Todo floating panel UI (quick add, inline edit, drag sort)
 │   │   ├── version-info.js             # Version info dialog (version/tag/commit)
 │   │   ├── context-indicator.js        # Context usage indicator + manual compaction entry
 │   │   ├── completion-feedback.js      # Completion feedback (sound/confetti/notification)
@@ -739,6 +743,23 @@ Speak instead of typing — and the **audio never leaves your machine**. Recogni
 
 ---
 
+### 36. Sidebar Todo List
+
+Items that come up mid-conversation no longer need a window switch — one click on the right entry rail captures them, tracks progress, and hands the list back to the AI whenever you want:
+
+- **Sixth rail entry**: sits alongside Workspace / Bookmarks / Message TOC / Search; a badge on the icon shows the open item count live, visible even with the panel collapsed.
+- **Right-edge overlay**: 320px wide over the chat area, re-clamped into the viewport whenever the window resizes. On narrow sidebars it caps at `100vw - 60px`, so it never covers the left "running session dock" corridor; stacking inside the rail is explicit, so the todo list stays visible and clickable even when Scheduled Tasks is open at the same time.
+- **Enter to add**: press Enter (or `+`) in the top input and the item is created, focus stays put for the next one.
+- **Three states**: the leading status circle cycles Pending → In Progress → Done. Completed items form their own group, collapsed by default (the preference persists in `chrome.storage.local`), with a `done / total` progress readout in the header.
+- **Inline editing**: title, note and due date are all edited in place. Notes save with `Ctrl`/`⌘` + `Enter`, cancel with `Esc`; the due date is day-granular, and overdue rows get a warning tint plus ⏰.
+- **Half-typed text survives**: an in-progress title/note/due editor is treated as a draft. When another item's add/update/delete triggers a full re-render, the draft value, focus and caret position are restored in place; only save or cancel clears it.
+- **Drag to reorder**: active group only, with a dashed segment showing the insertion point; moving between groups always goes through the status circle so a drag can never silently change state.
+- **Actions appear on hover**: a row normally shows only the circle and the title — edit/copy/more surface on hover or keyboard focus; low-frequency actions (note, due date, delete) live in the row's `⋯` menu and batch actions (clear completed, fill input box) in the header's `⋯`. Menus render on a `fixed` layer so scrolling never clips them.
+- **One click into the prompt box**: the list becomes a Markdown checklist (status, due date, notes) that is **appended** after the existing draft in the question input rather than replacing it.
+- **Dependable persistence**: data lives in the IndexedDB `todos` store (DB v7) with optimistic updates — the UI changes first, writes are serialized so concurrent edits cannot clobber each other's snapshot, and a failure rolls back only that one item (leaving successful writes intact), broadcasts the rollback so the UI tells the truth, and shows a "save failed" toast instead of failing silently.
+
+---
+
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
 ### Content Extraction (6)
@@ -1165,6 +1186,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 |-----------|---------|-------------|
 | Extension Config | `chrome.storage.local` | API Key, ReAct params, models, image recognition, UI theme (`appTheme`), etc. |
 | Chat Sessions | IndexedDB (`ai-helper-db`) | Active sessions + archived sessions |
+| Sidebar Todos | IndexedDB (`todos`) | Title/status/note/due date/order |
 | UI Prototypes | IndexedDB | Associated by session |
 | Toolbar Config | `chrome.storage.local` | Tool list, ordering, domain blocklist |
 | Input History | `chrome.storage.local` | Auto-dedup management |
@@ -1174,7 +1196,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 
 ### IndexedDB Database Design
 
-`ai-helper-db` (v6), eight object stores:
+`ai-helper-db` (v7), nine object stores:
 
 | Store | Purpose |
 |-------|---------|
@@ -1186,6 +1208,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 | `reactCheckpoints` | ReAct Checkpoints (7-day TTL auto-expiry) |
 | `bookmarks` | Message bookmarks (index: sessionId, pinned, createdAt) |
 | `scheduledTasks` | Scheduled tasks (index: nextRunAt, enabled) |
+| `todos` | Sidebar todos (index: status, createdAt) |
 
 Supports automatic transaction failure recovery and legacy `chrome.storage.local` auto-migration.
 
