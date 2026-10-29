@@ -1,4 +1,4 @@
-// 回归守卫：右侧入口轨道 5 个浮层（工作目录 / 收藏 / 消息目录 / 检索 / 定时任务）
+// 回归守卫：右侧入口轨道 6 个浮层（工作目录 / 收藏 / 消息目录 / 检索 / 待办 / 定时任务）
 // 的边框必须走主题 token，否则亮色下白框压白底、暗色下白框过亮，面板边界与背景糊在一起。
 //
 // 历史写法：border: 1px solid rgba(255,255,255,0.3) + inset 0 1px 0 rgba(255,255,255,0.5)
@@ -25,7 +25,7 @@ function ruleBlock(src, selector) {
   return src.slice(start, end);
 }
 
-const PANEL_SELECTORS = ['.workspace-panel {', '.bookmark-panel {', '.message-toc-panel {', '.search-panel {'];
+const PANEL_SELECTORS = ['.workspace-panel {', '.bookmark-panel {', '.message-toc-panel {', '.search-panel {', '.todo-panel {'];
 
 describe('styles.css 侧边浮层边框走主题 token', () => {
   test.each(PANEL_SELECTORS)('%s 使用 1px var(--border-strong) 描边', (selector) => {

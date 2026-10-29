@@ -16096,9 +16096,10 @@ body.voice-recording-active .input-container {
   max-width: calc(100vw - 44px);
   max-height: min(72vh, 560px);
   background: rgba(var(--surface-rgb), 1);
-  border: 1px solid var(--border-default);
+  /* 浮层边界：与另外 5 个侧边浮层同一套 token（守卫见 side-rail-popup-border-theme） */
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18);
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
