@@ -224,7 +224,7 @@ export function initSchedulePanel() {
       .schedule-panel-toggle.running { animation: sched-btn-glow 1.4s ease-in-out infinite; }
       @keyframes sched-icon-spin { to { transform: rotate(360deg); } }
       @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.3); } 50% { box-shadow: -2px 2px 18px rgba(var(--success-rgb), 0.85); } }
-      .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(var(--surface-rgb), 1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,0.5); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
+      .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(var(--surface-rgb), 1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
       .schedule-panel.open { display: flex; }
       .schedule-panel-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
       .schedule-panel-header .title { font-weight: 600; font-size: 13px; color: var(--text-primary); flex: 1; }

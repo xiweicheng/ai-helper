@@ -12306,8 +12306,9 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  /* 浮层边界：亮/暗主题统一走描边 + 投影，否则白底白框、暗底黑框都会与背景糊在一起 */
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18);
   opacity: 0;
   visibility: hidden;
   transition: all 0.3s ease;
@@ -12898,8 +12899,9 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  /* 浮层边界：亮/暗主题统一走描边 + 投影，否则白底白框、暗底黑框都会与背景糊在一起 */
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18);
   opacity: 0;
   visibility: hidden;
   transition: all 0.3s ease;
@@ -13265,8 +13267,9 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  /* 浮层边界：亮/暗主题统一走描边 + 投影，否则白底白框、暗底黑框都会与背景糊在一起 */
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18);
   opacity: 0;
   visibility: hidden;
   transition: all 0.3s ease;
@@ -13604,8 +13607,9 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 32px var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  /* 浮层边界：亮/暗主题统一走描边 + 投影，否则白底白框、暗底黑框都会与背景糊在一起 */
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18);
   opacity: 0;
   visibility: hidden;
   transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s ease;

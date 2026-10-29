@@ -1165,7 +1165,7 @@ export function startServer() {
         }
       }
 
-      // === 移除允许访问的目录（需认证，不可移除当前工作目录） ===
+      // === 移除允许访问的目录（需认证；默认目录/本会话目录也可移除，只去掉「附加授权」） ===
       if (pathname === '/api/config/allowed-paths/remove' && req.method === 'POST') {
         const targetPath = body.path;
         if (!targetPath || typeof targetPath !== 'string') {
@@ -1187,12 +1187,12 @@ export function startServer() {
 
         try {
           const freshConfig = loadConfig();
-          const currentWorkdir = resolve(freshConfig.workdir || '');
-          // 禁止移除当前工作目录
-          if (resolvedPath === currentWorkdir) {
-            return jsonResponse(res, 400, { success: false, error: t('error.cannotRemoveWorkdir') });
-          }
-
+          // 不拦「全局默认目录 / 本会话目录」：allowedPaths 只是「有效工作目录之外的附加授权」，
+          // 而有效工作目录在 checkPath 的 0.6 分支里无条件放行、从不查白名单。
+          // 拦下来只会造成「列表里删不掉、实际照样能读写」的自相矛盾——
+          // 用户遇到的正是这种：把会话切到别的目录后，去删列表里的全局默认目录被 400 拒绝，
+          // 提示还是「不能移除当前工作目录」（实际当前目录已经是新绑定的那个）。
+          // 移出列表的真实效果只是去掉「附加授权」这一身份。
           const allowedPaths = Array.isArray(freshConfig.allowedPaths) ? freshConfig.allowedPaths : [];
           // 跨平台路径比较：统一分隔符 + 大小写不敏感
           const norm = s => s.replace(/\\/g, '/').toLowerCase();

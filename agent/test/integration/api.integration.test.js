@@ -736,9 +736,30 @@ describe('12. 配置接口（带恢复）', () => {
     assert.equal(res.status, 400);
   });
 
-  test('allowed-paths/remove 移除当前工作目录被拒绝', async () => {
-    const res = await req('/api/config/allowed-paths/remove', { path: ctx.originalWorkdir });
-    assert.equal(res.data.success, false);
+  test('allowed-paths/remove 允许移除「默认目录」：移出列表后仍可访问', async () => {
+    // 回归：扩展端列表里删默认目录项被 400 拒绝（提示「不能移除当前工作目录」），
+    // 但 allowedPaths 只是「有效工作目录之外的附加授权」，而有效工作目录在 checkPath
+    // 的 0.6 分支里无条件放行 —— 拦下来只会让用户删不掉一个其实删了也没影响的项
+    const tempDir = join(ctx.workdir, `_wd_remove_default_${Date.now()}`);
+    try {
+      const switched = await req('/api/config/workdir', { workdir: tempDir });
+      assert.equal(switched.data.success, true, `切换失败: ${JSON.stringify(switched)}`);
+      assert.ok(switched.data.allowedPaths.includes(tempDir), '全局切换应把新默认目录追加进 allowedPaths');
+
+      const removed = await req('/api/config/allowed-paths/remove', { path: tempDir });
+      assert.equal(removed.data.success, true, `默认目录应允许移出允许列表: ${JSON.stringify(removed)}`);
+      assert.ok(!removed.data.allowedPaths.includes(tempDir), '移出后列表里不应再有该目录');
+
+      // 关键：移出白名单后它仍是当前默认目录，读写必须照常可用
+      const listed = await req('/api/fs/list', { path: tempDir });
+      assert.equal(listed.data.success, true, `默认目录移出列表后应仍可访问: ${JSON.stringify(listed)}`);
+    } finally {
+      const cur = await get('/api/status/detail').catch(() => ({}));
+      if (cur.data?.workdir && cur.data.workdir !== ctx.originalWorkdir) {
+        await req('/api/config/workdir', { workdir: ctx.originalWorkdir }).catch(() => {});
+      }
+      await req('/api/fs/delete', { path: tempDir }).catch(() => {});
+    }
   });
 });
 

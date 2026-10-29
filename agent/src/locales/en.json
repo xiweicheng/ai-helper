@@ -15,7 +15,6 @@
     "workdirNotDirectory": "The target path exists but is not a directory",
     "sessionWorkdirMissing": "This session's working directory no longer exists ({workdir}), please pick another one",
     "pathNotAbsolute": "path must be an absolute path",
-    "cannotRemoveWorkdir": "Cannot remove the current working directory, please switch to another directory first",
     "pathNotInAllowedList": "This directory is not in the allowed list",
     "fileNotFound": "File does not exist",
     "dirNotFound": "Directory does not exist",

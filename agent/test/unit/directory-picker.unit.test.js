@@ -35,6 +35,11 @@ function makeChild(step = {}) {
   return child;
 }
 
+/** 真实 stdout 形态：脚本先输出窗口标记，再输出 base64 路径（见 buildPowerShellScript） */
+function withMarker(payload) {
+  return `${SHOWN_MARKER_FOR_TEST}${payload}`;
+}
+
 /** 按顺序消费步骤：每调用一次 spawn 取一个 step（用尽后默认 code 0） */
 function scriptedSpawn(steps) {
   const queue = [...steps];
@@ -168,13 +173,56 @@ describe('pickDirectoryNative', () => {
     assert.equal(r.path, null);
   });
 
-  test('Windows 选中：stdout 为 UTF-8 base64 路径 → 正确解码（中文路径不乱码）', async () => {
+  test('Windows 选中：真实形态（窗口标记 + base64 同行）→ 正确解码（中文路径不乱码）', async () => {
     const picked = 'C:\\Users\\xiweicheng\\项目 目录';
-    const { spawnImpl } = scriptedSpawn([{ stdout: Buffer.from(picked, 'utf8').toString('base64') }]);
+    const { spawnImpl } = scriptedSpawn([{ stdout: withMarker(Buffer.from(picked, 'utf8').toString('base64')) }]);
     const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
     assert.equal(r.success, true);
     assert.equal(r.path, picked);
     assert.equal(r.backend, 'powershell-inline');
+  });
+
+  test('Windows 选中：标记单独一行后再输出 base64 → 正确解码', async () => {
+    const picked = 'D:\\work\\项目';
+    const { spawnImpl } = scriptedSpawn([
+      { stdout: `${SHOWN_MARKER_FOR_TEST}\r\n${Buffer.from(picked, 'utf8').toString('base64')}\r\n` },
+    ]);
+    const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
+    assert.equal(r.success, true);
+    assert.equal(r.path, picked);
+  });
+
+  test('Windows 兼容：stdout 只有 base64（无窗口标记）→ 仍能解码', async () => {
+    const picked = 'C:\\Users\\x\\ws';
+    const { spawnImpl } = scriptedSpawn([{ stdout: Buffer.from(picked, 'utf8').toString('base64') }]);
+    const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
+    assert.equal(r.success, true);
+    assert.equal(r.path, picked);
+  });
+
+  test('窗口标记与路径粘在同一行也不能静默当取消（输入框不回显的根因）', async () => {
+    // 回归：标记用 [Console]::Out.Write 输出时，整行是「标记+base64」，
+    // 「整行必须是 base64」的校验会失配 → 退出码 0 被当成用户取消 → 选了目录却不回显
+    const ps = buildPickPlan('选择目录', 'win32', { env: {} })[0];
+    const picked = 'C:\\Users\\me\\ws';
+    const b64 = Buffer.from(picked, 'utf8').toString('base64');
+    assert.equal(ps.decode({ stdout: `${SHOWN_MARKER_FOR_TEST}${b64}` }), picked);
+    assert.equal(ps.decode({ stdout: `${SHOWN_MARKER_FOR_TEST}\n${b64}` }), picked);
+  });
+
+  test('脚本内窗口标记独占一行（WriteLine）：避免与 base64 粘成一行', () => {
+    const ps = buildPickPlan('选择目录', 'win32', { env: {} })[0];
+    const script = ps.args[ps.args.length - 1];
+    assert.ok(script.includes(`Out.WriteLine('${SHOWN_MARKER_FOR_TEST}')`), '标记必须用 WriteLine 独占一行');
+  });
+
+  test('exit 0 但输出解不出路径 → 必须报 decode-failed，不能被当成“用户取消”', async () => {
+    const garbage = withMarker('这不是base64也不是路径');
+    const { spawnImpl } = scriptedSpawn([{ code: 0, stdout: garbage }, { code: 0, stdout: garbage }, { code: 0, stdout: garbage }]);
+    const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
+    assert.equal(r.success, false, '有输出却解不出路径时不能静默返回取消');
+    assert.ok(String(r.attempts[0].error).startsWith('decode-failed'), r.attempts[0].error);
+    assert.ok(r.error.includes('decode-failed'));
   });
 
   test('Windows exit 1 且无 stderr → 必须报失败，不能被当作“用户取消”静默吞掉', async () => {
@@ -191,7 +239,7 @@ describe('pickDirectoryNative', () => {
     const picked = 'C:\\Users\\x\\ws';
     const { spawnImpl, calls } = scriptedSpawn([
       { code: 1, stderr: 'TypeNotFound: Could not load System.Windows.Forms' },
-      { stdout: Buffer.from(picked, 'utf8').toString('base64') },
+      { stdout: withMarker(Buffer.from(picked, 'utf8').toString('base64')) },
     ]);
     const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
     assert.equal(r.success, true);
