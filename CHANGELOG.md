@@ -34,6 +34,56 @@
 - 视觉探针 `test-results-probes/_session-archive-dock-ui.mjs`：用真实 `theme.css` / `styles.css` 渲染真实 DOM 结构，断言浏览器算出来的值（芯片 26×26、三态动画名、等距堆叠不重叠、`×` 悬停才显、tooltip 不挡点击、34px 走廊、z 序 停靠条 < 会话列表 < 归档区、归档面板全屏、悬停归档行才出操作按钮、无页面异常）→ 亮色 / 暗色各 **25 项全过 / EXT_UI_PASS**。
 - 回归：`npx vitest run` **209 文件 / 3161 例**全过、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
 
+### 切换工作目录：会话级切换不再弹「不在允许路径之内」，勾选「设为默认目录」对列表项生效
+> 来源：用户反馈两点——①「在会话里切换工作目录会弹窗说当前目录不在允许的路径之内，但会话绑定的工作目录本来就不需要加进允许路径吧，这个提示有问题」；②「设默认目录必须在输入框里填 + 勾选才行，如果我是从上面的目录列表里选一项，要怎么把它设为默认？勾一下再点列表项行不行，现在实现了吗」。
+
+- **①的根因（提示内容与真实后果不符）**：确认框那句「切换后将自动创建目录并加入允许列表」只对**全局切换**成立。代理端 `scope=session` 分支只 `bindSessionWorkdir()` 写 `session-workdirs.json`，**既不写 `allowedPaths` 也不 `saveConfig`**；而会话目录在 `checkPath` 的 0.6 分支无条件放行、根本不查白名单。所以「不在允许列表」对一次会话级切换既不是风险也不会发生，拿它劝阻用户纯属误导。修法：把确认门控从 `!isAllowed` 收紧为 `!isAllowed && willChangeGlobalDefault`（`willChangeGlobalDefault = !effectiveSessionId || setAsDefault`，即只有旧版代理端回落全局、或勾了「同时设为代理默认目录」才弹），文案同时改成讲清真实后果的「本次会把它设为代理默认目录…（影响未绑定的会话）」，标题改「确认切换到新默认目录」。
+- **②的核查结论（功能本来就在，缺的是可达性与反馈）**：列表项点击与「切换」按钮都走同一个 `doSwitch`，而 `doSwitch` 会读 `setDefaultCheckbox.checked`，所以「勾选 + 点列表项」一直是有效的；真正挡住用户的是三处缺口。修法：① 弹窗列表原本只渲染 `allowedPaths`，而会话级切换不写白名单 → 切到一个列表外目录后再打开弹窗，连「当前」那一项都看不见（这正是 ① 那句误导提示的土壤）；现在列表 = `白名单 ∪ 代理默认目录 ∪ 本会话有效目录`（跨平台判重、非 ASCII 安全比较），被合并进来的展示项不给「×」（它没有「附加授权」身份可移除）；② 标「当前」的项此前被 `:not(.current)` 一刀切禁点，于是「先把会话切到 X、再把 X 提为默认」这条最常见的路径点了没反应 → 现在勾选后该项可点且光标跟随变 `pointer`，点击走 `performSetAgentDefault()`（只做全局默认切换、不动会话绑定）；③ 复选框补 `title` 提示（中英各一份）说明「勾选后点列表里的目录或点『切换』都会同时把它设为代理默认目录」，成功 toast 按是否真的改了默认目录分两套（`switchedToAndSetDefault` / `setAsDefaultDone`），否则用户无从判断勾选有没有生效。
+- **顺手收口**：`performSwitchWorkdir` 里「代理默认目录变了要同步的三处缓存」抽成 `syncAgentDefaultWorkdirCache()`，与新增的 `performSetAgentDefault()` 共用（会话级切换不得写 `state.agentPlatform.workdir`，这条不变量现在只有一处写入口）；代理端移除接口的路由注释仍写着「不可移除当前工作目录」，与上一轮已删掉的守卫矛盾，一并改正。
+- **验证**：真实 MV3 探针 `test-results-probes/_workdir-ext-ui.mjs` 新增 5h 段 23 项（会话级切到列表外目录 → **不出现** `#customConfirmOverlay` 且 `config.json` 的 `workdir`/`allowedPaths` 分毫未动；列表里能看见标「当前」的会话目录且不配「×」；勾选后点「当前」项 → `workdir` 落库且会话绑定不变；勾选后点列表非当前项 → 绑定 + 默认同时生效；不勾选切列表外目录不弹、勾选后切列表外目录**仍要弹**且文案含「设为代理默认目录」；确认后 `allowedPaths` 才真的追加）→ **89 项全过 / EXT_UI_PASS**。新增 `test/unit/workdir-switch-confirm.unit.test.js`（14 例：代理端会话分支无 `allowedPaths`/`saveConfig` 而全局分支有、`willChangeGlobalDefault` 门控、旧 `confirmSwitchToNew` 文案已删且新 key 唯一调用点、列表点击与按钮共用 `doSwitch`、`computeDisplayPaths` 三源合并与跨平台判重、× 仅给白名单项、光标跟随、`defaultApplied` 两套 toast、`state.defaultWorkdir` 只有一处写入口、tooltip 中英齐备）；`workdir-allowed-list-remove.unit.test.js` 的 3 处锚点与断言随列表渲染改造更新。回归 `npx vitest run` **212 文件 / 3182 例**、`node --test agent/test/unit/*.test.js` **825 例**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启、扩展需重新加载后生效。
+
+
+### 流式输出：切换会话后命令执行结果掉出工具折叠区
+
+> 来源：用户反馈「正在跑命令的会话切到别的会话，等它输出完再切回来，命令执行结果不在工具执行的折叠里，单独显示成一块」。
+
+- **根因**：`AGENT_STREAM` 首次创建输出块时，用 `if (!outputDiv.isConnected)` 判断「是否已成功放进工具卡片」，失败才退回 `.stream-content`。但切换会话时 `chatContainer` 会被重建，流式消息元素只由 `_streamingElements` 保活、**整体脱离文档** —— 此时它的整棵子树 `isConnected` 恒为 `false`，哪怕已经 `appendChild` 进 `.tool-call-body` 也会被再 `appendChild` 搬到 `.stream-content`，于是切回会话后结果落在折叠区外。
+- **修法**：`chat-streaming.js` 新增 `createAgentStreamOutput(card, streamContent)`，挂载位置**只由卡片查找结果决定**（卡片在 → 进 `.tool-call-body`；卡片缺失才退回 `.stream-content`），彻底不再用 `isConnected` 判定；`chat-manager` 的 `AGENT_STREAM` 分支改为调用它。
+- **验证**：新增 `test/unit/agent-stream-output-placement.unit.test.js`（6 例：脱离文档态输出仍落在 tool-call-body、文档内行为不变、卡片缺失才回落 stream-content、缺 `.tool-call-body` 时退化挂卡片、源码守卫禁止 `!outputDiv.isConnected` 回归）；回归 `npx vitest run` **212 文件 / 3182 例**、`npx eslint` 无输出、`npm run build:silent` → BUILD_SUCCESS。**需重新加载扩展**。
+
+### 侧边栏浮层：工作目录 / 收藏 / 消息目录 / 检索 / 定时任务补可见边框
+
+> 来源：用户反馈「右侧那些图标点开的弹框没有边框色，白色主题下跟背景糊在一起，分不清弹框边界；暗色主题也要照顾到」。
+
+- **根因**：5 个浮层的边框都写死成 `1px solid rgba(255,255,255,0.3)` 外加 `inset 0 1px 0 rgba(255,255,255,0.5)` 白色内高光，投影走 `--shadow-sm`。亮色下白框叠白底等于没有；暗色下白框刺眼且与主题无关。
+- **修法**：统一改用主题 token —— `border: 1px solid var(--border-strong)`（亮 `#ccc` / 暗 `#4a5160`）+ `box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18)`（暗色下自动翻成微光晕）。涉及 `styles.css` 的 `.workspace-panel` / `.bookmark-panel` / `.message-toc-panel` / `.search-panel` 与 `schedule-panel.js` 的内联样式；嵌入模式下工作目录面板的左右分栏边框不受影响。
+- **验证**：新增真实 MV3 探针 `test-results-probes/_side-rail-popup-border.mjs`（dist 包 + light/dark 双主题，逐面板断言 1px 描边存在、描边色与页面底色可区分、描边色等于 `--border-strong` 计算值）**31 项全过**，截图留档 `_side-rail-border-{theme}-*.png`；新增 `test/unit/side-rail-popup-border-theme.unit.test.js`（14 例源码守卫）；`npm run theme:check` 无违规。
+
+### 切换工作目录：允许移除列表里的「默认目录」（此前被误判成「当前工作目录」）
+> 来源：用户反馈「删除列表项时提示『不能移除当前工作目录』，但我当前会话已经切到其它目录了，删不掉我没绑定的那个目录」。
+
+- **根因（三方对「当前」的定义不一致）**：切换弹窗里的「当前」标记比的是 `/api/status/detail` 的 `workdir`（**本会话有效目录**，用户已切到 `/B`），而代理端移除接口的守卫比的是 `config.workdir`（**全局默认目录**，还是 `/A`）。于是 `/A` 在列表里不被标「当前」、还带着删除按钮，点下去必被 400 拒绝，提示写「不能移除当前工作目录」——用户看到的就是「我明明没在用这个目录」。
+- **为什么这条守卫本身就是错的**：`allowedPaths` 的语义是「有效工作目录之外的**附加授权**」，而有效工作目录在 `checkPath` 的 0.6 分支里**无条件放行、从不查白名单**。所以把全局默认目录（或本会话目录）从列表里删掉，删不掉任何可用性；拦下来只会造成「列表里不让删、实际照样能读写」的自相矛盾。
+- **修法**：① 代理端删掉 `cannotRemoveWorkdir` 守卫（连同 zh/en 两条误导文案），移除接口对任何路径都只做「从 allowedPaths 里摘掉」；② 扩展端列表给默认目录加「默认」徽标（当前目录保留「当前」徽标），**所有列表项都渲染删除按钮**（此前当前项没有按钮、默认项有按钮却删不掉，两条都是死路）；③ 移除默认/当前目录时换一套确认文案与成功提示（「移出列表后仍照常可用，只是不再作为附加授权显示」），普通附加目录仍保留原来那句「移除后 AI 将无法访问该目录」—— 那句对它才是真的。
+- **验证**：新增真实代理探针 `test-results-probes/_allowed-list-remove.mjs`（临时 HOME + 真实 `startServer` + 真实配对）：切全局默认为新目录 → 移除它 → **200 且 allowedPaths 里消失** → `/api/fs/list` 仍 200（0.6 放行）→ `detail.defaultWorkdir` 仍是它；对照组「普通附加目录移出后 `fs/list` 变 403」证明移除不是空操作 → **13 项全过**。反向验证：把旧守卫临时加回去再跑同一探针 → 恰好「移除默认目录」一项 FAIL（`status=400`），与用户遇到的症状一致，去掉后全绿。单测新增 `test/unit/workdir-allowed-list-remove.unit.test.js`（7 例：守卫已删除、i18n 无残留、默认目录取值与徽标、删除按钮对所有项渲染、两类文案分支），`agent/test/integration/api.integration.test.js` 里「移除当前工作目录被拒绝」改为「允许移除且移出后仍可访问」。回归 `npx vitest run` **208 文件 / 3128 例**、`node --test agent/test/unit/*.test.js` **825 例**、真实 MV3 探针 `_workdir-ext-ui.mjs` **66 项**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启后生效。
+
+### 切换工作目录：Windows「浏览…」选完目录不回显（窗口标记吃掉了路径解码）
+> 来源：用户反馈「在公司 Windows 电脑上切换工作目录，通过浏览选择目录，弹窗弹出来了，但选完目录后没有回显到输入框里」（macOS 上正常）。
+
+- **根因**：Windows 后端为了让「窗口到底有没有弹出来」可判定，脚本会在 `ShowDialog` 之前先向 stdout 写一个窗口标记 `@@AI_HELPER_PICK_SHOWN@@`，再用 `[Console]::Out.Write` 写选中路径的 UTF-8 base64。两次 `Write` 之间没有换行，stdout 实际是 `标记+base64` **拼在同一行**；而解码侧 `decodePowerShellOutput` 的校验是「整行必须匹配 base64 字符集」（`@` `_` 都不是），于是必然失配 → 解出空路径 → 退出码 0 被 `classifyPickResult` 归为「对话框正常关闭但没选」→ **静默当作用户取消**，输入框不回显、也没有任何提示。macOS 走 `osascript`（路径直接在 stdout 的文本行里），不经这段，所以只有 Windows 复现。
+- **为什么之前没被测出来**：单测里「Windows 选中」用例的 fake stdout 只喂了 base64（没有标记），真实线上永远带标记 —— 测试与实现各说各话。
+- **修法**：① 脚本改用 `[Console]::Out.WriteLine('标记')`，标记独占一行（`Console.Out` 自动 flush，`shownTimeout` 的快速探测不受影响）；② `decodePowerShellOutput` 先按标记切行再逐行找 base64，兼容旧脚本/被污染的 stdout；③ `classifyPickResult` 在 `exit 0/2` 且去掉标记后仍有输出却解不出路径时返回 `decode-failed: <片段>`（不再谎报取消），扩展端会走既有的「浏览失败：<原因>」toast，下次出问题能直接看到原因而不是「点了没反应」。
+- **验证**：把 HEAD 版本与修复后版本对同一份真实 stdout（`标记+base64` 同行）做对比 → 修复前 `""`、修复后 `C:\Users\me\ws`；`agent/test/unit/directory-picker.unit.test.js` 37 例全过，新增 5 例（真实形态同行解码、标记换行解码、无标记纯 base64 兼容、脚本标记必须 `WriteLine`、`exit 0` 但解不出 → `decode-failed`）。回归 `node --test agent/test/unit/*.test.js` **825 例**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启后生效。
+
+### 语音输入：输入设备一直显示「正在读取设备列表」（Windows 上枚举不返回）
+
+> 来源：用户反馈「在公司的 Windows 电脑上看语音输入配置，输入设备那里一直显示『读取设备列表』，但列表里只有一个默认值，其他值也看不到」。
+
+- **根因**：`refreshDeviceList()` 里第一个语句就是 `await listAudioInputDevices()`，而它直接 `await navigator.mediaDevices.enumerateDevices()` **没有任何超时**。Windows 上这个调用并不保证会返回（麦克风已授权但系统音频服务刚启动 / 隐私设置半开 / 驱动半挂，远程桌面与公司域机器上尤其常见）—— Promise 永不 settle，函数就永远卡在第一行 await 上：后面的 `menu.innerHTML = …`、`input.value = …`、状态文案赋值**全都没机会执行**。于是两个现象是同一个原因：下拉里只剩 `options.html` 写死的那一项「跟随系统默认」（看起来就是“只有一个默认值”），状态行一直停在初始文案「正在读取设备列表…」。macOS 上枚举总是立即返回，所以只有 Windows 复现。
+- **三个会把它“拖更久”的隐藏诱因**：① 状态行挂了 `data-i18n="toolbox.asrDeviceNoteLoading"`，任何一次 `applyI18n()` 都会把已经刷好的状态文案冲回「正在读取」（外观上就是卡死）；② `devicechange` 在 Windows 音频服务抖动时会连发，每次都重新走一遍枚举，旧结果被并发丢弃、状态行反复被冲回 loading；③ 授权入口只存在于「麦克风权限」小节，而那节跟着语音总开关收起，关着时用户在设备块里根本找不到自救入口。
+- **修法**：① 新增 `probeAudioInputDevices()`，用 `Promise.race` 给枚举加 2.5s 超时兑底，并区分 `timedOut` / `unsupported` / 空列表三种「列不出来」的原因（只回一个空数组，页面就分不清该提示“没插麦克风”还是“枚举卡死”）；② 新增 `warmupAudioInputDevices()`：超时且**已授权**时先用 `getUserMedia` 开一次流（拿完立即 `stop`，超时后迟到的流也自己收掉，不占着麦克风）把音频子系统唤醒，再枚举一次 —— 这是真正把设备列回来的那一步，不只是把卡死换成报错；③ `refreshDeviceList()` 整体 `try/catch`，**任何**异常都必须落成一个可读文案，不再允许停在 loading；④ 状态行去掉 `data-i18n`（改由 JS 管），并只在「尚未拿到过确定结果」时显示 loading，后台刷新不再闪回；⑤ `devicechange` 防抖 400ms；⑥ 设备块内就地补「授权麦克风」按钮（超时 / 读失败 / 未授权时露出，已拒绝则不弹），不再依赖收起的那一节；⑦ 文案补 `asrDeviceTimeout` / `asrDeviceUnsupported` / `asrDeviceReadFailed` / `asrDeviceDenied` 四条（中英文各一份）。
+- **验证**：新增真机探针 `test-results-probes/_voice-device-stall.mjs`（真实 Chromium + dist 包，用 `addInitScript` 在页面脚本前把 `enumerateDevices` 打成永不返回）——**11 项全过**：状态行不再停在「正在读取」、落到确定超时文案、下拉仍渲染出「跟随系统默认」、连点两次刷新后依旧回到确定文案、`devicechange` 连发 6 次后状态行不变回 loading；第二个场景把枚举打成「第一次挂住、之后正常」，验证预热兜底确实把 2 个真实设备列了回来（`enumCalls=3`）。新增 `test/unit/asr-device-loading-guard.unit.test.js`（12 例）把上面的契约钉住：超时常量必须有限、页面不得再裸 `await enumerateDevices`、必须有 catch 兜底、五种失败文案必须中英各一份、状态行不得挂 `data-i18n`、`devicechange` 必须防抖、预热不得占着麦克风；并做了变异验证——把三处契约改回旧写法，对应 4 条守卫如预期失败（确认不是恒真断言）。`audio-input-device.unit.test.js` 补 9 例（超时兑底 / 抛错不误报超时 / `unsupported` 区分 / 默认超时必须是有限值 / 预热成功就停轨 / 预热被拒不抛 / 预热超时时迟到的流也要 `stop`）。既有探针 `_voice-device-select.mjs` **16 项无回退**。回归 `npx vitest run` **212 文件 / 3182 例**全绿、`npx eslint` 无输出、`npm run build:silent` → BUILD_SUCCESS。**需重新加载扩展**（纯扩展侧代码，不涉及代理进程）。
+
 ### 语音输入：可自选输入设备（麦克风）
 
 > 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。

@@ -1135,6 +1135,32 @@ export function createCodeBlockHtml(codeContent, extraPreClass = '') {
 }
 
 /**
+ * 创建 Agent 命令流式输出容器，并决定挂载位置
+ * 优先放进对应工具卡片的 body（折叠时随卡片一起隐藏），卡片缺失时才退回 stream-content。
+ *
+ * 判定"是否已放进卡片"必须靠显式的挂载结果，不能用 outputDiv.isConnected：
+ * 用户切换会话期间流式消息元素整体脱离文档，此时整棵子树 isConnected 恒为 false，
+ * 旧写法会把已放进 tool-call-body 的输出再搬去 stream-content，切回会话后
+ * 命令执行结果就落在折叠区外，单独显示成一块。
+ * @param {HTMLElement|null} card - 对应的工具卡片（找不到时为 null）
+ * @param {HTMLElement|null} streamContent - 卡片缺失时的兜底挂载点
+ * @returns {HTMLElement} 输出容器（始终返回，未找到挂载点时保持游离）
+ */
+export function createAgentStreamOutput(card, streamContent) {
+  const outputDiv = document.createElement('div');
+  outputDiv.className = 'agent-stream-output';
+  outputDiv.innerHTML = `
+    <div class="tool-result-title">${t('chatMsg.toolResultTitle')}</div>
+    ${createCodeBlockHtml('', 'agent-stream-content')}
+  `;
+  // 放入 body 内，使折叠时输出一并隐藏
+  const body = card ? (card.querySelector('.tool-call-body') || card) : null;
+  const mount = body || streamContent;
+  if (mount) mount.appendChild(outputDiv);
+  return outputDiv;
+}
+
+/**
  * 在流式消息的工具卡片中添加执行结果
  * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
  */

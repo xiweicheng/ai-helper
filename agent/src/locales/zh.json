@@ -15,7 +15,6 @@
     "workdirNotDirectory": "目标路径已存在但不是目录",
     "sessionWorkdirMissing": "本会话的工作目录不存在或已被删除（{workdir}），请重新选择目录",
     "pathNotAbsolute": "path 必须是绝对路径",
-    "cannotRemoveWorkdir": "不能移除当前工作目录，请先切换到其它目录",
     "pathNotInAllowedList": "该目录不在允许列表中",
     "fileNotFound": "文件不存在",
     "dirNotFound": "目录不存在",
