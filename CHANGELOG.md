@@ -4,6 +4,14 @@
 
 ## 2026-10-29
 
+### 切换工作目录：Windows「浏览…」选完目录不回显（窗口标记吃掉了路径解码）
+> 来源：用户反馈「在公司 Windows 电脑上切换工作目录，通过浏览选择目录，弹窗弹出来了，但选完目录后没有回显到输入框里」（macOS 上正常）。
+
+- **根因**：Windows 后端为了让「窗口到底有没有弹出来」可判定，脚本会在 `ShowDialog` 之前先向 stdout 写一个窗口标记 `@@AI_HELPER_PICK_SHOWN@@`，再用 `[Console]::Out.Write` 写选中路径的 UTF-8 base64。两次 `Write` 之间没有换行，stdout 实际是 `标记+base64` **拼在同一行**；而解码侧 `decodePowerShellOutput` 的校验是「整行必须匹配 base64 字符集」（`@` `_` 都不是），于是必然失配 → 解出空路径 → 退出码 0 被 `classifyPickResult` 归为「对话框正常关闭但没选」→ **静默当作用户取消**，输入框不回显、也没有任何提示。macOS 走 `osascript`（路径直接在 stdout 的文本行里），不经这段，所以只有 Windows 复现。
+- **为什么之前没被测出来**：单测里「Windows 选中」用例的 fake stdout 只喂了 base64（没有标记），真实线上永远带标记 —— 测试与实现各说各话。
+- **修法**：① 脚本改用 `[Console]::Out.WriteLine('标记')`，标记独占一行（`Console.Out` 自动 flush，`shownTimeout` 的快速探测不受影响）；② `decodePowerShellOutput` 先按标记切行再逐行找 base64，兼容旧脚本/被污染的 stdout；③ `classifyPickResult` 在 `exit 0/2` 且去掉标记后仍有输出却解不出路径时返回 `decode-failed: <片段>`（不再谎报取消），扩展端会走既有的「浏览失败：<原因>」toast，下次出问题能直接看到原因而不是「点了没反应」。
+- **验证**：把 HEAD 版本与修复后版本对同一份真实 stdout（`标记+base64` 同行）做对比 → 修复前 `""`、修复后 `C:\Users\me\ws`；`agent/test/unit/directory-picker.unit.test.js` 37 例全过，新增 5 例（真实形态同行解码、标记换行解码、无标记纯 base64 兼容、脚本标记必须 `WriteLine`、`exit 0` 但解不出 → `decode-failed`）。回归 `node --test agent/test/unit/*.test.js` **825 例**、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。代理进程需重启后生效。
+
 ### 语音输入：可自选输入设备（麦克风）
 
 > 来源：用户反馈「语音输入到底用哪个麦克风？我没地方选。别的语音输入都会列一个设备列表，或者自动选」。

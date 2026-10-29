@@ -128,7 +128,10 @@ function buildPowerShellScript(title) {
     // owner 只是为了让对话框置顶；某些会话下 Form 句柄创建会失败，这时必须降级而不是整体报错
     '$owner = $null',
     'try { $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $null = $owner.Handle } catch { $owner = $null }',
-    `[Console]::Out.Write('${SHOWN_MARKER}'); [Console]::Out.Flush()`,
+    // 标记必须独占一行（WriteLine）：它与下面的 base64 路径都用 Write 输出，
+    // 粘成一行会让「整行必须是 base64」的解码校验必然失败，把「用户选了目录」
+    // 误判成「用户取消」——表现为输入框不回显且没有任何提示
+    `[Console]::Out.WriteLine('${SHOWN_MARKER}')`,
     '$r = $null',
     'if ($null -ne $owner) { $r = $f.ShowDialog($owner) } else { $r = $f.ShowDialog() }',
     'if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($f.SelectedPath))); exit 0 }',
@@ -191,7 +194,9 @@ function looksLikePath(value) {
 
 /** PowerShell 后端：stdout 为 UTF-8 base64 编码的路径（SHOWN_MARKER 行会被自动跳过） */
 function decodePowerShellOutput(stdout) {
-  const raw = String(stdout || '').trim();
+  // 先把窗口标记替换成换行再切行：旧脚本用 Write 把标记和 base64 粘成一行，
+  // 整行校验必然失配（'@' '_' 不是 base64 字符），这里按标记切开保证仍能解出路径
+  const raw = String(stdout || '').split(SHOWN_MARKER).join('\n').trim();
   if (!raw) return '';
   // 只取最后一行非空内容（防止任何前缀噪声）
   const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
@@ -336,7 +341,21 @@ function classifyPickResult(runResult, item) {
 
   if (item.kind === 'powershell' || item.kind === 'vbs') {
     // 退出码是我们自己脚本约定的：2=取消；0=对话框正常关闭但没选
-    if (code === 2 || code === 0) return { success: true, path: null, available: true };
+    if (code === 2 || code === 0) {
+      // 去掉窗口标记后还剩内容却解不出路径：说明「用户选了、我们没读懂」。
+      // 这种必须报错，否则会被当成取消静默吞掉（用户只看到输入框没反应）
+      const residue = String(runResult.stdout || '').split(SHOWN_MARKER).join('').trim();
+      if (residue) {
+        return {
+          success: false,
+          path: null,
+          available: true,
+          exitCode: code ?? null,
+          error: `decode-failed: ${residue.slice(0, 160)}`,
+        };
+      }
+      return { success: true, path: null, available: true };
+    }
     return {
       success: false,
       path: null,
@@ -577,6 +596,7 @@ async function doPickDirectory(title, options) {
  *   error?: string, attempts?: Array<object>, diagnostics?: string, environment?: object}>}
  *   - 选中：{ success: true, path, available: true, backend }
  *   - 用户取消：{ success: true, path: null, available: true }
+ *   - 选中但路径解不出（脚本输出被污染等）：{ success: false, error: 'decode-failed: …' }
  *   - 环境不支持：{ success: false, path: null, available: false, error: 'no-dialog-tool: …' | 'no-display' }
  *   - 后端都失败：{ success: false, path: null, available: false, error: 'all-backends-failed: …', attempts }
  *   - 超时：{ success: false, path: null, available: true, error: 'timeout', attempts }
