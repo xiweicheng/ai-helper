@@ -82,6 +82,30 @@
 
 **顺便回答「卡死了图标还删不删得掉」**：真在跑的没有 `×` 是刻意的（给执行态画 `×` 会被读成「取消任务」）；卡死要靠上面那三条同时成立才判陈旧并露出 `×`。**如实说明还剩一个洞**：若后台 Service Worker 自身 hung 住、`activeReactLoops` 里仍留着该会话，则条件②「后台不认」永不成立 → 永不判陈旧 → 停靠条上删不掉，只能点进该会话用停止按钮，或等 SW 被回收重启（届时面板本地脏的 `generating` / `pending` 都不持久化，能自愈）。按用户选择本次不加「立即删除」入口。
 
+### 点停靠条芯片不再只是「打开会话」：额外定位到那一轮用户问题
+> 来源：用户追问「点击左侧那个执行状态的圆圈，除了打开会话，有没有定位到会话里对应的那个用户问题？我看好像只是打开了会话，滚动到的是当前正在执行任务的那条问题，而不是芯片对应的那条。」
+
+**先证实观察成立，并说清用户看到的滚动到底是什么**：
+- 芯片点击原先只调 `handleSessionSwitch(entry.sessionId)`，**没有任何定位逻辑** —— 用户看到的落点来自另一条路：切换会话后 150ms 会恢复 `chrome.storage.local['scrollPosition_<sid>']`（写入点在滚动监听），而 rebuild 消息走的是 `addMessage(..., scroll=false)`。所以那个位置是「这个会话上次看到哪儿」，**与芯片代表哪条问题无关**，单轮会话下两者恰好重合，才像是定位了。
+- 定位选「问题」而不是「回答」：回答在跑的过程中随执行日志与流式输出不断变高，定位过去要么停在半截、要么很快跑出视野；问题是这一轮的起点且尺寸稳定，且芯片主行显示的本来就是这个问题（完成态同样定位到问题）。
+
+**改法**
+- `utils.js` 新增导出 `focusMessageInView(messageId)`：遍历容器内 `[data-message-id]` 比 `dataset.messageId` 而**不拼属性选择器**（消息 id 是用户内容，jsdom 也没有 `CSS.escape`，两条路径不一致），命中则 `scrollIntoView({ behavior: 'instant', block: 'start' })` + 复用既有 `bookmark-highlight` 闪烁（新常量 `MESSAGE_HIGHLIGHT_MS = 2000`）；找不到返回 `false`。`instant` 而非 `smooth`：点哪个就该看到哪个，长途平滑滚动会把定位意图盖掉。
+- `handleSessionSwitch(sessionId, { focusMessageId = null })`：只在传了锚点时给 `session-switched` 事件加 `skipScrollRestore: true`（收藏 / 搜索 / 定时任务跳转用的是同一套契约），否则 500ms 后会被内建的恢复位置拽回来；渲染稳定后（`FOCUS_SETTLE_MS = 500`）再定位，且先查 `state.activeSessionId !== sessionId`（用户已切走就别抢视野）；**定位失败回落 `restoreSessionScroll`**，不强行停在顶部。新参默认不传 → 所有既有调用点行为零变化。
+- 采集侧 `lastUserMessageFrom` 连带返回 `messageId`；`readQuestions()` 返回 `{ questions, anchors }`；`questionCache` 改存 `{ text, messageId, stamp }`；`buildDockEntries` 新增 `anchors` 入参并落 `entry.anchorMessageId`；`pickEntryLabel` 新增 `from` 字段（`queued` / `question` / `title` / `''`）——**只有 `from === 'question'` 才给锚点**：排队原文根本还没入库、标题回落没有对应消息节点，拿上一轮的 id 去定位只能算骗人。（该字段叫 `from` 而不叫 `source`：`entry.source` 已被「定时任务 / 普通聊天」占用，同名不义。）
+- 两处点击（芯片、溢出面板行）统一走新增的 `openDockEntry(entry)`，`session-dock.js` 里 `handleSessionSwitch(` 只允许出现 1 处（有源码守卫）。
+- `styles.css` 补一处降级：`prefers-reduced-motion: reduce` 下原本的 `animation: none` 会把 `.bookmark-highlight::before` 的描边退回 `transparent` —— 定位反馈等于被关掉。现改为 reduce 下保留 2s **静态** `--warning-strong` 描边（不闪但仍看得见）。
+
+**验证**
+- `test/unit/session-dock.unit.test.js` 56 → **67 例**：锚点采集（`messageHistory` 倒序取第一条有文本的 user 消息）、排队条目不许拿上一轮 id 冒充定位、标题回落不出锚点、`from` 四值、DOM 上点击芯片传 `{ focusMessageId: 'msg_other_q2' }` / 只有标题时传 `null` / 溢出行同样传锚点，以及两条源码守卫（缓存必须存 `messageId`、切换调用口只留一处）。
+- 新建 `test/unit/message-focus-anchor.unit.test.js`（**7 例**）：`instant` + `block:'start'` 参数、fake timers 在 1999/2000ms 验证高亮按时撤除、找不到返回 `false` 且不碰任何节点、`msg_1` 不误中 `msg_12`、空 id 与容器缺失、特殊字符 id（`a"b'c\d`）走 dataset 仍安全、CSS 里没新造第三种闪烁类。
+- 视觉探针 50 → **61 项**，亮 / 暗各 **61/61 全过 / EXT_UI_PASS**：真实滚动后目标顶边与容器 padding box 顶 `offset=1px`、`scrollTop=374/523`（确实滚了且没退到底）、脉冲动画名、峰值帧确有 inset 晕光（否则下面那条是空跑）、晕光相对降幅 **亮 8.3% / 暗 7.3%**（门槛 ≤10%）、高亮不改布局、撤高亮后无残余动画、reduce 下不闪但描边仍在。探针自身两个坑一并记录：`.chat-container` 是 `flex: 1`，只写 inline `height` 会被 flex 撑满、滚动条根本不出现（需 `max-height`）；`scrollIntoView` 对齐的是**padding box** 而非 border box，拿 `getBoundingClientRect().top` 直接比会把 11px 上内边距算成偏差。
+- 回归：`npx eslint src/ agent/` 无输出、`npx vitest run` **215 文件 / 3276 例**全过、`npm run build` 成功；`dist/assets/side_panel.js` 里核验压缩后仍有 `function As(e,{focusMessageId:t=null}={})`、`...t?{skipScrollRestore:!0}:{}`、`scrollIntoView({behavior:\`instant\`,block:\`start\`})` 只多这一处、`XT(e){As(e.sessionId,{focusMessageId:e.anchorMessageId||null})}` 且芯片与溢出行**两个调用点**都在；`dist/assets/side_panel.css` 里 reduce 静态描边规则确实打包进去。
+
+**如实报告两条既有 / 遗留问题（本次没动）**：
+- 用户气泡正文对比度实测 **亮 3.66 / 暗 2.45**（`--text-on-brand` on `--brand-500`），均低于 4.5:1，暗色明显更糟 —— 这是既有配色，与本次定位无关，所以探针只卡「晕光相对基线降幅」而不拿它当本次的门，数值以 INFO 行报出。是否单开一项修由用户定。
+- 排队中的那条原文还没进消息库，点它的芯片仍然只能打开会话、**不做假定位**（只走原有的恢复滚动）。
+
 ### 切换工作目录：会话级切换不再弹「不在允许路径之内」，勾选「设为默认目录」对列表项生效
 > 来源：用户反馈两点——①「在会话里切换工作目录会弹窗说当前目录不在允许的路径之内，但会话绑定的工作目录本来就不需要加进允许路径吧，这个提示有问题」；②「设默认目录必须在输入框里填 + 勾选才行，如果我是从上面的目录列表里选一项，要怎么把它设为默认？勾一下再点列表项行不行，现在实现了吗」。
 
