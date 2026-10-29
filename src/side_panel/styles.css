@@ -13196,6 +13196,20 @@ body {
   z-index: 1;
 }
 
+/* 减少动态偏好下把「2 秒脉冲」换成「2 秒静态描边」，而不是什么都不留。
+ * 直接 animation: none 会让描边回到上面那条 transparent —— 定位反馈等于被关掉；
+ * 停靠条点芯片的「这就是那一轮」提示也就白给。 */
+@media (prefers-reduced-motion: reduce) {
+  .bookmark-highlight,
+  .bookmark-highlight::before {
+    animation: none;
+  }
+
+  .bookmark-highlight::before {
+    border-color: var(--warning-strong);
+  }
+}
+
 @keyframes bookmarkHighlightPulse {
   0% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.7), inset 0 0 0 0 rgba(var(--warning-rgb), 0.3); }
   15% { box-shadow: 0 0 0 12px rgba(var(--warning-rgb), 0), inset 0 0 20px 4px rgba(var(--warning-rgb), 0.3); }
@@ -16715,3 +16729,593 @@ body.voice-recording-active .input-container {
 .todo-menu-item.danger:hover {
   background: rgba(var(--danger-rgb), 0.1);
 }
+
+/* ============================================
+   会话归档区
+   归档 = 给会话打 archivedAt 移出视野，消息/目录绑定/执行记录全部保留。
+   面板叠在会话列表（10003）之上，是唯一能看到并操作归档会话的入口。
+   ============================================ */
+.session-archive-panel {
+  z-index: 10004;
+}
+
+/* 头部三个元素（返回 / 标题 / 关闭）：标题吃满剩余宽度，紧贴返回按钮 */
+.session-archive-panel .session-dropdown-header {
+  gap: 8px;
+}
+
+.session-archive-panel .session-dropdown-header-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-archive-back {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.session-archive-back:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* 会话列表底部的「归档区」入口 */
+.session-archive-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.session-archive-entry:hover {
+  background: var(--brand-soft-bg);
+  /* 12px 文字在软底上需要 -700 档才过 4.5:1 */
+  color: var(--brand-700);
+}
+
+.session-archive-entry svg {
+  flex-shrink: 0;
+}
+
+.session-archive-entry-label {
+  flex: 1;
+  text-align: left;
+}
+
+.session-archive-entry-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--brand-500);
+  color: var(--text-on-brand);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* 归档面板底部提示条 */
+.session-archive-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-default);
+  padding: 8px 12px;
+}
+
+.session-archive-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* 归档行的归档时间：让位给右侧操作按钮（与普通行的时间一致的交互） */
+.session-archive-item .session-dropdown-item-time {
+  pointer-events: none;
+}
+
+/* 会话列表行内的「归档」按钮 */
+.session-dropdown-item-archive {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--text-disabled);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.session-dropdown-item:hover .session-dropdown-item-archive {
+  opacity: 1;
+  visibility: visible;
+}
+
+.session-dropdown-item-archive:hover {
+  color: var(--brand-500);
+  background: rgba(var(--brand-rgb), 0.1);
+}
+
+/* 归档行的恢复 / 彻底删除按钮：只在 hover 时出现，避免静态列表过于嘈杂 */
+.session-dropdown-item-restore,
+.session-dropdown-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--text-disabled);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.session-archive-item:hover .session-dropdown-item-restore,
+.session-archive-item:hover .session-dropdown-item-delete {
+  opacity: 1;
+  visibility: visible;
+}
+
+.session-dropdown-item-restore:hover {
+  color: var(--brand-500);
+  background: rgba(var(--brand-rgb), 0.1);
+}
+
+.session-dropdown-item-delete:hover {
+  color: var(--danger-500);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
+/* ============================================
+   执行中会话停靠条（左侧边缘）
+   三态：running（呼吸 + 旋转弧）/ queued（琥珀）/ done（绿色 + 完成脉冲）
+   上边界由 session-dock.js 与聊天区可视区对齐，从顶部向下堆叠 ——
+   左侧垂直中心已被「消息跳转热区」(.chat-nav-hotzone) 占用。
+   ============================================ */
+.session-dock {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 100px;
+  width: 26px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  /* 低于会话列表面板（10003）：面板打开时整条被盖住，不抢视线 */
+  z-index: 10002;
+}
+
+.session-dock.show {
+  display: flex;
+}
+
+.session-dock-item {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.session-dock-chip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.session-dock-item:hover .session-dock-chip {
+  transform: translateX(1px) scale(1.06);
+}
+
+/* 执行中：品牌色 + 呼吸光环 + 外圈旋转弧，一眼看出「还在跑」 */
+.session-dock-item[data-phase="running"] .session-dock-chip {
+  border-color: rgba(var(--brand-rgb), 0.55);
+  background: var(--brand-soft-bg);
+  /* 11px 字重 600 不算大字号：必须用 -700 档才过 4.5:1（-500 在软底上约 3.6:1） */
+  color: var(--brand-700);
+  animation: session-dock-breathe 1.8s ease-in-out infinite;
+}
+
+.session-dock-item[data-phase="running"] .session-dock-chip::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(var(--brand-rgb), 0.85);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: session-dock-spin 1.1s linear infinite;
+}
+
+@keyframes session-dock-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.08);
+  }
+}
+
+@keyframes session-dock-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 排队中：琥珀色，静态呼吸（任务尚未真正开始，不应比执行中更抢眼） */
+.session-dock-item[data-phase="queued"] .session-dock-chip {
+  border-color: rgba(var(--warning-rgb), 0.55);
+  background: var(--warning-soft-bg);
+  color: var(--warning-strong);
+}
+
+/* 完成态：绿色对勾，停留到用户进来查看或手动点掉 */
+.session-dock-item[data-phase="done"] .session-dock-chip {
+  border-color: rgba(var(--success-rgb), 0.6);
+  background: var(--success-soft-bg);
+  color: var(--success-strong);
+  font-size: 12px;
+}
+
+/* 刚进入完成态：弹一下 + 绿色扩散环，替代「静默消失」 */
+.session-dock-item.is-flash .session-dock-chip {
+  animation: session-dock-pop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+
+@keyframes session-dock-pop {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.55);
+  }
+  35% {
+    transform: scale(1.22);
+    box-shadow: 0 0 0 5px rgba(var(--success-rgb), 0.2);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0);
+  }
+}
+
+/* 排队条数徽标 */
+.session-dock-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: var(--brand-500);
+  color: var(--text-on-brand);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* 定时任务触发的执行：右下角小表盘角标 */
+.session-dock-clock {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+
+.session-dock-clock::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1px;
+  height: 3px;
+  background: var(--text-tertiary);
+  transform: translate(-50%, -100%) rotate(30deg);
+  transform-origin: bottom center;
+}
+
+/* 可手动清掉的 × ：完成态，以及已失效的执行中条目 */
+.session-dock-dismiss {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-tertiary);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.session-dock-item:hover .session-dock-dismiss,
+.session-dock-item:focus-within .session-dock-dismiss {
+  opacity: 1;
+}
+
+.session-dock-dismiss:hover {
+  color: var(--danger-500);
+  border-color: rgba(var(--danger-rgb), 0.6);
+}
+
+/* 悬停提示：用户问题（主）+ 会话标题（副，仅在与问题不同时）+ 实时状态，定位由 JS 按芯片位置算出 */
+.session-dock-tip {
+  position: fixed;
+  z-index: 10005;
+  max-width: 220px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--elev-surface);
+  box-shadow: var(--elev-pop);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+  pointer-events: none;
+}
+
+.session-dock-tip.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* 主行是用户原话，长度不可控：给两行，再多就截断。
+ * 一行 nowrap 会把长问题切得看不出是哪个任务，反而失去这次改动的意义。 */
+.session-dock-tip-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* 中英混排 + 长 URL 时必须允许断词，否则会顶宽 tooltip */
+  word-break: break-word;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 副行：会话标题，比主行弱一档，只用来定位「这是哪个会话」 */
+.session-dock-tip-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  /* 11px 小字要过 4.5:1 得用 -secondary，-tertiary 只够装饰性文本 */
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-dock-tip-status {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 停靠条出现时给聊天区留出左侧走廊：排版让位，而不是把芯片透明叠在文字上 */
+body.has-session-dock .chat-container {
+  padding-left: 34px;
+}
+
+/* 动效克制：尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .session-dock-item[data-phase="running"] .session-dock-chip,
+  .session-dock-item[data-phase="running"] .session-dock-chip::after,
+  .session-dock-item.is-flash .session-dock-chip {
+    animation: none;
+  }
+}
+
+/* ---------- 停靠条：已失效的执行中条目 ----------
+ * 后台已经不再报告该会话、且超时没收到执行更新（见 session-dock.js 的 isEntryStale）。
+ * 本来就不该再装成「执行中」：转灰、虚线描边、呼吸光环与旋转弧全部停掉——
+ * 还在动就等于在说谎。同时把 × 露出来，否则脏状态会让条目永久删不掉。
+ */
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+  /* 11px 字重 600 需要 -secondary 档才稳过 4.5:1，-disabled 只是装饰性灰 */
+  color: var(--text-secondary);
+  animation: none;
+  box-shadow: none;
+}
+
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip::after {
+  display: none;
+}
+
+/* 失效条目也允许手动清掉（与完成态同一套交互） */
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip:hover {
+  border-color: var(--danger-500);
+}
+
+/* ---------- 停靠条：+N 聚合芯片 ----------
+ * 条目放不下时占用最后一个位置，代表被折叠的条目。
+ * 用中性色 + 虚线，避开三态状态色，免得被读成「第四种执行状态」。
+ */
+.session-dock-item--more .session-dock-more {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-dock-item--more .session-dock-more:hover,
+.session-dock-item--more .session-dock-more:focus-visible,
+.session-dock-item--more .session-dock-more.is-open {
+  background: var(--brand-soft-bg);
+  border-color: rgba(var(--brand-rgb), 0.6);
+  /* 与执行中芯片同一档：软底上要 -700 才过 4.5:1 */
+  color: var(--brand-700);
+}
+
+/* ---------- 停靠条：溢出面板 ----------
+ * 被 +N 折叠掉的会话列表。做成正常宽度的浮层，滚动放在这里——
+ * 26px 宽的芯片列里塞滚动条根本没法用。
+ */
+.session-dock-overflow {
+  position: fixed;
+  left: 34px;
+  width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  border-radius: 8px;
+  background: var(--elev-surface);
+  box-shadow: var(--elev-pop);
+  z-index: 10003;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.session-dock-overflow.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+.session-dock-overflow-header {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 2px;
+}
+
+.session-dock-overflow-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-dock-overflow-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.session-dock-overflow-row:hover,
+.session-dock-overflow-row:focus-visible {
+  background: var(--brand-soft-bg);
+}
+
+.session-dock-overflow-title {
+  /* 长标题必须能截断：flex 子项默认 min-width:auto 会把容器顶宽 */
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-dock-overflow-status {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-dock-overflow-row[data-phase="running"] .session-dock-overflow-status {
+  color: var(--brand-700);
+}
+
+.session-dock-overflow-row[data-phase="queued"] .session-dock-overflow-status {
+  color: var(--warning-strong);
+}
+
+.session-dock-overflow-row[data-phase="done"] .session-dock-overflow-status {
+  color: var(--success-strong);
+}
+
+.session-dock-overflow-row[data-stale="true"] .session-dock-overflow-status {
+  color: var(--text-secondary);
+}
+
+/* 溢出面板也遵守减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .session-dock-overflow,
+  .session-dock-tip {
+    transition: none;
+  }
+}
+

@@ -1131,6 +1131,39 @@ export function buildMessageJumpGroups(container) {
   return groups;
 }
 
+/** 定位高亮的停留时长：与收藏/搜索/问答跳转同一口径 */
+const MESSAGE_HIGHLIGHT_MS = 2000;
+
+/**
+ * 把某条消息滚进聊天区视野并短暂高亮（按 messageId 定位）。
+ *
+ * 贴顶而不是居中：点「执行中/已完成」的停靠芯片进来时，用户要先确认
+ * 「这是我问的哪件事」，再看它跑得怎么样——问题贴顶后，一屏里同时装得下
+ * 原话和它下方的回答/执行日志开头。落到底部等于没定位（回到流式尾部）。
+ *
+ * 用遍历 dataset 比对而不是属性选择器插值：messageId 虽只含 base36 与下划线，
+ * 但拼进 CSS 属性值要靠转义兜底，而 jsdom 不提供 CSS.escape，两条路径会不一致。
+ * @param {string} messageId - 目标消息的 messageId
+ * @returns {boolean} 是否定位成功；失败时调用方需自行回落（不能默默停在顶部）
+ */
+export function focusMessageInView(messageId) {
+  if (!messageId || typeof document === 'undefined') return false;
+  const container = document.getElementById('chatContainer');
+  if (!container) return false;
+  let target = null;
+  for (const node of container.querySelectorAll('[data-message-id]')) {
+    if (node.dataset.messageId === String(messageId)) { target = node; break; }
+  }
+  if (!target) return false;
+
+  // instant：这是「点你就想看你点的」的跳转，平滑滚会让画面长途爬行，盖过定位意图
+  target.scrollIntoView({ behavior: 'instant', block: 'start' });
+  // 高亮沿用既有 bookmark-highlight，不再造第三种闪烁
+  target.classList.add('bookmark-highlight');
+  setTimeout(() => target.classList.remove('bookmark-highlight'), MESSAGE_HIGHLIGHT_MS);
+  return true;
+}
+
 /**
  * 判定当前所在组：第一组「底边已进入视口阈值以下」的消息。
  * 被顶边切掉一半的组不算当前，避免连按上一条时原地不动。

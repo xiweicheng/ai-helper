@@ -202,7 +202,38 @@
     </div>
     <div class="session-dropdown-list" id="sessionDropdownList"></div>
     <div class="session-dropdown-footer">
+      <button class="session-archive-entry" id="sessionArchiveEntry" data-i18n-title="session.archiveEntryTitle" title="查看归档会话">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+        <span class="session-archive-entry-label" data-i18n="session.archiveEntry">归档区</span>
+        <span class="session-archive-entry-count" id="sessionArchiveEntryCount" hidden></span>
+      </button>
       <button class="session-dropdown-close-all" id="sessionDropdownCloseAll" data-i18n="session.closeAll">关闭全部</button>
+    </div>
+  </div>
+
+  <!-- 归档区面板（全屏覆盖，会话列表面板底部的「归档区」入口进入，层级高于会话列表） -->
+  <div class="session-dropdown session-archive-panel" id="sessionArchivePanel">
+    <div class="session-dropdown-header">
+      <button class="session-archive-back" id="sessionArchiveBackBtn" data-i18n-title="session.backToSessionList" title="返回会话列表">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <span class="session-dropdown-header-title" data-i18n="session.archivePanelTitle">归档区</span>
+      <button class="session-dropdown-header-close" id="sessionArchiveCloseBtn" data-i18n-title="common.close" title="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="session-dropdown-search">
+      <svg class="session-dropdown-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input type="text" data-i18n-placeholder="session.archiveSearchPlaceholder" placeholder="搜索归档会话..." id="sessionArchiveSearch" />
+      <button class="session-dropdown-search-clear" id="sessionArchiveSearchClear" title="清除搜索" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="session-dropdown-list" id="sessionArchiveList"></div>
+    <div class="session-archive-footer">
+      <span class="session-archive-hint" data-i18n="session.archiveHint">归档只是移出视野，随时可以恢复</span>
     </div>
   </div>
   

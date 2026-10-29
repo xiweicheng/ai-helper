@@ -11,6 +11,7 @@ import { initMessageToc } from './message-toc.js';
 import { initContextIndicator, runCompaction, computeCurrentUsage, updateContextIndicator } from './context-indicator.js';
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
+import { initSessionDock } from './session-dock.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initMessageJumpNav } from './message-jump-nav.js';
 import { initMessageFullscreen, getSessionDOMSnapshot } from './message-fullscreen.js';
@@ -4582,6 +4583,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { updateBookmarkButtons, updateBookmarkBadge } = await import('./bookmark-panel.js');
   updateBookmarkButtons();
   updateBookmarkBadge();
+});
+document.addEventListener('DOMContentLoaded', () => {
+  // 执行中会话停靠条：左侧边缘常驻，集中展示运行中/排队中/刚完成的会话
+  initSessionDock();
 });
 document.addEventListener('DOMContentLoaded', async () => {
   // 队列：先注入唯一发送入口（sendMessage），再初始化接力与排队条 UI

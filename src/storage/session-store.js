@@ -81,15 +81,19 @@ async function cleanupOrphanScrollPositions() {
 }
 
 /**
- * 加载所有会话（兼容旧 API 返回格式）
+ * 加载会话列表（兼容旧 API 返回格式）
+ * 归档会话默认不在列表里：标签栏、「全部会话」、导出等入口一律看不到它们，
+ * 只有归档区（listArchivedSessions）能拿到。
+ * @param {{includeArchived?: boolean}} [options]
  * @returns {Promise<{activeSessionId: string|null, list: Array}>}
  */
-export async function loadSessions() {
+export async function loadSessions({ includeArchived = false } = {}) {
   await init();
-  const [list, activeId] = await Promise.all([
+  const [all, activeId] = await Promise.all([
     idb.getAllSessions(),
     idb.getActiveSessionId(),
   ]);
+  const list = includeArchived ? all : all.filter((s) => !s.archivedAt);
   // 按 order 排序，没有 order 的按 createdAt 兜底
   list.sort((a, b) => {
     if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
@@ -418,6 +422,14 @@ export async function switchToSession(sessionId) {
     return false;
   }
 
+  // 归档会话被收藏 / 旧入口直接打开时先解除归档：否则切进去了，标签栏和会话列表里
+  // 也查不到它（loadSessions 默认过滤归档会话），用户会以为切换失败。
+  if (targetSession.archivedAt) {
+    delete targetSession.archivedAt;
+    targetSession.order = await nextSessionOrder();
+    await idb.putSession(targetSession);
+  }
+
   await idb.setActiveSessionId(sessionId);
 
   state.activeSessionId = sessionId;
@@ -645,7 +657,69 @@ export async function reorderSessions(orderedIds) {
 }
 
 /**
- * 归档当前会话
+ * 标签栏末尾的排序位（现有未归档会话的最大 order + 1）
+ * 恢复归档会话时用它落位，避免与既有 order 撞号后排序结果不确定。
+ */
+async function nextSessionOrder() {
+  const all = await idb.getAllSessions();
+  let max = -1;
+  for (const s of all) {
+    if (s.archivedAt) continue;
+    if (typeof s.order === 'number' && s.order > max) max = s.order;
+  }
+  return max + 1;
+}
+
+/**
+ * 把一个会话移入归档区（可逆）。
+ * 只写 archivedAt，不动 messages / workdir 绑定 / ReAct checkpoint —— 归档的语义是
+ * 「移出视野」，不是「清空」。队列条目与完成标记由调用方（side_panel/session-manager.js）
+ * 先校验/清理，本函数只负责数据落库。
+ * @param {string} sessionId
+ * @returns {Promise<boolean>}
+ */
+export async function archiveSession(sessionId) {
+  if (!sessionId) return false;
+  const session = await idb.getSession(sessionId);
+  if (!session) return false;
+  if (session.archivedAt) return true;
+  session.archivedAt = new Date().toISOString();
+  // 归档的会话不可能正在生成（调用方已拦截），这里顺手清掉可能残留的脏标记
+  session.isGenerating = false;
+  return idb.putSession(session);
+}
+
+/**
+ * 从归档区恢复为普通会话（回到标签栏末尾）
+ * @param {string} sessionId
+ * @returns {Promise<boolean>}
+ */
+export async function unarchiveSession(sessionId) {
+  if (!sessionId) return false;
+  const session = await idb.getSession(sessionId);
+  if (!session || !session.archivedAt) return false;
+  delete session.archivedAt;
+  session.order = await nextSessionOrder();
+  return idb.putSession(session);
+}
+
+/**
+ * 归档区列表（按归档时间倒序，最新的在最前）
+ * @returns {Promise<Array>}
+ */
+export async function listArchivedSessions() {
+  await init();
+  const all = await idb.getAllSessions();
+  return all
+    .filter((s) => s.archivedAt)
+    .sort((a, b) => new Date(b.archivedAt || 0) - new Date(a.archivedAt || 0));
+}
+
+/**
+ * 清空当前对话时保存一份快照（旧通道，与「会话归档区」不是同一件事）。
+ * 快照进独立 archivedSessions 表（上限 20、仅 RAG 的 all_sessions 检索可见），
+ * 随后会话本身被删除。用户可见的「归档 / 恢复 / 彻底删除」走
+ * archiveSession / unarchiveSession / listArchivedSessions（会话对象上的 archivedAt 字段）。
  */
 export async function archiveCurrentSession() {
   if (!state.messageHistory || state.messageHistory.length === 0) return;

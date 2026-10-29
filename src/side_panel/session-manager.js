@@ -174,6 +174,72 @@ export async function restoreArchivedSession(archivedId) {
   return store.restoreArchivedSession(archivedId);
 }
 
+// ==================== 归档区（用户可见的归档） ====================
+//
+// 与上面的 archiveCurrentSession / restoreArchivedSession 不是同一件事：
+// 那两个是「清空对话」时写进独立 archivedSessions 表的旧快照通道（上限 20、无 UI）。
+// 本节的归档可逆：只给会话对象打 archivedAt，消息、工作目录绑定、checkpoint 全部保留。
+
+/**
+ * 归档区列表（按归档时间倒序）
+ */
+export async function loadArchivedSessions() {
+  return store.listArchivedSessions();
+}
+
+/**
+ * 判断会话当前能否归档。
+ * 执行中/排队中的会话不允许归档：归档后标签栏与会话列表都看不到它，
+ * 而任务还在后台继续写消息，用户既看不到进度也找不到入口去停。
+ * @param {string} sessionId
+ * @returns {{ok: boolean, reason?: 'running'|'queued'|'missing'}}
+ */
+export function isSessionArchivable(sessionId) {
+  if (!sessionId) return { ok: false, reason: 'missing' };
+  if (state.generatingSessionIds.has(sessionId) || state.pendingCallApiSessionIds.has(sessionId)) {
+    return { ok: false, reason: 'running' };
+  }
+  if (queueStore.getQueuedCount(sessionId) > 0) {
+    return { ok: false, reason: 'queued' };
+  }
+  return { ok: true };
+}
+
+/**
+ * 归档一个会话（可逆）。
+ * 当前会话被归档后该切到哪里由调用方（session-manager-ui）负责。
+ * @param {string} sessionId
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export async function archiveSession(sessionId) {
+  const check = isSessionArchivable(sessionId);
+  if (!check.ok) return check;
+  const done = await store.archiveSession(sessionId);
+  if (!done) return { ok: false, reason: 'missing' };
+  // 归档会话不参与「完成待查看」提示：否则标签栏/停靠条会留下一个永远点不到的条目
+  if (state.completedSessionIds.has(sessionId)) {
+    state.completedSessionIds.delete(sessionId);
+    await persistCompletedSessions();
+    document.dispatchEvent(new CustomEvent('generating-state-changed'));
+  }
+  return { ok: true };
+}
+
+/**
+ * 从归档区恢复为普通会话（回到标签栏末尾），不负责切换
+ */
+export async function restoreSession(sessionId) {
+  return store.unarchiveSession(sessionId);
+}
+
+/**
+ * 彻底删除归档会话：故意复用 deleteSession 而非 deleteStoreSession，
+ * 否则会漏清队列条目、附件、完成标记（那条路径只有 UI 层知道）。
+ */
+export async function deleteArchivedSession(sessionId) {
+  return deleteSession(sessionId);
+}
+
 /**
  * 从导出的会话数据导入
  */

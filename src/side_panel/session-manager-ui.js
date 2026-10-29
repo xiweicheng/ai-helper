@@ -6,7 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
-import { showToast } from './utils.js';
+import { showToast, focusMessageInView } from './utils.js';
 import {
   createSession,
   switchToSession,
@@ -17,7 +17,12 @@ import {
   reorderSessions,
   duplicateSession,
   clearSessionCompleted,
-  hydrateSessionWorkdir
+  hydrateSessionWorkdir,
+  archiveSession,
+  isSessionArchivable,
+  loadArchivedSessions,
+  restoreSession,
+  deleteArchivedSession
 } from './session-manager.js';
 import { getQueuedCount, getRecent } from './queue-store.js';
 import logger from '../shared/logger.js';
@@ -48,6 +53,26 @@ registerTranslations('zh', {
     todayFormat: '今天 {hour}:{minute}',
     yesterdayFormat: '昨天 {hour}:{minute}',
     daysAgo: '{count} 天前',
+    archive: '归档会话',
+    archiveEntry: '归档区',
+    archiveEntryTitle: '查看归档会话',
+    archivePanelTitle: '归档区',
+    archiveSearchPlaceholder: '搜索归档会话...',
+    archiveEmpty: '暂无归档会话',
+    archiveNoMatch: '未找到匹配的归档会话',
+    archiveHint: '归档只是移出视野，随时可以恢复',
+    archiveBusyRunning: '该会话任务还在执行，完成后再归档',
+    archiveBusyQueued: '该会话还有排队任务，先清空队列再归档',
+    archived: '已归档到归档区',
+    archivedRestored: '已恢复会话「{title}」',
+    archivedAt: '归档于 {time}',
+    restore: '恢复',
+    restoreTitle: '恢复到会话列表',
+    deleteForever: '彻底删除',
+    confirmDeleteForeverTitle: '彻底删除会话',
+    confirmDeleteForeverMessage: '「{title}」将被彻底删除，消息与执行记录都无法恢复。确定继续吗？',
+    archiveDeleted: '已彻底删除会话「{title}」',
+    backToSessionList: '返回会话列表',
   },
 });
 registerTranslations('en', {
@@ -75,6 +100,26 @@ registerTranslations('en', {
     todayFormat: 'Today {hour}:{minute}',
     yesterdayFormat: 'Yesterday {hour}:{minute}',
     daysAgo: '{count}d ago',
+    archive: 'Archive session',
+    archiveEntry: 'Archived',
+    archiveEntryTitle: 'View archived sessions',
+    archivePanelTitle: 'Archived sessions',
+    archiveSearchPlaceholder: 'Search archived sessions...',
+    archiveEmpty: 'No archived sessions',
+    archiveNoMatch: 'No archived sessions found',
+    archiveHint: 'Archiving only hides a session — you can restore it anytime',
+    archiveBusyRunning: 'This session is still running. Archive it when it finishes',
+    archiveBusyQueued: 'This session still has queued tasks. Clear the queue first',
+    archived: 'Moved to archive',
+    archivedRestored: 'Session "{title}" restored',
+    archivedAt: 'Archived {time}',
+    restore: 'Restore',
+    restoreTitle: 'Restore to session list',
+    deleteForever: 'Delete permanently',
+    confirmDeleteForeverTitle: 'Delete session permanently',
+    confirmDeleteForeverMessage: '"{title}" will be permanently deleted. Messages and execution logs cannot be recovered. Continue?',
+    archiveDeleted: 'Session "{title}" permanently deleted',
+    backToSessionList: 'Back to sessions',
   },
 });
 
@@ -287,6 +332,8 @@ export async function renderSessionTabs(prefetchedData = null) {
   bindAddButton();
   // 绑定下拉面板事件
   bindDropdownEvents();
+  // 绑定归档面板与「归档区」入口（幂等：renderSessionTabs 会被反复调用）
+  initArchivePanel();
 
   // 鼠标滚轮水平滚动支持
   bindWheelScroll(scrollContainer);
@@ -452,6 +499,9 @@ async function openDropdown() {
   dropdownState.filteredSessions = sortByUpdatedAt([...sessionsData.list]);
   dropdownState.highlightIndex = -1;
   dropdownState.visible = true;
+
+  // 归档区入口的条数徽标只在本面板里可见，打开时刷一次就够（不必跟着每次标签栏重渲染读库）
+  void refreshArchiveEntryCount();
 
   renderDropdownList();
   dropdown.classList.add('show');
@@ -691,6 +741,19 @@ function renderDropdownList() {
       filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
     });
     actionsWrapper.appendChild(duplicateBtn);
+
+    // 归档按钮（移出视野、随时可恢复；执行中/排队中的会话会被拦下并提示）
+    const archiveBtn = document.createElement('span');
+    archiveBtn.className = 'session-dropdown-item-archive';
+    archiveBtn.title = t('session.archive');
+    archiveBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
+    archiveBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      await archiveSessionFlow(session.id);
+      filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
+    });
+    actionsWrapper.appendChild(archiveBtn);
 
     // 关闭按钮
     const closeBtn = document.createElement('span');
@@ -932,15 +995,352 @@ function showCustomConfirm(message, title) {
   });
 }
 
+// ==================== 会话归档区 ====================
+//
+// 归档 = 给会话打 archivedAt，从标签栏 / 「全部会话」/ 全局搜索里消失，但消息、
+// 目录绑定、checkpoint 全部保留。归档区是唯一能看到并操作它们的入口（恢复 / 彻底删除）。
+
+/** 归档面板列表缓存（仅用于计数徽标与测试断言） */
+let archivedListCache = [];
+/** 归档面板搜索词 */
+let archiveSearchText = '';
+/** 归档面板与入口是否已绑事件（renderSessionTabs 反复调用，只能绑一次） */
+let archivePanelInited = false;
+
+/**
+ * 归档一个会话（唯一入口：标签右键菜单、会话列表行操作都走这里）。
+ * 当前会话被归档后必须切走 —— 标签栏与会话列表都已过滤归档会话，
+ * 停在归档会话上等于把用户困在一个列表里看不见的会话上。
+ */
+async function archiveSessionFlow(sessionId) {
+  if (!sessionId) return;
+  const check = isSessionArchivable(sessionId);
+  if (!check.ok) {
+    if (check.reason === 'running') showToast(t('session.archiveBusyRunning'), 'warning');
+    else if (check.reason === 'queued') showToast(t('session.archiveBusyQueued'), 'warning');
+    return;
+  }
+
+  const wasActive = sessionId === state.activeSessionId;
+  const res = await archiveSession(sessionId);
+  if (!res?.ok) {
+    if (res?.reason === 'running') showToast(t('session.archiveBusyRunning'), 'warning');
+    else if (res?.reason === 'queued') showToast(t('session.archiveBusyQueued'), 'warning');
+    else showToast(t('session.operationFailed', { message: res?.reason || 'unknown' }), 'error');
+    return;
+  }
+
+  // 停靠条等外部 UI 同步移除该会话条目
+  document.dispatchEvent(new CustomEvent('session-archived', { detail: { sessionId } }));
+
+  if (wasActive) {
+    await switchAwayFromArchived(sessionId);
+  } else {
+    const sessionsData = await loadSessions();
+    state.sessions = sessionsData.list;
+    renderSessionTabs(sessionsData);
+  }
+
+  await refreshArchiveEntryCount();
+  showToast(t('session.archived'), 'info');
+}
+
+/**
+ * 归档掉当前会话后把面板切到剩余会话里最近更新的一个；一个都没有就新建一个空会话。
+ * 不复用 newSession()：那条路径会先 saveCurrentSession()，把内存态写回刚归档的会话。
+ */
+async function switchAwayFromArchived(archivedId) {
+  const sessionsData = await loadSessions();
+  const remaining = sortByUpdatedAt([...sessionsData.list]).filter((s) => s.id !== archivedId);
+  if (remaining.length > 0) {
+    await handleSessionSwitch(remaining[0].id);
+    return;
+  }
+  // createSession 内部会把 DB 的 activeSessionId 指向新会话，再用 reloadAfterDelete 水合面板状态
+  await createSession();
+  await reloadAfterDelete();
+}
+
+/** 刷新「归档区 (N)」入口的条数徽标 */
+async function refreshArchiveEntryCount() {
+  const countEl = document.getElementById('sessionArchiveEntryCount');
+  if (!countEl) return;
+  const list = await loadArchivedSessions();
+  archivedListCache = list;
+  if (list.length > 0) {
+    countEl.textContent = String(list.length > 99 ? '99+' : list.length);
+    countEl.hidden = false;
+  } else {
+    countEl.textContent = '';
+    countEl.hidden = true;
+  }
+}
+
+/** 打开归档面板（覆盖在会话列表面板之上） */
+async function openArchivePanel() {
+  const panel = document.getElementById('sessionArchivePanel');
+  if (!panel) return;
+  initArchivePanel();
+  archiveSearchText = '';
+  const searchInput = document.getElementById('sessionArchiveSearch');
+  if (searchInput) searchInput.value = '';
+  updateArchiveSearchClear();
+  await renderArchiveList();
+  panel.classList.add('show');
+  // 全屏面板不叠两层：会话列表面板先收起，返回时再拉起来
+  closeDropdown();
+}
+
+function closeArchivePanel() {
+  const panel = document.getElementById('sessionArchivePanel');
+  if (panel) panel.classList.remove('show');
+}
+
+function updateArchiveSearchClear() {
+  const clearBtn = document.getElementById('sessionArchiveSearchClear');
+  if (clearBtn) clearBtn.style.display = archiveSearchText ? 'flex' : 'none';
+}
+
+/** 渲染归档列表（按归档时间分组，复用会话列表的时间分组键） */
+async function renderArchiveList() {
+  const listEl = document.getElementById('sessionArchiveList');
+  if (!listEl) return;
+  const all = await loadArchivedSessions();
+  archivedListCache = all;
+
+  const keyword = archiveSearchText.trim().toLowerCase();
+  const filtered = keyword
+    ? all.filter((s) => (s.title || '').toLowerCase().includes(keyword))
+    : all;
+
+  listEl.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'session-dropdown-empty';
+    emptyEl.textContent = keyword ? t('session.archiveNoMatch') : t('session.archiveEmpty');
+    listEl.appendChild(emptyEl);
+    return;
+  }
+
+  const groupLabels = {
+    today: t('session.today'),
+    yesterday: t('session.yesterday'),
+    last7Days: t('session.last7Days'),
+    earlier: t('session.earlier'),
+  };
+
+  let lastGroup = null;
+  filtered.forEach((session) => {
+    const group = getTimeGroupKey(session.archivedAt);
+    if (group !== lastGroup) {
+      lastGroup = group;
+      const header = document.createElement('div');
+      header.className = 'session-dropdown-group-header';
+      const label = document.createElement('span');
+      label.textContent = groupLabels[group] || group;
+      header.appendChild(label);
+      listEl.appendChild(header);
+    }
+    listEl.appendChild(createArchivedItem(session));
+  });
+}
+
+/** 归档行：点行 = 恢复并进入会话；右侧两个按钮 = 恢复 / 彻底删除 */
+function createArchivedItem(session) {
+  const item = document.createElement('div');
+  item.className = 'session-dropdown-item session-archive-item';
+  item.dataset.sessionId = session.id;
+  item.title = session.title || t('session.newSession');
+
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'session-dropdown-item-icon';
+  iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>';
+  item.appendChild(iconSpan);
+
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'session-dropdown-item-title';
+  titleSpan.textContent = session.title || t('session.newSession');
+  item.appendChild(titleSpan);
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'session-dropdown-item-time';
+  timeSpan.textContent = t('session.archivedAt', { time: formatSessionTime(session.archivedAt) });
+  item.appendChild(timeSpan);
+
+  const actionsWrapper = document.createElement('span');
+  actionsWrapper.className = 'session-dropdown-item-actions';
+
+  const restoreBtn = document.createElement('span');
+  restoreBtn.className = 'session-dropdown-item-restore';
+  restoreBtn.title = t('session.restoreTitle');
+  restoreBtn.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>';
+  restoreBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await restoreArchivedFlow(session.id);
+  });
+  actionsWrapper.appendChild(restoreBtn);
+
+  const deleteBtn = document.createElement('span');
+  deleteBtn.className = 'session-dropdown-item-delete';
+  deleteBtn.title = t('session.deleteForever');
+  deleteBtn.innerHTML = '&#10005;';
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteArchivedFlow(session);
+  });
+  actionsWrapper.appendChild(deleteBtn);
+
+  item.appendChild(actionsWrapper);
+
+  item.addEventListener('click', async () => {
+    await restoreArchivedFlow(session.id, { enter: true });
+  });
+  return item;
+}
+
+/** 恢复归档会话；enter=true 表示恢复后直接进入该会话 */
+async function restoreArchivedFlow(sessionId, { enter = false } = {}) {
+  const restored = await restoreSession(sessionId);
+  if (!restored) {
+    showToast(t('session.operationFailed', { message: 'not found' }), 'error');
+    await renderArchiveList();
+    return;
+  }
+  const sessionsData = await loadSessions();
+  state.sessions = sessionsData.list;
+  const target = sessionsData.list.find((s) => s.id === sessionId);
+  const title = target?.title || t('session.newSession');
+
+  closeArchivePanel();
+  await renderArchiveList();
+  await refreshArchiveEntryCount();
+
+  if (enter) {
+    await handleSessionSwitch(sessionId);
+  } else {
+    renderSessionTabs(sessionsData);
+  }
+  showToast(t('session.archivedRestored', { title }), 'success');
+}
+
+/** 彻底删除归档会话（走与普通删除同一条清理路径，必须二次确认） */
+async function deleteArchivedFlow(session) {
+  const title = session.title || t('session.newSession');
+  const confirmed = await showCustomConfirm(
+    t('session.confirmDeleteForeverMessage', { title }),
+    t('session.confirmDeleteForeverTitle')
+  );
+  if (!confirmed) return;
+
+  await deleteArchivedSession(session.id);
+  await renderArchiveList();
+  await refreshArchiveEntryCount();
+  document.dispatchEvent(new CustomEvent('session-deleted', { detail: { sessionId: session.id } }));
+  showToast(t('session.archiveDeleted', { title }), 'success');
+}
+
+/** 绑定归档面板与入口事件（幂等） */
+function initArchivePanel() {
+  if (archivePanelInited) return;
+  const panel = document.getElementById('sessionArchivePanel');
+  const entry = document.getElementById('sessionArchiveEntry');
+  if (!panel || !entry) return;
+  archivePanelInited = true;
+
+  entry.addEventListener('click', () => { void openArchivePanel(); });
+
+  // 返回会话列表（保留两层之间的连续性，而不是直接关掉全部）
+  const backBtn = document.getElementById('sessionArchiveBackBtn');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      closeArchivePanel();
+      void openDropdown();
+    });
+  }
+  const closeBtn = document.getElementById('sessionArchiveCloseBtn');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeArchivePanel());
+
+  const searchInput = document.getElementById('sessionArchiveSearch');
+  const clearBtn = document.getElementById('sessionArchiveSearchClear');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      archiveSearchText = searchInput.value;
+      updateArchiveSearchClear();
+      void renderArchiveList();
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeArchivePanel();
+        void openDropdown();
+      }
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (!searchInput) return;
+      searchInput.value = '';
+      archiveSearchText = '';
+      updateArchiveSearchClear();
+      void renderArchiveList();
+      searchInput.focus();
+    });
+  }
+
+  // 归档/彻底删除发生在别处（右键菜单、会话列表行操作）时，面板开着就同步刷新
+  document.addEventListener('session-archived', () => {
+    if (panel.classList.contains('show')) void renderArchiveList();
+  });
+  document.addEventListener('session-deleted', () => {
+    if (panel.classList.contains('show')) void renderArchiveList();
+  });
+}
+
 // ==================== 会话切换 ====================
 
 // 切换进行中标志：防止快速连点并发执行 switchToSession（乐观高亮的配套防护）
 let isSwitching = false;
 
+/** 等 DOM 重建完成再定位：与收藏 / 搜索定位同一等待口径 */
+const FOCUS_SETTLE_MS = 500;
+
+/**
+ * 恢复该会话上次离开时的滚动位置。
+ * 只在调用方主动跳过内建恢复（skipScrollRestore）而定位又没成功时使用，
+ * 否则视野会停在消息区最顶部，比不定位更突兀。
+ */
+function restoreSessionScroll(sessionId) {
+  const scrollKey = `scrollPosition_${sessionId || 'default'}`;
+  chrome.storage.local.get([scrollKey], (result) => {
+    const el = document.getElementById('chatContainer');
+    if (el && result[scrollKey] !== undefined) el.scrollTop = result[scrollKey];
+    // 滚动后要同步「滚动到底部」按钮状态，不然徽标停在旧值
+    import('./chat-streaming.js')
+      .then(({ updateScrollButtonState }) => updateScrollButtonState())
+      .catch(() => {});
+  });
+}
+
+/**
+ * 定位到会话里的某一轮用户问题（失败则回落恢复上次滚动位置）。
+ * 等期间用户已切走就不要动手，否则会把视野从用户新去的会话上抢回来。
+ */
+function scheduleMessageFocus(sessionId, messageId) {
+  setTimeout(() => {
+    if (state.activeSessionId !== sessionId) return;
+    if (!focusMessageInView(messageId)) restoreSessionScroll(sessionId);
+  }, FOCUS_SETTLE_MS);
+}
+
 /**
  * 处理会话切换
+ * @param {string} sessionId - 目标会话
+ * @param {{focusMessageId?: string|null}} [options] - 带上某条消息的 messageId 时，
+ *   开完会话后滚到那条消息并高亮；不传则保持原有行为（恢复该会话上次滚动位置）。
+ *   所有现有调用点都不传，行为完全不变。
  */
-async function handleSessionSwitch(sessionId) {
+export async function handleSessionSwitch(sessionId, { focusMessageId = null } = {}) {
   // saveCurrentSession() 已在 switchToSession 内部调用，此处无需重复
   const previousSessionId = state.activeSessionId;
   const result = await switchToSession(sessionId);
@@ -1002,7 +1402,13 @@ async function handleSessionSwitch(sessionId) {
   state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
 
   document.dispatchEvent(new CustomEvent('session-switched', {
-    detail: { sessionId, previousSessionId }
+    // 要定位到具体消息时必须跳过内建的「150ms 恢复上次滚动位置」，
+    // 否则我们刚滚过去的位置会在下一拍被它拽回去（收藏/搜索也是这么做的）
+    detail: {
+      sessionId,
+      previousSessionId,
+      ...(focusMessageId ? { skipScrollRestore: true } : {}),
+    }
   }));
 
   // 用户已切回该会话查看，清除"完成待查看"标记
@@ -1030,6 +1436,8 @@ async function handleSessionSwitch(sessionId) {
   }
   // 始终更新工具栏按钮
   updateToolsToggleState();
+
+  if (focusMessageId) scheduleMessageFocus(sessionId, focusMessageId);
 }
 
 // ==================== 会话复制（对话分支） ====================
@@ -1220,6 +1628,13 @@ function showTabContextMenu(event, session) {
     handleDuplicateSession(session.id);
   });
   menu.appendChild(duplicateItem);
+
+  // 归档会话（可逆：归档后从标签栏/会话列表消失，但消息与目录绑定全留着）
+  const archiveItem = createMenuItem(t('session.archive'), '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>', async () => {
+    menu.remove();
+    await archiveSessionFlow(session.id);
+  });
+  menu.appendChild(archiveItem);
 
   // 关闭会话（原"删除"，统一命名为"关闭会话"；空会话无需确认）
   const deleteItem = createMenuItem(t('session.closeSession'), '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', async () => {

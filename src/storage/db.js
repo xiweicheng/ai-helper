@@ -506,7 +506,8 @@ export function searchActiveSessionsMessages(sessionId) {
     });
   }
   return getAllSessions().then((all) => {
-    const sessions = all;
+    // 归档会话对用户已隐藏（只在归档区可见），搜索里再挖得出来就自相矛盾了
+    const sessions = all.filter((s) => !s.archivedAt);
     const results = [];
     sessions.forEach((session) => {
       const label = session.title || t('db.sessionLabel', { id: session.id?.slice(0, 8) });

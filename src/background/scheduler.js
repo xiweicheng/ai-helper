@@ -136,12 +136,15 @@ async function loadAgent(agentId) {
 }
 
 /**
- * 解析宿主会话：存在则复用，被删除则自动新建专属会话
+ * 解析宿主会话：存在则复用，被删除或被归档则自动新建专属会话
+ *
+ * 归档会话对用户已不可见（不进标签栏/会话列表/全局搜索），继续往里写执行结果
+ * 等于把结果写进一个用户看不见的地方，所以按「不存在」处理并重建专属会话。
  */
 async function resolveHostSession(task) {
   if (task.sessionId) {
     const s = await getSession(task.sessionId);
-    if (s) return { session: s, created: false };
+    if (s && !s.archivedAt) return { session: s, created: false };
   }
   const s = await createScheduledSession(task);
   return { session: s, created: true };
@@ -301,12 +304,20 @@ export async function runTask(taskId, force = false) {
     // 通知侧边栏：任务开始执行（入口图标进入「运行中」动效）
     chrome.runtime.sendMessage({ type: 'SCHEDULED_TASK_RUN_STATE', taskId, running: true }).catch(() => {});
 
-    // 1. 解析宿主会话（删除则自愈新建）
+    // 1. 解析宿主会话（删除/归档则自愈新建）
     const { session: hostSession, created } = await resolveHostSession(task);
     if (created) {
       task.sessionId = hostSession.id;
       await putScheduledTask(task);
     }
+    // 停靠条需要「哪个会话在被定时任务驱动」：taskId 只能让入口图标动起来，
+    // 会话维度的停靠条目必须带上 sessionId（此处会话才解析出来，故补发一条）
+    chrome.runtime.sendMessage({
+      type: 'SCHEDULED_TASK_RUN_STATE',
+      taskId,
+      sessionId: hostSession.id,
+      running: true,
+    }).catch(() => {});
 
     // 2. 解析执行配置：任务覆盖 > 宿主会话 > 全局默认
     const agent = await loadAgent(task.agentId || hostSession.agentId);
@@ -435,8 +446,13 @@ export async function runTask(taskId, force = false) {
     if (task.sessionId) {
       chrome.runtime.sendMessage({ type: 'SCHEDULED_SESSION_UPDATED', sessionId: task.sessionId, taskId }).catch(() => {});
     }
-    // 通知侧边栏：任务执行结束（入口图标停止「运行中」动效）
-    chrome.runtime.sendMessage({ type: 'SCHEDULED_TASK_RUN_STATE', taskId, running: false }).catch(() => {});
+    // 通知侧边栏：任务执行结束（入口图标停止「运行中」动效 + 停靠条收起该会话的定时来源）
+    chrome.runtime.sendMessage({
+      type: 'SCHEDULED_TASK_RUN_STATE',
+      taskId,
+      sessionId: task.sessionId,
+      running: false,
+    }).catch(() => {});
   }
   return ok;
 }
