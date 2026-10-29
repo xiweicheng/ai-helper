@@ -355,8 +355,15 @@ describe('主行用用户问题而不是会话标题', () => {
 
   it('pickEntryLabel：拿不到问题时回落会话标题，且不编造副行', () => {
     const label = pickEntryLabel({ phase: 'running', questionText: '', title: '只有标题' });
-    expect(label).toEqual({ primary: '只有标题', sub: '', isQuestion: false });
-    expect(pickEntryLabel({ phase: 'running' })).toEqual({ primary: '', sub: '', isQuestion: false });
+    expect(label).toEqual({ primary: '只有标题', sub: '', isQuestion: false, from: 'title' });
+    expect(pickEntryLabel({ phase: 'running' })).toEqual({ primary: '', sub: '', isQuestion: false, from: '' });
+  });
+
+  it('pickEntryLabel：from 说清主行来自哪一手（定位只能信 question）', () => {
+    expect(pickEntryLabel({ phase: 'queued', queuedText: '排队原文', questionText: '上一轮问题' }).from)
+      .toBe('queued');
+    expect(pickEntryLabel({ phase: 'running', questionText: '正在执行的问题' }).from).toBe('question');
+    expect(pickEntryLabel({ phase: 'done', title: '只有标题' }).from).toBe('title');
   });
 
   it('pickEntryLabel：副行只在「与问题不是同一句」时出现', () => {
@@ -386,12 +393,14 @@ describe('主行用用户问题而不是会话标题', () => {
   it('取用户问题必须走 extractTextFromContent（带图提问的 content 是 parts 数组）', () => {
     const src = read('src/side_panel/session-dock.js');
     const body = src.slice(
-      src.indexOf('function lastUserTextFrom'),
-      src.indexOf('/** 标题：优先 state.sessions'),
+      src.indexOf('function lastUserMessageFrom'),
+      src.indexOf('/**\n * 由各路信号算出停靠条目'),
     );
     expect(body).toContain('extractTextFromContent(msg.content)');
     // 不得把原始 content 直接当文本塞进提示：那会得到一坨 base64 data URL
     expect(body).not.toContain('String(msg.content)');
+    // 定位锚点必须一起取回来：没 messageId 就只能「打开会话」，定不到那一轮
+    expect(body).toContain('messageId: msg.messageId ? String(msg.messageId)');
     expect(src).toContain("from '../shared/token-counter.js'");
   });
 
@@ -399,10 +408,150 @@ describe('主行用用户问题而不是会话标题', () => {
     const src = read('src/side_panel/session-dock.js');
     const hydrate = src.slice(src.indexOf('function hydrateSessionLabels'), src.indexOf('/** 条目状态文案'));
     // 写进缓存的必须是 getSession 回来的记录，而不是 state.sessions 那份旧快照
-    expect(hydrate).toContain('questionCache.set(sid, { text: lastUserTextFrom(session), stamp })');
+    expect(hydrate).toContain('questionCache.set(sid, { text: found.text, messageId: found.messageId, stamp })');
     expect(hydrate).toContain('cached.stamp !== stamp');
     // 且一次 getSession 同时补标题与问题，不多一次 IO
     expect(hydrate.match(/getSession\(/g)).toHaveLength(1);
+  });
+});
+
+describe('点芯片定位到那一轮用户问题', () => {
+  it('执行中条目带 anchorMessageId（取自会话最后一条用户消息）', () => {
+    const entries = buildDockEntries({
+      generatingIds: ['r1'],
+      titles: { r1: '会话标题' },
+      questions: { r1: '正在执行的问题' },
+      anchors: { r1: 'msg_r1_q5' },
+    });
+    expect(entries[0]).toMatchObject({ primary: '正在执行的问题', anchorMessageId: 'msg_r1_q5' });
+  });
+
+  it('完成态也带锚点（点进去先确认是哪个问题跑完了）', () => {
+    const entries = buildDockEntries({
+      completedIds: ['d1'],
+      titles: { d1: '会话标题' },
+      questions: { d1: '刚跑完的问题' },
+      anchors: { d1: 'msg_d1_q3' },
+    });
+    expect(entries[0]).toMatchObject({ phase: 'done', anchorMessageId: 'msg_d1_q3' });
+  });
+
+  it('排队条目不许拿上一轮的 messageId 冒充定位（那条原文还没入库）', () => {
+    const entries = buildDockEntries({
+      queuedCounts: { q1: 2 },
+      titles: { q1: '会话标题' },
+      questions: { q1: '上一轮已经跑完的问题' },
+      anchors: { q1: 'msg_q1_prev' },
+      queuedTexts: { q1: '排队里等着的那句' },
+    });
+    expect(entries[0]).toMatchObject({ phase: 'queued', primary: '排队里等着的那句', anchorMessageId: '' });
+  });
+
+  it('主行回落到会话标题时不带锚点（会话里没有对应消息节点）', () => {
+    const entries = buildDockEntries({
+      generatingIds: ['r1'],
+      titles: { r1: '每日汇总' },
+      anchors: { r1: 'msg_r1_ghost' },
+    });
+    expect(entries[0]).toMatchObject({ primary: '每日汇总', anchorMessageId: '' });
+  });
+
+  it('历史消息没带 messageId 时锚点为空（不拿空 id 去定位）', () => {
+    const entries = buildDockEntries({
+      generatingIds: ['r1'],
+      titles: { r1: '会话标题' },
+      questions: { r1: '早期记录的问题' },
+    });
+    expect(entries[0].anchorMessageId).toBe('');
+  });
+
+  it('点执行中芯片：把锚点交给会话切换', async () => {
+    const { handleSessionSwitch } = await import('../../src/side_panel/session-manager-ui.js');
+    __resetSessionDockForTest();
+    state.activeSessionId = 'cur';
+    state.generatingSessionIds.clear();
+    state.sessions = [{
+      id: 'other',
+      title: '会话标题',
+      messageHistory: [{ role: 'user', content: '正在执行的问题', messageId: 'msg_other_q2' }],
+    }];
+    state.generatingSessionIds.add('other');
+    renderDock();
+
+    document.querySelector('.session-dock-item[data-session-id="other"] .session-dock-chip').click();
+    expect(handleSessionSwitch).toHaveBeenCalledWith('other', { focusMessageId: 'msg_other_q2' });
+  });
+
+  it('只能显示标题的芯片不带锚点：宁可不定位也不定错行', async () => {
+    const { handleSessionSwitch } = await import('../../src/side_panel/session-manager-ui.js');
+    __resetSessionDockForTest();
+    state.activeSessionId = 'cur';
+    state.generatingSessionIds.clear();
+    state.sessions = [{
+      id: 'noid',
+      title: '每日汇总',
+      messageHistory: [{ role: 'assistant', content: '自动执行结果' }],
+    }];
+    state.generatingSessionIds.add('noid');
+    renderDock();
+
+    document.querySelector('.session-dock-item[data-session-id="noid"] .session-dock-chip').click();
+    expect(handleSessionSwitch).toHaveBeenCalledWith('noid', { focusMessageId: null });
+  });
+
+  it('溢出面板里的行点击也带锚点，且必须是同一个会话的锚点', async () => {
+    const { handleSessionSwitch } = await import('../../src/side_panel/session-manager-ui.js');
+    __resetSessionDockForTest();
+    state.activeSessionId = 'cur';
+    state.generatingSessionIds.clear();
+    state.sessions = [];
+    for (let i = 1; i <= 10; i += 1) {
+      state.sessions.push({
+        id: `big${i}`,
+        title: `会话 ${i}`,
+        messageHistory: [{ role: 'user', content: `第 ${i} 个任务的问题`, messageId: `msg_big${i}` }],
+      });
+      state.generatingSessionIds.add(`big${i}`);
+    }
+    renderDock();
+    document.querySelector('.session-dock-item--more').dispatchEvent(new MouseEvent('mouseenter'));
+
+    const rows = document.querySelectorAll('.session-dock-overflow-row');
+    expect(rows.length).toBe(3);
+    rows[0].click();
+    // 不钉死哪一行在前：只要求传回的锚点属于刚切过去的那个会话
+    // （mock 不每条用例重置，取最后一笔才是本次点击）
+    const [switchedId, options] = handleSessionSwitch.mock.calls[handleSessionSwitch.mock.calls.length - 1];
+    expect(options).toEqual({ focusMessageId: `msg_${switchedId}` });
+  });
+
+  it('会话切换的接线：跳过内建滚动恢复，定位失败则回落恢复位置', () => {
+    const src = read('src/side_panel/session-manager-ui.js');
+    expect(src).toContain('export async function handleSessionSwitch(sessionId, { focusMessageId = null } = {})');
+    const fn = src.slice(
+      src.indexOf('export async function handleSessionSwitch'),
+      src.indexOf('// ==================== 会话复制'),
+    );
+    // 不带参时不能往 detail 里塞 skipScrollRestore，否则所有旧调用点会丢掉原有的滚动恢复
+    expect(fn).toContain('...(focusMessageId ? { skipScrollRestore: true } : {})');
+    expect(fn).toContain('if (focusMessageId) scheduleMessageFocus(sessionId, focusMessageId);');
+
+    const focus = src.slice(
+      src.indexOf('function scheduleMessageFocus'),
+      src.indexOf('/**\n * 处理会话切换'),
+    );
+    // 跳过内建恢复后，定位失败必须自己补一次，不然视野停在消息区顶部
+    expect(focus).toContain('if (!focusMessageInView(messageId)) restoreSessionScroll(sessionId)');
+    // 等 DOM 重建的 500ms 里用户可能已切走，不能把视野抢回来
+    expect(focus).toContain('if (state.activeSessionId !== sessionId) return;');
+  });
+
+  it('芯片与溢出行走同一个入口，且只有停靠条会传锚点', () => {
+    const dock = read('src/side_panel/session-dock.js');
+    // 两个入口不能各写一套传参：只能有一处调 handleSessionSwitch
+    expect((dock.match(/handleSessionSwitch\(/g) || []).length).toBe(1);
+    // 只数调用点（带分号），否则连定义行 `openDockEntry(entry) {` 也会被算进去
+    expect((dock.match(/openDockEntry\(entry\);/g) || []).length).toBe(2);
   });
 });
 

@@ -228,39 +228,49 @@ export function isSameLabel(title, primary) {
  * 排队条目为什么单独取：它还没变成用户消息，库里查不到，但 queue-store 里有现成 text。
  *
  * @param {Object} input
- * @returns {{ primary: string, sub: string, isQuestion: boolean }}
+ * @returns {{ primary: string, sub: string, isQuestion: boolean, from: string }}
  */
 export function pickEntryLabel({ phase = '', queuedText = '', questionText = '', title = '' } = {}) {
   const queued = phase === 'queued' ? normalizeLabel(queuedText) : '';
   const question = queued || normalizeLabel(questionText);
   const titleLabel = normalizeLabel(title);
   const primary = question || titleLabel;
+  // from 记下主行到底来自哪一手，用来判定能不能定位：
+  // 排队原文与回落的标题在会话里没有对应消息节点。
+  // 叫 from 而不叫 source：条目上的 entry.source 已被「定时任务 / 普通聊天」占用，同名不义
+  const from = queued ? 'queued' : (question ? 'question' : (primary ? 'title' : ''));
   return {
     primary,
     // 副行只在「主行确实是问题、且标题不是同一句话」时出现
     sub: question && !isSameLabel(titleLabel, question) ? titleLabel : '',
     isQuestion: Boolean(question),
+    from,
   };
 }
 
 /**
- * 从会话记录里取最后一条用户消息的纯文本。
+ * 从会话记录里取最后一条用户消息的文本与 messageId。
+ *
  * 必须走 extractTextFromContent：带图提问时 content 是多模态 parts 数组，
  * 直接拿它当文本会得到一坨 base64 data URL（[object Object] 都算好的）。
+ * messageId 也得一起拿：点芯片不能只「打开会话」，要滚到这一轮问题那行；
+ * 而回答会随执行日志与流式输出不断变高，只有问题是稳定锚。
  */
-function lastUserTextFrom(record) {
+function lastUserMessageFrom(record) {
   const history = Array.isArray(record?.messageHistory) ? record.messageHistory : [];
   for (let i = history.length - 1; i >= 0; i -= 1) {
     const msg = history[i];
     if (!msg || msg.role !== 'user') continue;
     const text = extractTextFromContent(msg.content);
-    if (text && String(text).trim()) return String(text);
+    if (text && String(text).trim()) {
+      return { text: String(text), messageId: msg.messageId ? String(msg.messageId) : '' };
+    }
   }
-  return '';
+  return { text: '', messageId: '' };
 }
 
 /**
- * 由各路信号算出停靠条条目（纯函数，便于单测）。
+ * 由各路信号算出停靠条目（纯函数，便于单测）。
  *
  * 规则：
  * - 当前会话永不出现（用户正看着它，提示是干扰）
@@ -274,6 +284,7 @@ export function buildDockEntries({
   activeSessionId = null,
   titles = {},
   questions = {},
+  anchors = {},
   queuedTexts = {},
   generatingIds = [],
   pendingIds = [],
@@ -338,6 +349,9 @@ export function buildDockEntries({
       primary: label.primary,
       sub: label.sub,
       isQuestion: label.isQuestion,
+      // 定位锚点只在「主行就是会话里那条真实用户消息」时成立：
+      // 排队原文还没入库、标题回落没有对应消息，拿上一轮的 id 去定位只能算骗人
+      anchorMessageId: label.from === 'question' ? String(anchors?.[sid] || '') : '',
       phase,
       stale,
       source: scheduled.has(sid) ? 'scheduled' : 'chat',
@@ -410,6 +424,7 @@ function readTitles() {
  */
 function readQuestions() {
   const questions = {};
+  const anchors = {};
   const snapshot = new Map();
   for (const session of state.sessions || []) snapshot.set(session.id, session);
   for (const sid of new Set([
@@ -421,13 +436,19 @@ function readQuestions() {
     const stamp = startedAt.get(sid) || doneAt.get(sid) || 0;
     const cached = questionCache.get(sid);
     if (stamp && cached && cached.stamp === stamp) {
-      if (cached.text) questions[sid] = cached.text;
+      if (cached.text) {
+        questions[sid] = cached.text;
+        anchors[sid] = cached.messageId || '';
+      }
       continue;
     }
-    const text = lastUserTextFrom(snapshot.get(sid));
-    if (text) questions[sid] = text;
+    const found = lastUserMessageFrom(snapshot.get(sid));
+    if (found.text) {
+      questions[sid] = found.text;
+      anchors[sid] = found.messageId;
+    }
   }
-  return questions;
+  return { questions, anchors };
 }
 
 /** 排队条目的原文：它还没变成用户消息，库里查不到，只有 queue-store 有 */
@@ -461,7 +482,10 @@ function hydrateSessionLabels(entries) {
     getSession(sid).then((session) => {
       if (!session) return;
       if (needTitle || !titleCache.has(sid)) titleCache.set(sid, session.title || '');
-      if (needQuestion) questionCache.set(sid, { text: lastUserTextFrom(session), stamp });
+      if (needQuestion) {
+        const found = lastUserMessageFrom(session);
+        questionCache.set(sid, { text: found.text, messageId: found.messageId, stamp });
+      }
     }).catch((e) => {
       logger.debug('[SessionDock] hydrate label failed:', e?.message || e);
     }).finally(() => {
@@ -512,10 +536,12 @@ function collectEntries() {
     if (!doneAt.has(sid) && !isExecutingNow(sid)) doneAt.set(sid, Date.now());
   }
 
+  const { questions, anchors } = readQuestions();
   const entries = buildDockEntries({
     activeSessionId: state.activeSessionId,
     titles: readTitles(),
-    questions: readQuestions(),
+    questions,
+    anchors,
     queuedTexts: readQueuedTexts(),
     generatingIds: state.generatingSessionIds,
     pendingIds: state.pendingCallApiSessionIds,
@@ -585,6 +611,14 @@ function syncDockBounds() {
   dockEl.style.top = `${Math.max(0, Math.round(rect.top + 8))}px`;
 }
 
+/**
+ * 点开一个停靠条目：切到该会话，带得上锚点时一并定位到那一轮用户问题。
+ * 锚点为空（主行是排队原文或回落的标题）时只是开会话，回到原有的恢复滚动行为。
+ */
+function openDockEntry(entry) {
+  void handleSessionSwitch(entry.sessionId, { focusMessageId: entry.anchorMessageId || null });
+}
+
 function buildChip(entry) {
   const wrapper = document.createElement('div');
   wrapper.className = 'session-dock-item';
@@ -608,7 +642,7 @@ function buildChip(entry) {
   chip.title = '';
   chip.textContent = face;
   chip.addEventListener('click', () => {
-    void handleSessionSwitch(entry.sessionId);
+    openDockEntry(entry);
   });
   wrapper.appendChild(chip);
 
@@ -754,7 +788,7 @@ function renderOverflowRows() {
     row.appendChild(statusEl);
     row.addEventListener('click', () => {
       closeOverflow();
-      void handleSessionSwitch(entry.sessionId);
+      openDockEntry(entry);
     });
     list.appendChild(row);
   }

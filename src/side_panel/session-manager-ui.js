@@ -6,7 +6,7 @@ import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
-import { showToast } from './utils.js';
+import { showToast, focusMessageInView } from './utils.js';
 import {
   createSession,
   switchToSession,
@@ -1302,10 +1302,45 @@ function initArchivePanel() {
 // 切换进行中标志：防止快速连点并发执行 switchToSession（乐观高亮的配套防护）
 let isSwitching = false;
 
+/** 等 DOM 重建完成再定位：与收藏 / 搜索定位同一等待口径 */
+const FOCUS_SETTLE_MS = 500;
+
+/**
+ * 恢复该会话上次离开时的滚动位置。
+ * 只在调用方主动跳过内建恢复（skipScrollRestore）而定位又没成功时使用，
+ * 否则视野会停在消息区最顶部，比不定位更突兀。
+ */
+function restoreSessionScroll(sessionId) {
+  const scrollKey = `scrollPosition_${sessionId || 'default'}`;
+  chrome.storage.local.get([scrollKey], (result) => {
+    const el = document.getElementById('chatContainer');
+    if (el && result[scrollKey] !== undefined) el.scrollTop = result[scrollKey];
+    // 滚动后要同步「滚动到底部」按钮状态，不然徽标停在旧值
+    import('./chat-streaming.js')
+      .then(({ updateScrollButtonState }) => updateScrollButtonState())
+      .catch(() => {});
+  });
+}
+
+/**
+ * 定位到会话里的某一轮用户问题（失败则回落恢复上次滚动位置）。
+ * 等期间用户已切走就不要动手，否则会把视野从用户新去的会话上抢回来。
+ */
+function scheduleMessageFocus(sessionId, messageId) {
+  setTimeout(() => {
+    if (state.activeSessionId !== sessionId) return;
+    if (!focusMessageInView(messageId)) restoreSessionScroll(sessionId);
+  }, FOCUS_SETTLE_MS);
+}
+
 /**
  * 处理会话切换
+ * @param {string} sessionId - 目标会话
+ * @param {{focusMessageId?: string|null}} [options] - 带上某条消息的 messageId 时，
+ *   开完会话后滚到那条消息并高亮；不传则保持原有行为（恢复该会话上次滚动位置）。
+ *   所有现有调用点都不传，行为完全不变。
  */
-export async function handleSessionSwitch(sessionId) {
+export async function handleSessionSwitch(sessionId, { focusMessageId = null } = {}) {
   // saveCurrentSession() 已在 switchToSession 内部调用，此处无需重复
   const previousSessionId = state.activeSessionId;
   const result = await switchToSession(sessionId);
@@ -1367,7 +1402,13 @@ export async function handleSessionSwitch(sessionId) {
   state.activeAgentMcpExcludedServerIds = agent ? (agent.mcpExcludedServerIds ?? null) : null;
 
   document.dispatchEvent(new CustomEvent('session-switched', {
-    detail: { sessionId, previousSessionId }
+    // 要定位到具体消息时必须跳过内建的「150ms 恢复上次滚动位置」，
+    // 否则我们刚滚过去的位置会在下一拍被它拽回去（收藏/搜索也是这么做的）
+    detail: {
+      sessionId,
+      previousSessionId,
+      ...(focusMessageId ? { skipScrollRestore: true } : {}),
+    }
   }));
 
   // 用户已切回该会话查看，清除"完成待查看"标记
@@ -1395,6 +1436,8 @@ export async function handleSessionSwitch(sessionId) {
   }
   // 始终更新工具栏按钮
   updateToolsToggleState();
+
+  if (focusMessageId) scheduleMessageFocus(sessionId, focusMessageId);
 }
 
 // ==================== 会话复制（对话分支） ====================

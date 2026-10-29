@@ -13196,6 +13196,20 @@ body {
   z-index: 1;
 }
 
+/* 减少动态偏好下把「2 秒脉冲」换成「2 秒静态描边」，而不是什么都不留。
+ * 直接 animation: none 会让描边回到上面那条 transparent —— 定位反馈等于被关掉；
+ * 停靠条点芯片的「这就是那一轮」提示也就白给。 */
+@media (prefers-reduced-motion: reduce) {
+  .bookmark-highlight,
+  .bookmark-highlight::before {
+    animation: none;
+  }
+
+  .bookmark-highlight::before {
+    border-color: var(--warning-strong);
+  }
+}
+
 @keyframes bookmarkHighlightPulse {
   0% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.7), inset 0 0 0 0 rgba(var(--warning-rgb), 0.3); }
   15% { box-shadow: 0 0 0 12px rgba(var(--warning-rgb), 0), inset 0 0 20px 4px rgba(var(--warning-rgb), 0.3); }
