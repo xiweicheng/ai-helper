@@ -16341,7 +16341,7 @@ body.voice-recording-active .input-container {
   transform-origin: bottom center;
 }
 
-/* 完成态的 × ：只给完成态，执行中点掉会被误读成「取消任务」 */
+/* 可手动清掉的 × ：完成态，以及已失效的执行中条目 */
 .session-dock-dismiss {
   position: absolute;
   top: -5px;
@@ -16373,7 +16373,7 @@ body.voice-recording-active .input-container {
   border-color: rgba(var(--danger-rgb), 0.6);
 }
 
-/* 悬停提示：标题 + 实时状态，定位由 JS 按芯片位置算出 */
+/* 悬停提示：用户问题（主）+ 会话标题（副，仅在与问题不同时）+ 实时状态，定位由 JS 按芯片位置算出 */
 .session-dock-tip {
   position: fixed;
   z-index: 10005;
@@ -16395,10 +16395,27 @@ body.voice-recording-active .input-container {
   transform: translateY(0);
 }
 
+/* 主行是用户原话，长度不可控：给两行，再多就截断。
+ * 一行 nowrap 会把长问题切得看不出是哪个任务，反而失去这次改动的意义。 */
 .session-dock-tip-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  /* 中英混排 + 长 URL 时必须允许断词，否则会顶宽 tooltip */
+  word-break: break-word;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+/* 副行：会话标题，比主行弱一档，只用来定位「这是哪个会话」 */
+.session-dock-tip-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  /* 11px 小字要过 4.5:1 得用 -secondary，-tertiary 只够装饰性文本 */
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -16422,6 +16439,161 @@ body.has-session-dock .chat-container {
   .session-dock-item[data-phase="running"] .session-dock-chip::after,
   .session-dock-item.is-flash .session-dock-chip {
     animation: none;
+  }
+}
+
+/* ---------- 停靠条：已失效的执行中条目 ----------
+ * 后台已经不再报告该会话、且超时没收到执行更新（见 session-dock.js 的 isEntryStale）。
+ * 本来就不该再装成「执行中」：转灰、虚线描边、呼吸光环与旋转弧全部停掉——
+ * 还在动就等于在说谎。同时把 × 露出来，否则脏状态会让条目永久删不掉。
+ */
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+  /* 11px 字重 600 需要 -secondary 档才稳过 4.5:1，-disabled 只是装饰性灰 */
+  color: var(--text-secondary);
+  animation: none;
+  box-shadow: none;
+}
+
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip::after {
+  display: none;
+}
+
+/* 失效条目也允许手动清掉（与完成态同一套交互） */
+.session-dock-item[data-phase="running"][data-stale="true"] .session-dock-chip:hover {
+  border-color: var(--danger-500);
+}
+
+/* ---------- 停靠条：+N 聚合芯片 ----------
+ * 条目放不下时占用最后一个位置，代表被折叠的条目。
+ * 用中性色 + 虚线，避开三态状态色，免得被读成「第四种执行状态」。
+ */
+.session-dock-item--more .session-dock-more {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-dock-item--more .session-dock-more:hover,
+.session-dock-item--more .session-dock-more:focus-visible,
+.session-dock-item--more .session-dock-more.is-open {
+  background: var(--brand-soft-bg);
+  border-color: rgba(var(--brand-rgb), 0.6);
+  /* 与执行中芯片同一档：软底上要 -700 才过 4.5:1 */
+  color: var(--brand-700);
+}
+
+/* ---------- 停靠条：溢出面板 ----------
+ * 被 +N 折叠掉的会话列表。做成正常宽度的浮层，滚动放在这里——
+ * 26px 宽的芯片列里塞滚动条根本没法用。
+ */
+.session-dock-overflow {
+  position: fixed;
+  left: 34px;
+  width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  border-radius: 8px;
+  background: var(--elev-surface);
+  box-shadow: var(--elev-pop);
+  z-index: 10003;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.session-dock-overflow.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+
+.session-dock-overflow-header {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: 2px;
+}
+
+.session-dock-overflow-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-dock-overflow-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.session-dock-overflow-row:hover,
+.session-dock-overflow-row:focus-visible {
+  background: var(--brand-soft-bg);
+}
+
+.session-dock-overflow-title {
+  /* 长标题必须能截断：flex 子项默认 min-width:auto 会把容器顶宽 */
+  min-width: 0;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-dock-overflow-status {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-dock-overflow-row[data-phase="running"] .session-dock-overflow-status {
+  color: var(--brand-700);
+}
+
+.session-dock-overflow-row[data-phase="queued"] .session-dock-overflow-status {
+  color: var(--warning-strong);
+}
+
+.session-dock-overflow-row[data-phase="done"] .session-dock-overflow-status {
+  color: var(--success-strong);
+}
+
+.session-dock-overflow-row[data-stale="true"] .session-dock-overflow-status {
+  color: var(--text-secondary);
+}
+
+/* 溢出面板也遵守减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .session-dock-overflow,
+  .session-dock-tip {
+    transition: none;
   }
 }
 

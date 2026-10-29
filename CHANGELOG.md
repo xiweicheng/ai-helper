@@ -34,6 +34,54 @@
 - 视觉探针 `test-results-probes/_session-archive-dock-ui.mjs`：用真实 `theme.css` / `styles.css` 渲染真实 DOM 结构，断言浏览器算出来的值（芯片 26×26、三态动画名、等距堆叠不重叠、`×` 悬停才显、tooltip 不挡点击、34px 走廊、z 序 停靠条 < 会话列表 < 归档区、归档面板全屏、悬停归档行才出操作按钮、无页面异常）→ 亮色 / 暗色各 **25 项全过 / EXT_UI_PASS**。
 - 回归：`npx vitest run` **209 文件 / 3161 例**全过、`npx eslint src/ agent/` 无输出、`npm run build:silent` → BUILD_SUCCESS。
 
+### 停靠条补两个边界：条目放不下时的 +N 聚合、执行状态卡死时的陈旧降级
+> 来源：用户追问两点——①「执行中状态有没有显示个数限制？假如我执行 10 个、20 个任务，左侧边缘放不放得下？」②「万一执行状态卡死掉了，停靠条上的执行中状态还删不删得掉？现在好像只有跑完变打勾才出现小叉，如果一直是执行中怎么办？」
+
+**先如实认下两个原有缺陷**（追问时读代码才发现，不是这次才出现的）：
+- `MAX_VISIBLE = 8` 的注释写着「超出纵向滚动」，但 `.session-dock` 既无 `max-height` 也无 `overflow`，且渲染后还有一句死代码 `dockEl.style.maxHeight = ''` —— 第 9 个条目是**静默丢弃**，不是滚动。更糟的是同组按 `startedAt` **升序**排，被丢弃的恰好是最新的任务。
+- `collectEntries` 用「后台集合 ∪ 两路面本地集合」的并集去解除 `dismissedIds` 标记，而陈旧条目正是脏在本地集合里 —— 点 `×` 后下一帧就被自己复活，等于删不掉。
+
+**溢出：+N 聚合芯片 + 溢出面板**
+- 整条只占 `MAX_CHIPS = 8` 个位置：条目 ≤ 8 全画条目；> 8 画前 `MAX_INLINE_ENTRIES = 7` 条 + 第 8 位换成 `+N` 芯片（`session-dock-item--more` / `session-dock-more`）。26px 宽的芯片列里塞滚动条没法用，所以滚动放在**正常宽度（220px）的溢出浮层**里，`max-height: 320px` + `overflow-y: auto`，挂在聚合芯片右侧 8px、与芯片顶对齐且不超出视口底部。
+- 溢出面板按「其他执行中的会话」列出全部被折叠条目（标题 + 状态两行、整宽 `<button>`、点击进入该会话并收起），悬停/聚焦芯片展开、移开延迟收起、点击即钉住、`Esc` 与面板隐藏时一并收起。`aria-expanded` + `is-open` 类由 JS 同步（溢出面板在 DOM 里排在停靠条之后，CSS 兄弟选择器够不到）。
+- 同组排序改**降序**（running/queued 按 `startedAt`、done 按 `doneAt`，最新在前），保证被折叠的一定是最老的；`+N` 数字 > 99 显示 `+99`。
+- `+N` 芯片用中性虚线描边 + `--text-secondary`，避开三态状态色，免得被读成「第四种执行状态」。
+
+**卡死：陈旧降级 + 允许移除**
+- 新增导出纯函数 `isEntryStale({ phase, sessionId, backendRunningIds, startedAt, lastUpdateAt, now, staleMs })`，三条件同时成立才判陈旧：① 只对 `running` 生效（queued 来自持久数据、done 本是终态）；② 后台权威集合已不认这个会话（还在报告的一律不判）；③ 距最后一次 `EXECUTION_STATUS_UPDATE` / 首次观测运行超过 `STALE_MS = 90s`。两个时间戳都为 0（无任何时间基准）时不判 —— 宁可少报不可误报。
+- 面板新增 `lastUpdateAt` 记账：`EXECUTION_STATUS_UPDATE` 与后台确认在跑都会刷新，所以真在跑的会话永不误伤。
+- 视觉与交互：转灰 + 虚线描边 + `animation: none` + `::after { display: none }`（还在动就等于在说谎），tooltip 改「状态可能已失效 · 未在限定时间内收到执行更新」（据此判断要不要继续等，说谎比不显示更糟），`×` 露出来并改用「移除失效条目」文案，`×` 结果同样持久化。同组内 stale 排在真实 running 之后。
+- 配合修掉上面的 dismiss bug：**只有后台权威 `runningIds` 里的会话才解除 `×` 标记**，本地脏数据不再能翻掉用户的手动移除。
+- 明确留在范围外（用户当时未选）：跨会话「停止执行」按钮、`isSessionArchivable` 脏状态解挡。后果如实告知：被判陈旧的会话**仍然归档不了**（`generatingSessionIds` 还脏着），只能 `×` 掉或重开面板。
+
+**验证**
+- `test/unit/session-dock.unit.test.js` 20 → **40 例**：`isEntryStale` 阈值边界 / 后台在跑不判 / queued 与 done 不参与 / 无时间基准不判；`buildDockEntries` 降序与 stale 归组期望；+N 折叠（8 个以内不出芯片、第 9 个起 7 条 + 1 芯片共占 8 位）；陈旧降级上 DOM（`data-stale` + `×` + 不再报「正在执行」）；两条隐藏 bug 的源码守卫（只按后台集合解除 dismiss、`×` 只给完成态与陈旧态）。
+- 视觉探针扩到 **43 项**（新增陈旧灰态/停动画/`×` 悬停可见/对比度实测、+N 芯片尺寸与中性描边、芯片列不横向溢出、溢出面板宽度/滚动/层级/长标题截断/四态色区分），亮色 / 暗色各 **43/43 全过 / EXT_UI_PASS**，并核对 `dist/` 里新类名与中文文案确实打包进去。
+- 回归：`npx vitest run` **214 文件 / 3242 例**全过、`npx eslint src/ agent/` 无输出、`npm run build` 成功。
+
+### 停靠条悬停提示：主行改为用户的问题，会话标题降为次要小字
+> 来源：用户提出「执行中任务那个旋转的小图标，移上去显示的是会话标题。是不是显示用户对那个任务的问题更合适？一眼就能看出这是哪一个用户问题——看会话名称有可能对不上是哪个任务」。
+
+**先纠正两个我自己读错的事实**（设计前查证代码，不是猜的）：
+- 会话记录里的消息字段是 **`messageHistory`**，不是 `messages`；按 `session.messages` 设计会直接取到 `undefined`。
+- **不能只读内存 `state.sessions`**：它是上一次 `loadSessions` 的快照，而 `chat-manager` 的跨会话派发明确「非激活会话的会话态只从调用方给的快照读，绝不回写 state」。内存里那份 `messageHistory` 可能停在上一轮 —— 恰好会复现用户抱怨的「对不上是哪个任务」。所以**真值以 IndexedDB 为准**（`getSession`），内存快照只当首帧占位，避免每帧读库。
+- `EXECUTION_STATUS_UPDATE` 载荷里只有 `nodeName` / `status` / `executionLog` / `sessionId` / `callId`，**根本没有问题原文**，指望事件带文本这条路不通。
+
+**改法**
+- 新增导出纯函数 `normalizeLabel` / `isSameLabel` / `pickEntryLabel`，主行优先级：`queued` 取排队原文（`queueStore.peekNext(sid).text`）→ 否则取会话里**最后一条用户消息** → 都没有才回落到会话标题。有独立原文可展示时就不再重复标题；`normalizeLabel` 折叠空白并截断到 `MAX_LABEL_CHARS = 160`。
+- 副行只在「标题与问题不是同一件事」时出现（`isSameLabel` 比对前**丢掉全部空白**：标题是首条问题前 50 字符且换行被换成空格，只折叠空白会漏判，结果副行把同一句话重播一遍）。三行结构 = 加粗问题（最多两行）+ 灰色会话标题 + 状态行。
+- 采集侧 `hydrateMissingTitles` → `hydrateSessionLabels`：**一次 `getSession` 同时补标题与问题**，缓存按 `stamp = startedAt || doneAt` 键控，只有轮次变了才重查库；`titlePending` 换成 `questionCache` + `labelPending`，`clearEntry` / `reset` 同步清理。
+- 多模态带图提问的 `content` 是 parts 数组，**必须走既有的 `extractTextFromContent`**（`src/shared/token-counter.js`），直接 `String(content)` 会把 base64 data URL 塞进 tooltip。该模块只依赖 logger + i18n 且侧边栏已有 4 处在用，不增加打包体积。
+- 芯片首字符按用户选择**保持取会话标题**（26px 里放问题首字反而更易误认），但 `aria-label` 改用主行文本，读屏拿到的是问题。
+- 样式：`.session-dock-tip-title` 从单行 `nowrap` 省略改 `-webkit-box` + `line-clamp: 2` + `word-break: break-word`（一行 nowrap 会把长问题切得看不出是哪个任务，反而失去这次改动的意义）；新增 `.session-dock-tip-sub`（11px / `--text-secondary` / 单行省略，小字要过 4.5:1 只能用 `-secondary` 档）。
+
+**验证**
+- `test/unit/session-dock.unit.test.js` 40 → **56 例**：主行优先级与回落链、160 字符截断、空白差异判重、排队条目用原文、5 个 DOM 用例（主行是问题、副行是标题、标题与问题相同时不出副行）；两条专门守卫 —— 取文本必须走 `extractTextFromContent`（断言源码里不许出现 `String(msg.content)`）、问题真值以库为准（`questionCache.set(sid, { text, stamp })` 且只有一处 `getSession(`）。
+- 视觉探针 43 → **50 项**：长问题两行截断、副行存在与内容、状态行未被改样式弄丢；亮色 / 暗色各 **50/50 全过 / EXT_UI_PASS**，副行对比度实测 **亮 5.74 / 暗 7.70**。
+- 回归：`npx eslint src/ agent/` 无输出、`npx vitest run` **214 文件 / 3258 例**全过、`npm run build` 成功，并在 `dist/assets/side_panel.{js,css}` 里核验压缩后仍存在 `{primary:...,sub:...,isQuestion:...}` 与 `Array.isArray(e?.messageHistory)` + `role !== 'user'` 的取文本逻辑，及 `session-dock-tip-sub` / `-webkit-line-clamp:2`。
+
+**顺便回答「卡死了图标还删不删得掉」**：真在跑的没有 `×` 是刻意的（给执行态画 `×` 会被读成「取消任务」）；卡死要靠上面那三条同时成立才判陈旧并露出 `×`。**如实说明还剩一个洞**：若后台 Service Worker 自身 hung 住、`activeReactLoops` 里仍留着该会话，则条件②「后台不认」永不成立 → 永不判陈旧 → 停靠条上删不掉，只能点进该会话用停止按钮，或等 SW 被回收重启（届时面板本地脏的 `generating` / `pending` 都不持久化，能自愈）。按用户选择本次不加「立即删除」入口。
+
 ### 切换工作目录：会话级切换不再弹「不在允许路径之内」，勾选「设为默认目录」对列表项生效
 > 来源：用户反馈两点——①「在会话里切换工作目录会弹窗说当前目录不在允许的路径之内，但会话绑定的工作目录本来就不需要加进允许路径吧，这个提示有问题」；②「设默认目录必须在输入框里填 + 勾选才行，如果我是从上面的目录列表里选一项，要怎么把它设为默认？勾一下再点列表项行不行，现在实现了吗」。
 
