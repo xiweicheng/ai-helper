@@ -213,10 +213,13 @@ registerTranslations('zh', {
     switchBtn: '切换',
     noAllowedPaths: '暂无允许的目录',
     currentTag: '当前',
+    defaultTag: '默认',
     removeFromAllowed: '从允许列表移除',
     confirmRemovePath: '确定要从允许访问的目录列表中移除以下目录吗？\n{path}\n\n移除后 AI 将无法访问该目录，可重新切换工作目录再加回。',
+    confirmRemoveStillUsable: '确定要从允许访问的目录列表中移除以下目录吗？\n{path}\n\n它是当前会话的目录或代理默认目录，移出列表后仍照常可用（工作目录不受允许列表限制），只是不再作为「附加授权」显示。',
     confirmRemovePathTitle: '确认移除允许目录',
     removedFromAllowed: '已从允许列表移除',
+    removedStillUsable: '已从允许列表移除（它仍是工作目录/默认目录，照常可用）',
     removeFailedWithError: '移除失败: {error}',
     selectOrInputPath: '请选择或输入目标路径',
     alreadyCurrentWorkdir: '该目录已是当前工作目录',
@@ -445,10 +448,13 @@ registerTranslations('en', {
     switchBtn: 'Switch',
     noAllowedPaths: 'No allowed directories',
     currentTag: 'Current',
+    defaultTag: 'Default',
     removeFromAllowed: 'Remove from allowed list',
     confirmRemovePath: 'Are you sure you want to remove the following directory from the allowed list?\n{path}\n\nAfter removal, the AI will no longer be able to access this directory. You can switch the working directory again to add it back.',
+    confirmRemoveStillUsable: 'Remove the following directory from the allowed list?\n{path}\n\nIt is this session\'s directory or the agent default, so it stays accessible (working directories bypass the allowed list). It will simply no longer be listed as an additional allowed entry.',
     confirmRemovePathTitle: 'Confirm Remove Allowed Directory',
     removedFromAllowed: 'Removed from allowed list',
+    removedStillUsable: 'Removed from allowed list (still available as the working/default directory)',
     removeFailedWithError: 'Remove failed: {error}',
     selectOrInputPath: 'Please select or enter a target path',
     alreadyCurrentWorkdir: 'This directory is already the current working directory',
@@ -6116,6 +6122,9 @@ export async function showSwitchWorkdirDialog(options = {}) {
   const isBound = !!boundWorkdir;
   const scopeSuffix = isBound ? t('workdirTag.sessionScope') : t('workdirTag.defaultScope');
   const currentWorkdir = detail.workdir || '';
+  // 代理全局默认目录（未绑定会话的兜底目录）：用来给列表项标注「默认」，
+  // 老代理端没有该字段时退回当前目录（此时二者等价）
+  const agentDefaultWorkdir = detail.defaultWorkdir || currentWorkdir;
   let allowedPaths = Array.isArray(detail.allowedPaths) ? [...detail.allowedPaths] : [];
 
   // 浏览按钮仅在回环本机代理时展示：原生目录选择框弹在代理端所在机器，
@@ -6217,14 +6226,18 @@ export async function showSwitchWorkdirDialog(options = {}) {
       }
       listEl.innerHTML = allowedPaths.map(p => {
         const isCurrent = p === currentWorkdir;
+        const isDefault = p === agentDefaultWorkdir;
+        // 徽标负责解释「删了为什么还能用」：当前目录与默认目录在 checkPath 里本来就无条件放行，
+        // 移出列表只是去掉「附加授权」身份。移除按钮对所有项都保留 —— 之前当前项没有按钮、
+        // 默认项有按钮却会被代理端 400 拒绝，两者都是死路。
+        const currentBadge = '<span style="flex-shrink:0;font-size:11px;color:var(--info-500);border:1px solid var(--info-500);border-radius:4px;padding:0 6px;">' + t('workspace.currentTag') + '</span>';
+        const defaultBadge = '<span style="flex-shrink:0;font-size:11px;color:var(--text-tertiary);border:1px solid var(--border-default);border-radius:4px;padding:0 6px;">' + t('workspace.defaultTag') + '</span>';
         return `
             <div class="switch-workdir-item${isCurrent ? ' current' : ''}" data-path="${escapeHtml(p)}" title="${escapeHtml(p)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:${isCurrent ? 'default' : 'pointer'};font-size:13px;color:${isCurrent ? 'var(--text-tertiary)' : 'var(--text-primary)'};word-break:break-all;border-bottom:1px solid var(--bg-subtle);${isCurrent ? 'background:var(--bg-subtle);' : ''}">
               <span style="flex-shrink:0;">📁</span>
               <span style="flex:1;">${escapeHtml(p)}</span>
-              ${isCurrent
-                ? '<span style="flex-shrink:0;font-size:11px;color:var(--info-500);border:1px solid var(--info-500);border-radius:4px;padding:0 6px;">' + t('workspace.currentTag') + '</span>'
-                : '<button class="switch-workdir-remove" data-remove-path="' + escapeHtml(p) + '" title="' + t('workspace.removeFromAllowed') + '" style="flex-shrink:0;background:none;border:none;color:var(--danger-500);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>'
-              }
+              ${isCurrent ? currentBadge : ''}${isDefault ? defaultBadge : ''}
+              <button class="switch-workdir-remove" data-remove-path="${escapeHtml(p)}" title="${t('workspace.removeFromAllowed')}" style="flex-shrink:0;background:none;border:none;color:var(--danger-500);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:4px;">×</button>
             </div>`;
       }).join('');
     }
@@ -6232,8 +6245,13 @@ export async function showSwitchWorkdirDialog(options = {}) {
 
     // 移除允许目录
     async function doRemove(targetPath) {
+      // 当前目录 / 默认目录移出列表后依然能读写（checkPath 0.6 无条件放行），
+      // 这两类必须换一套文案，否则「移除后 AI 将无法访问该目录」就是假话
+      const stillUsable = targetPath === agentDefaultWorkdir || targetPath === currentWorkdir;
       const ok = await window.showCustomConfirm(
-        t('workspace.confirmRemovePath', { path: targetPath }),
+        stillUsable
+          ? t('workspace.confirmRemoveStillUsable', { path: targetPath })
+          : t('workspace.confirmRemovePath', { path: targetPath }),
         t('workspace.confirmRemovePathTitle')
       );
       if (!ok) return;
@@ -6241,7 +6259,7 @@ export async function showSwitchWorkdirDialog(options = {}) {
       if (result.success) {
         allowedPaths = Array.isArray(result.allowedPaths) ? result.allowedPaths : allowedPaths.filter(p => p !== targetPath);
         renderList();
-        showToast(t('workspace.removedFromAllowed'), 'success');
+        showToast(stillUsable ? t('workspace.removedStillUsable') : t('workspace.removedFromAllowed'), 'success');
       } else {
         showToast(t('workspace.removeFailedWithError', { error: result.error || t('workspace.unknownError') }), 'error');
       }
