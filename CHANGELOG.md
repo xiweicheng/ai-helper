@@ -2,6 +2,23 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-30
+
+### 待办面板 UX 重做：双 Tab、标记完成入口、优先级色条、外部链接、底边不挡输入框
+
+> 来源：用户在真实扩展里用了一轮之后给出四条硬伤——「怎么都是进行中的呀？」（组名误导）、「上面那个待办上有一个数字一直是 0，前面那个是什么呢？」（`0 / 11` 看不出分子）、「完成的任务在哪里呢？怎么把任务标记完成？只有删除，没有标记完成呢？」（致命可发现性缺陷）、已完成条目被折叠分组顶到屏幕外；并追加要求：菜单不要换行（「连都换行了？好难看呀！」）、要优先级（「在前面加一个垂直的颜色条」）、要能关联外部链接、面板底部不能盖住问答输入框。列表形态经确认选**双 Tab**。
+
+- **双 Tab 取代折叠分组**：「待办 / 已完成」一次只渲染一组（`data-group="active|done"`），各自带条数；折叠偏好彻底不再使用。之前两组同列 + 默认折叠，已完成条目被顶到可视区之外，等价于「做完了但找不到」。头部进度改成自解释的「完成 1 / 3」；在已完成 Tab 里添加会自动切回待办 Tab，避免「加了但看不见」。
+- **标记完成有文字入口**：状态圈继续承担点击循环，但行尾「⋯」菜单里必须出现「开始处理 / 标记完成 / 退回待办」——把关键动作藏在一个空心圆圈的点击上是本次最大的可用性问题。「处理中」改用圈内实心点 + 淡底表示，把左侧竖条让给优先级（一个位置只说一件事）。
+- **撤销条与智能恢复**：进入 `done` 时记录 `prevStatus`、离开时清除；标记完成后在原位置浮现面板内联撤销条（6 秒），点击走 `restoreTodo` 且**保持 `order` 原位**而不是掉到列表末尾（`showToast` 内部是 `textContent`，塞不进按钮，所以撤销只能做成内联条）。已完成 Tab 每行的「恢复」文案写明目标状态：完成前是「处理中」就回到处理中，否则回到待处理。
+- **优先级**：`priority: 'high' | 'medium' | 'low' | null`，模型层 `normalizePriority` 白名单过滤（脏值落库前就变成 `null`）；行首 3px 竖条只代表优先级，色值取仓库实际存在的 `--danger-500` / `--warning-500` / `--brand-500`（设计稿写的 `--brand-red/amber/blue-500` 并不存在），未设置则不出条；摘要里高优先级条目带「（高优先级）」标注。
+- **外部链接**：`link` 存绝对地址，`normalizeLink` 剔前导斜杠、缺协议补 `https://`、协议白名单只留 `http:` / `https:`，返回 `{url, host, valid}`。**校验在编排层先于乐观更新**——非法链接不先上屏再回滚，`setTodoLink` 返回 `reason:'invalid'` 并弹「仅支持 http/https」。胶囊是普通 `button`，**`href` 不写进 DOM**，点击时才 `chrome.tabs.create({url})`，扩展页面因此不留可悬停的任意链接；清空回车即移除；摘要只写合法链接。
+- **菜单不换行**：`.todo-menu` 用 `width: max-content` + 条目 `white-space: nowrap`，按视口右缘与高度实测夹取（`offsetWidth` 而非猜宽度），超长时可滚动。
+- **底边不挡输入框**：不再复用共享的 `clampPanelToViewport`（它只按「视口底 - 8px」夹，恰好会把面板压到输入框上），todo 从 `OPEN_PANEL_SELECTOR` 名单移出，改为参照定时任务的底部锚定：量 `.input-container` 顶边，写私有 `--todo-max-h` 与 `--fit-y`（只取负值），量不到时回退 `innerHeight - 160`，并用 `ResizeObserver` 跟着输入区增高把面板抬上去。
+- **探针暴露的两个自引入缺陷**（单测看不见，都是本轮改动带进来的）：① `handleChange` 的 link 分支缺 `linkEditId` 守卫，回车保存后重渲染把还带脏值的输入框从 DOM 拆下来时，浏览器会补发一次 `change` → 写两遍、弹两条一样的 toast（探针 O 组的 toast 串「已关联链接 | 已关联链接」直接暴露）；② 链接编辑器的「取消」按钮点下去时 `change` 与 `focusout` 都比 `click` 早，自动保存抢跑让取消变成死按钮——先试过 `focusout` 里判 `relatedTarget`，实测 `change` 更早就没有焦点信息可用，改成在 `pointerdown` 就 `cancelLinkEdit()`。两条各补源码守卫与探针断言（O3b / O6b）。
+- **测试同步**：`todo-model` 39 例（优先级白名单、`normalizeLink` 全分支、`linkLabel`/`isLinkOpenable`、`restoreTarget`、`prevStatus` 脏值、摘要含高优先级与链接且非法链接不进摘要）、`todo-manager` 29 例（完成与恢复 / 优先级 / 外部链接三个新 describe：`prevStatus` 记录与清除、恢复保持原位、相同状态短路、非法状态拒收、写操作 `{ok, reason}` 四态、校验先于乐观更新）、`todo-panel-structure` 56 例（双 Tab、状态动作可见、优先级色条分工、外部链接、菜单不换行、几何夹取、i18n 中英 key 成对）；探针新增 M / N / O / P 四组共 30 余条实测（菜单条目真实高度与截断、色条真实渲染色与 token 同值、开新标签的 URL 是补全后的 https、面板底边与输入区上沿的几何不变量含输入区增高与 620px 矮窗口）。
+- **验证**：`npx vitest run` **218 文件 / 3403 例全绿**；`node test-results-probes/_todo-panel-visual.mjs` **ALL CHECKS PASSED**（含暗色截图）；`npx eslint` 无输出；`npm run build:silent` → BUILD_SUCCESS。中英 `DOCUMENTATION.md` 第 36 节与 `docs/superpowers/specs/2026-10-29-side-panel-todo-design.md`（新增 §9 实现记录）已同步。
+
 ## 2026-10-29
 
 ### 侧边栏待办（todo）：右侧轨道第 6 个入口 + 浮层清单

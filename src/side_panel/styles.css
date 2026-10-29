@@ -16101,15 +16101,19 @@ body.voice-recording-active .input-container {
 .todo-panel {
   position: absolute;
   right: 26px;
-  top: 50%;
-  transform: translateY(calc(-50% + var(--clamp-y, 0px)));
+  /* 底部锚定（与定时任务同一锁点）：面板从下往上长，配合 JS 把底边夹在
+     输入区上沿之前；以前的 top:50% 居中会让面板一直伸到视口底、盖住输入框 */
+  top: auto;
+  bottom: -40px;
+  transform: translateY(var(--fit-y, 0px));
   display: flex;
   flex-direction: column;
   width: 320px;
   /* 窄侧边栏兜底：60 = 右入口轨 26 + 左走廊 34（与 body.has-session-dock 给聊天区留的
      padding-left 对齐），保证面板不把左侧执行中会话停靠条压在自己底下 */
   max-width: calc(100vw - 60px);
-  max-height: min(72vh, 560px);
+  /* 可用高度由 JS 按「输入区顶边 - 顶部保留」实时算；给个兜底值防未跑 JS 时超高 */
+  max-height: var(--todo-max-h, min(72vh, 560px));
   background: rgba(var(--surface-rgb), 1);
   /* 浮层边界：与另外 5 个侧边浮层同一套 token（守卫见 side-rail-popup-border-theme） */
   border: 1px solid var(--border-strong);
@@ -16217,13 +16221,27 @@ body.voice-recording-active .input-container {
   height: 13px;
 }
 
+.todo-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+  flex: 0 0 auto;
+}
+
+/* 进度旁边的文字带上「完成」二字，不再只给一个看不出分子的「0 / 11」 */
+.todo-progress-row .todo-panel-count {
+  flex: 0 0 auto;
+  min-width: 62px;
+}
+
 .todo-progress {
+  flex: 1 1 auto;
+  min-width: 0;
   height: 2px;
-  margin: 0 12px 8px;
   border-radius: 2px;
   background: var(--border-subtle);
   overflow: hidden;
-  flex: 0 0 auto;
 }
 
 .todo-progress i {
@@ -16294,49 +16312,107 @@ body.voice-recording-active .input-container {
   padding: 0 6px 10px;
 }
 
-.todo-section {
+/* 待办 / 已完成两个 Tab：一次只渲染一组，已完成不再被顶到屏幕外 */
+.todo-tabs {
   display: flex;
+  gap: 4px;
+  padding: 0 10px 8px;
+  flex: 0 0 auto;
+}
+
+.todo-tab {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 6px 4px;
-}
-
-.todo-section-done {
-  margin-top: 6px;
+  gap: 5px;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  user-select: none;
-  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.todo-section-done:hover {
+.todo-tab:hover {
   background: var(--bg-hover);
 }
 
-.todo-section-chevron {
-  display: inline-flex;
-  color: var(--text-tertiary);
-  transition: transform 0.2s ease;
+.todo-tab.active {
+  background: rgba(var(--brand-violet-rgb), 0.12);
+  color: var(--brand-violet-500);
 }
 
-.todo-section-chevron.open {
-  transform: rotate(90deg);
+/* 英文文案比中文长，靠 min-width:0 + 省略号而不是让 Tab 被顶开 */
+.todo-tab > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.todo-section-chevron svg {
-  width: 10px;
-  height: 10px;
-}
-
-.todo-section-name {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  color: var(--text-secondary);
-}
-
-.todo-section-count {
+.todo-tab-count {
+  flex: 0 0 auto;
   font-size: 10px;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-tab.active .todo-tab-count {
+  color: var(--brand-violet-500);
+}
+
+/* 刚标记完成的撤销条：开在面板内联，不依赖只能放纯文本的全局 toast */
+.todo-undo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--brand-violet-soft-border);
+  border-radius: 8px;
+  background: var(--brand-violet-soft-bg);
+}
+
+.todo-undo-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-clear-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: calc(100% - 12px);
+  margin: 0 6px 6px;
+  padding: 5px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.todo-clear-done:hover {
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--danger-500);
+}
+
+.todo-clear-done svg {
+  width: 11px;
+  height: 11px;
 }
 
 .todo-empty {
@@ -16369,19 +16445,39 @@ body.voice-recording-active .input-container {
   background: rgba(var(--brand-violet-rgb), 0.07);
 }
 
+/* 左侧竖条只代表优先级（一个位置只说一件事）；未设置时保持透明 */
 .todo-item::before {
   content: '';
   position: absolute;
   left: 0;
   top: 9px;
   bottom: 9px;
-  width: 2px;
+  width: 3px;
   border-radius: 2px;
   background: transparent;
 }
 
-.todo-item.doing::before {
-  background: var(--brand-violet-500);
+.todo-item.prio-high::before {
+  background: var(--danger-500);
+}
+
+.todo-item.prio-medium::before {
+  background: var(--warning-500);
+}
+
+.todo-item.prio-low::before {
+  background: var(--brand-500);
+}
+
+/* 「处理中」不再抢竖条，改用底色 + 圈内实心点 + 加粗标题表示 */
+.todo-item.doing {
+  background: rgba(var(--brand-violet-rgb), 0.05);
+}
+
+/* 悬停仍要给反馈，所以 doing 的 hover 比默认更重一点 */
+.todo-item.doing:hover,
+.todo-item.doing:focus-within {
+  background: rgba(var(--brand-violet-rgb), 0.1);
 }
 
 .todo-item.dragging {
@@ -16517,6 +16613,69 @@ body.voice-recording-active .input-container {
 
 .todo-sep {
   opacity: 0.5;
+}
+
+/* 链接胶囊：标题不加下划线（与行内编辑抢手势），可点区单独给一枚带图标的胶囊；
+   下划线只在悬停时出现 —— 常态干净，悬停给足「可点」信号 */
+.todo-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 160px;
+  margin: -1px 0;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 5px;
+  background: var(--brand-soft-bg);
+  color: var(--text-link);
+  font-size: 10.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.todo-link-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-link-chip svg {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+}
+
+.todo-link-chip:hover,
+.todo-link-chip:focus-visible {
+  background: var(--brand-soft-border);
+  text-decoration: underline;
+}
+
+/* 已完成的条目不再是重点，胶囊降成中性色但仍可点 */
+.todo-item.done .todo-link-chip {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.todo-link-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.todo-link-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid rgba(var(--brand-violet-rgb), 0.5);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  font-size: 11px;
+  color: var(--text-primary);
+  outline: none;
 }
 
 .todo-note-toggle {
@@ -16683,11 +16842,17 @@ body.voice-recording-active .input-container {
   height: 12px;
 }
 
-/* 更多菜单：fixed 层，避免被 .todo-body 的滚动容器裁切 */
+/* 更多菜单：fixed 层，避免被 .todo-body 的滚动容器裁切。
+   宽度按文案自适应（以前写死 132px，「复制并附提问模板」会被拆成两行）；
+   定位由 JS 拿 offsetWidth 实测后夹取，不在这里用常量 */
 .todo-menu {
   position: fixed;
   z-index: 10020;
-  width: 132px;
+  width: max-content;
+  min-width: 148px;
+  max-width: min(280px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--border-default);
   border-radius: 8px;
@@ -16708,7 +16873,82 @@ body.voice-recording-active .input-container {
   color: var(--text-secondary);
   font-size: 11.5px;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+/* 极端情况（超长本地化文案）下宁可截断也不换行 */
+.todo-menu-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.todo-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-subtle);
+}
+
+/* 优先级行：四个色块直接摆在菜单里，比二级菜单少一次跳转 */
+.todo-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.todo-menu-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.todo-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.todo-swatch:hover {
+  transform: scale(1.12);
+}
+
+.todo-swatch.low {
+  background: var(--brand-500);
+}
+
+.todo-swatch.medium {
+  background: var(--warning-500);
+}
+
+.todo-swatch.high {
+  background: var(--danger-500);
+}
+
+/* 「无」用斜线表示，与未选中的空白区分开 */
+.todo-swatch:not(.low):not(.medium):not(.high) {
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--border-strong) calc(50% - 1px),
+    var(--border-strong) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+.todo-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 3px var(--brand-violet-500);
 }
 
 .todo-menu-item svg {

@@ -2,9 +2,15 @@
 import { describe, test, expect } from 'vitest';
 import {
   TODO_STATUS,
+  TODO_PRIORITY,
   nextStatus,
   createTodo,
   normalizeTodo,
+  normalizePriority,
+  normalizeLink,
+  linkLabel,
+  isLinkOpenable,
+  restoreTarget,
   groupTodos,
   reorderList,
   withOrder,
@@ -49,7 +55,7 @@ describe('状态流转', () => {
 });
 
 describe('两段式分组', () => {
-  test('待处理与处理中同属「进行中」，已完成独立成组', () => {
+  test('待处理与处理中同属待办组，已完成独立成组', () => {
     const { active, done, stats } = groupTodos([
       todo({ id: 'a', status: TODO_STATUS.PENDING, order: 1 }),
       todo({ id: 'b', status: TODO_STATUS.DOING, order: 0 }),
@@ -81,9 +87,113 @@ describe('两段式分组', () => {
     expect(groupTodos(null).active).toEqual([]);
   });
 
-  test('已完成条目不会残留在进行中组', () => {
+  test('已完成条目不会残留在待办组', () => {
     const { active } = groupTodos([todo({ status: TODO_STATUS.DONE, completedAt: NOW })]);
     expect(active).toHaveLength(0);
+  });
+});
+
+describe('优先级白名单', () => {
+  test('三档原样保留，其它值归为未设置（不报错也不丢数据）', () => {
+    expect(normalizePriority(TODO_PRIORITY.HIGH)).toBe('high');
+    expect(normalizePriority('medium')).toBe('medium');
+    expect(normalizePriority('low')).toBe('low');
+    expect(normalizePriority('HIGH')).toBeNull();
+    expect(normalizePriority('urgent')).toBeNull();
+    expect(normalizePriority('')).toBeNull();
+    expect(normalizePriority(null)).toBeNull();
+    expect(normalizePriority(undefined)).toBeNull();
+  });
+
+  test('新建与读取都过白名单，历史脏值不会渲染出色条', () => {
+    expect(createTodo('A', { priority: 'highest' }, NOW).priority).toBeNull();
+    expect(createTodo('A', { priority: 'high' }, NOW).priority).toBe('high');
+    expect(normalizeTodo({ id: 'a', priority: 3 }).priority).toBeNull();
+    expect(normalizeTodo({ id: 'a', priority: 'low' }).priority).toBe('low');
+  });
+});
+
+describe('外部链接校验', () => {
+  test('空值 = 没有链接且算合法（移除链接走这条路）', () => {
+    expect(normalizeLink('')).toEqual({ url: '', host: '', valid: true });
+    expect(normalizeLink(null).valid).toBe(true);
+    expect(normalizeLink(undefined).url).toBe('');
+    expect(normalizeLink('   ').url).toBe('');
+  });
+
+  test('不带协议时补 https，粘一条纯域名也要能直接用', () => {
+    expect(normalizeLink('example.com').url).toBe('https://example.com/');
+    expect(normalizeLink('  example.com/x  ').url).toBe('https://example.com/x');
+    expect(normalizeLink('http://example.com').url).toBe('http://example.com/');
+    expect(normalizeLink('https://example.com/a?b=1#c').valid).toBe(true);
+  });
+
+  test('只放行 http/https：javascript:/data:/file: 进 href 就是自伤 XSS', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,<h1>x</h1>', 'file:///etc/passwd']) {
+      expect(normalizeLink(bad).valid, bad).toBe(false);
+      expect(normalizeLink(bad).url, bad).toBe('');
+    }
+  });
+
+  test('补完协议仍然解析不出来的，判非法而不是硬拼一个怪地址', () => {
+    expect(normalizeLink('https://').valid).toBe(false);
+    expect(normalizeLink('http://').valid).toBe(false);
+  });
+
+  test('前导斜杠先剔掉，否则 //example.com 补完协议会留下四个斜杠', () => {
+    const parsed = normalizeLink('//example.com/x');
+    expect(parsed.valid).toBe(true);
+    expect(parsed.url).toBe('https://example.com/x');
+    expect(parsed.url).not.toContain('///');
+  });
+
+  test('展示域名去 www、过长截断，胶囊不会被域名撑爆', () => {
+    expect(normalizeLink('https://www.example.com/docs').host).toBe('example.com');
+    const long = normalizeLink('https://some-very-long-subdomain-name.example.com/a/b');
+    expect(long.host).toHaveLength(22);
+    expect(long.host.endsWith('…')).toBe(true);
+  });
+
+  test('linkLabel 只给已存且合法的链接出文案', () => {
+    expect(linkLabel({ link: 'https://example.com/x' })).toBe('example.com');
+    expect(linkLabel({ link: 'javascript:alert(1)' })).toBe('');
+    expect(linkLabel({ link: '' })).toBe('');
+    expect(linkLabel({})).toBe('');
+    expect(linkLabel(null)).toBe('');
+  });
+
+  test('点击前再校一次：库里被手改坏的链接不打开', () => {
+    expect(isLinkOpenable('https://example.com')).toBe(true);
+    expect(isLinkOpenable('javascript:alert(1)')).toBe(false);
+    expect(isLinkOpenable('')).toBe(false);
+    expect(isLinkOpenable(undefined)).toBe(false);
+  });
+
+  test('normalizeTodo：存量非法链接当没链接，缺协议的补全后入库形态一致', () => {
+    expect(normalizeTodo({ id: 'a', link: 'javascript:alert(1)' }).link).toBe('');
+    expect(normalizeTodo({ id: 'a', link: 'example.com' }).link).toBe('https://example.com/');
+    expect(normalizeTodo({ id: 'a' }).link).toBe('');
+  });
+});
+
+describe('完成后的智能恢复目标', () => {
+  test('记到「处理中」就回处理中，其余一律回待办', () => {
+    expect(restoreTarget({ prevStatus: TODO_STATUS.DOING })).toBe(TODO_STATUS.DOING);
+    expect(restoreTarget({ prevStatus: TODO_STATUS.PENDING })).toBe(TODO_STATUS.PENDING);
+    expect(restoreTarget({ prevStatus: TODO_STATUS.DONE })).toBe(TODO_STATUS.PENDING);
+    expect(restoreTarget({ prevStatus: 'bogus' })).toBe(TODO_STATUS.PENDING);
+    expect(restoreTarget({ prevStatus: null })).toBe(TODO_STATUS.PENDING);
+    expect(restoreTarget({})).toBe(TODO_STATUS.PENDING);
+    expect(restoreTarget(null)).toBe(TODO_STATUS.PENDING);
+  });
+
+  test('prevStatus 只贴在已完成条目身上，其余情况一律丢脏值', () => {
+    expect(normalizeTodo({ id: 'a', status: TODO_STATUS.DONE, prevStatus: TODO_STATUS.DOING }).prevStatus)
+      .toBe(TODO_STATUS.DOING);
+    expect(normalizeTodo({ id: 'a', status: TODO_STATUS.PENDING, prevStatus: TODO_STATUS.DOING }).prevStatus).toBeNull();
+    expect(normalizeTodo({ id: 'a', status: TODO_STATUS.DONE, prevStatus: TODO_STATUS.DONE }).prevStatus).toBeNull();
+    expect(normalizeTodo({ id: 'a', status: TODO_STATUS.DONE, prevStatus: 'archived' }).prevStatus).toBeNull();
+    expect(createTodo('A', {}, NOW).prevStatus).toBeNull();
   });
 });
 
@@ -160,7 +270,7 @@ describe('时间文案', () => {
 });
 
 describe('Markdown 导出', () => {
-  test('进行中在前、已完成在后，处理中带 ⏳，备注缩进', () => {
+  test('待办在前、已完成在后，处理中带 ⏳，备注缩进', () => {
     const md = buildTodoDigest([
       todo({ title: '写方案', status: TODO_STATUS.DOING, order: 0, note: '先列大纲' }),
       todo({ title: '对需求', order: 1 }),
@@ -168,7 +278,8 @@ describe('Markdown 导出', () => {
     ], { now: NOW });
 
     expect(md).toBe([
-      '**进行中**',
+      // 分组标题与面板 Tab 同名：写「进行中」会让人以为下面全是执行中的任务
+      '**待办**',
       '- [ ] ⏳ 写方案',
       '  - 备注：先列大纲',
       '- [ ] 对需求',
@@ -176,6 +287,29 @@ describe('Markdown 导出', () => {
       '**已完成**',
       '- [x] 搭环境（10月28日 完成）',
     ].join('\n'));
+  });
+
+  test('只标高优先级，链接以 Markdown 链接跟在条目末尾', () => {
+    const md = buildTodoDigest([
+      todo({ title: '修 P0', order: 0, priority: TODO_PRIORITY.HIGH, link: 'https://bug.example.com/1' }),
+      todo({ title: '整理', order: 1, priority: TODO_PRIORITY.LOW, link: 'https://example.com/doc' }),
+      todo({
+        title: '发布',
+        order: 2,
+        status: TODO_STATUS.DONE,
+        completedAt: NOW,
+        link: 'https://example.com/rel',
+      }),
+    ], { now: NOW });
+    expect(md).toContain('- [ ] 修 P0（高优先级） [bug.example.com](https://bug.example.com/1)');
+    expect(md).toContain('- [ ] 整理 [example.com](https://example.com/doc)');
+    expect(md).not.toContain('（低优先级）');
+    expect(md).toContain('- [x] 发布（10月29日 完成） [example.com](https://example.com/rel)');
+  });
+
+  test('非法链接不进摘要，免得把 javascript: 递给模型', () => {
+    const md = buildTodoDigest([todo({ title: 'A', order: 0, link: 'javascript:alert(1)' })], { now: NOW });
+    expect(md).toBe(['**待办**', '- [ ] A'].join('\n'));
   });
 
   test('带截止时间的条目补「截止」括注', () => {

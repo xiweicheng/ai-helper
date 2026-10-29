@@ -20,7 +20,9 @@ import { clampPanelToViewport } from './utils.js';
 const SLOT_ORDER = ['workspace', 'bookmark', 'toc', 'search', 'todo', 'schedule'];
 
 // 处于打开态的浮层面板：尺寸变化后需重新夹取入视口
-const OPEN_PANEL_SELECTOR = '.workspace-panel.expanded, .bookmark-panel.expanded, .message-toc-panel.expanded, .search-panel.expanded, .todo-panel.expanded, .schedule-panel.open';
+// 待办不在名单里：共享夹取只按视口底，会把面板正好放到输入框上；
+// 待办自己按「输入区顶边」限高与位移（见 todo-panel.js 的 fitPanelToInputArea）
+const OPEN_PANEL_SELECTOR = '.workspace-panel.expanded, .bookmark-panel.expanded, .message-toc-panel.expanded, .search-panel.expanded, .schedule-panel.open';
 
 let railEl = null;
 let reclampTimer = null;

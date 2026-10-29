@@ -3,7 +3,8 @@
 // 1) 入口按轨道均分、配色沿用 tinted 语义族（不回退实心亮块/硬编码色值）；
 // 2) 行内操作默认隐藏、悬停或键盘聚焦才浮现（面板清爽的核心交互）；
 // 3) 纯逻辑与编排层不碰 DOM，保证可单测且不被渲染细节污染；
-// 4) 行内编辑在重渲染中存活、**每一个**写操作失败都有反馈（代码评审的一主一拦路缺陷）。
+// 4) 行内编辑在重渲染中存活、**每一个**写操作失败都有反馈（代码评审的一主一拦路缺陷）；
+// 5) 双 Tab / 智能恢复 / 优先级色条 / 链接协议白名单 / 底部锚定输入区上沿（本轮 UX 重做的不变量）。
 import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -14,6 +15,10 @@ const RAIL = read('src/side_panel/side-rail.js');
 const PANEL = read('src/side_panel/todo-panel.js');
 const MODEL = read('src/side_panel/todo-model.js');
 const MANAGER = read('src/side_panel/todo-manager.js');
+
+// 面板自己注册的中英文案块（用于「中英成对」守卫）
+const ZH = PANEL.slice(PANEL.indexOf("registerTranslations('zh'"), PANEL.indexOf("registerTranslations('en'"));
+const EN = PANEL.slice(PANEL.indexOf("registerTranslations('en'"));
 
 /** 取出某条规则块（从选择器到首个右花括号） */
 function rule(src, selector) {
@@ -35,8 +40,14 @@ describe('入口轨道', () => {
     expect(PANEL).toContain("getSideRailSlot('todo').appendChild(containerEl)");
   });
 
-  test('待办面板进入「打开态需重新夹取视口」名单', () => {
-    expect(RAIL).toContain('.todo-panel.expanded');
+  test('待办不用共享夹取：它只按视口底夹，正好会把面板压到输入框上', () => {
+    const list = RAIL.match(/const OPEN_PANEL_SELECTOR = '([^']+)'/);
+    expect(list).toBeTruthy();
+    expect(list[1]).not.toContain('.todo-panel');
+    // 另外几个面板仍然走共享夹取，不能连带改掉
+    expect(list[1]).toContain('.schedule-panel.open');
+    expect(PANEL).not.toMatch(/clampPanelToViewport\(/);
+    expect(PANEL).not.toMatch(/releasePanelClamp\(/);
   });
 
   test('入口与面板都接收指针事件（否则轨道 pointer-events:none 会吃掉点击）', () => {
@@ -74,9 +85,47 @@ describe('入口 tinted 风格', () => {
     const block = rule(STYLES, '.todo-panel {');
     expect(block).toContain('right: 26px');
     expect(block).toContain('width: 320px');
-    expect(block).toContain('var(--clamp-y, 0px)');
-    expect(PANEL).toContain('clampPanelToViewport(panelEl)');
-    expect(PANEL).toContain('releasePanelClamp(panelEl)');
+  });
+});
+
+describe('面板底部不遮住输入区', () => {
+  test('底部锚定（与定时任务同一锁点），不再垂直居中', () => {
+    const block = rule(STYLES, '.todo-panel {');
+    expect(block).toContain('top: auto');
+    expect(block).toContain('bottom: -40px');
+    expect(block).toContain('translateY(var(--fit-y, 0px))');
+    // 只负向匹配「声明行」：同一规则块里那句「以前的 top:50% 居中…」是注释
+    expect(block).not.toMatch(/^\s*top:\s*50%/m);
+    expect(block).toContain('max-height: var(--todo-max-h,');
+  });
+
+  test('限高与位移都以输入区上沿为界，量不到时回退轨道预留', () => {
+    expect(PANEL).toContain("const INPUT_AREA_SELECTOR = '.input-container'");
+    const measure = PANEL.slice(PANEL.indexOf('function measureInputTop('));
+    expect(measure.slice(0, measure.indexOf('\n}'))).toContain('window.innerHeight - RAIL_BOTTOM_RESERVE');
+
+    const fit = PANEL.slice(PANEL.indexOf('function fitPanelToInputArea('));
+    const body = fit.slice(0, fit.indexOf('\n}'));
+    expect(body).toContain('measureInputTop() - BOTTOM_GAP');
+    expect(body).toContain("'--todo-max-h'");
+    expect(body).toContain("'--fit-y'");
+    expect(body).toContain('if (!panelEl || !isOpen()) return;');
+    // 位移只能往上（Math.min(0, …)），往下就是把面板送进输入区
+    expect(body).toContain('Math.min(0, Math.floor(limit - rect.bottom))');
+  });
+
+  test('监听只在面板开着时存在，关闭即解除（常驻观察者会一直重排）', () => {
+    expect(PANEL).toMatch(/function watchInputArea\(\) \{[\s\S]*?stopWatchingInputArea\(\);/);
+    expect(PANEL).toContain('new ResizeObserver(');
+    expect(PANEL).toMatch(/function closePanel\(\) \{[\s\S]*?stopWatchingInputArea\(\);/);
+    expect(PANEL).toMatch(/function closePanel\(\) \{[\s\S]*?removeProperty\('--fit-y'\)/);
+    expect(PANEL).toMatch(/function closePanel\(\) \{[\s\S]*?removeProperty\('--todo-max-h'\)/);
+  });
+
+  test('每次重渲染后重新量一次（条目增减会改面板高度）', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    const body = render.slice(0, render.indexOf('\n}\n'));
+    expect(body.slice(body.indexOf('bodyEl.innerHTML')).indexOf('fitPanelToInputArea()')).toBeGreaterThan(-1);
   });
 });
 
@@ -103,6 +152,236 @@ describe('按钮收纳（清爽）', () => {
     expect(block).toContain('position: fixed');
     expect(PANEL).toContain('openRowMenu');
     expect(PANEL).toContain('openHeaderMenu');
+  });
+});
+
+describe('待办 / 已完成双 Tab', () => {
+  test('一次只渲染当前 Tab 的那一组', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    const body = render.slice(0, render.indexOf('\n}\n'));
+    expect(body).toContain("activeTab === 'done' ? done : active");
+    expect(body).toContain('data-group="${activeTab}"');
+  });
+
+  test('折叠分组的旧结构不得复活（它把已完成顶到屏幕外）', () => {
+    expect(STYLES).not.toContain('.todo-section');
+    expect(PANEL).not.toContain('toggle-done');
+    expect(PANEL).not.toContain('persistDoneExpanded');
+    expect(PANEL).not.toContain('DONE_EXPANDED_KEY');
+  });
+
+  test('Tab 条在 body 之外，只改选中态与计数，不重建 DOM（否则抢走列表里的焦点）', () => {
+    const update = PANEL.slice(PANEL.indexOf('function updateTabs('));
+    const body = update.slice(0, update.indexOf('\n}'));
+    expect(body).not.toContain('innerHTML');
+    expect(body).toContain("aria-selected");
+    expect(PANEL).toContain('switchTab(actionEl.dataset.tab)');
+    expect(STYLES).toMatch(/\.todo-tab\.active \{[^}]*background/);
+  });
+
+  test('两个 Tab 各带自己的计数，进度文字写明「完成」二字', () => {
+    expect(PANEL).toContain('todo-tab-count');
+    expect(PANEL).toMatch(/t\('todo\.progressLabel', \{ done: stats\.done, total: stats\.total \}\)/);
+    expect(ZH).toContain("progressLabel: '完成 {done} / {total}'");
+    // 计数从 header 搬到了进度行，不再孤悬在标题右边
+    expect(STYLES).toMatch(/\.todo-progress-row \{[^}]*display: flex/);
+  });
+
+  test('清除已完成只出现在已完成 Tab，且非空才给', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    const body = render.slice(0, render.indexOf('\n}\n'));
+    expect(body).toContain("activeTab === 'done' && done.length > 0");
+    expect(body).toContain('clear-completed-btn');
+    // 空列表要有完成 Tab 自己的空态文案，不能只说「暂无待办」
+    expect(body).toContain("isDoneTab ? 'todo.emptyDone' : 'todo.empty'");
+  });
+
+  test('已完成 Tab 里回车新增要先切回待办，否则「加了但看不见」', () => {
+    expect(PANEL).toMatch(/function submitQuickAdd\(\) \{[\s\S]*?if \(activeTab === 'done'\) activeTab = 'active';/);
+  });
+});
+
+describe('状态动作可见（不能只藏在状态圈上）', () => {
+  test('菜单按当前状态给「开始处理 / 标记完成 / 恢复」文字项', () => {
+    const items = PANEL.slice(PANEL.indexOf('function statusMenuItems('));
+    const body = items.slice(0, items.indexOf('\n}'));
+    expect(body).toContain("'set-doing'");
+    expect(body).toContain("'set-done'");
+    expect(body).toContain("'restore'");
+    expect(body).toContain("'set-pending'");
+    expect(body).toContain('restoreTarget(todo)');
+    // 智能恢复已经会回到待办时不再给重复项
+    expect(body).toContain('target !== TODO_STATUS.PENDING');
+    expect(PANEL).toContain('...statusMenuItems(todo)');
+  });
+
+  test('已完成条目行内悬浮按钮直接给「恢复」入口', () => {
+    expect(PANEL).toContain('data-action="restore"');
+    expect(PANEL).toMatch(/const restoreAction = isDone/);
+    expect(PANEL).toMatch(/case 'restore':[\s\S]*?restoreOne\(id\);/);
+  });
+
+  test('状态菜单里的每一个动作都过 persist（失败要说）', () => {
+    const menu = PANEL.slice(PANEL.indexOf('async function handleMenuAction('));
+    expect(menu.slice(0, menu.indexOf('\n}\n'))).toMatch(/persist\(setTodoStatus\(id, TODO_STATUS\.DOING\)\)/);
+    expect(menu).toMatch(/persist\(setTodoStatus\(id, TODO_STATUS\.PENDING\)\)/);
+  });
+
+  test('标记完成立即移走 + 面板内联撤销条（toast 只有 textContent，放不了按钮）', () => {
+    expect(PANEL).toMatch(/markUndoable\(todo\);[\s\S]*?persist\(setTodoStatus\(id, TODO_STATUS\.DONE\)\)/);
+    expect(PANEL).toContain('data-action="undo-complete"');
+    expect(PANEL).toContain('UNDO_DURATION_MS');
+    expect(PANEL).toMatch(/function clearUndo\(\) \{[\s\S]*?undoable = null;/);
+    expect(PANEL).toMatch(/function closePanel\(\) \{[\s\S]*?clearUndo\(\);/);
+    // 每次开面板都回到待办 Tab，旧的撤销条不跨开关留存
+    expect(PANEL).toMatch(/function openPanel\(\) \{[\s\S]*?activeTab = 'active';[\s\S]*?undoable = null;/);
+    expect(STYLES).toMatch(/\.todo-undo \{[^}]*flex/);
+  });
+});
+
+describe('优先级色条只说优先级', () => {
+  test('竖条默认透明，三档各取一个语义 token（不撞色也不硬编码）', () => {
+    expect(rule(STYLES, '.todo-item::before {')).toContain('background: transparent');
+    const high = rule(STYLES, '.todo-item.prio-high::before {');
+    const medium = rule(STYLES, '.todo-item.prio-medium::before {');
+    const low = rule(STYLES, '.todo-item.prio-low::before {');
+    expect(high).toContain('var(--danger-500)');
+    expect(medium).toContain('var(--warning-500)');
+    expect(low).toContain('var(--brand-500)');
+    const tokens = [high, medium, low].map(b => b.match(/var\((--[a-z0-9-]+)\)/)[1]);
+    expect(new Set(tokens)).toHaveLength(3);
+    for (const b of [high, medium, low]) expect(b).not.toMatch(/#[0-9a-f]{3,6}/i);
+  });
+
+  test('「处理中」不再抢竖条，改用底色 + 圈内实心点', () => {
+    expect(STYLES).not.toMatch(/\.todo-item\.doing::before/);
+    expect(rule(STYLES, '.todo-item.doing {')).toMatch(/background:/);
+    expect(PANEL).toMatch(/if \(todo\.status === TODO_STATUS\.DOING\) classes\.push\('doing'\);/);
+    expect(PANEL).toContain('classes.push(`prio-${todo.priority}`)');
+    expect(PANEL).toMatch(/TODO_STATUS\.DOING \? '<i><\/i>' : ''/);
+  });
+
+  test('档位白名单在模型层，菜单色块走 data-priority-value 并过 persist', () => {
+    expect(MODEL).toContain('PRIORITY_LEVELS');
+    expect(MANAGER).toContain('export function setTodoPriority');
+    expect(PANEL).toContain('data-priority-value');
+    expect(PANEL).toContain('persist(setTodoPriority(sid, value))');
+  });
+});
+
+describe('外部链接', () => {
+  test('协议白名单写在模型层，编排层校完才允许落库', () => {
+    expect(MODEL).toContain("ALLOWED_LINK_PROTOCOLS = ['http:', 'https:']");
+    expect(MANAGER).toContain("reason: 'invalid'");
+    expect(MANAGER).toMatch(/if \(!parsed\.valid\) return/);
+  });
+
+  test('链接渲染成可点胶囊，但不把 href 写进 DOM', () => {
+    const chip = PANEL.slice(PANEL.indexOf('function renderLinkChip('));
+    const body = chip.slice(0, chip.indexOf('\n}'));
+    expect(body).toContain('<button class="todo-link-chip"');
+    expect(body).not.toMatch(/<a\b/);
+    expect(body).not.toContain('href=');
+    expect(body).toContain('linkLabel(todo)');
+    // 无链接不出胶囊，不留一个点了没反应的洞
+    expect(body).toContain('if (!host) return \'\';');
+    expect(STYLES).toMatch(/\.todo-link-chip \{[^}]*var\(--text-link\)/);
+    expect(STYLES).toMatch(/\.todo-link-chip:hover[\s\S]*?text-decoration: underline/);
+  });
+
+  test('点击走 chrome.tabs.create 开新标签，打开前再校一次协议', () => {
+    const open = PANEL.slice(PANEL.indexOf('function openTodoLink('));
+    const body = open.slice(0, open.indexOf('\n}'));
+    expect(body).toContain('isLinkOpenable(url)');
+    expect(body).toContain('chrome.tabs.create({ url })');
+    expect(body).toMatch(/catch \(e\) \{/);
+    expect(PANEL).toMatch(/case 'open-link':[\s\S]*?openTodoLink\(findTodo\(id\)\);/);
+  });
+
+  test('链接失焦即保存，且走 persist（非法要有专门文案）', () => {
+    expect(PANEL).toMatch(/contains\('todo-link-input'\)[\s\S]*?saveLink\(id, e\.target\.value\)/);
+    expect(PANEL).toMatch(/function saveLink[\s\S]*?persist\(setTodoLink\(id, value\)/);
+    expect(PANEL).toMatch(/function cancelInlineEdit\(\) \{[\s\S]*?linkEditId = null;/);
+    expect(PANEL).toContain("data-action=\"link-cancel\"");
+  });
+
+  test('change 与 focusout 两条通道只能有一条生效（探针实测到会写两次、弹两条 toast）', () => {
+    const change = PANEL.slice(PANEL.indexOf('function handleChange('));
+    const changeBody = change.slice(0, change.indexOf('\n}\n'));
+    expect(changeBody).toMatch(/contains\('todo-link-input'\)[\s\S]*?if \(!linkEditId \|\| linkEditId !== id\) return;/);
+    const focusOut = PANEL.slice(PANEL.indexOf('function handleFocusOut('));
+    expect(focusOut.slice(0, focusOut.indexOf('\n}\n')))
+      .toMatch(/if \(!linkEditId \|\| linkEditId !== id\) return;/);
+  });
+
+  test('点「取消」不能被自动保存抢跑（change / focusout 都比 click 早）', () => {
+    // 不能靠 relatedTarget 分流：实测 change 比 focusout 还先，那时什么焦点信息都拿不到
+    const bind = PANEL.slice(PANEL.indexOf("addEventListener('pointerdown'"));
+    const bindBody = bind.slice(0, bind.indexOf('\n  });'));
+    expect(bindBody).toContain('[data-action="link-cancel"]');
+    expect(bindBody).toContain('e.preventDefault()');
+    expect(bindBody).toContain('cancelLinkEdit(');
+    // 取消只是关编辑器，一个字节也不写库
+    const cancelFn = PANEL.slice(PANEL.indexOf('function cancelLinkEdit('));
+    const cancelBody = cancelFn.slice(0, cancelFn.indexOf('\n}'));
+    expect(cancelBody).toContain('clearDraft(id)');
+    expect(cancelBody).not.toContain('setTodoLink');
+    expect(cancelBody).not.toContain('persist(');
+  });
+});
+
+describe('更多菜单不换行、不被裁', () => {
+  test('宽度自适应文案，条目禁止折行', () => {
+    const menu = rule(STYLES, '.todo-menu {');
+    expect(menu).toContain('width: max-content');
+    expect(menu).toContain('max-width: min(280px, calc(100vw - 16px))');
+    expect(menu).toContain('max-height: calc(100vh - 16px)');
+    expect(menu).toContain('overflow-y: auto');
+    expect(rule(STYLES, '.todo-menu-item {')).toContain('white-space: nowrap');
+    expect(rule(STYLES, '.todo-menu-row {')).toContain('white-space: nowrap');
+  });
+
+  test('定位拿实测宽度，不留写死的常量', () => {
+    const open = PANEL.slice(PANEL.indexOf('function openMenuAt('));
+    const body = open.slice(0, open.indexOf('\n}'));
+    expect(body).toContain('menu.offsetWidth');
+    expect(body).toContain('window.innerWidth - width - 8');
+    // 底下放不下要往上翻，否则靠屏幕底部的条目菜单直接溢出视口
+    expect(body).toContain('rect.top - height - 4');
+    expect(PANEL).not.toMatch(/const MENU_WIDTH/);
+  });
+});
+
+describe('文案中英成对', () => {
+  /** 取出 todo 命名空间的 key 列表 */
+  function todoKeys(src) {
+    const start = src.indexOf('todo: {');
+    expect(start).toBeGreaterThan(-1);
+    const body = src.slice(start, src.indexOf('\n  },', start));
+    return [...body.matchAll(/^ {4}(\w+):/gm)].map(m => m[1]).sort();
+  }
+
+  test('本轮新增的每一个 key 都要中英同时补齐，缺一边就是半边英文界面', () => {
+    expect(todoKeys(EN)).toEqual(todoKeys(ZH));
+    for (const key of [
+      'emptyDone', 'tabActive', 'tabDone', 'progressLabel', 'startDoing', 'markDone',
+      'backToPending', 'restoreTo', 'undoBar', 'undoAction', 'restoredToast',
+      'priority', 'priorityHigh', 'priorityNone', 'addLink', 'editLink',
+      'linkInvalid', 'openLinkTitle', 'statusTip',
+    ]) {
+      expect(todoKeys(ZH), key).toContain(key);
+      expect(todoKeys(EN), key).toContain(key);
+    }
+  });
+
+  test('旧的误导文案不得回流（组名「进行中」、markAs 这种看不出动作的弱动词）', () => {
+    for (const gone of ['activeGroup', 'doneGroup', 'markAs']) {
+      expect(ZH).not.toContain(gone);
+      expect(EN).not.toContain(gone);
+    }
+    // 摘要分组标题跟 Tab 同名，不再叫「进行中」
+    expect(MODEL).toContain("active: '待办'");
+    expect(MODEL).toContain("active: 'To do'");
   });
 });
 
@@ -149,10 +428,13 @@ describe('行内编辑在重渲染中存活', () => {
     expect(beforeWrite).toContain('getFocusMarker()');
   });
 
-  test('三种编辑器都以草稿为底稿，而不是库里的旧值', () => {
+  test('四种编辑器都以草稿为底稿，而不是库里的旧值', () => {
     expect(PANEL).toMatch(/draftFor\(todo\.id, 'title'\)/);
     expect(PANEL).toMatch(/draftFor\(todo\.id, 'note'\)/);
     expect(PANEL).toMatch(/draftFor\(todo\.id, 'due'\)/);
+    expect(PANEL).toMatch(/draftFor\(todo\.id, 'link'\)/);
+    expect(PANEL).toMatch(/const EDITOR_CLASSES = \[[^\]]*'todo-link-input'/);
+    expect(PANEL).toMatch(/'todo-link-input': 'link'/);
   });
 
   test('重渲染后还原焦点与光标（date 输入读 selectionStart 会抛，必须兜住）', () => {
@@ -181,9 +463,14 @@ describe('落库失败必须有反馈', () => {
     expect(PANEL).not.toMatch(/^\s*updateTodo\(id, \{ dueAt: null \}\);\s*$/m);
   });
 
-  test('persist 失败走统一的 saveFailed 文案', () => {
+  test('persist 失败区分「链接非法」与「写库失败」', () => {
     const helper = PANEL.slice(PANEL.indexOf('function persist('));
-    expect(helper.slice(0, helper.indexOf('\n}'))).toContain("t('todo.saveFailed')");
+    const body = helper.slice(0, helper.indexOf('\n}'));
+    expect(body).toContain("'todo.saveFailed'");
+    expect(body).toContain("'todo.linkInvalid'");
+    expect(body).toContain("result.reason === 'invalid'");
+    // manager 开始返 {ok,reason}，只认布尔值会把链接的成功当失败
+    expect(body).toContain('result === true || (result && result.ok === true)');
   });
 
   test('删除 / 清除已完成 / 拖拽重排的写操作也必须过 persist（只报成功不报失败不算反馈）', () => {
@@ -203,10 +490,8 @@ describe('落库失败必须有反馈', () => {
   });
 
   test('copyFailed 中英成对', () => {
-    const zh = PANEL.slice(PANEL.indexOf("registerTranslations('zh'"), PANEL.indexOf("registerTranslations('en'"));
-    const en = PANEL.slice(PANEL.indexOf("registerTranslations('en'"));
-    expect(zh).toContain('copyFailed');
-    expect(en).toContain('copyFailed');
+    expect(ZH).toContain('copyFailed');
+    expect(EN).toContain('copyFailed');
   });
 });
 

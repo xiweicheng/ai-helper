@@ -1,6 +1,6 @@
 // side_panel/todo-model.js - 待办纯逻辑（不触碰 DOM，便于单测）
 //
-// 面板只负责渲染与事件，分组/排序/状态流转/时间文案/Markdown 导出都在这里，
+// 面板只负责渲染与事件，分组/排序/状态流转/优先级与链接校验/时间文案/Markdown 导出都在这里，
 // 这样这些规则可以脱离浏览器环境直接跑单测。
 
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
@@ -18,10 +18,11 @@ registerTranslations('zh', {
     overdueStamp: '已逾期 {date}',
   },
   todoDigest: {
-    active: '进行中',
+    active: '待办',
     done: '已完成',
     note: '备注',
     due: '截止',
+    highPriority: '高优先级',
     prompt: '请基于以上待办，给出实施顺序与风险提示。',
   },
 });
@@ -39,17 +40,26 @@ registerTranslations('en', {
     overdueStamp: 'overdue {date}',
   },
   todoDigest: {
-    active: 'In progress',
+    active: 'To do',
     done: 'Done',
     note: 'Note',
     due: 'Due',
+    highPriority: 'high priority',
     prompt: 'Based on the todos above, propose an implementation order and call out risks.',
   },
 });
 
 export const TODO_STATUS = { PENDING: 'pending', DOING: 'doing', DONE: 'done' };
 
+/** 优先级：只三档 + 未设置，不做自定义权重（用户要的是「哪条先做」，不是甘特图） */
+export const TODO_PRIORITY = { HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
+
 const STATUS_CYCLE = [TODO_STATUS.PENDING, TODO_STATUS.DOING, TODO_STATUS.DONE];
+
+const PRIORITY_LEVELS = [TODO_PRIORITY.HIGH, TODO_PRIORITY.MEDIUM, TODO_PRIORITY.LOW];
+
+/** 外部链接只放行这两种协议：链接是用户手输内容，javascript:/data: 进 href 就是自伤 XSS */
+const ALLOWED_LINK_PROTOCOLS = ['http:', 'https:'];
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -70,10 +80,64 @@ export function isTodoStatus(status) {
   return STATUS_CYCLE.includes(status);
 }
 
+/** 优先级白名单；非法值一律归为「未设置」，不报错也不丢数据 */
+export function normalizePriority(priority) {
+  return PRIORITY_LEVELS.includes(priority) ? priority : null;
+}
+
+/**
+ * 解析用户手输入的链接。
+ * 不带协议时补 https://（粘一条 example.com/x 也要能直接用）；补完仍解析失败
+ * 或协议不在白名单内 → valid:false，调用方不得落库。
+ * @param {string|number|null} raw
+ * @returns {{url: string, host: string, valid: boolean}}
+ */
+export function normalizeLink(raw) {
+  // 先剔前导斜杠，否则 //example.com 补完协议会变成四个斜杠的怪地址
+  const text = String(raw ?? '').trim().replace(/^\/+/, '');
+  if (!text) return { url: '', host: '', valid: true };
+  const candidate = /^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`;
+  let parsed = null;
+  try {
+    parsed = new URL(candidate);
+  } catch (e) {
+    return { url: '', host: '', valid: false };
+  }
+  if (!ALLOWED_LINK_PROTOCOLS.includes(parsed.protocol)) return { url: '', host: '', valid: false };
+  return { url: parsed.href, host: linkHost(parsed.hostname), valid: true };
+}
+
+/** 展示用域名：去 www 前缀，过长截断 */
+function linkHost(hostname, max = 22) {
+  const host = String(hostname || '').toLowerCase().replace(/^www\./, '');
+  return host.length > max ? `${host.slice(0, max - 1)}…` : host;
+}
+
+/** 已存链接的展示文案；无链接返回空串 */
+export function linkLabel(todo) {
+  const { url, host } = normalizeLink(todo && todo.link);
+  return url ? host : '';
+}
+
+/** 链接是否可打开（库里的旧值可能被手改坏，点击前再校一次） */
+export function isLinkOpenable(link) {
+  const { url, valid } = normalizeLink(link);
+  return valid && !!url;
+}
+
+/**
+ * 已完成条目「恢复到哪里」：优先回到完成前的状态，没记到就回待办
+ * @param {{prevStatus?: string|null}} todo
+ */
+export function restoreTarget(todo) {
+  const prev = todo && todo.prevStatus;
+  return prev === TODO_STATUS.DOING ? TODO_STATUS.DOING : TODO_STATUS.PENDING;
+}
+
 /**
  * 生成一条待办
  * @param {string} title
- * @param {{note?: string, dueAt?: number|null}} [extra]
+ * @param {{note?: string, dueAt?: number|null, priority?: string|null, link?: string}} [extra]
  * @param {number} [now]
  */
 export function createTodo(title, extra = {}, now = Date.now()) {
@@ -82,6 +146,10 @@ export function createTodo(title, extra = {}, now = Date.now()) {
     title: String(title || '').trim(),
     note: String(extra.note || '').trim(),
     status: TODO_STATUS.PENDING,
+    // 新条目只会是待处理，不存在「完成前状态」
+    prevStatus: null,
+    priority: normalizePriority(extra.priority),
+    link: normalizeLink(extra.link).url,
     order: 0,
     dueAt: Number.isFinite(extra.dueAt) ? extra.dueAt : null,
     createdAt: now,
@@ -96,11 +164,21 @@ export function createTodo(title, extra = {}, now = Date.now()) {
 export function normalizeTodo(raw) {
   const todo = raw && typeof raw === 'object' ? raw : {};
   const createdAt = Number.isFinite(todo.createdAt) ? todo.createdAt : Date.now();
+  const status = isTodoStatus(todo.status) ? todo.status : TODO_STATUS.PENDING;
   return {
     id: String(todo.id || ''),
     title: String(todo.title || '').trim(),
     note: String(todo.note || ''),
-    status: isTodoStatus(todo.status) ? todo.status : TODO_STATUS.PENDING,
+    status,
+    // prevStatus 只在「已完成」身上有意义，其余情况一律丢掉脏值
+    prevStatus: status === TODO_STATUS.DONE
+      && isTodoStatus(todo.prevStatus)
+      && todo.prevStatus !== TODO_STATUS.DONE
+      ? todo.prevStatus
+      : null,
+    priority: normalizePriority(todo.priority),
+    // 库里存量的非法链接（手改/旧版本写入）读进来就当没链接，不渲染成可点元素
+    link: normalizeLink(todo.link).url,
     order: Number.isFinite(todo.order) ? todo.order : Number.MAX_SAFE_INTEGER,
     dueAt: Number.isFinite(todo.dueAt) ? todo.dueAt : null,
     createdAt,
@@ -277,7 +355,14 @@ export function buildTodoDigest(todos, options = {}) {
       const due = Number.isFinite(todo.dueAt)
         ? `（${t('todoDigest.due')} ${formatDueAt(todo.dueAt, now)}）`
         : '';
-      lines.push(`- [ ] ${flag}${oneLine(todo.title)}${due}`);
+      // 只标高优先级：三档都标会让清单变成噪声，而「先做哪条」只需要顶部几条亮出来
+      const prio = todo.priority === TODO_PRIORITY.HIGH
+        ? `（${t('todoDigest.highPriority')}）`
+        : '';
+      const link = normalizeLink(todo.link).url
+        ? ` [${linkLabel(todo)}](${normalizeLink(todo.link).url})`
+        : '';
+      lines.push(`- [ ] ${flag}${oneLine(todo.title)}${prio}${due}${link}`);
       if (todo.note && todo.note.trim()) {
         lines.push(`  - ${t('todoDigest.note')}：${oneLine(todo.note)}`);
       }
@@ -291,7 +376,9 @@ export function buildTodoDigest(todos, options = {}) {
       const stamp = Number.isFinite(todo.completedAt)
         ? `（${t('todoTime.doneStamp', { date: formatTodoDate(todo.completedAt, now) })}）`
         : '';
-      lines.push(`- [x] ${oneLine(todo.title)}${stamp}`);
+      const url = normalizeLink(todo.link).url;
+      const link = url ? ` [${linkLabel(todo)}](${url})` : '';
+      lines.push(`- [x] ${oneLine(todo.title)}${stamp}${link}`);
     }
   }
 

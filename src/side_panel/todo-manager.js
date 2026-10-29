@@ -6,7 +6,7 @@
 // 两条约束（都是踩过的坑，见 CHANGELOG）：
 // 1. 落库走 queueWrite 串行：并发写各自抓的「整表快照」会互踩 —— A 失败时若整表
 //    还原，会把期间 B 已经落库成功的变更也从内存里抹掉，内存/视图/IndexedDB 三方分叉。
-//    因此六个写操作失败时都只撤销自己涉入的那几条（单条直接还原本条，重排只还原
+//    因此所有写操作失败时都只撤销自己涉入的那几条（单条直接还原本条，重排只还原
 //    order 字段，清除只补回被清条目）。
 // 2. 回滚必须 emitChange：乐观值已经渲染给用户了，回滚不广播就等于「界面说删掉了，
 //    库里其实没动」。
@@ -17,11 +17,15 @@ import {
   TODO_STATUS,
   createTodo,
   normalizeTodo,
+  normalizePriority,
+  normalizeLink,
+  restoreTarget,
   groupTodos,
   reorderList,
   withOrder,
   nextOrder,
   nextStatus,
+  isTodoStatus,
 } from './todo-model.js';
 import logger from '../shared/logger.js';
 
@@ -73,7 +77,7 @@ export async function loadTodos() {
   }
 }
 
-/** 两段式分组结果（进行中 / 已完成） */
+/** 两段式分组结果（待办 / 已完成） */
 export function getTodoGroups() {
   return groupTodos(state.todos);
 }
@@ -87,9 +91,9 @@ function replaceTodo(updated) {
 }
 
 /**
- * 新增一条待办（落在进行中组末尾）
+ * 新增一条待办（落在待办列表末尾）
  * @param {string} title
- * @param {{note?: string, dueAt?: number|null}} [extra]
+ * @param {{note?: string, dueAt?: number|null, priority?: string|null, link?: string}} [extra]
  * @returns {Promise<Object|null>} 落库失败返回 null
  */
 export async function addTodo(title, extra = {}) {
@@ -115,9 +119,9 @@ export async function addTodo(title, extra = {}) {
 }
 
 /**
- * 更新标题 / 备注 / 截止时间
+ * 更新标题 / 备注 / 截止时间 / 优先级 / 链接
  * @param {string} id
- * @param {{title?: string, note?: string, dueAt?: number|null}} patch
+ * @param {{title?: string, note?: string, dueAt?: number|null, priority?: string|null, link?: string}} patch
  * @returns {Promise<boolean>}
  */
 export async function updateTodo(id, patch = {}) {
@@ -132,6 +136,8 @@ export async function updateTodo(id, patch = {}) {
   }
   if (patch.note !== undefined) next.note = String(patch.note || '').trim();
   if (patch.dueAt !== undefined) next.dueAt = Number.isFinite(patch.dueAt) ? patch.dueAt : null;
+  if (patch.priority !== undefined) next.priority = normalizePriority(patch.priority);
+  if (patch.link !== undefined) next.link = normalizeLink(patch.link).url;
 
   replaceTodo(next);
   const ok = await queueWrite(() => putTodo(next)).catch(e => {
@@ -148,7 +154,7 @@ export async function updateTodo(id, patch = {}) {
 }
 
 /**
- * 指定的状态切换；进入已完成记录 completedAt，离开已完成则清空并排到末尾
+ * 切到指定状态；进入已完成时记下「完成前是什么状态」供智能恢复，离开已完成时清空
  * @param {string} id
  * @param {string} status
  * @returns {Promise<boolean>}
@@ -156,16 +162,22 @@ export async function updateTodo(id, patch = {}) {
 export async function setTodoStatus(id, status) {
   const current = findTodo(id);
   if (!current) return false;
+  // 非法状态直接拒：乐观更新一个不存在的状态，回滚时没有可比对的基准
+  if (!isTodoStatus(status)) return false;
+  if (current.status === status) return true;
 
   const now = Date.now();
   const next = { ...current, status, updatedAt: now };
 
   if (status === TODO_STATUS.DONE) {
     next.completedAt = now;
+    // 只有从待处理/处理中进入已完成才记，已完成自身不覆盖已有记录
+    if (current.status !== TODO_STATUS.DONE) next.prevStatus = current.status;
   } else if (current.status === TODO_STATUS.DONE) {
-    // 从已完成捞回进行中：排到末尾，避免插回旧位置造成错乱
     next.completedAt = null;
-    next.order = nextOrder(state.todos.filter(item => item.id !== id));
+    next.prevStatus = null;
+    // 不动 order：已完成期间其它条目的 order 并未重排，保留原值恰好回到原位
+    //（以前在这里补 nextOrder 把它挤到末尾，撤销一次完成就会跳位置）
   }
 
   replaceTodo(next);
@@ -187,6 +199,43 @@ export function cycleTodoStatus(id) {
   const current = findTodo(id);
   if (!current) return Promise.resolve(false);
   return setTodoStatus(id, nextStatus(current.status));
+}
+
+/**
+ * 把已完成条目恢复到它完成前的状态（没记到则回待办）
+ * @param {string} id
+ * @returns {Promise<boolean>}
+ */
+export function restoreTodo(id) {
+  const current = findTodo(id);
+  if (!current) return Promise.resolve(false);
+  if (current.status !== TODO_STATUS.DONE) return Promise.resolve(false);
+  return setTodoStatus(id, restoreTarget(current));
+}
+
+/**
+ * 设置优先级（null 为取消）
+ * @param {string} id
+ * @param {string|null} priority
+ * @returns {Promise<boolean>}
+ */
+export function setTodoPriority(id, priority) {
+  return updateTodo(id, { priority: normalizePriority(priority) });
+}
+
+/**
+ * 关联外部链接。校验先于乐观更新：非法链接不能先渲染再回滚。
+ * @param {string} id
+ * @param {string} raw 用户原始输入（可不带协议；空串 = 移除链接）
+ * @returns {Promise<{ok: boolean, reason: string}>}
+ */
+export async function setTodoLink(id, raw) {
+  const current = findTodo(id);
+  if (!current) return { ok: false, reason: 'missing' };
+  const parsed = normalizeLink(raw);
+  if (!parsed.valid) return { ok: false, reason: 'invalid' };
+  const ok = await updateTodo(id, { link: parsed.url });
+  return { ok, reason: ok ? '' : 'save' };
 }
 
 /**
@@ -213,7 +262,7 @@ export async function removeTodo(id) {
 }
 
 /**
- * 进行中组内拖拽重排
+ * 待办列表内拖拽重排
  * @param {number} fromIndex
  * @param {number} toIndex
  * @returns {Promise<boolean>}

@@ -269,9 +269,9 @@ ai-helper/
 │   │   ├── search-panel.js             # Message search UI (full-text, dual-mode)
 │   │   ├── schedule-panel.js           # Scheduled task panel (create/edit/history)
 │   │   ├── side-rail.js                # Right entry rail (6 slots, viewport clamp, pointer whitelist)
-│   │   ├── todo-model.js               # Todo pure logic (grouping, date math, Markdown digest)
+│   │   ├── todo-model.js               # Todo pure logic (grouping, date math, priority/link normalization, Markdown digest)
 │   │   ├── todo-manager.js             # Todo orchestration (optimistic update, serialized writes, rollback)
-│   │   ├── todo-panel.js               # Todo floating panel UI (quick add, inline edit, drag sort)
+│   │   ├── todo-panel.js               # Todo floating panel UI (two tabs, status menu, priority, links, drag sort)
 │   │   ├── version-info.js             # Version info dialog (version/tag/commit)
 │   │   ├── context-indicator.js        # Context usage indicator + manual compaction entry
 │   │   ├── completion-feedback.js      # Completion feedback (sound/confetti/notification)
@@ -748,15 +748,20 @@ Speak instead of typing — and the **audio never leaves your machine**. Recogni
 Items that come up mid-conversation no longer need a window switch — one click on the right entry rail captures them, tracks progress, and hands the list back to the AI whenever you want:
 
 - **Sixth rail entry**: sits alongside Workspace / Bookmarks / Message TOC / Search; a badge on the icon shows the open item count live, visible even with the panel collapsed.
-- **Right-edge overlay**: 320px wide over the chat area, re-clamped into the viewport whenever the window resizes. On narrow sidebars it caps at `100vw - 60px`, so it never covers the left "running session dock" corridor; stacking inside the rail is explicit, so the todo list stays visible and clickable even when Scheduled Tasks is open at the same time.
-- **Enter to add**: press Enter (or `+`) in the top input and the item is created, focus stays put for the next one.
-- **Three states**: the leading status circle cycles Pending → In Progress → Done. Completed items form their own group, collapsed by default (the preference persists in `chrome.storage.local`), with a `done / total` progress readout in the header.
-- **Inline editing**: title, note and due date are all edited in place. Notes save with `Ctrl`/`⌘` + `Enter`, cancel with `Esc`; the due date is day-granular, and overdue rows get a warning tint plus ⏰.
-- **Half-typed text survives**: an in-progress title/note/due editor is treated as a draft. When another item's add/update/delete triggers a full re-render, the draft value, focus and caret position are restored in place; only save or cancel clears it.
-- **Drag to reorder**: active group only, with a dashed segment showing the insertion point; moving between groups always goes through the status circle so a drag can never silently change state.
-- **Actions appear on hover**: a row normally shows only the circle and the title — edit/copy/more surface on hover or keyboard focus; low-frequency actions (note, due date, delete) live in the row's `⋯` menu and batch actions (clear completed, fill input box) in the header's `⋯`. Menus render on a `fixed` layer so scrolling never clips them.
-- **One click into the prompt box**: the list becomes a Markdown checklist (status, due date, notes) that is **appended** after the existing draft in the question input rather than replacing it.
-- **Dependable persistence**: data lives in the IndexedDB `todos` store (DB v7) with optimistic updates — the UI changes first, writes are serialized so concurrent edits cannot clobber each other's snapshot, and a failure rolls back only that one item (leaving successful writes intact), broadcasts the rollback so the UI tells the truth, and shows a "save failed" toast instead of failing silently.
+- **Right-edge overlay**: 320px wide over the chat area. On narrow sidebars it caps at `100vw - 60px`, so it never covers the left "running session dock" corridor; stacking inside the rail is explicit, so the todo list stays visible and clickable even when Scheduled Tasks is open at the same time.
+- **Never over the input box**: the panel bottom is anchored 8px above the question input (it is no longer a centred overlay). The available height is measured in JS and written into `--todo-max-h`; when the input grows while you type a long draft a `ResizeObserver` lifts the panel out of the way, and if the input cannot be measured it falls back to the rail's bottom reserve while keeping a minimum usable height in short windows.
+- **Enter to add**: press Enter (or `+`) in the top input and the item is created, focus stays put for the next one; adding while the Done tab is open switches back to the To-do tab, so nothing is ever "added but invisible".
+- **Two tabs instead of collapsed groups**: To-do and Done render one group at a time, each with its own count. The old collapsed group pushed completed items out of view, so they were effectively undiscoverable. The header now reads `1 / 3 done` rather than a bare `0 / 3` whose numerator meant nothing.
+- **Three states**: the leading status circle cycles Pending → In Progress → Done, and the row `⋯` menu spells the actions out in words (Start / Mark done / Back to to-do) — marking done must not hide behind a click on a circle alone. In-progress rows use a filled dot inside the circle plus a tinted background, so they don't fight the priority bar for the same pixel.
+- **Undo and smart restore**: marking a todo done surfaces an inline undo bar in its place for 6 seconds; one click puts it back where it came from instead of at the bottom of the list. Every row in the Done tab has a Restore action whose label names the target — a todo that was In Progress when it finished goes back to In Progress, everything else returns to Pending.
+- **Priority bar**: the menu shows four swatches directly (High / Medium / Low / None, current one highlighted) and the 3px bar on the left of a row is the priority — High = `--danger-500`, Medium = `--warning-500`, Low = `--brand-500`, none = no bar. That strip means exactly one thing.
+- **External link**: Add/Edit link opens an inline input; Enter attaches it. Only http/https is accepted and a missing scheme is completed to `https://`; an invalid link is rejected at the validation layer instead of being painted on screen and rolled back, with its own "only http/https" message. An attached link renders as a domain chip (a plain button — no `href` in the DOM) and only opens a new tab on click; clearing the input and pressing Enter removes the link; the Cancel button ends the edit on `pointerdown`, so auto-save cannot jump the gun.
+- **Inline editing**: title, note, due date and link are all edited in place. Notes save with `Ctrl`/`⌘` + `Enter`, cancel with `Esc`; the due date is day-granular, and overdue rows get a warning tint plus ⏰.
+- **Half-typed text survives**: an in-progress title/note/due/link editor is treated as a draft. When another item's add/update/delete triggers a full re-render, the draft value, focus and caret position are restored in place; only save or cancel clears it. Attaching one link shows exactly one toast (browsers fire a follow-up `change` when a re-render removes a dirty input, so it must not save twice).
+- **Drag to reorder**: To-do tab only, with a dashed segment showing the insertion point; moving between groups always goes through the status circle or the menu, so a drag can never silently change state.
+- **Actions appear on hover**: a row normally shows only the circle and the title — edit/copy/more surface on hover or keyboard focus; note, due date, link, priority and delete live in the row's `⋯` menu and batch actions (clear completed, fill input box) in the header's `⋯`. Menus render on a `fixed` layer, size to their longest label and never wrap (no more broken words), and are clamped to the viewport edges with scrolling when they get tall.
+- **One click into the prompt box**: the list becomes a Markdown checklist (status, priority, due date, notes, links) that is **appended** after the existing draft in the question input rather than replacing it; only http/https links make it into the digest, an invalid one leaves no trace.
+- **Dependable persistence**: data lives in the IndexedDB `todos` store (DB v7) with optimistic updates — the UI changes first, writes are serialized so concurrent edits cannot clobber each other's snapshot, and a failure rolls back only that one item (leaving successful writes intact), broadcasts the rollback so the UI tells the truth, and shows a "save failed" toast instead of failing silently. Every write returns `{ok, reason}` (invalid status / invalid link / save failed / missing item), and anything that fails validation never enters the optimistic update at all.
 
 ---
 
@@ -1186,7 +1191,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 |-----------|---------|-------------|
 | Extension Config | `chrome.storage.local` | API Key, ReAct params, models, image recognition, UI theme (`appTheme`), etc. |
 | Chat Sessions | IndexedDB (`ai-helper-db`) | Active sessions + archived sessions |
-| Sidebar Todos | IndexedDB (`todos`) | Title/status/note/due date/order |
+| Sidebar Todos | IndexedDB (`todos`) | Title/status/note/due date/order/priority/link/previous status |
 | UI Prototypes | IndexedDB | Associated by session |
 | Toolbar Config | `chrome.storage.local` | Tool list, ordering, domain blocklist |
 | Input History | `chrome.storage.local` | Auto-dedup management |

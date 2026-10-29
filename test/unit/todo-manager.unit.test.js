@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // test/unit/todo-manager.unit.test.js - 待办编排层
 //
-// 只盯三件在真实扩展里才会咬人、而纯逻辑单测看不见的事：
+// 只盯四件在真实扩展里才会咬人、而纯逻辑单测看不见的事：
 //   1. 落库串行 —— 并发写各自抓「整表快照」会互踩；
 //   2. 失败只撤销本条 —— 不能把期间别人已经落库成功的变更一起抹掉；
-//   3. 回滚必须广播 —— 乐观值已经渲染给用户了，不广播就是界面和数据各说各话。
+//   3. 回滚必须广播 —— 乐观值已经渲染给用户了，不广播就是界面和数据各说各话；
+//   4. 状态/优先级/链接这三个新动作的「先校验后落库」与智能恢复原位。
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const ctl = vi.hoisted(() => ({
@@ -51,19 +52,27 @@ vi.mock('../../src/storage/db.js', () => ({
 }));
 
 import state from '../../src/side_panel/state.js';
-import { TODO_STATUS } from '../../src/side_panel/todo-model.js';
+import { TODO_STATUS, TODO_PRIORITY } from '../../src/side_panel/todo-model.js';
 import {
   loadTodos,
   addTodo,
   updateTodo,
   setTodoStatus,
   cycleTodoStatus,
+  restoreTodo,
+  setTodoPriority,
+  setTodoLink,
   removeTodo,
   reorderActiveTodos,
   clearCompletedTodos,
   subscribeTodos,
   getTodoGroups,
 } from '../../src/side_panel/todo-manager.js';
+
+/** 取内存里的那一条（乐观值/回滚都体现在这里） */
+function pick(id) {
+  return state.todos.find(t => t.id === id);
+}
 
 /** 订阅广播并计数（用例结束务必 off()） */
 function watch() {
@@ -253,6 +262,155 @@ describe('失败路径：只撤销本条，且必须广播', () => {
     expect(ctl.order).toEqual([]);
     expect(w.count()).toBe(0);
     w.off();
+  });
+});
+
+describe('完成与恢复：记住完成前的状态，且回到原位', () => {
+  it('从处理中进入已完成记下 prevStatus，恢复后回处理中并清空痕迹', async () => {
+    const a = await addTodo('A');
+    await setTodoStatus(a.id, TODO_STATUS.DOING);
+    await setTodoStatus(a.id, TODO_STATUS.DONE);
+    expect(pick(a.id).prevStatus).toBe(TODO_STATUS.DOING);
+    expect(pick(a.id).completedAt).toBeGreaterThan(0);
+
+    expect(await restoreTodo(a.id)).toBe(true);
+    expect(pick(a.id).status).toBe(TODO_STATUS.DOING);
+    expect(pick(a.id).prevStatus).toBeNull();
+    expect(pick(a.id).completedAt).toBeNull();
+    expect(ctl.store.get(a.id).status).toBe(TODO_STATUS.DOING);
+  });
+
+  it('待处理直接完成的恢复到待处理', async () => {
+    const a = await addTodo('A');
+    await setTodoStatus(a.id, TODO_STATUS.DONE);
+    expect(pick(a.id).prevStatus).toBe(TODO_STATUS.PENDING);
+    expect(await restoreTodo(a.id)).toBe(true);
+    expect(pick(a.id).status).toBe(TODO_STATUS.PENDING);
+  });
+
+  it('恢复不动 order：撤销一次完成不会让条目跳到末尾', async () => {
+    const a = await addTodo('A');
+    await addTodo('B');
+    await addTodo('C');
+    await setTodoStatus(a.id, TODO_STATUS.DONE);
+    expect(getTodoGroups().active.map(t => t.order)).toEqual([1, 2]);
+
+    await restoreTodo(a.id);
+    const { active } = getTodoGroups();
+    expect(active.map(t => t.order)).toEqual([0, 1, 2]);
+    expect(active[0].id).toBe(a.id);
+  });
+
+  it('已完成期间不重排别人的 order，恢复也就不需要插回', async () => {
+    const a = await addTodo('A');
+    const b = await addTodo('B');
+    await setTodoStatus(a.id, TODO_STATUS.DONE);
+    expect(pick(b.id).order).toBe(1);
+    await restoreTodo(a.id);
+    expect(pick(a.id).order).toBe(0);
+    expect(pick(b.id).order).toBe(1);
+  });
+
+  it('非已完成条目不做恢复：不写库也不广播', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    expect(await restoreTodo(a.id)).toBe(false);
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(w.count()).toBe(0);
+    w.off();
+  });
+
+  it('状态没变则短路成功不重复写库；非法状态直接拒', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    expect(await setTodoStatus(a.id, TODO_STATUS.PENDING)).toBe(true);
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(await setTodoStatus(a.id, 'archived')).toBe(false);
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(pick(a.id).status).toBe(TODO_STATUS.PENDING);
+    expect(w.count()).toBe(0);
+    w.off();
+  });
+
+  it('非法状态不留乐观值也不落库', async () => {
+    const a = await addTodo('A');
+    expect(await setTodoStatus(a.id, undefined)).toBe(false);
+    expect(pick(a.id).status).toBe(TODO_STATUS.PENDING);
+    expect(ctl.store.get(a.id).status).toBe(TODO_STATUS.PENDING);
+  });
+});
+
+describe('优先级', () => {
+  it('合法档位落库，非法值等于取消并落 null', async () => {
+    const a = await addTodo('A');
+    expect(await setTodoPriority(a.id, TODO_PRIORITY.HIGH)).toBe(true);
+    expect(pick(a.id).priority).toBe('high');
+    expect(ctl.store.get(a.id).priority).toBe('high');
+
+    expect(await setTodoPriority(a.id, 'urgent')).toBe(true);
+    expect(pick(a.id).priority).toBeNull();
+    expect(ctl.store.get(a.id).priority).toBeNull();
+  });
+
+  it('落库失败 → 优先级还原并广播', async () => {
+    const a = await addTodo('A');
+    ctl.failIds.add(a.id);
+    const w = watch();
+    expect(await setTodoPriority(a.id, TODO_PRIORITY.LOW)).toBe(false);
+    expect(pick(a.id).priority).toBeNull();
+    expect(w.count()).toBe(1);
+    w.off();
+  });
+});
+
+describe('外部链接：校验先于乐观更新', () => {
+  it('不带协议的输入补全后落库', async () => {
+    const a = await addTodo('A');
+    expect(await setTodoLink(a.id, 'example.com/doc')).toEqual({ ok: true, reason: '' });
+    expect(pick(a.id).link).toBe('https://example.com/doc');
+    expect(ctl.store.get(a.id).link).toBe('https://example.com/doc');
+  });
+
+  it('非法链接拒于库外：不写库、不改内存、不广播', async () => {
+    const a = await addTodo('A');
+    await setTodoLink(a.id, 'https://example.com');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    expect(await setTodoLink(a.id, 'javascript:alert(1)')).toEqual({ ok: false, reason: 'invalid' });
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(pick(a.id).link).toBe('https://example.com/');
+    expect(w.count()).toBe(0);
+    w.off();
+  });
+
+  it('空串 = 移除链接', async () => {
+    const a = await addTodo('A');
+    await setTodoLink(a.id, 'https://example.com');
+    expect(await setTodoLink(a.id, '')).toEqual({ ok: true, reason: '' });
+    expect(pick(a.id).link).toBe('');
+    expect(ctl.store.get(a.id).link).toBe('');
+  });
+
+  it('落库失败 → reason 是 save，内存还原成旧链接', async () => {
+    const a = await addTodo('A');
+    await setTodoLink(a.id, 'https://example.com');
+    ctl.failIds.add(a.id);
+    expect(await setTodoLink(a.id, 'https://other.com')).toEqual({ ok: false, reason: 'save' });
+    expect(pick(a.id).link).toBe('https://example.com/');
+  });
+
+  it('条目不存在 → missing，不碰存储', async () => {
+    expect(await setTodoLink('ghost', 'https://example.com')).toEqual({ ok: false, reason: 'missing' });
+    expect(ctl.order).toEqual([]);
+  });
+
+  it('新增时带的非法链接不会进库（createTodo 兼一道）', async () => {
+    const created = await addTodo('A', { link: 'javascript:alert(1)', priority: 'urgent' });
+    expect(created.link).toBe('');
+    expect(created.priority).toBeNull();
+    expect(ctl.store.get(created.id).link).toBe('');
   });
 });
 
