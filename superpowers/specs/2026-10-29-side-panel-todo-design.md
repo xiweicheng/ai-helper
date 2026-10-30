@@ -118,10 +118,12 @@
 5. **优先级**：`priority: 'high'|'medium'|'low'|null`，模型层 `normalizePriority` 白名单过滤；行首 3px 竖条只表优先级，`doing` 改用圈内实心点 + 淡底，两者不抢同一个位置。
 6. **外部链接**：`link` 存绝对地址；`normalizeLink` 剔前导斜杠、缺协议补 `https://`、协议白名单 `http:/https:`，返回 `{url, host, valid}`。非法链接在编排层就拒（`reason:'invalid'`），不进乐观更新。胶囊是普通 `button`（**`href` 不写进 DOM**），点击才 `chrome.tabs.create({url})`；清空回车即移除。摘要只写合法链接。
 7. **菜单不换行**：`.todo-menu` 为 `width: max-content` + `white-space: nowrap`，按视口右缘/高度夹取，超长可滚动。
-8. **底部锚定不遮输入框**：不再复用共享的 `clampPanelToViewport`（它只按视口底 -8px 夹，正好会把面板压到输入框上），`todo-panel` 从 `OPEN_PANEL_SELECTOR` 名单移除；改为量 `.input-container` 顶边，写私有 `--todo-max-h` 与 `--fit-y`（仅负值），并用 `ResizeObserver` 跟输入区增高；量不到时回退 `innerHeight - 160`。
+8. **底部锚定不遮输入框**：不再复用共享的 `clampPanelToViewport`（它只按视口底 - 8px 夹，正好会把面板压到输入框上），`todo-panel` 从 `OPEN_PANEL_SELECTOR` 名单移除；改为量 `.input-container` 顶边，写私有 `--todo-max-h` 与 `--fit-y`（仅负值），并用 `ResizeObserver` 跟输入区增高；量不到时回退 `innerHeight - 160`。
+9. **高度只增不减**（用户反馈第二轮）：双 Tab 上线后出现新问题——两个 Tab 条目数不同，面板高度按内容走，切 Tab 整块上下跳。口径不是“打开即锁死”（那样只有 1 条时面板会很矮），而是 `heightFloor = min(available, max(heightFloor, 内容自然高))`：添加条目继续长高，到可用上限为止；切到条目更少的 Tab 或删条目不回缩；`openPanel`/`closePanel` 把 floor 与 `height` 归零，所以每次重新打开都按新内容重算。测量前必须先把 `height` 临时置 `auto`，否则量到的永远是上一次写回的值。
+10. **撤销条不换行**：`button` 在 flex 容器里的 `min-width:auto` 只等于一个汉字宽，标题一长「撤销」就被压成竖排两行；补 `.todo-undo .todo-mini-btn { flex: 0 0 auto; white-space: nowrap; }`，长标题交给 `.todo-undo-text` 的 ellipsis 承接。
 
 **与设计稿的两处偏差**（实现时纠正）：① 优先级不做二级菜单，直接在行 `⋯` 里给四个色块档位（二级菜单在 320px 浮层里难用）；② 色条 token 用仓库**实际存在**的 `--danger-500` / `--warning-500` / `--brand-500`，而非设计稿写的 `--brand-red/amber/blue-500`（不存在）。
 
 **两个实现缺陷由探针暴露**（单测看不见）：① `handleChange` 的 link 分支缺 `linkEditId` 守卫，重渲染拆掉脏输入框时浏览器补发 `change` → 双写双 toast；② 「取消」按钮点下去时 `change`/`focusout` 都比 `click` 早，自动保存抢跑使取消变成死按钮 → 改为在 `pointerdown` 就 `cancelLinkEdit()`。两条都已补源码守卫单测与探针 O3b/O6b。
 
-**验证面新增**：单测 `todo-model` 39 例 / `todo-manager` 29 例 / `todo-panel-structure` 56 例（双 Tab、状态动作可见、优先级色条、外部链接、菜单不换行、几何夹取、i18n 中英成对）；探针新增 M（标记完成入口+撤销+智能恢复+菜单不换行实测）、N（色条真实渲染色与 token 同值）、O（胶囊/开标签/非法拒收/移除/取消/重载持久）、P（面板底边与输入区上沿的几何不变量、输入区增高跟随、矮窗口）四组，整轮跑 ALL CHECKS PASSED。
+**验证面新增**：单测 `todo-model` 39 例 / `todo-manager` 29 例 / `todo-panel-structure` 56 例（双 Tab、状态动作可见、优先级色条、外部链接、菜单不换行、几何夹取、i18n 中英成对）；探针新增 M（标记完成入口+撤销+智能恢复+菜单不换行实测）、N（色条真实渲染色与 token 同值）、O（胶囊/开标签/非法拒收/移除/取消/重载持久）、P（面板底边与输入区上沿的几何不变量、输入区增高跟随、矮窗口）、Q（Tab 来回切高度不变、添加条目仍长高、超长标题下撤销按钮不折行且文本被截断、重开面板锁定归零）五组，整轮跑 ALL CHECKS PASSED。
