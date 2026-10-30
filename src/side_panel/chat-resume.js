@@ -135,6 +135,11 @@ export function showResumeDialog(options = {}) {
  */
 export function _clearResumableFlagsForSession(sessionId) {
   if (!sessionId) return;
+  // state.messageHistory 与 DOM 永远只代表「当前激活会话」：传入的却是任意会话时
+  // （跨会话队列派发、续跑期间用户切走），无条件清理抹掉的是用户正看着的那个会话的
+  // 续跑入口，还会随 saveChatHistory 落盘成永久丢失。非激活会话的陈旧标记交给
+  // _verifyCheckpointAndHideButton 在恢复渲染时按 checkpoint 实况自愈。
+  if (sessionId !== state.activeSessionId) return;
   let changed = false;
   // 清除 messageHistory 中的 resumable 标记
   for (const msg of state.messageHistory) {

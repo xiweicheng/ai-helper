@@ -217,6 +217,19 @@ describe('「继续执行」入口：单一实现 + 选择器兼容 budget 语�
     expect(CHAT_RESUME_SRC).toMatch(/\.message\[data-resumable\]:not\(\[data-resumable="false"\]\)/);
   });
 
+  test('流式元素已脱离 DOM 的重渲染也必须带 resumable（否则预算报告当场没有续跑入口）', () => {
+    // 该分支走的是 restoreMessageFromHtml 重渲染：上面的 _mountResumeButton 因元素不在 DOM 中
+    // 已放弃挂载，若重渲染不带 resumable，用户只有切会话/刷新才看得到按钮
+    expect(CHAT_MANAGER_SRC).toMatch(/restoreMessageFromHtml\(streamingHtml, assistantMsgId, budgetEnded \? 'budget' : false\)/);
+    expect(CHAT_MANAGER_SRC).not.toMatch(/restoreMessageFromHtml\(streamingHtml\);/);
+  });
+
+  test('_clearResumableFlagsForSession 只在目标会话激活时清理（跨会话清会抹掉用户正看着的入口）', () => {
+    const fn = between(CHAT_RESUME_SRC, 'export function _clearResumableFlagsForSession(sessionId) {', '// 清除 messageHistory 中的 resumable 标记');
+    expect(fn.length).toBeGreaterThan(0);
+    expect(fn).toMatch(/if \(sessionId !== state\.activeSessionId\) return;/);
+  });
+
   test('会话重建路径透传 resumable（写死 false 会把入口整条丢掉）', () => {
     expect(PANEL_INDEX_SRC).toMatch(/restoreMessageFromHtml\(msg\.htmlContent, msg\.messageId, msg\.resumable\)/);
     expect(PANEL_INDEX_SRC).toMatch(/addMessage\([^;]*msg\.resumable \|\| false, msg\.timestamp \?\? null\);/);

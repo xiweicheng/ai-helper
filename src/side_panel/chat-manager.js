@@ -1546,7 +1546,10 @@ export async function sendMessage(opts = {}) {
       if (!streamingConnected) {
         const existingEl = document.querySelector(`[data-message-id="${assistantMsgId}"]`);
         if (!existingEl) {
-          restoreMessageFromHtml(streamingHtml);
+          // 预算软着陆时这次重渲染就是用户唯一能看到的回复：上面的 _mountResumeButton 因为
+          // 元素当时不在 DOM 里已经放弃了挂载，这里不把 resumable 传下去，用户就会看到
+          // 「部分完成」报告却没有任何续跑入口（必须切会话/刷新才出现）
+          restoreMessageFromHtml(streamingHtml, assistantMsgId, budgetEnded ? 'budget' : false);
           bindExecutionLogDelegate();
           bindReflectionBadgeDelegate();
           const chatContainerEl = document.getElementById('chatContainer');

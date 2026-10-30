@@ -20,7 +20,7 @@
 - 循环次数内部 100→2000 并**撤出设置页**：只作确定性保险丝（时间上限接「慢而卡」，轮数接「快而空转」）；旧 storage 残留值不再被读取并在首次触达时清除。
 
 **验证**
-- 新增 `loop-budget-phase.unit.test.js` 19 例（阶段决策/预警节奏/宽限指令/进度归纳/兜底报告）+ `loop-budget-soft-landing-wiring.unit.test.js` 31 例接线守卫（主循环不得残留轮数上界、续跑撞线必须保留现场、登记表超时不得被全局压缩、面板看门狗余量、退休 key 导入兼容、子任务软着陆按未完成落定、流式/重建路径的「继续执行」入口）；全量单测 227 文件 3586 例全绿；`npm run lint` 通过；`npm run build` 成功。旧守卫测试同步改造：主循环锚点、收敛预警接线断言、回退默认值不再钉字面量。
+- 新增 `loop-budget-phase.unit.test.js` 19 例（阶段决策/预警节奏/宽限指令/进度归纳/兜底报告）+ `loop-budget-soft-landing-wiring.unit.test.js` 34 例接线守卫（主循环不得残留轮数上界、续跑撞线必须保留现场、登记表超时不得被全局压缩、面板看门狗余量、退休 key 导入兼容、子任务软着陆按未完成落定、流式/重建路径的「继续执行」入口）；全量单测 227 文件 3589 例全绿；`npm run lint` 通过；`npm run build` 成功。旧守卫测试同步改造：主循环锚点、收敛预警接线断言、回退默认值不再钉字面量。
 
 **评审期修复（自测发现，均属「接错就静默退回旧行为」的接线缺陷）**
 - 主循环移除 `iteration < maxIterations` 上界（轮数维度的软着陆在旧条件下永远进不到循环体）并补显式兜底 `throw`；`hard_stop` 文案按归因分流。
@@ -30,6 +30,12 @@
 - 子任务软着陆按未完成落定且 `stop` 策略不回滚（否则成果被抹且 `subtaskProgress` 会永久跳过缺项）。
 - 导入导出新增 `RETIRED_KEYS`：只删白名单不兼容旧备份，会把所有含 `reactMaxIterations` 的旧导出文件全部拒掉。
 - 续跑取消分支原先用中文字面量比较错误信息（英文界面下「用户取消」被误判成恢复失败、可续跑入口丢失），改走 `t('chatMsg.errTaskStopped')`。
+- 流式元素已脱离 DOM 时的重渲染（`restoreMessageFromHtml(streamingHtml)`）没带 `resumable`：
+  预算报告当场没有「继续执行」可点（须切会话/刷新才出现），改为透传 `assistantMsgId` 与 `budget` 标记。
+- `_clearResumableFlagsForSession(sessionId)` 完全忽略入参：跨会话队列派发、续跑期间用户切走时，
+  被清掉的是**当前激活会话**的续跑入口（并随 `saveChatHistory` 落盘成永久丢失）；改为仅当
+  `sessionId === state.activeSessionId` 才清理，非激活会话的陈旧标记交给
+  `_verifyCheckpointAndHideButton` 按 checkpoint 实况自愈。
 
 ### 待办第四轮：复制提到行内与编辑同级、「复制并附提问模板」下线、编辑态收起操作栏
 
