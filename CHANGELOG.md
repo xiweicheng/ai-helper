@@ -4,6 +4,40 @@
 
 ## 2026-10-30
 
+### 用户气泡正文对比度：白字从 3.66 提到 5.59，并把这条不变量做成门禁
+
+> 来源：上一轮「点停靠条芯片定位」的探针顺带报出的既有问题——用户气泡正文对比度 **亮 3.66 / 暗 2.45**，都低于 WCAG AA 的 4.5:1。用户批准单开一项修。
+
+**根因不是「颜色选浅了」，是 token 契约与值不符**
+- `docs/superpowers/specs/2026-10-18-theme-switching-design.md` §4.2 把 `--brand-fill` 的用途写成「实底按钮/开关轨道（**保白字 AA**）」，可它的亮色值当时就填了 `#667eea` —— 白字在上面只有 3.66:1，契约要求的 AA 从来没成立过。
+- 而这个 token 在 `src/` 里**零引用**（死 token），所以不符值的坑一直没人踩到；`.message.user` 是直接拿了 `--brand-500`。
+- `--brand-500` 本就不该承载正文：校验器 `scripts/theme-contrast-check.py` 是按**非文本图形 3:1** 给它定的档（适合图标 / 边框 / 进度条），而门禁从不算「白字 on 品牌实底」这一格 —— 于是 3.66 没有任何一道闸能拦住。
+
+**改法（选「白字不动」那条路）**
+- 亮色 `--brand-fill` 取品牌阶更深的 `#4c5bd4`（白字 **5.59:1**），暗色保持 `#566ad3`（**4.77:1**），两档同口径；`.message.user` 底色 `--brand-500` → `--brand-fill`，`color: var(--text-on-brand)` 一个字不动 —— 气泡内以白字为前提的配色（文件标签的 rgba 白底白字、悬停工具条）因此全都不用跟着改。
+- 拒绝的方案：① 暗色翻成「浅底深字」（`#16181d` on `#8da2f2` = 7.26:1）数值最好看，但要把气泡内所有白字前提的配色重做一遍；② 直接改 `--text-on-brand`（全仓 63 处引用）或改 `--brand-500`（全站色源）爆炸半径更大。
+- `--brand-fill` 补契约注释（写清它是 AA 实底、不是 `--brand-500` 的别名，动它必须重新过 AA）。
+
+**换深底把自己引入的第二个坑顶出来了**
+- 高亮脉冲 `bookmarkHighlightPulse` 带 `inset` 琥珀内光，会把正文底下那层提亮：实测瞬时掉到 亮 **4.54**（相对降 18.9%）/ 暗 **3.62**（降 24.3%），反而**跌破 AA**。原先浅底本来就不过线，内光才没被当成问题。
+- 新增 `@keyframes bookmarkHighlightPulseOnBrand`：只做外扩涟漪、全程零 `inset`，配 `.message.user.bookmark-highlight` 专用规则 —— 反馈一样不少（外圈 + `::before` 描边都动），正文底下那层颜色一律不动。收藏 / 搜索 / 目录跳转那一路的通用脉冲**一字未改**（探针反向断言助手气泡峰值帧确有 inset，防止顺手改错地方）。
+- `@media (prefers-reduced-motion: reduce)` 的选择器组必须补上 `.message.user.bookmark-highlight`：它权重 (0,3,0) 高于块里原有的 `.bookmark-highlight` (0,2,0)，漏写就会在「减少动态」下赢过本块、气泡又开始闪。
+
+**把不变量做成门禁**
+- `scripts/theme-contrast-check.py` 新增 `brand_fill_check()`：对 `:root` 与 `html[data-theme="dark"]` **两块都**算 `--text-on-brand` × `--brand-fill` ≥ 4.5，失败计入非零退出（token 缺失则跳过不报错）。实测 `[OK] 亮色 5.59:1` / `[OK] 暗色 4.77:1` / 未达标 0 项 / 退出码 0。
+- `test/unit/theme-contrast.unit.test.js` 2 → **6 例**：门禁确实跑到（亮暗两行都出 `[OK]`，防空跑）、把 `--brand-fill` 改回 `#667eea` 必须 `[AA FAIL]` 且非零退出、亮色 `brand-fill` 不许是 `brand-500` 的副本、`.message.user` 必须用 `--brand-fill` 不许退回 `--brand-500`。顺带修掉测试自己的坑：`css.indexOf('data-theme')` 会被文件头注释命中而切出空串，导致「undefined not.toBe undefined」假过 —— 改用 `html[data-theme="dark"]` 并补两条 `toBeTruthy()`。
+- `test/unit/message-focus-anchor.unit.test.js` 7 → **11 例**（CSS 源码守卫）：新 keyframes 全程不含 `inset`、气泡确实切到 `OnBrand`、通用 `bookmarkHighlightPulse` 保持原样、reduce 块含那条高权重选择器。两文件合跑 **17 例全过**。
+- 真实 Chrome 探针 `test-results-probes/_session-archive-dock-ui.mjs` 50 → **66 项**，亮 / 暗各 **66/66 EXT_UI_PASS**：静态正文对比度 ≥4.5 硬门、逐帧 rAF 录 900ms（56 帧）断言取样窗口内**无 inset** 且**确有外扩涟漪在动**、`::before` 描边动画名在位、高亮前后对比度差 ≤2%（实测 before = during = 亮 5.59 / 暗 4.77）、助手气泡峰值帧确有 inset。晕光必须用新的 `contrastWithGlow()` 按 alpha 合成「祖先不透明底 + inset 层」——直接读 `backgroundColor` 永远看不见内光的影响。
+- 探针两个取样坑一并记录：只取 300ms 单帧会刚好落在 `alpha 0 / spread 12px` 的关键帧上（必漏），改成逐帧录制再 `some/every`；`style(sel, prop)` 不支持伪元素，`::before` 的动画名得走 `getComputedStyle(el, '::before')`。
+
+**如实报告没动的部分**
+- 还有 **11 处**「`--text-on-brand` 白字 + `--brand-500` 实底」的规则没跟着换：`src/options/styles.css` 的 `.add-model-form-actions .btn-primary` 与 `.toolbox-btn-primary`（真按钮文字，亮色同样只有 3.66），以及侧边栏 9 处徽标 / 圆点 / hover 态（`.tool-toggle-btn .badge`、`.main-tasks-dot`、`.session-dock-badge`、`.session-archive-entry-count` 等）。它们不属于「用户气泡」这一项，而且按 4.5（正文）还是按 3:1（图形）定档需要单独定夺 —— 新门禁只校 `--brand-fill`，暂时管不到这些点。
+- 同一份 spec §4.2 把「用户气泡」列在 `--brand-soft-bg`（品牌浅底）那行的用途里，与实现的实底白字不一致；本次保留实底观感（用户已熟悉）并按实底把它修到 AA，这条 spec 与实现的分歧如实留着。
+- `src/content/index.js`、`src/content/advanced-tools.js`、`src/content/selection-toolbar-styles.js`、`src/side_panel/token-stats-panel.js` 里仍有硬编码 `#667eea`（SVG 图表 stroke/fill、选中文本工具条），与气泡无关，`npm run theme:check` 也没把这几条列进违规，属既有存量，未改。
+
+**验证**
+- `python3 scripts/theme-contrast-check.py src/shared/theme.css` 未达标 0 项 / 退出码 0；`npx vitest run test/unit/theme-contrast.unit.test.js test/unit/message-focus-anchor.unit.test.js` **17 例全过**；探针亮 / 暗各 **66/66**；`npm run theme:check` 无输出。
+
 ### 切换会话工作目录：任务执行中禁用的入口，执行结束后必须当场自动恢复
 
 > 来源：用户复测上一轮改动后报告——「会话执行中把输入框底部的切换入口禁掉我是认的，但有时候任务执行完了它还是禁用的，我只有把会话切走再切回来，那个禁用状态才会解除。」语义经确认保持不变（执行中 / 队列非空都不许换目录），只修实时性。

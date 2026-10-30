@@ -4,6 +4,8 @@
 theme-contrast-check.py —— 暗色 token 的 WCAG 对比度门禁
 解析 theme.css 的 :root（亮）与 [data-theme="dark"]（暗）两块，对暗色文本/边框类 token
 按其对照面（同块 --bg-surface / --bg-elevated 取劣者）实算对比度，低于阈值即 [AA FAIL] 并非零退出。
+另加一项亮暗都算的「品牌实底 × 白字正文」：--brand-fill 的契约就是撑得住 --text-on-brand
+正文（过去只按非文本图形 3:1 校 --brand-500，于是白字正文坐在 3.66:1 的底上没人卡）。
 用法：python3 scripts/theme-contrast-check.py src/shared/theme.css
 口径：相对亮度公式同 spec §4.2。文本类阈值 4.5:1，边框/图形类 3:1。
 """
@@ -67,11 +69,23 @@ def contrast(fg, bg_rgb):
     hi, lo = max(l1, l2), min(l1, l2)
     return (hi + 0.05) / (lo + 0.05)
 
+def brand_fill_check(label, block):
+    """品牌实底上的常驻白字正文：亮暗两套都要过 4.5:1。token 缺失则跳过（不报错）。"""
+    bg = to_rgb(block.get('--brand-fill', ''))
+    fg = to_rgb(block.get('--text-on-brand', ''))
+    if not bg or not fg:
+        return 0
+    r = contrast(fg, bg[:3])
+    ok = r >= 4.5
+    print(f'{"[OK]" if ok else "[AA FAIL]"} {label} --brand-fill={block["--brand-fill"]} × --text-on-brand={block["--text-on-brand"]} 对比度 {r:.2f}:1（阈值 4.5:1，正文白字底）')
+    return 0 if ok else 1
+
 def main(argv):
     if not argv:
         print('usage: theme-contrast-check.py <theme.css>')
         return 2
     css = open(argv[0], encoding='utf-8').read()
+    light = parse_block(css, ':root')
     dark = parse_block(css, 'html[data-theme="dark"]')
     if not dark:
         m = re.search(r'\[data-theme="dark"\]\s*\{([^}]*)\}', css)
@@ -83,6 +97,8 @@ def main(argv):
             bgs.append((key, v[:3]))
     fails = 0
     infos = 0
+    fails += brand_fill_check('亮色', light)
+    fails += brand_fill_check('暗色', dark)
     for name, val in sorted(dark.items()):
         fg = to_rgb(val)
         if not fg:

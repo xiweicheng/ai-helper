@@ -3589,7 +3589,11 @@ body {
 }
 .message.user {
   align-self: flex-end;
-  background: var(--brand-500);
+  /* 用户气泡是「正文 + 白字」，底得取撑得住 AA 的品牌实底：
+   * 旧的 --brand-500 上白字只有亮 3.66 / 暗 2.45（该 token 在门禁里是按非文本图形 3:1 定的）。
+   * 换 --brand-fill 后亮 5.59 / 暗 4.77，且白字不变 —— 气泡内的文件标签（rgba 白底白字）
+   * 与工具条以白字为前提的配色都不用跟着改。 */
+  background: var(--brand-fill);
   color: var(--text-on-brand);
   border-bottom-right-radius: 4px;
   position: relative;
@@ -13196,10 +13200,19 @@ body {
   z-index: 1;
 }
 
+/* 用户气泡是「白字 + 品牌实底」，不能沿用上面那条带 inset 内铺晕光的脉冲：
+ * 琥珀内光会把底提亮，实测把正文对比度从 5.59 打到 4.54（暗色 4.77 → 3.62），瞬时掉出 AA。
+ * 换成「外扩涟漪 + 描边」：反馈仍在（外圈 + ::before 描边都动），但正文底下那层颜色一律不动。 */
+.message.user.bookmark-highlight {
+  animation: messageFadeIn 0.3s ease-out, bookmarkHighlightPulseOnBrand 2s ease;
+}
+
 /* 减少动态偏好下把「2 秒脉冲」换成「2 秒静态描边」，而不是什么都不留。
  * 直接 animation: none 会让描边回到上面那条 transparent —— 定位反馈等于被关掉；
  * 停靠条点芯片的「这就是那一轮」提示也就白给。 */
 @media (prefers-reduced-motion: reduce) {
+  /* 必须把上面那条气泡专用规则一并列出：它权重更高，漏写就会在 reduce 下赢过本块，气泡又开始闪 */
+  .message.user.bookmark-highlight,
   .bookmark-highlight,
   .bookmark-highlight::before {
     animation: none;
@@ -13217,6 +13230,16 @@ body {
   45% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.7), inset 0 0 0 0 rgba(var(--warning-rgb), 0.3); }
   60% { box-shadow: 0 0 0 10px rgba(var(--warning-rgb), 0), inset 0 0 20px 4px rgba(var(--warning-rgb), 0.25); }
   75% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0); }
+}
+
+@keyframes bookmarkHighlightPulseOnBrand {
+  0% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.7); }
+  15% { box-shadow: 0 0 0 12px rgba(var(--warning-rgb), 0); }
+  30% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.6); }
+  45% { box-shadow: 0 0 0 10px rgba(var(--warning-rgb), 0); }
+  60% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0.5); }
+  75% { box-shadow: 0 0 0 9px rgba(var(--warning-rgb), 0); }
   100% { box-shadow: 0 0 0 0 rgba(var(--warning-rgb), 0); }
 }
 

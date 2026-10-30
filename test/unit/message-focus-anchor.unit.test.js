@@ -99,3 +99,35 @@ describe('focusMessageInView', () => {
     expect(css).not.toContain('.session-dock-highlight');
   });
 });
+
+describe('用户气泡的高亮不能把白字底提亮', () => {
+  const css = () => read('src/side_panel/styles.css');
+
+  it('气泡专用脉冲的 keyframes 全程不含 inset（探针只录 15%–60%，剩下的帧靠这条守）', () => {
+    const all = css();
+    const start = all.indexOf('@keyframes bookmarkHighlightPulseOnBrand');
+    expect(start).toBeGreaterThan(-1);
+    // 关键帧步骤都缩进，收尾那个 } 占行首
+    const body = all.slice(start, all.indexOf('\n}', start) + 2);
+    expect(body).not.toContain('inset');
+  });
+
+  it('.message.user.bookmark-highlight 切到不含 inset 的那条脉冲', () => {
+    const start = css().indexOf('.message.user.bookmark-highlight {');
+    expect(start).toBeGreaterThan(-1);
+    const block = css().slice(start, css().indexOf('}', start));
+    expect(block).toContain('bookmarkHighlightPulseOnBrand');
+  });
+
+  it('通用脉冲一字不动（收藏/搜索/问答跳转还靠它的内铺光）', () => {
+    expect(css()).toMatch(/@keyframes bookmarkHighlightPulse \{[^}]*inset/);
+    expect(css()).toMatch(/\.bookmark-highlight\s*\{[^}]*bookmarkHighlightPulse 2s/);
+  });
+
+  it('reduce 块里必须连气泡专用选择器一起关掉：它权重高，漏写就会在 reduce 下继续闪', () => {
+    const reduce = css().slice(css().indexOf('.message.user.bookmark-highlight {'));
+    const block = reduce.slice(reduce.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(block.slice(0, block.indexOf('}', block.indexOf('animation: none'))))
+      .toContain('.message.user.bookmark-highlight');
+  });
+});

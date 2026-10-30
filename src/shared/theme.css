@@ -32,7 +32,12 @@
   --brand-500: #667eea;
   --brand-600: #5a6fd6;
   --brand-700: #4c5bd4;
-  --brand-fill: #667eea;
+  /* 品牌实底：契约是「其上常驻 --text-on-brand 白字正文，亮暗两套主题都要过 WCAG AA 4.5:1」。
+   * 它不是 --brand-500 的别名：白字在 #667eea 上只有 3.66:1（本 token 旧值），
+   * 而 --brand-500 在门禁里是按非文本图形 3:1 定的（适合图标/边框）。
+   * 所以亮色取品牌阶更深的 #4c5bd4（白字 5.59:1），与暗色那档 #566ad3（4.77:1）同口径；
+   * 门禁见 scripts/theme-contrast-check.py 的「品牌实底×白字」一项。 */
+  --brand-fill: #4c5bd4;
   --brand-accent: #764ba2;
   --brand-violet-500: #8b5cf6;
   --brand-violet-600: #6d28d9;
@@ -149,6 +154,7 @@ html[data-theme="dark"] {
   --brand-500: #8da2f2;
   --brand-600: #7d92ec;
   --brand-700: #6d84ee;
+  /* 同亮色那档：品牌实底要撑得住白字正文（4.77:1，过 AA） */
   --brand-fill: #566ad3;
   --brand-accent: #6f4b99;
   --brand-violet-500: #a78bfa;
