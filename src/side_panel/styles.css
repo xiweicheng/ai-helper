@@ -15050,11 +15050,15 @@ body {
 
 .xlsx-table-scroll {
   flex: 1;
-  overflow: auto;
+  /* 横向滚动完全交给底部镜像条（.xlsx-table-scrollbar-mirror）承担：
+     overflow-x 必须显式 hidden——新版 Chrome 中一旦声明标准 scrollbar-width，
+     下方 ::-webkit-scrollbar:horizontal 的隐藏规则整组失效，原生横条会重新出现，
+     >2000 行时被截断提示行与镜像条分隔，视觉上变成两条滚动条 */
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
   position: relative;
   padding-bottom: 16px;
-  scrollbar-width: thin;
 }
 
 .xlsx-table-scroll::-webkit-scrollbar {
