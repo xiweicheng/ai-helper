@@ -420,9 +420,11 @@ export async function resumeTask(sessionId, userGuidance = '') {
   } catch (errorResult) {
     // 已切换到其他会话：保存到原会话历史，不修改当前 DOM
     if (state.activeSessionId !== mySessionId) {
-      const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
-                        errorResult.message === '任务已被用户停止';
-      if (errorResult.message === '任务已被用户停止') {
+      // 必须走 t()：字面量只匹配中文，英文界面下「用户取消」会被误判成恢复失败，
+      // 于是既不写 taskCancelled 文案、也不给 resumable，续跑入口当场丢失
+      const taskStopped = errorResult.message === t('chatMsg.errTaskStopped');
+      const resumable = !!errorResult.checkpoint || errorResult.swRestarted || taskStopped;
+      if (taskStopped) {
         appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
       } else if (errorResult.swRestarted) {
         appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.swRestarted'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
@@ -437,7 +439,7 @@ export async function resumeTask(sessionId, userGuidance = '') {
     }
 
     // 用户主动取消
-    if (errorResult.message === '任务已被用户停止') {
+    if (errorResult.message === t('chatMsg.errTaskStopped')) {
       removeLoadingMessage(loadingId);
       const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || []);
       state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true, resumed: true });

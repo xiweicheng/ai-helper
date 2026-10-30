@@ -222,6 +222,11 @@ describe('「继续执行」入口：单一实现 + 选择器兼容 budget 语�
     expect(PANEL_INDEX_SRC).toMatch(/addMessage\([^;]*msg\.resumable \|\| false, msg\.timestamp \?\? null\);/);
   });
 
+  test('续跑取消分支按 t() 比较（中文以外的界面不得把用户取消误判为恢复失败）', () => {
+    expect(CHAT_RESUME_SRC).not.toMatch(/errorResult\.message === '任务已被用户停止'/);
+    expect(CHAT_RESUME_SRC).toMatch(/errorResult\.message === t\('chatMsg\.errTaskStopped'\)/);
+  });
+
   test('restoreMessageFromHtml 复用 _mountResumeButton（budget 专属文案/校验不漂移）', () => {
     const fn = between(CHAT_MANAGER_SRC, 'export function restoreMessageFromHtml', '// 移除 streaming 类');
     expect(fn).toMatch(/if \(resumable\) _mountResumeButton\(messageEl, resumable\);/);

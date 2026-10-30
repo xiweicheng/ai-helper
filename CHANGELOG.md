@@ -29,6 +29,7 @@
 - 续跑返回 `budgetEnded` 时保留 checkpoint（否则第二次撞线后按钮点下去报 checkpoint 不存在）；面板流式成功路径补挂「继续执行」，`data-resumable` 选择器兼容 `'budget'`。
 - 子任务软着陆按未完成落定且 `stop` 策略不回滚（否则成果被抹且 `subtaskProgress` 会永久跳过缺项）。
 - 导入导出新增 `RETIRED_KEYS`：只删白名单不兼容旧备份，会把所有含 `reactMaxIterations` 的旧导出文件全部拒掉。
+- 续跑取消分支原先用中文字面量比较错误信息（英文界面下「用户取消」被误判成恢复失败、可续跑入口丢失），改走 `t('chatMsg.errTaskStopped')`。
 
 ### 待办第四轮：复制提到行内与编辑同级、「复制并附提问模板」下线、编辑态收起操作栏
 
