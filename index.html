@@ -1145,6 +1145,11 @@
       <h3 data-i18n="feat-verify-title">Objective Completion Checks</h3>
       <p data-i18n="feat-verify-desc">Sub-tasks from plan_task can declare doneCriteria acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model's self-report. An optional auto-rerun loop drives unmet sub-tasks back through four gates; fully unchanged when left off.</p>
     </div>
+    <div class="card">
+      <div class="card-icon">🗂️</div>
+      <h3 data-i18n="feat-dock-title">Session Archive &amp; Running-Session Dock</h3>
+      <p data-i18n="feat-dock-desc">A rail on the left edge keeps every other session visible as running, queued or done — with node and sub-task progress, your original question in the tooltip, and one click to jump straight to that round. Overflow collapses into +N and a wedged status greys out so you can dismiss it. Sessions you are done with move to an archive area instead of being deleted: everything is kept, restorable or permanently deletable, and hidden from the tabs, list and search.</p>
+    </div>
   </div>
 </section>
 
@@ -1896,6 +1901,8 @@
     'feat-theme-desc':       { en: 'A semantic-token redesign across the whole UI with three states (light, dark, follow-system). Switch instantly from the sidebar "More" menu or the Options "Appearance" card; the resolved theme syncs across every page without a reload, with WCAG-AA dark contrast verified per panel.', zh: '全站语义 token 重构，提供亮 / 暗 / 跟随系统三态。侧边栏「更多」菜单与选项页「外观」卡片两处入口即时切换，解析后主题跨页面免刷新同步，逐面板实测暗色对比度符合 WCAG AA。' },
     'feat-verify-title':     { en: 'Objective Completion Checks', zh: '完成度客观取证校验' },
     'feat-verify-desc':      { en: 'Sub-tasks from plan_task can declare doneCriteria acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model\'s self-report. An optional auto-rerun loop drives unmet sub-tasks back through four gates; fully unchanged when left off.', zh: 'plan_task 拆出的子任务可用 doneCriteria 声明验收标准，依据真实 DOM / 命令证据（穿透 Shadow DOM / 同源 iframe）客观取证判断是否达成，而非依赖模型自述。可选自动重跑回路以四闸门驱动未达标子任务回炉；默认关闭时现有行为逐字节不变。' },
+    'feat-dock-title':       { en: 'Session Archive & Running-Session Dock', zh: '会话归档区 + 执行中会话停靠条' },
+    'feat-dock-desc':        { en: 'A rail on the left edge keeps every other session visible as running, queued or done — with node and sub-task progress, your original question in the tooltip, and one click to jump straight to that round. Overflow collapses into +N and a wedged status greys out so you can dismiss it. Sessions you are done with move to an archive area instead of being deleted: everything is kept, restorable or permanently deletable, and hidden from the tabs, list and search.', zh: '左侧边缘一条停靠条实时显示其他会话的「执行中 / 排队中 / 已完成」（带当前节点与子任务进度），悬停看到的就是那一轮你提的问题，点一下直接跳过去并高亮；条目太多自动收成 +N，状态卡死时转灰并允许移除。不再问答的会话可丢进归档区而不是删掉：消息与目录绑定原样保留，随时恢复或彻底删除，标签栏 / 会话列表 / 全局搜索会一并藏好。' },
     'scenarios-title':          { en: 'Typical Use Cases', zh: '典型使用场景' },
     'scenarios-desc':           { en: 'One assistant, covering every aspect of your daily work', zh: '一个助手，覆盖你日常工作的方方面面' },
     'scenario-dev-title':       { en: 'Full-Stack Development Assistant', zh: '全栈开发助手' },
