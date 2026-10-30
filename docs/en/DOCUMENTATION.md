@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 35 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 37 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -453,7 +453,7 @@ Model Context Protocol (MCP) support for dynamically extending third-party tool 
 - **Tab Switching**: Horizontal tab bar, auto-restores message history, model, tools, and temperature
 - **Session Creation**: One-click creation, auto-generated title (from first user message)
 - **Session Rename/Delete**: Right-click context menu
-- **Session Archive/Restore**: Up to 20 archived, restorable anytime
+- **Session Archive/Restore (legacy snapshot channel)**: "Clear current conversation" writes to the separate `archivedSessions` store — up to 20, visible only to RAG retrieval. This is *not* the Archive Area described in section 37
 - **Cross-Session Message Delivery**: Background task results auto-appended to original session
 - **Persistent Storage**: Based on IndexedDB, auto-migrates from legacy `chrome.storage.local`
 - **Session Export/Import**: Batch select export as `.aihelper.json`, compatible with new/legacy format import
@@ -763,6 +763,33 @@ Items that come up mid-conversation no longer need a window switch — one click
 - **Actions appear on hover**: a row normally shows only the circle and the title — edit/copy/more surface on hover or keyboard focus; note, due date, link, priority and delete live in the row's `⋯` menu and batch actions (clear completed, fill input box) in the header's `⋯`. Menus render on a `fixed` layer, size to their longest label and never wrap (no more broken words), and are clamped to the viewport edges with scrolling when they get tall.
 - **One click into the prompt box**: the list becomes a Markdown checklist (status, priority, due date, notes, links) that is **appended** after the existing draft in the question input rather than replacing it; only http/https links make it into the digest, an invalid one leaves no trace.
 - **Dependable persistence**: data lives in the IndexedDB `todos` store (DB v7) with optimistic updates — the UI changes first, writes are serialized so concurrent edits cannot clobber each other's snapshot, and a failure rolls back only that one item (leaving successful writes intact), broadcasts the rollback so the UI tells the truth, and shows a "save failed" toast instead of failing silently. Every write returns `{ok, reason}` (invalid status / invalid link / save failed / missing item), and anything that fails validation never enters the optimistic update at all.
+
+### 37. Session Archive Area & Running-Session Dock
+
+Too many open sessions create two kinds of noise, each with its own answer: sessions you no longer prompt in but cannot bring yourself to delete need a way to leave the screen, and when several tasks run at once you should not be hunting through tabs.
+
+**Archive area (leaves the view — it does not delete data)**
+
+- **Only the visibility changes**: archiving sets `session.archivedAt`; messages, workspace binding and ReAct checkpoints are kept untouched. `loadSessions()` filters archived sessions out by default and only returns everything with `{ includeArchived: true }`.
+- **Hidden consistently in all three places**: the tab bar, the "All sessions" dropdown and global message search (via `db.searchActiveSessionsMessages` plus the search panel's `visibleSessions`) never show an archived session, so nothing is "findable in search but missing from the tabs".
+- **The entry costs no permanent space**: `Archive area (N)` at the bottom of the "All sessions" panel opens a full-screen archive panel layered above the session list, grouped by archive time and searchable. Clicking a row restores it and switches in; hovering reveals Restore / Delete permanently.
+- **All three archive entry points** (row button, tab context menu, archive panel) route through one `archiveSessionFlow`, and **archiving is refused while a session is running or has queued work** (`isSessionArchivable`) with the reason stated — a session that is still writing results must not be hideable.
+- **Archiving the active session switches away automatically** to the most recently updated session (or creates one when none is left); otherwise you would be sitting on a session the tab bar no longer shows. `switchToSession` also un-archives on demand, since bookmarks, legacy entry points and scheduled tasks can all address an archived session directly.
+- **Delete permanently** reuses the normal deletion cleanup (queue entries, attachments, completion markers, checkpoints) behind a confirmation that spells out that messages and run logs are unrecoverable.
+- **Scheduled tasks self-heal**: `scheduler.resolveHostSession` treats an archived host session as unavailable and rebuilds a dedicated one, so results never go into a session the user cannot see.
+
+**Running-session dock (`src/side_panel/session-dock.js`)**
+
+- **No second source of truth**: the dock creates no run state of its own, it only consumes existing signals — the background `QUERY_SESSION_RUNNING` reply (authoritative) plus `generatingSessionIds` / `pendingCallApiSessionIds`, `completedSessionIds`, the queue store, `EXECUTION_STATUS_UPDATE` and `SCHEDULED_TASK_RUN_STATE`. It can therefore never claim "running" after the background already stopped.
+- **Three-state chips** (26px, never for the current session): running = brand colour with a breathing halo and a rotating outer arc, tooltip "Running: Write · sub-task 2/3"; queued = amber with a count badge; done = green ✓ with a one-shot pulse and the `HH:mm` finish time.
+- **The tooltip's primary line is your question, not the session title**: it prefers the queued prompt text, then the last user message in that session (read from IndexedDB, since the in-memory snapshot can be a round behind), falling back to the title only when neither exists. The title appears as a secondary line only when it is not the same sentence as the question.
+- **Clicking a chip opens the session *and* jumps to that round's question**: `focusMessageInView` scrolls it to the top (`instant`, `block: 'start'`) and reuses the existing `bookmark-highlight` flash for 2 seconds instead of inventing a third highlight. It targets the question rather than the answer, because the answer keeps growing during execution and would land half off-screen. Queued prompts are not in the database yet and title-fallback entries have no node, so in those two cases it **does not fake a location** and just restores the usual scroll position.
+- **Done chips do not disappear on their own** (auto-dismissal would throw the notification away): clicking into the session removes them, and the hover `×` appears only for done and stale entries — putting an `×` on a running chip reads as "cancel this task". Dismissal persists and is cleared automatically the next time that session starts running.
+- **`+N` collapse when they do not fit**: the rail occupies at most 8 slots — beyond that it renders 7 entries plus a `+N` chip, and the scrolling lives in a normal-width (220px) overflow overlay (a scrollbar in a 26px chip column is unusable). It opens on hover/focus, pins on click, closes on `Esc`. Groups sort newest-first so what gets collapsed is always the oldest.
+- **Stale downgrade when state wedges**: `isEntryStale` requires all three conditions (phase is `running`, the authoritative background set no longer recognises the session, and more than 90s since the last `EXECUTION_STATUS_UPDATE`), then greys the chip out, stops the animation, changes the tooltip to "status may be stale" and exposes the `×` as "remove stale entry". With no time baseline at all it never flags — under-reporting beats lying.
+- **Position and make-way**: chips stack down from the top of the chat area along the left edge (the vertical centre is already occupied by the message-jump hot zone `.chat-nav-hotzone`), and `.chat-container` gets a 34px left corridor so the layout shifts instead of the chips floating translucently over the text.
+- **Performance and accessibility**: calibration pauses while the panel is hidden and resumes immediately on return; `EXECUTION_STATUS_UPDATE` arrives dozens of times per round, so rendering is debounced at 250ms. Chips are real `<button>`s (Tab-able, Enter-able) whose `aria-label` carries the question; all three state colours take the `-700` / `-strong` ramp to clear 4.5:1 on their soft background; `prefers-reduced-motion: reduce` drops the breathing, rotation and pulse but keeps a static outline.
+- **User-bubble legibility**: the bubble body is white text on `--brand-fill` (the brand *solid fill* token, contracted to keep white text AA) rather than `--brand-500`, measuring **5.59:1 light / 4.77:1 dark** — both past WCAG AA. Its highlight pulse uses a ripple-only variant, because the generic pulse's `inset` glow would lighten the layer under the text below AA mid-animation. `scripts/theme-contrast-check.py` gates that invariant for both the light and dark blocks.
 
 ---
 

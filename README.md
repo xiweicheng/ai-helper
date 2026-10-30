@@ -47,6 +47,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 - **Talk instead of typing** — click 🎤 in the input box or press `Alt+V` (works with page focus too; right Alt / right Ctrl can be enabled as single-key triggers under Options → Voice): streaming draft as you speak, punctuation-aware final text when you stop, all transcribed locally by the Agent — the audio never leaves your machine and no cloud ASR is involved.
 - **Bring any provider, switch in two clicks** — save multiple OpenAI-compatible provider profiles (endpoint / key / model list); pick provider first, then model, right in the chat panel.
 - **Never miss an unfinished task** — desktop notifications when a task completes or fails, when a scheduled task finishes, and when the AI is waiting for your confirmation or clarification; one click jumps back to the side panel.
+- **Run several sessions at once without flipping between them** — a rail on the left edge shows every other session as running / queued / done, with the current node and sub-task progress. The tooltip leads with the question you actually asked, and one click scrolls to it and highlights it. Finished sessions stay until you have seen them, a long list collapses into `+N`, and a wedged status greys out and becomes removable. Sessions you are done with but cannot bring yourself to delete go to the archive area: messages and workspace binding are kept intact, restore or delete permanently whenever you like, and the tab bar, session list and global search all hide them together.
 - **Light / Dark / Follow-system theme** — a semantic-token redesign across the whole UI, switchable instantly from the sidebar "More" menu and the Options "Appearance" card; a change anywhere syncs every page without a reload.
 
 ## How it compares
@@ -103,8 +104,8 @@ Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 
 Everything below the quickstart lives in the full technical reference:
 
-- **English** — architecture, all 35 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
-- **中文** — 架构总览、35 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** — architecture, all 37 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** — 架构总览、37 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
 - **Wiki** — installation, features, tools, Agent, configuration → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **Website** — <https://xiweicheng.github.io/ai-helper/>
 - **Tech docs site** (Chinese only) — full RepoWiki technical documentation (offline full-text search + sidebar tree navigation) <https://xiweicheng.github.io/ai-helper/wiki/> · maintainers refresh it with `npm run build:docsite` (local preview `npm run preview:docsite`)

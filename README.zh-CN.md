@@ -47,6 +47,7 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 - **不想打字就直接说** —— 输入框 🎤 或随时按 `Alt+V`（焦点在网页里也能触发；右侧 Alt / 右侧 Ctrl 可在「语音 → 快捷触发」里另配为单键触发）：边说边出草稿，松手后换高精度模型加标点、规整数字；识别全部在本地 Agent 完成，音频不出本机、不经任何云端 ASR。
 - **任意厂商，两下切换** —— 保存多套 OpenAI 兼容厂商配置（地址 / Key / 模型列表），在侧边栏先选厂商、再选模型，随切随用。
 - **任务完成不错过** —— 任务完成 / 失败、定时任务结束、AI 等待确认或澄清时弹出桌面通知，点击即可回到侧边栏。
+- **多个会话同时跑，不用来回翻** —— 左侧边缘一条停靠条实时显示其他会话的「执行中 / 排队中 / 已完成」（带当前节点与子任务进度），悬停看到的就是那一轮你提的问题，点一下跳过去并高亮；跑完的留在那里等你看过，条目太多自动收成 `+N`，状态卡死时转灰并允许移除。开太多又不忍删的会话可丢进归档区：消息、工作目录绑定原样保留，随时恢复或彻底删除，标签栏 / 会话列表 / 全局搜索会一并藏好。
 - **亮 / 暗 / 跟随系统三态主题** —— 全站语义 token 化，侧边栏「更多」菜单与选项页「外观」两处入口即时切换，任一处改动其余页面无需刷新同步。
 
 ## 能力对比
@@ -103,8 +104,8 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 上手之后的所有细节都放在完整技术参考里：
 
-- **中文** —— 架构总览、35 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
-- **English** —— architecture、35 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** —— 架构总览、37 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** —— architecture、37 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
 - **Wiki** —— 安装、功能、工具、代理、配置全站 → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **文档站** —— <https://xiweicheng.github.io/ai-helper/>
 - **技术文档站** —— RepoWiki 全站技术文档（离线全文搜索 + 目录树导航）<https://xiweicheng.github.io/ai-helper/wiki/> · 维护者刷新：`npm run build:docsite`（本地预览 `npm run preview:docsite`）
