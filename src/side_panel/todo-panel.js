@@ -244,6 +244,8 @@ let undoable = null;
 let undoTimer = null;
 // 面板开着时才监听输入区尺寸变化
 let fitObserver = null;
+// 本次打开期间锁定过的高度：只增不减，切 Tab / 删条目都不回缩
+let heightFloor = 0;
 
 // 行内编辑的未提交内容只活在 DOM 里，而每一次落库成功都会 emitChange → render()
 // 重建整段列表。不在重建前把这些脏值抓下来，用户正在敲的备注/标题就会在下一次
@@ -362,6 +364,8 @@ function togglePanel() {
 function openPanel() {
   activeTab = 'active';
   undoable = null;
+  heightFloor = 0;
+  panelEl.style.removeProperty('height');
   render();
   panelEl.classList.add('expanded');
   toggleEl.classList.add('active');
@@ -378,6 +382,8 @@ function closePanel() {
   stopWatchingInputArea();
   panelEl.style.removeProperty('--fit-y');
   panelEl.style.removeProperty('--todo-max-h');
+  panelEl.style.removeProperty('height');
+  heightFloor = 0;
   closeMenu();
   cancelInlineEdit();
   clearUndo();
@@ -554,6 +560,11 @@ function fitPanelToInputArea() {
     // 底部锚定下 rect.bottom 不随高度变化，可以直接用它算可用高
     const available = Math.max(MIN_PANEL_HEIGHT, Math.floor(rect.bottom - TOP_RESERVE));
     panelEl.style.setProperty('--todo-max-h', `${available}px`);
+    // 高度只增不减：先放开写回的高度量一次内容自然高，再与历史值取大。
+    // 不这么做的后果就是切到条目更少的已完成 Tab 时面板缩一截、整块上下跳。
+    if (heightFloor) panelEl.style.height = 'auto';
+    heightFloor = Math.min(available, Math.max(heightFloor, panelEl.offsetHeight));
+    panelEl.style.height = `${heightFloor}px`;
     const dy = Math.min(0, Math.floor(limit - rect.bottom));
     if (dy) panelEl.style.setProperty('--fit-y', `${dy}px`);
   });

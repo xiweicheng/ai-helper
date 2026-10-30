@@ -127,6 +127,29 @@ describe('面板底部不遮住输入区', () => {
     const body = render.slice(0, render.indexOf('\n}\n'));
     expect(body.slice(body.indexOf('bodyEl.innerHTML')).indexOf('fitPanelToInputArea()')).toBeGreaterThan(-1);
   });
+
+  test('高度只增不减：切到条目更少的 Tab 不能把面板缩一截', () => {
+    const fit = PANEL.slice(PANEL.indexOf('function fitPanelToInputArea('));
+    const body = fit.slice(0, fit.indexOf('\n}'));
+    // 先放开自己写回的 height，否则量到的永远是上次的值，条目增加也长不上去
+    expect(body).toMatch(/if \(heightFloor\) panelEl\.style\.height = 'auto';/);
+    expect(body).toContain('Math.max(heightFloor, panelEl.offsetHeight)');
+    // 上限仍由可用高度把住，不会顶到输入区以外
+    expect(body).toContain('Math.min(available, Math.max(heightFloor');
+    expect(body).toMatch(/panelEl\.style\.height = `\$\{heightFloor\}px`;/);
+  });
+
+  test('锁定高度只在一次打开内生效，开关面板必须归零', () => {
+    expect(PANEL).toMatch(/function openPanel\(\) \{[\s\S]*?heightFloor = 0;[\s\S]*?render\(\);/);
+    expect(PANEL).toMatch(/function closePanel\(\) \{[\s\S]*?removeProperty\('height'\);[\s\S]*?heightFloor = 0;/);
+  });
+
+  test('撤销按钮不收缩也不折行（标题一长会被压成竖排两行）', () => {
+    const block = rule(STYLES, '.todo-undo .todo-mini-btn {');
+    expect(block).toContain('flex: 0 0 auto');
+    expect(block).toContain('white-space: nowrap');
+    expect(rule(STYLES, '.todo-undo-text {')).toContain('text-overflow: ellipsis');
+  });
 });
 
 describe('按钮收纳（清爽）', () => {

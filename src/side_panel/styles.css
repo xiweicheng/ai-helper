@@ -16388,6 +16388,13 @@ body.voice-recording-active .input-container {
   white-space: nowrap;
 }
 
+/* 撤销按钮不参与收缩：button 在 flex 里的 min-content 只有一个汉字宽，
+   标题一长就会被压成「撤销」两行竖排 */
+.todo-undo .todo-mini-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .todo-clear-done {
   display: flex;
   align-items: center;
