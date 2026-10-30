@@ -2450,6 +2450,8 @@ export function startServer() {
       return { online: resolved.online, offline: resolved.offline, vad: resolved.vad };
     },
     getIdleUnloadMs: () => getAsrConfig().idleUnloadMs,
+    // 识别节奏档位：会话创建时快照一次（instant/precise 会改变逐句精修行为）
+    getPacing: () => getAsrConfig().asrPacing,
     onError: (stage, err) => logError('system', 'asr_session_error', { stage, error: err?.message || String(err) }),
     onLog: (event, payload) => logSystem(event, payload),
   });

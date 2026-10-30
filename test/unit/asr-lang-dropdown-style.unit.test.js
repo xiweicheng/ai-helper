@@ -116,3 +116,27 @@ describe('输入设备下拉与识别语言同构', () => {
     expect(STYLES).not.toContain('.asr-device-menu .model-option');
   });
 });
+
+describe('识别节奏下拉与识别语言同构', () => {
+  // 背景：识别节奏（即时/均衡/精确）是 Task 7 新增的第三个下拉。
+  // 三颗下拉必须共用同一套触发器+浮层+交互绑定，否则又会长出第二套外观。
+
+  test('触发器用 .model-selector + readonly input，且挂在同一个 .asr-lang-field 上', () => {
+    expect(TOOLBOX_ASR_JS).toMatch(/class="model-selector asr-lang-field" id="asrPacingField"/);
+    expect(TOOLBOX_ASR_JS).toMatch(/<input type="text" id="asrPacingInput" readonly/);
+  });
+
+  test('浮层列表复用 .model-dropdown，选项带 data-pacing 三档', () => {
+    expect(TOOLBOX_ASR_JS).toContain('class="model-dropdown asr-lang-menu" id="asrPacingDropdown"');
+    expect(TOOLBOX_ASR_JS).toContain('data-pacing="${code}"');
+    expect(TOOLBOX_ASR_JS).toContain("const PACING_CODES = ['instant', 'balanced', 'precise']");
+  });
+
+  test('点外面收起靠 DISMISSABLE_DROPDOWNS 登记（漏登记就会出现“点别处不收起”）', () => {
+    expect(TOOLBOX_ASR_JS).toContain("inputId: 'asrPacingInput', menuId: 'asrPacingDropdown'");
+  });
+
+  test('选择后写入 /api/asr/config 的 asrPacing 字段（与会话读取的键一致）', () => {
+    expect(TOOLBOX_ASR_JS).toMatch(/agentApi\('POST', '\/api\/asr\/config', \{ asrPacing: pacing \}\)/);
+  });
+});
