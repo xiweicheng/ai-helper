@@ -4,6 +4,31 @@
 
 ## 2026-10-30
 
+### 待办第三轮：入口收敛成弹窗、快捷键标进菜单、面板按输入区撑高，并修掉「复制点了没反应」与统计顶上的野线
+
+> 来源：用户实测提出四项体验点 + 两个 bug——导出/导入各搞好几个菜单项太碎；行菜单里要能看到快捷键；面板太矮只能露三四条而可视区还有很多；「复制本条」「复制并附提问模板」点击无反应；统计菜单顶上多一条没来由的横线。
+
+**导出/导入各收敛到一个入口 + 一张弹窗**
+- 头部菜单六项 → 三项：`stats` / `export-options` / `import-options`。「导出…」弹一张弹窗，范围（全部/待办/已完成，各自带条数）与格式（JSON/Markdown）**同屏一次选完**，确认才落文件；范围为空时确认按钮 `disabled` 并写明「这个范围里没有待办」，`confirm()` 里再挡一层，绝不生成空文件。
+- 「导入…」改成先选文件、解析成功再问：弹窗给出「文件 N 条 / 当前清单 M 条」+ 合并/替换。**替换的二次确认就是弹窗里的警告条**（选中即亮出「将删除当前全部待办、写入 N 条、不可撤销」），不再多弹一个全局确认框；坏文件会在问方式之前就被拒。
+- 新增 `src/side_panel/todo-io-dialogs.js`：`buildExportDialogHtml` / `buildImportDialogHtml` 纯函数可单测，控制器只负责挂载、`change` 回写、`sync()` 切 disabled/`.show`（不重建 DOM 以免丢焦点）、`Esc` 与 `settle()`。层级 10015，低于 `.todo-menu` 的 10020。
+
+**快捷键直接标在菜单项右侧**
+- `kbdHtml(shortcut)` 只在真有键时输出 `<kbd class="todo-menu-kbd">`，`menuRowHtml` 两处（普通项与优先级色块行）插入；`set-done`/`restore` → `Alt+D`、优先级行 → `Alt+P`、`edit-note` → `Alt+B`、`edit-link` → `Alt+L`，其余项不占位。
+
+**面板按输入区上沿撑高（根因修复）**
+- 旧算法拿**面板自己的底边**当基准算可用高度（`rect.bottom - TOP_RESERVE`），而面板本来就悬在输入区上方，等于自己限制自己：探针实测 `inputTop 752 / rect.bottom 629 / maxH 520`，白白少掉 100px+；同时 `--fit-y` 只允许负值，面板悬空 123px 却贴不上去。
+- 改为 `available = max(220, floor(inputTop - 8 - 108))`，同场景 `maxH 520 → 635`（约多两条）；`dy` 正负都写（悬空向下补齐、越界向上让开），`.todo-panel.expanded` 自己声明不含 `transform` 的 `transition`，位置一次定好后不再滑动。条目少仍按内容矮、条目多才长到上限再转列表滚动。
+
+**两个 bug 的根因**
+- 复制无反应：菜单点击统一进 `handleMenuAction`，而该 `switch` 没有 `copy-item` / `copy-item-prompt` 分支（落到 `default: return`）——处理器只活在 `handleClick` 里，服务的还是早先已删掉的行内复制按钮。把 case 迁到 `handleMenuAction`、删掉死分支，并补一条静态守卫：把三处菜单数据里的 `action` 全抽出来逐个断言有对应 `case`，以后新增菜单项忘了接处理器会被单测拦住。
+- 统计顶上多一条线：`divider` 语义是「上面还有内容」，而它挂在 `headerMenuItems()` 首项上，菜单顶上空无一物就多出一条横线。修在 `openMenuAt` 渲染前把首项 `divider` 归零（不改数据，避免以后调顺序再犯）。
+
+**验证**
+- 单测：`todo-panel-structure` **95 例**（新增「菜单动作必须有落点」「菜单分割线」「行菜单标注快捷键」三个 describe，重写导入导出与面板几何旧断言）、新建 `todo-io-dialogs` **13 例**（jsdom）；待办相关 7 个文件 **224 例全绿**。全量 `vitest run` 226 文件 / 3553 例，4 例失败全在 `src/background/*`（工作区里另一条线的未提交 WIP，与本次改动无关，单独跑也失败）。`npm run lint` 与 `npm run theme:check` 无输出，`npm run build:silent` BUILD_SUCCESS。
+- 探针 `_todo-io-stats.mjs` 重写 S/T/V/W 四组 **43/43 ALL CHECKS PASSED**：三入口菜单与首项无分割线、弹窗内范围+格式同屏且条数正确、空范围禁用+硬点也不出文件、真下载 JSON/Markdown、选文件后选方式、替换警告条、坏文件不问方式、空文件替换不清库、弹窗开着切语言立即换词。
+- `_todo-panel-visual.mjs` 新增 R 组（首项无分割线、角标与真实快捷键一致、复制与复制并附模板真的调到 `clipboard.writeText` 并给对应 toast），P 组断言从「底边在输入区上方」改为「底边贴住 `inputTop - 8`」并补限高按输入区上沿算足的根因断言，整轮 ALL CHECKS PASSED（`bottom 744 / inputTop 752 / maxH 635 / fitY +115`）。
+
 ### 待办第二轮：语言热切换、快捷键、单条填入与拖拽、导入导出、处理中计数与统计视图
 
 > 来源：用户实测提出六件事——切语言要重启插件才生效、待办操作要支持快捷键、批量填入没有意义只要单条、条目要能拖进输入框且带组合好 的文本、头部看不到处理中条数、需要一个统计视图看完成情况与比例。

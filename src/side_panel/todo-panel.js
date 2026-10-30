@@ -33,6 +33,7 @@ import {
   subscribeTodos,
 } from './todo-manager.js';
 import { downloadTodoExport, pickTodoImportFile, readTodoImportFile } from './todo-io.js';
+import { openExportOptions, openImportOptions } from './todo-io-dialogs.js';
 import { openTodoStats } from './todo-stats-panel.js';
 import {
   TODO_STATUS,
@@ -121,20 +122,15 @@ registerTranslations('zh', {
     saveFailed: '保存失败，请重试',
     deletedToast: '已删除',
     clearedToast: '已清除已完成',
-    exportAll: '导出全部',
-    exportActive: '导出待办',
-    exportDone: '导出已完成',
     exportJson: 'JSON（可再导入）',
     exportMd: 'Markdown（可读文本）',
-    importMerge: '导入待办（合并）',
-    importReplace: '替换全部待办…',
+    exportEntry: '导出…',
+    importEntry: '导入…',
     exportEmptyToast: '当前范围内没有待办',
     exportedToast: '已导出 {name}',
     exportFailedToast: '导出失败，请重试',
     importJsonError: '不是有效的待办文件：JSON 解析失败',
     importFormatError: '文件结构不对，需要待办导出文件',
-    replaceConfirmTitle: '替换全部待办',
-    replaceConfirmMsg: '将删除当前全部待办，并写入文件里的 {n} 条。此操作不可撤销，确定继续吗？',
     importEmptyToast: '文件里没有可导入的待办，现有数据已保留',
     importNothingNewToast: '没有新增待办（{skipped} 条已存在或无效）',
     importedToast: '已导入 {added} 条（跳过 {skipped} 条）',
@@ -213,20 +209,15 @@ registerTranslations('en', {
     saveFailed: 'Failed to save, try again',
     deletedToast: 'Deleted',
     clearedToast: 'Completed todos cleared',
-    exportAll: 'Export all',
-    exportActive: 'Export to-dos',
-    exportDone: 'Export done',
     exportJson: 'JSON (re-importable)',
     exportMd: 'Markdown (readable)',
-    importMerge: 'Import todos (merge)',
-    importReplace: 'Replace all todos…',
+    exportEntry: 'Export…',
+    importEntry: 'Import…',
     exportEmptyToast: 'Nothing to export in this range',
     exportedToast: 'Exported {name}',
     exportFailedToast: 'Export failed, try again',
     importJsonError: 'Not a valid todo file: JSON parse failed',
     importFormatError: 'Unexpected file structure, need a todo export file',
-    replaceConfirmTitle: 'Replace all todos',
-    replaceConfirmMsg: 'All current todos will be deleted and {n} todos from the file written in. This cannot be undone. Continue?',
     importEmptyToast: 'No importable todos in the file, existing data kept',
     importNothingNewToast: 'Nothing new to import ({skipped} existing or invalid)',
     importedToast: 'Imported {added} todos ({skipped} skipped)',
@@ -275,8 +266,6 @@ let addInputEl = null;
 let toggleEl = null;
 let badgeEl = null;
 let menuEl = null;
-// 头部菜单的锚点：选中「导出」后再弹格式菜单要回到同一颗按钮下面
-let menuAnchorEl = null;
 let tabActiveEl = null;
 let tabDoneEl = null;
 
@@ -633,15 +622,17 @@ function fitPanelToInputArea() {
     const limit = measureInputTop() - BOTTOM_GAP;
     const rect = panelEl.getBoundingClientRect();
     if (!rect.height) return;
-    // 底部锚定下 rect.bottom 不随高度变化，可以直接用它算可用高
-    const available = Math.max(MIN_PANEL_HEIGHT, Math.floor(rect.bottom - TOP_RESERVE));
+    // 可用高度按「输入区上沿」算。用面板当前底边（它本来就悬在输入区上方）当基准
+    // 等于自己限制自己：实测白白少掉 100px+，明明有空间却只露三四条
+    const available = Math.max(MIN_PANEL_HEIGHT, Math.floor(limit - TOP_RESERVE));
     panelEl.style.setProperty('--todo-max-h', `${available}px`);
     // 高度只增不减：先放开写回的高度量一次内容自然高，再与历史值取大。
     // 不这么做的后果就是切到条目更少的已完成 Tab 时面板缩一截、整块上下跳。
     if (heightFloor) panelEl.style.height = 'auto';
     heightFloor = Math.min(available, Math.max(heightFloor, panelEl.offsetHeight));
     panelEl.style.height = `${heightFloor}px`;
-    const dy = Math.min(0, Math.floor(limit - rect.bottom));
+    // 底边贴到输入区上沿：悬空时向下补齐（正值），越界时向上让开（负值）
+    const dy = Math.floor(limit - rect.bottom);
     if (dy) panelEl.style.setProperty('--fit-y', `${dy}px`);
   });
 }
@@ -936,14 +927,6 @@ function handleClick(e) {
       cancelInlineEdit();
       titleEditId = id;
       render();
-      return;
-    case 'copy-item':
-      e.stopPropagation();
-      copyItem(id);
-      return;
-    case 'copy-item-prompt':
-      e.stopPropagation();
-      copyItem(id, true);
       return;
     case 'row-more':
       e.stopPropagation();
@@ -1333,6 +1316,11 @@ function closeMenu() {
   menuEl = null;
 }
 
+/** 快捷键角标：只有真有快捷键的项才输出，避免每个菜单项都挂一个空位 */
+function kbdHtml(shortcut) {
+  return shortcut ? `<kbd class="todo-menu-kbd">${escapeHtml(shortcut)}</kbd>` : '';
+}
+
 function menuRowHtml(item, id) {
   if (item.swatches) {
     const levels = [
@@ -1348,18 +1336,22 @@ function menuRowHtml(item, id) {
           data-priority-value="${escapeAttr(value)}" data-menu-id="${escapeAttr(id)}"
           title="${escapeAttr(t('todo.priorityTitle', { level: label }))}"
           aria-label="${escapeAttr(label)}"></button>`).join('')}
+      ${kbdHtml(item.shortcut)}
     </div>`;
   }
   const divider = item.divider ? '<div class="todo-menu-sep"></div>' : '';
   return `${divider}<button type="button" data-menu-action="${escapeAttr(item.action)}" data-menu-id="${escapeAttr(id || '')}"
     class="todo-menu-item${item.danger ? ' danger' : ''}">
-    ${item.icon || ''}<span>${escapeHtml(item.label)}</span>
+    ${item.icon || ''}<span>${escapeHtml(item.label)}</span>${kbdHtml(item.shortcut)}
   </button>`;
 }
 
 function openMenuAt(anchorEl, items, id) {
   const menu = ensureMenu();
-  menu.innerHTML = items.map(item => menuRowHtml(item, id)).join('');
+  // divider 的语义是「这一项上方还有内容」，菜单顶部什么都没有：
+  // 首项带着 divider 就会在菜单顶上多出一条没来由的横线
+  const rows = items.map((item, index) => (index === 0 && item.divider ? { ...item, divider: false } : item));
+  menu.innerHTML = rows.map(item => menuRowHtml(item, id)).join('');
 
   const rect = anchorEl.getBoundingClientRect();
   // 宽度不再用常量：菜单改成 max-content 自适应文案，定位必须拿实测值，
@@ -1379,7 +1371,7 @@ function statusMenuItems(todo) {
   if (todo.status === TODO_STATUS.DONE) {
     const target = restoreTarget(todo);
     const items = [
-      { action: 'restore', label: t('todo.restoreTo', { status: statusLabel(target) }), icon: ICONS.undo, divider: true },
+      { action: 'restore', label: t('todo.restoreTo', { status: statusLabel(target) }), icon: ICONS.undo, shortcut: 'Alt+D', divider: true },
     ];
     // 智能恢复已经会回到待办时不再给重复项
     if (target !== TODO_STATUS.PENDING) {
@@ -1389,13 +1381,13 @@ function statusMenuItems(todo) {
   }
   if (todo.status === TODO_STATUS.DOING) {
     return [
-      { action: 'set-done', label: t('todo.markDone'), icon: ICONS.check, divider: true },
+      { action: 'set-done', label: t('todo.markDone'), icon: ICONS.check, shortcut: 'Alt+D', divider: true },
       { action: 'set-pending', label: t('todo.backToPending'), icon: ICONS.circle },
     ];
   }
   return [
     { action: 'set-doing', label: t('todo.startDoing'), icon: ICONS.play, divider: true },
-    { action: 'set-done', label: t('todo.markDone'), icon: ICONS.check },
+    { action: 'set-done', label: t('todo.markDone'), icon: ICONS.check, shortcut: 'Alt+D' },
   ];
 }
 
@@ -1404,11 +1396,11 @@ function openRowMenu(anchorEl, id) {
   if (!todo) return;
   openMenuAt(anchorEl, [
     ...statusMenuItems(todo),
-    { swatches: true, label: t('todo.priority'), current: todo.priority || '', divider: true },
+    { swatches: true, label: t('todo.priority'), current: todo.priority || '', shortcut: 'Alt+P', divider: true },
     { action: 'edit-title', label: t('todo.editTitleAction'), icon: ICONS.edit, divider: true },
-    { action: 'edit-note', label: todo.note ? t('todo.editNote') : t('todo.addNote'), icon: ICONS.note },
+    { action: 'edit-note', label: todo.note ? t('todo.editNote') : t('todo.addNote'), icon: ICONS.note, shortcut: 'Alt+B' },
     { action: 'set-due', label: t('todo.setDue'), icon: ICONS.calendar },
-    { action: 'edit-link', label: todo.link ? t('todo.editLink') : t('todo.addLink'), icon: ICONS.link },
+    { action: 'edit-link', label: todo.link ? t('todo.editLink') : t('todo.addLink'), icon: ICONS.link, shortcut: 'Alt+L' },
     { action: 'copy-item', label: t('todo.copyItem'), icon: ICONS.copy },
     { action: 'copy-item-prompt', label: t('todo.copyWithPrompt'), icon: ICONS.fill },
     { action: 'delete', label: t('todo.delete'), icon: ICONS.trash, danger: true, divider: true },
@@ -1419,33 +1411,26 @@ function openHeaderMenu(anchorEl) {
   const items = headerMenuItems();
   // 没有菜单项就干脆不弹，不给用户一个空盒子
   if (items.length === 0) return;
-  menuAnchorEl = anchorEl;
   openMenuAt(anchorEl, items, '');
 }
 
-/** 头部「更多」菜单：导出三选一 / 导入合并 / 替换全部 */
+/** 头部「更多」菜单：统计 / 导出… / 导入…。导出与导入的选项都在各自弹窗里一次选完 */
 function headerMenuItems() {
   return [
     { action: 'stats', label: t('todo.statsEntry'), icon: ICONS.chart, divider: true },
-    { action: 'export-all', label: t('todo.exportAll'), icon: ICONS.download },
-    { action: 'export-active', label: t('todo.exportActive'), icon: ICONS.download },
-    { action: 'export-done', label: t('todo.exportDone'), icon: ICONS.download },
-    { action: 'import-merge', label: t('todo.importMerge'), icon: ICONS.upload, divider: true },
-    { action: 'import-replace', label: t('todo.importReplace'), icon: ICONS.upload, danger: true },
+    { action: 'export-options', label: t('todo.exportEntry'), icon: ICONS.download, divider: true },
+    { action: 'import-options', label: t('todo.importEntry'), icon: ICONS.upload },
   ];
 }
 
-/**
- * 选完范围再选格式：两项，不再套第三层菜单
- * 锚点沿用头部按钮；menuId 兼作 scope，选格式时才落文件
- * @param {'all'|'active'|'done'} scope
- */
-function openExportFormatMenu(scope) {
-  if (!menuAnchorEl) return;
-  openMenuAt(menuAnchorEl, [
-    { action: 'export-json', label: t('todo.exportJson') },
-    { action: 'export-md', label: t('todo.exportMd') },
-  ], scope);
+/** 导出：先弹选项弹窗（范围 + 格式），确认后再落文件 */
+async function openExportDialog() {
+  const { active, done } = getTodoGroups();
+  const picked = await openExportOptions({
+    counts: { all: active.length + done.length, active: active.length, done: done.length },
+  });
+  if (!picked) return;
+  exportTodoScope(picked.scope, picked.format);
 }
 
 /** 导出：范围为空就不生成空文件，直接告诉用户「这块没东西」 */
@@ -1466,10 +1451,10 @@ function exportTodoScope(scope, format) {
 }
 
 /**
- * 导入：选文件 → 读解析 → （替换时先二次确认）→ 交给编排层落库
- * @param {'merge'|'replace'} mode
+ * 导入：选文件 → 解析 → 选「合并 / 替换」→ 交给编排层落库
+ * 替换的二次确认就在选项弹窗里（选中即亮出警告），不再额外弹确认框
  */
-async function importTodoFile(mode) {
+async function importTodoFile() {
   const file = await pickTodoImportFile();
   if (!file) return;
 
@@ -1479,13 +1464,12 @@ async function importTodoFile(mode) {
     return;
   }
 
-  if (mode === 'replace') {
-    const ok = await confirmAction(
-      t('todo.replaceConfirmMsg', { n: parsed.todos.length }),
-      t('todo.replaceConfirmTitle'),
-    );
-    if (!ok) return;
-  }
+  const { active, done } = getTodoGroups();
+  const mode = await openImportOptions({
+    count: parsed.todos.length,
+    existing: active.length + done.length,
+  });
+  if (!mode) return;
 
   // 先回待办 Tab：停在「已完成」页，导进来的条目看不见，用户会以为没成功
   activeTab = 'active';
@@ -1545,29 +1529,20 @@ async function handleMenuAction(action, id) {
     case 'edit-link':
       startLinkEdit(id);
       return;
+    case 'copy-item':
+      copyItem(id);
+      return;
+    case 'copy-item-prompt':
+      copyItem(id, true);
+      return;
     case 'stats':
       openTodoStats();
       return;
-    case 'export-all':
-      openExportFormatMenu('all');
+    case 'export-options':
+      openExportDialog();
       return;
-    case 'export-active':
-      openExportFormatMenu('active');
-      return;
-    case 'export-done':
-      openExportFormatMenu('done');
-      return;
-    case 'export-json':
-      exportTodoScope(id || 'all', 'json');
-      return;
-    case 'export-md':
-      exportTodoScope(id || 'all', 'md');
-      return;
-    case 'import-merge':
-      importTodoFile('merge');
-      return;
-    case 'import-replace':
-      importTodoFile('replace');
+    case 'import-options':
+      importTodoFile();
       return;
     case 'delete': {
       const ok = await confirmAction(

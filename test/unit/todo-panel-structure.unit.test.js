@@ -113,8 +113,19 @@ describe('面板底部不遮住输入区', () => {
     expect(body).toContain("'--todo-max-h'");
     expect(body).toContain("'--fit-y'");
     expect(body).toContain('if (!panelEl || !isOpen()) return;');
-    // 位移只能往上（Math.min(0, …)），往下就是把面板送进输入区
-    expect(body).toContain('Math.min(0, Math.floor(limit - rect.bottom))');
+    // 可用高度必须用「输入区上沿」算：拿面板当前底边当基准等于自己限制自己，
+    // 面板悬在输入区上方时永远长不到真实可用高度
+    expect(body).toContain('Math.floor(limit - TOP_RESERVE)');
+    expect(body).not.toContain('rect.bottom - TOP_RESERVE');
+    // 底边要真正贴到输入区上沿：悬空时向下补齐，越界时向上让开
+    expect(body).toContain('Math.floor(limit - rect.bottom)');
+    expect(body).not.toContain('Math.min(0, Math.floor(limit - rect.bottom))');
+  });
+
+  test('贴合后的位移不做 0.2s 过渡：否则每次打开都往下滑一下', () => {
+    const block = rule(STYLES, '.todo-panel.expanded {');
+    expect(block).toContain('transition:');
+    expect(block).not.toContain('transform');
   });
 
   test('监听只在面板开着时存在，关闭即解除（常驻观察者会一直重排）', () => {
@@ -668,63 +679,58 @@ describe('待办快捷键（Alt + 字母，作用于选中行）', () => {
   });
 });
 
-describe('批量导入导出（header 更多菜单）', () => {
-  test('头部菜单不再是空数组，五项入口齐全', () => {
-    const header = PANEL.slice(PANEL.indexOf('function headerMenuItems()'));
-    const body = header.slice(0, header.indexOf('\n}\n'));
-    expect(body).not.toContain('return [];');
-    for (const action of ['export-all', 'export-active', 'export-done', 'import-merge', 'import-replace']) {
-      expect(body, `菜单缺 ${action}`).toContain(`action: '${action}'`);
-    }
+describe('批量导入导出（一个入口 + 一个弹窗）', () => {
+  const fnBody = (name) => {
+    const src = PANEL.slice(PANEL.indexOf(name));
+    expect(src, `缺少 ${name}`).not.toBe('');
+    return src.slice(0, src.indexOf('\n}\n'));
+  };
+
+  test('头部菜单只剩 统计 / 导出… / 导入…，不再用多级菜单铺开', () => {
+    const header = fnBody('function headerMenuItems(');
+    const actions = [...header.matchAll(/action: '([a-z-]+)'/g)].map(m => m[1]);
+    expect(actions).toEqual(['stats', 'export-options', 'import-options']);
   });
 
-  test('头部菜单每一项都带图标：混排会让文案左缘参差（三行导出曾整组往左缩进 20px）', () => {
-    const header = PANEL.slice(PANEL.indexOf('function headerMenuItems()'));
-    const body = header.slice(0, header.indexOf('\n}\n'));
-    const rows = body.split('\n').filter(line => line.includes("action: '"));
-    expect(rows.length).toBeGreaterThanOrEqual(5);
+  test('头部菜单每一项都带图标：混排会让文案左缘参差', () => {
+    const rows = fnBody('function headerMenuItems(').split('\n').filter(line => line.includes("action: '"));
+    expect(rows.length).toBe(3);
     for (const row of rows) {
       expect(row.trim()).toContain('icon: ICONS.');
     }
   });
 
-  test('导出范围三选一后先选格式，再交给 io 层下载；空范围不导空文件', () => {
-    expect(PANEL).toContain("from './todo-io.js'");
-    for (const scope of ['all', 'active', 'done']) {
-      expect(PANEL, `缺少 ${scope} 的导出入口`).toContain(`openExportFormatMenu('${scope}')`);
-    }
-    const fn = PANEL.slice(PANEL.indexOf('function exportTodoScope('));
-    const body = fn.slice(0, fn.indexOf('\n}\n'));
-    expect(body).toContain('downloadTodoExport(');
-    expect(body).toContain('format');
-    expect(body).toContain('exportEmptyToast');
+  test('导出：一个弹窗选完范围与格式，确认后交给 io 层；空范围不导空文件', () => {
+    expect(PANEL).toContain("from './todo-io-dialogs.js'");
+    const dialog = fnBody('async function openExportDialog(');
+    expect(dialog).toContain('openExportOptions(');
+    expect(dialog).toContain('counts:');
+    expect(dialog).toContain('exportTodoScope(');
+    expect(PANEL).not.toContain('openExportFormatMenu');
+
+    const scope = fnBody('function exportTodoScope(');
+    expect(scope).toContain('downloadTodoExport(');
+    expect(scope).toContain('exportEmptyToast');
   });
 
-  test('导入：选文件 → 解析 → 交给编排层，解析错有专门提示', () => {
-    const fn = PANEL.slice(PANEL.indexOf('async function importTodoFile('));
-    const body = fn.slice(0, fn.indexOf('\n}\n'));
+  test('导入：选文件 → 解析 → 弹窗选合并/替换 → 交给编排层，解析错有专门提示', () => {
+    const body = fnBody('async function importTodoFile(');
     expect(body).toContain('pickTodoImportFile(');
     expect(body).toContain('readTodoImportFile(');
+    expect(body).toContain('openImportOptions(');
     expect(body).toContain('importTodos(');
     expect(body).toContain('importJsonError');
     expect(body).toContain('importFormatError');
   });
 
-  test('替换全部必须二次确认，且确认在落库之前', () => {
-    const fn = PANEL.slice(PANEL.indexOf('async function importTodoFile('));
-    const body = fn.slice(0, fn.indexOf('\n}\n'));
-    const confirmAt = body.indexOf('confirmAction(');
-    const importAt = body.indexOf('importTodos(');
-    expect(confirmAt).toBeGreaterThan(-1);
-    expect(importAt).toBeGreaterThan(confirmAt);
-    expect(body).toContain("mode === 'replace'");
+  test('替换的二次确认在选项弹窗里（选中即亮警告），不再弹第二个确认框', () => {
+    const body = fnBody('async function importTodoFile(');
+    expect(body).not.toContain('confirmAction(');
+    expect(body.indexOf('openImportOptions(')).toBeLessThan(body.indexOf('importTodos('));
   });
 
   test('新增入口中英词条成对（缺一个英文就是半截翻译）', () => {
-    const keys = [
-      'exportAll', 'exportActive', 'exportDone', 'exportJson', 'exportMd',
-      'importMerge', 'importReplace', 'replaceConfirmMsg', 'importedToast',
-    ];
+    const keys = ['exportEntry', 'importEntry', 'exportJson', 'exportMd', 'importedToast'];
     for (const key of keys) {
       expect(ZH, `中文缺 ${key}`).toContain(`${key}:`);
       expect(EN, `英文缺 ${key}`).toContain(`${key}:`);
@@ -784,5 +790,97 @@ describe('统计视图（处理中计数 + 统计浮层）', () => {
     const z = STYLES.match(/\.todo-stats-overlay \{[\s\S]*?z-index: (\d+)/);
     expect(z).toBeTruthy();
     expect(Number(z[1])).toBeLessThan(10020);
+  });
+});
+
+describe('菜单动作必须有落点', () => {
+  /** 取函数体：从声明处到首个独占一行的右花括号 */
+  const fnBody = (src, name) => {
+    const start = src.indexOf(name);
+    expect(start, `缺少 ${name}`).toBeGreaterThan(-1);
+    const body = src.slice(start);
+    return body.slice(0, body.indexOf('\n}\n'));
+  };
+
+  test('行菜单 / 头部菜单声明的每个 action，handleMenuAction 都要有分支', () => {
+    const declared = new Set();
+    for (const name of [
+      'function statusMenuItems(',
+      'function openRowMenu(',
+      'function headerMenuItems(',
+    ]) {
+      for (const m of fnBody(PANEL, name).matchAll(/action: '([a-z-]+)'/g)) declared.add(m[1]);
+    }
+    expect(declared.size).toBeGreaterThan(0);
+
+    const handler = fnBody(PANEL, 'async function handleMenuAction(');
+    const missing = [...declared].filter(action => !handler.includes(`case '${action}':`));
+    // 漏接的表现就是「菜单项点下去什么都不发生」，静态守卫比探针更早发现
+    expect(missing, `这些菜单项点了没反应：${missing.join(', ')}`).toEqual([]);
+  });
+
+  test('菜单动作只从 handleMenuAction 分发，行内点击不再留重复分支', () => {
+    const click = fnBody(PANEL, 'function handleClick(');
+    // 行内复制按钮早在「单条填入」那轮就撤了；分支留着会让「复制有处理器」的假象蒙住漏接
+    expect(click).not.toContain("case 'copy-item':");
+    expect(click).not.toContain("case 'copy-item-prompt':");
+  });
+});
+
+describe('菜单分割线', () => {
+  const fnBody = (src, name) => {
+    const start = src.indexOf(name);
+    expect(start, `缺少 ${name}`).toBeGreaterThan(-1);
+    const body = src.slice(start);
+    return body.slice(0, body.indexOf('\n}\n'));
+  };
+
+  test('首项不画上分割线：上面没有菜单项，那条线是多余的', () => {
+    const open = fnBody(PANEL, 'function openMenuAt(');
+    expect(open).toContain('menuRowHtml(item, id)');
+    // divider 的语义是「这一项上方还有内容」：菜单顶部没有，因此渲染前先归零
+    expect(open).toMatch(/index === 0 && item\.divider/);
+  });
+});
+
+describe('行菜单标注快捷键', () => {
+  const fnBody = (src, name) => {
+    const start = src.indexOf(name);
+    expect(start, `缺少 ${name}`).toBeGreaterThan(-1);
+    const body = src.slice(start);
+    return body.slice(0, body.indexOf('\n}\n'));
+  };
+
+  test('真有快捷键的菜单项在文案旁标出键位', () => {
+    const row = fnBody(PANEL, 'function openRowMenu(');
+    expect(row).toMatch(/action: 'edit-note'[^\n]*shortcut: 'Alt\+B'/);
+    expect(row).toMatch(/action: 'edit-link'[^\n]*shortcut: 'Alt\+L'/);
+    expect(row).toMatch(/swatches: true[^\n]*shortcut: 'Alt\+P'/);
+
+    const status = fnBody(PANEL, 'function statusMenuItems(');
+    expect(status).toMatch(/action: 'set-done'[^\n]*shortcut: 'Alt\+D'/);
+    expect(status).toMatch(/action: 'restore'[^\n]*shortcut: 'Alt\+D'/);
+  });
+
+  test('标注的键位与真实快捷键同源，不能改一处忘另一处', () => {
+    for (const [label, code] of [['Alt+B', 'KeyB'], ['Alt+L', 'KeyL'], ['Alt+D', 'KeyD'], ['Alt+P', 'KeyP']]) {
+      expect(PANEL, `快捷键表缺 ${code}`).toContain(`${code}:`);
+      expect(PANEL, `菜单缺 ${label} 标注`).toContain(`shortcut: '${label}'`);
+    }
+  });
+
+  test('kbd 统一由 menuRowHtml 输出，没快捷键的项不占位', () => {
+    const row = fnBody(PANEL, 'function menuRowHtml(');
+    expect(row).toContain('kbdHtml(item.shortcut)');
+    const kbd = fnBody(PANEL, 'function kbdHtml(');
+    expect(kbd).toContain('todo-menu-kbd');
+    // 没有 shortcut 就返回空串：否则每一行都会留一个空白角标位
+    expect(kbd).toMatch(/return shortcut\s*\?/);
+  });
+
+  test('角标样式走 token，且靠右对齐', () => {
+    const block = rule(STYLES, '.todo-menu-kbd {');
+    expect(block).toContain('margin-left: auto');
+    expect(block).toContain('var(--text-tertiary)');
   });
 });

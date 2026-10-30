@@ -16158,6 +16158,9 @@ body.voice-recording-active .input-container {
   /* 待办是轨道里第 5 个槽位，后面的「定时任务」按树序会盖住它；提到轨内最上层，
      保证同开时待办清单可见可点（其它 5 个浮层之间的叠放仍属既有全局行为，本次不扩散） */
   z-index: 2;
+  /* 贴合输入区的位移（--fit-y）不做过渡：位置一旦定好就该稳在那里，
+     否则每次打开面板都要从锚点往下滑 100px+ */
+  transition: opacity 0.2s ease, visibility 0.2s;
 }
 
 .todo-panel-header {
@@ -16929,6 +16932,21 @@ body.voice-recording-active .input-container {
   height: 1px;
   margin: 4px 6px;
   background: var(--border-subtle);
+}
+
+/* 快捷键角标：只挂在真有快捷键的菜单项上，靠右对齐，让「这项不用点也能触发」一眼可见 */
+.todo-menu-kbd {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.02em;
 }
 
 /* 优先级行：四个色块直接摆在菜单里，比二级菜单少一次跳转 */
@@ -17821,4 +17839,212 @@ body.has-session-dock .chat-container {
   text-align: center;
   font-size: 11.5px;
   color: var(--text-tertiary);
+}
+
+/* ==================== 待办导入/导出选项弹窗 ==================== */
+/* 一个入口 + 一个弹窗把范围/格式（或合并方式）一次选完，不再套二级菜单。
+   同为居中卡片，层级与统计浮层一致且低于 .todo-menu（10020） */
+.todo-io-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10015;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(var(--overlay-rgb), 0.35);
+}
+
+.todo-io-overlay.show {
+  display: flex;
+}
+
+.todo-io-card {
+  width: min(320px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  box-shadow: var(--elev-float);
+  outline: none;
+}
+
+.todo-io-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.todo-io-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.todo-io-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.todo-io-close:hover,
+.todo-io-close:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.todo-io-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.todo-io-summary {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.todo-io-group + .todo-io-group {
+  margin-top: 10px;
+}
+
+.todo-io-group-label {
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.todo-io-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.todo-io-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.todo-io-option:hover {
+  background: var(--bg-hover);
+}
+
+.todo-io-option input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--brand-violet-500);
+  cursor: pointer;
+}
+
+.todo-io-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.todo-io-option-label {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.todo-io-option-hint {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+.todo-io-option.danger .todo-io-option-label {
+  color: var(--danger-500);
+}
+
+.todo-io-count {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-style: normal;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 提示条默认不占位：导出范围为空 / 导入选到「替换」时才亮 */
+.todo-io-hint,
+.todo-io-warn {
+  display: none;
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.todo-io-hint {
+  color: var(--text-tertiary);
+}
+
+.todo-io-warn {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(var(--danger-rgb), 0.08);
+  color: var(--danger-500);
+}
+
+.todo-io-hint.show,
+.todo-io-warn.show {
+  display: block;
+}
+
+.todo-io-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.todo-io-btn {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.todo-io-btn:hover {
+  background: var(--bg-hover);
+}
+
+.todo-io-btn.primary {
+  border-color: transparent;
+  background: rgba(var(--brand-violet-rgb), 0.14);
+  color: var(--brand-violet-500);
+}
+
+.todo-io-btn.primary:hover {
+  background: rgba(var(--brand-violet-rgb), 0.24);
+}
+
+.todo-io-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.todo-io-btn:focus-visible,
+.todo-io-option input:focus-visible {
+  outline: 2px solid var(--brand-violet-500);
+  outline-offset: 1px;
 }
