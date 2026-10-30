@@ -23,7 +23,6 @@ registerTranslations('zh', {
     note: '备注',
     due: '截止',
     highPriority: '高优先级',
-    prompt: '请基于以上待办，给出实施顺序与风险提示。',
   },
   todoExport: {
     title: '待办清单',
@@ -52,7 +51,6 @@ registerTranslations('en', {
     note: 'Note',
     due: 'Due',
     highPriority: 'high priority',
-    prompt: 'Based on the todos above, propose an implementation order and call out risks.',
   },
   todoExport: {
     title: 'Todo list',
@@ -421,7 +419,7 @@ function noteLine(todo) {
  * 标题、状态、优先级、截止、备注、链接一次带全：拖到输入框后能直接追问 AI
  * 做规划，不用再回面板里把信息找一遍。
  * @param {Object} todo
- * @param {{withPrompt?: boolean, now?: number}} [options]
+ * @param {{now?: number}} [options]
  * @returns {string} 无标题时返回空串
  */
 export function buildItemDigest(todo, options = {}) {
@@ -431,17 +429,13 @@ export function buildItemDigest(todo, options = {}) {
   const lines = [itemLine(item, now)];
   const note = noteLine(item);
   if (note) lines.push(note);
-  if (options.withPrompt) {
-    lines.push('');
-    lines.push(t('todoDigest.prompt'));
-  }
   return lines.join('\n');
 }
 
 /**
  * 生成填入输入框的 Markdown 清单
  * @param {Array<Object>} todos
- * @param {{withPrompt?: boolean, now?: number}} [options]
+ * @param {{now?: number}} [options]
  * @returns {string} 无待办时返回空串
  */
 export function buildTodoDigest(todos, options = {}) {
@@ -466,11 +460,6 @@ export function buildTodoDigest(todos, options = {}) {
     for (const todo of done) {
       lines.push(itemLine(todo, now));
     }
-  }
-
-  if (options.withPrompt) {
-    lines.push('');
-    lines.push(t('todoDigest.prompt'));
   }
 
   return lines.join('\n');

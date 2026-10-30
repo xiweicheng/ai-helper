@@ -189,3 +189,25 @@
 - 统计顶上多一条线：`divider: true` 挂在 `headerMenuItems()` 首项上，而 `menuRowHtml` 把分割线渲染在**该项上方**，菜单顶上空无一物就得到一条没来由的横线。修在 `openMenuAt` 渲染前把首项 `divider` 归零（不在数据里逐项删，避免以后调整顺序又冒出来）。
 
 **验证面**：`todo-panel-structure` 95 例（新增「菜单动作必须有落点」「菜单分割线」「行菜单标注快捷键」三个 describe，并重写导入导出与面板几何的旧断言）、新建 `todo-io-dialogs` 13 例（jsdom：两种弹窗结构、空范围禁用、头部菜单契约、导入顺序 pick → options → importTodos、样式 token 与层级、中英词条成对）；待办相关 7 个测试文件共 224 例全绿，全量 `vitest run` 226 文件 / 3553 例（4 例失败全在 `src/background/*`，与本轮无关）。探针 `_todo-io-stats.mjs` 重写 S/T/V/W 四组（43 项全绿）：三入口菜单、弹窗内范围+格式同屏与条数、空范围禁用+硬点不出文件、真下载 JSON/Markdown、选文件后选方式、摘要条数、替换警告条、坏文件不问方式、**空文件替换不清库**、弹窗开着切语言；`_todo-panel-visual.mjs` 新增 R 组（首项无分割线、角标与真实快捷键一致、复制与复制并附模板真的调到 `clipboard.writeText`）并把 P 组断言从「底边在输入区上方」改为「底边贴住 `inputTop - 8`」，另加限高按输入区上沿算足的根因断言。
+
+## 12. 2026-10-30 第四轮：复制提到行内、下线「复制并附提问模板」、编辑态收起操作区
+
+两句需求：复制不该藏在菜单里，要与编辑图标同级；「复制并附提问模板」不要了。附带着一个实测问题：进入编辑态后行尾操作栏盖住了输入框右端。
+
+**12.1 「复制」提到行内，与编辑同级**
+
+行内动作区从「编辑 / 填入 / 更多」变成「编辑 → 复制 → 填入 → 更多」（已完成 Tab 行首多一个恢复按钮）。复制按钮 `data-action="copy-item"`，`title`/`aria-label` 用 `todo.copyItem`（「复制本条」），图标复用 `ICONS.copy`。`handleClick` 新增 `case 'copy-item'`；`openRowMenu` 与 `handleMenuAction` 里的两条复制分支同时删除。
+
+> §11.4 里「把 case 迁到 `handleMenuAction`」是当时菜单有这一项时的修法，本轮已被推翻：复制只在行内，处理器只该活在 `handleClick`。静态守卫（菜单里声明的每个 `action` 都要有 `case`）依旧成立，因为菜单里已经不再声明它。但它管不到行内动作，所以另加一条断言：`handleClick` 必须真的有 `case 'copy-item'` —— 「按钮在 DOM 里、处理器不在」正是上一轮那个 bug 的形态。
+
+**12.2 「复制并附提问模板」整体下线**
+
+不只是删菜单项：`copy-item-prompt` 动作、`todo.copyWithPrompt` / `todo.copiedPromptToast` 两个词条、`copyItem(id, withPrompt)` 的参数、`todo-model` 里 `buildItemDigest` / `buildTodoDigest` 的 `withPrompt` 分支与 `todoDigest.prompt` 文案、两条模型单测全部移除。留着任何一层都是「看起来还支持」的假象。顺手清掉早就无人引用的 `todo.copyClipboard` 死词条（它和「复制到剪贴板」的概念只差一个没人用的 key）。
+
+**12.3 编辑态收起整排操作（根因）**
+
+`.todo-item-actions` 是 `position: absolute; right: 4px; top: 5px` 的行尾浮层，还带一条向左透明的渐变底；`.todo-edit-input` 是 `width: 100%`。两者叠在一起，输入框右端必然被按钮和渐变压掉一截。更关键的是 `.todo-item:focus-within .todo-item-actions` 会在输入框获得焦点时把按钮**正好**放出来——编辑态就是 focus-within 态，纯 CSS 无从区分。
+
+修法在渲染层：`renderItem` 先算 `editing = titleEditId === todo.id || noteEditId === todo.id || dueEditId === todo.id || linkEditId === todo.id`，输出改成 `${editing ? '' : actions}`。DOM 里根本没有按钮，就不存在遮挡、也不会被 Tab 聚焦；保存或 `Esc` 退出后重渲染自然恢复。
+
+**验证面**：`todo-panel-structure` 99 例（新增「编辑态不被行内操作遮挡」describe，并重写两条与复制相关的旧守卫——它们原本断言的是「行内没有复制、复制在菜单里」，正是本轮要反转的旧契约）。其中「编辑态不渲染操作区」这条做过变异验证：把 `${editing ? '' : actions}` 改回 `${actions}` 后该例立即变红。`todo-model` 53 例（少两条 withPrompt）。探针 `_todo-panel-visual.mjs` 的 R 组重写：R4 菜单里不再有复制项、R5 行内复制与编辑同排且在右侧且悬停可见（`opacity=1`、宽 20px）、R6 点击真的把组合文本送进 `clipboard.writeText` 并给出「已复制到剪贴板」；新增 S 组：S1 编辑态 `actionsGone=true` 且 `document.elementFromPoint(input.right-3, midY)` 命中的就是 input 本身（`hitTag=input`）、S2 `Esc` 退出后复制按钮原样回来。整轮 ALL CHECKS PASSED。

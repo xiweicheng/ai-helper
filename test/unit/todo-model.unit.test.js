@@ -339,11 +339,6 @@ describe('Markdown 导出', () => {
     expect(md).toContain('- [ ] 发布（截止 明天）');
   });
 
-  test('withPrompt 追加提问模板', () => {
-    const md = buildTodoDigest([todo({ title: 'A', order: 0 })], { now: NOW, withPrompt: true });
-    expect(md.endsWith('请基于以上待办，给出实施顺序与风险提示。')).toBe(true);
-  });
-
   test('空清单返回空串（不产出空标题）', () => {
     expect(buildTodoDigest([], { now: NOW })).toBe('');
     expect(buildTodoDigest(null, { now: NOW })).toBe('');
@@ -498,11 +493,6 @@ describe('单条组合文本（填入输入框 / 拖拽 / 复制共用）', () =
   test('空标题返回空串，不产出只有符号的脏行', () => {
     expect(buildItemDigest(todo({ title: '   ' }), { now: NOW })).toBe('');
     expect(buildItemDigest(null, { now: NOW })).toBe('');
-  });
-
-  test('withPrompt 追加提问模板（单条也要能直接拿去追问 AI）', () => {
-    const md = buildItemDigest(todo({ title: 'A' }), { now: NOW, withPrompt: true });
-    expect(md.endsWith('请基于以上待办，给出实施顺序与风险提示。')).toBe(true);
   });
 
   test('与批量清单首行口径一致：两处格式不许漂移', () => {

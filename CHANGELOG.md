@@ -4,6 +4,25 @@
 
 ## 2026-10-30
 
+### 待办第四轮：复制提到行内与编辑同级、「复制并附提问模板」下线、编辑态收起操作栏
+
+> 来源：用户实测提出两点——复制藏在菜单里不在行内；「复制并附提问模板」不要了。附带一个截图报告：进入编辑模式后右侧操作栏挡住了标题输入框一部分。
+
+**「复制」提到行内**
+- 行内动作区从「编辑 / 填入 / 更多」变成「编辑 → 复制 → 填入 → 更多」，复制不再是菜单项；`handleClick` 新增 `case 'copy-item'`，`openRowMenu` 与 `handleMenuAction` 里的两条复制分支一起删掉。
+- 菜单静态守卫（菜单声明的每个 `action` 都要有 `case`）管不到行内动作，所以另加一条：`handleClick` 必须真的有 `case 'copy-item'` —— 「按钮在 DOM 里、处理器不在」正是上一轮那个「点了没反应」的形态。
+
+**「复制并附提问模板」整体下线**
+- 不只删菜单项：`copy-item-prompt` 动作、`todo.copyWithPrompt` / `todo.copiedPromptToast` 词条、`copyItem(id, withPrompt)` 参数、`todo-model` 的 `withPrompt` 分支与 `todoDigest.prompt` 文案、两条模型单测全部移除；顺手清掉早就无人引用的 `todo.copyClipboard` 死词条。
+
+**编辑态收起整排操作（根因）**
+- `.todo-item-actions` 是绝对定位的行尾浮层、还带渐变底，`.todo-edit-input` 又是 `width: 100%`，两者叠在一起必然压掉输入框右端；而 `.todo-item:focus-within` 会在输入框获得焦点时把按钮**正好**放出来——编辑态本身就是 focus-within 态，纯 CSS 分不开。
+- 改在渲染层：`renderItem` 算出 `editing`（标题/备注/截止/链接任一在编辑）就以 `${editing ? '' : actions}` 不输出操作区，DOM 里没按钮就不会遮挡、也不会被 Tab 聚焦；保存或 `Esc` 退出后重渲染自然恢复。
+
+**验证**
+- 单测：`todo-panel-structure` **99 例**（新增「编辑态不被行内操作遮挡」describe，重写两条「行内没有复制、复制在菜单里」的旧守卫）、`todo-model` **53 例**；待办相关 7 个文件 **226 例全绿**，`npm run lint` 无输出，`npm run build:silent` BUILD_SUCCESS。「编辑态不渲染操作区」做过变异验证：改回 `${actions}` 立即变红。
+- 探针 `_todo-panel-visual.mjs`：R 组重写（菜单里已无复制项、行内复制与编辑同排在其右侧且悬停可见、点击后组合文本真的进 `clipboard.writeText` 并弹「已复制到剪贴板」），新增 S 组（编辑态 `actionsGone=true` 且输入框右端点 `elementFromPoint` 命中的就是 input；`Esc` 退出后按钮回来），整轮 **ALL CHECKS PASSED**。
+
 ### 待办第三轮：入口收敛成弹窗、快捷键标进菜单、面板按输入区撑高，并修掉「复制点了没反应」与统计顶上的野线
 
 > 来源：用户实测提出四项体验点 + 两个 bug——导出/导入各搞好几个菜单项太碎；行菜单里要能看到快捷键；面板太矮只能露三四条而可视区还有很多；「复制本条」「复制并附提问模板」点击无反应；统计菜单顶上多一条没来由的横线。

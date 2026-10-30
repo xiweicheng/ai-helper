@@ -105,8 +105,6 @@ registerTranslations('zh', {
     headerMore: '更多',
     copyItem: '复制本条',
     editItem: '编辑',
-    copyClipboard: '复制到剪贴板',
-    copyWithPrompt: '复制并附提问模板',
     clearCompleted: '清除已完成',
     clearCompletedConfirmTitle: '清除已完成',
     clearCompletedConfirmMsg: '确定删除全部 {n} 条已完成待办吗？',
@@ -115,7 +113,6 @@ registerTranslations('zh', {
     statusDone: '已完成',
     filledToast: '已填入输入框',
     copiedToast: '已复制到剪贴板',
-    copiedPromptToast: '已复制（含提问模板）',
     emptyDigestToast: '暂无可复制的待办',
     copyFailed: '复制失败',
     noInputToast: '未找到输入框',
@@ -192,8 +189,6 @@ registerTranslations('en', {
     headerMore: 'More',
     copyItem: 'Copy this',
     editItem: 'Edit',
-    copyClipboard: 'Copy to clipboard',
-    copyWithPrompt: 'Copy with prompt',
     clearCompleted: 'Clear completed',
     clearCompletedConfirmTitle: 'Clear completed',
     clearCompletedConfirmMsg: 'Delete all {n} completed todos?',
@@ -202,7 +197,6 @@ registerTranslations('en', {
     statusDone: 'Done',
     filledToast: 'Inserted into input',
     copiedToast: 'Copied to clipboard',
-    copiedPromptToast: 'Copied with prompt',
     emptyDigestToast: 'Nothing to copy',
     copyFailed: 'Copy failed',
     noInputToast: 'Input box not found',
@@ -794,6 +788,10 @@ function renderItem(todo, group) {
     : '';
 
   const draggable = group === 'active' ? ' draggable="true"' : '';
+  // 编辑态整排操作收起来：它是绝对定位的行尾浮层（还带渐变底），
+  // 标题输入框是 width:100%，右端会被按钮压掉一截
+  const editing = titleEditId === todo.id || noteEditId === todo.id
+    || dueEditId === todo.id || linkEditId === todo.id;
   const restoreAction = isDone
     ? `<button class="todo-act" data-action="restore" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.restoreTo', { status: statusLabel(restoreTarget(todo)) }))}" aria-label="${escapeAttr(t('todo.restoreTo', { status: statusLabel(restoreTarget(todo)) }))}">${ICONS.undo}</button>`
     : '';
@@ -801,6 +799,7 @@ function renderItem(todo, group) {
     <div class="todo-item-actions">
       ${restoreAction}
       <button class="todo-act" data-action="edit-title" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.editItem'))}" aria-label="${escapeAttr(t('todo.editItem'))}">${ICONS.edit}</button>
+      <button class="todo-act" data-action="copy-item" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.copyItem'))}" aria-label="${escapeAttr(t('todo.copyItem'))}">${ICONS.copy}</button>
       <button class="todo-act" data-action="fill-item" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.fillInput'))}" aria-label="${escapeAttr(t('todo.fillInput'))}">${ICONS.fill}</button>
       <button class="todo-act" data-action="row-more" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.more'))}" aria-label="${escapeAttr(t('todo.more'))}">${ICONS.more}</button>
     </div>`;
@@ -814,7 +813,7 @@ function renderItem(todo, group) {
         ${linkHtml}
         ${renderMeta(todo)}
       </div>
-      ${actions}
+      ${editing ? '' : actions}
     </div>`;
 }
 
@@ -884,6 +883,10 @@ function handleClick(e) {
     case 'fill-item':
       e.stopPropagation();
       fillInputItem(id);
+      return;
+    case 'copy-item':
+      e.stopPropagation();
+      copyItem(id);
       return;
     case 'header-more':
       e.stopPropagation();
@@ -1401,8 +1404,6 @@ function openRowMenu(anchorEl, id) {
     { action: 'edit-note', label: todo.note ? t('todo.editNote') : t('todo.addNote'), icon: ICONS.note, shortcut: 'Alt+B' },
     { action: 'set-due', label: t('todo.setDue'), icon: ICONS.calendar },
     { action: 'edit-link', label: todo.link ? t('todo.editLink') : t('todo.addLink'), icon: ICONS.link, shortcut: 'Alt+L' },
-    { action: 'copy-item', label: t('todo.copyItem'), icon: ICONS.copy },
-    { action: 'copy-item-prompt', label: t('todo.copyWithPrompt'), icon: ICONS.fill },
     { action: 'delete', label: t('todo.delete'), icon: ICONS.trash, danger: true, divider: true },
   ], id);
 }
@@ -1529,12 +1530,6 @@ async function handleMenuAction(action, id) {
     case 'edit-link':
       startLinkEdit(id);
       return;
-    case 'copy-item':
-      copyItem(id);
-      return;
-    case 'copy-item-prompt':
-      copyItem(id, true);
-      return;
     case 'stats':
       openTodoStats();
       return;
@@ -1595,14 +1590,14 @@ function fillInputItem(id) {
   showToast(t('todo.filledToast'), 'success');
 }
 
-/** 复制一条的组合文本（可选附提问模板） */
-function copyItem(id, withPrompt = false) {
-  const digest = itemDigest(id, { withPrompt });
+/** 复制一条的组合文本（与填入 / 拖拽同一份口径） */
+function copyItem(id) {
+  const digest = itemDigest(id);
   if (!digest) {
     showToast(t('todo.emptyDigestToast'), 'info');
     return;
   }
-  copyText(digest, withPrompt ? t('todo.copiedPromptToast') : t('todo.copiedToast'));
+  copyText(digest, t('todo.copiedToast'));
 }
 
 function copyText(text, successMessage) {

@@ -600,16 +600,42 @@ describe('单条进出输入框（批量入口已撤）', () => {
     expect(body).not.toContain('copy-with-prompt');
   });
 
-  test('行内可见按钮换成「填入输入框」，复制挪进行菜单', () => {
+  test('「复制」提到行内，与编辑按钮同级；菜单里两个复制项全部下线', () => {
     const item = PANEL.slice(PANEL.indexOf('function renderItem'));
     const body = item.slice(0, item.indexOf('\n}\n'));
+    const actions = body.slice(body.indexOf('todo-item-actions'));
     expect(body).toContain('data-action="fill-item"');
-    expect(body).not.toContain('data-action="copy-item"');
+    expect(actions).toContain('data-action="copy-item"');
+    // 同一排按钮：编辑 → 复制 → 填入，不用先进菜单再点一次
+    expect(actions.indexOf('data-action="edit-title"'))
+      .toBeLessThan(actions.indexOf('data-action="copy-item"'));
+    expect(actions.indexOf('data-action="copy-item"'))
+      .toBeLessThan(actions.indexOf('data-action="fill-item"'));
 
     const rowMenu = PANEL.slice(PANEL.indexOf('function openRowMenu'));
     const menuBody = rowMenu.slice(0, rowMenu.indexOf('\n}'));
-    expect(menuBody).toContain("action: 'copy-item'");
-    expect(menuBody).toContain("action: 'copy-item-prompt'");
+    expect(menuBody).not.toContain("action: 'copy-item'");
+    expect(menuBody).not.toContain('copy-item-prompt');
+  });
+
+  test('「复制并附提问模板」整体下线：动作、词条、模型分支一个不留', () => {
+    expect(PANEL).not.toContain('copy-item-prompt');
+    expect(PANEL).not.toContain('copyWithPrompt');
+    expect(PANEL).not.toContain('copiedPromptToast');
+    // 模型层留着 withPrompt 就是「看起来还支持」的假象
+    expect(MODEL).not.toContain('withPrompt');
+    expect(MODEL).not.toContain('todoDigest.prompt');
+    // 顺带清掉早就没人引用的 copyClipboard 死词条
+    expect(PANEL).not.toContain('copyClipboard');
+  });
+
+  test('行内复制只在 handleClick 分发一次，菜单那份副本不再重复接', () => {
+    const click = PANEL.slice(PANEL.indexOf('function handleClick('));
+    const clickBody = click.slice(0, click.indexOf('\n}\n'));
+    expect(clickBody).toContain("case 'copy-item':");
+    expect(clickBody).toMatch(/case 'copy-item':\s*\n\s*e\.stopPropagation\(\);\s*\n\s*copyItem\(id\);/);
+    const menu = PANEL.slice(PANEL.indexOf('async function handleMenuAction('));
+    expect(menu.slice(0, menu.indexOf('\n}\n'))).not.toContain("case 'copy-item'");
   });
 
   test('填入/复制/拖拽都走单条组合文本，不再只丢一个标题', () => {
@@ -622,6 +648,32 @@ describe('单条进出输入框（批量入口已撤）', () => {
     const body = start.slice(0, start.indexOf('\n}\n'));
     expect(body).toContain("setData('text/plain', buildItemDigest(");
     expect(body).toContain("effectAllowed = 'copyMove'");
+  });
+});
+
+describe('编辑态不被行内操作遮挡', () => {
+  const itemBody = () => {
+    const src = PANEL.slice(PANEL.indexOf('function renderItem'));
+    return src.slice(0, src.indexOf('\n}\n'));
+  };
+
+  test('标题 / 备注 / 截止 / 链接任一在编辑，就不渲染操作区', () => {
+    const body = itemBody();
+    expect(body).toContain('const editing = titleEditId === todo.id');
+    expect(body).toContain('noteEditId === todo.id');
+    expect(body).toContain('dueEditId === todo.id');
+    expect(body).toContain('linkEditId === todo.id');
+    // 输出时不带 actions：DOM 里没有按钮，就不存在「绝对定位盖住输入框右端」
+    expect(body).toContain("${editing ? '' : actions}");
+    expect(body).not.toContain('${actions}');
+  });
+
+  test('操作区仍然是绝对定位的行尾浮层（普通态照旧悬停才现）', () => {
+    const block = rule(STYLES, '.todo-item-actions {');
+    expect(block).toContain('position: absolute');
+    expect(block).toContain('opacity: 0');
+    // :focus-within 正是「编辑时按钮冒出来」的入口，所以只能从 DOM 层撤掉
+    expect(STYLES).toContain('.todo-item:focus-within .todo-item-actions');
   });
 });
 
@@ -819,11 +871,14 @@ describe('菜单动作必须有落点', () => {
     expect(missing, `这些菜单项点了没反应：${missing.join(', ')}`).toEqual([]);
   });
 
-  test('菜单动作只从 handleMenuAction 分发，行内点击不再留重复分支', () => {
+  test('菜单动作只从 handleMenuAction 分发，行内复制不再留重复分支', () => {
     const click = fnBody(PANEL, 'function handleClick(');
-    // 行内复制按钮早在「单条填入」那轮就撤了；分支留着会让「复制有处理器」的假象蒙住漏接
-    expect(click).not.toContain("case 'copy-item':");
+    // 复制已经提到行内：这里必须有一份处理器，否则点下去毫无反应
+    expect(click).toContain("case 'copy-item':");
+    // 「复制并附提问模板」已整体下线，两处分发都不许再出现
     expect(click).not.toContain("case 'copy-item-prompt':");
+    const menu = fnBody(PANEL, 'async function handleMenuAction(');
+    expect(menu).not.toContain("case 'copy-item'");
   });
 });
 
