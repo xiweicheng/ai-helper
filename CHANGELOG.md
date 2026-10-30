@@ -4,6 +4,21 @@
 
 ## 2026-10-30
 
+### 切换会话工作目录：任务执行中禁用的入口，执行结束后必须当场自动恢复
+
+> 来源：用户复测上一轮改动后报告——「会话执行中把输入框底部的切换入口禁掉我是认的，但有时候任务执行完了它还是禁用的，我只有把会话切走再切回来，那个禁用状态才会解除。」语义经确认保持不变（执行中 / 队列非空都不许换目录），只修实时性。
+
+- **根因是快照，不是判定写错**：`updateWorkdirTag()` 把「是否在跑 + 队列是否非空」的结果一次性写进 `el.dataset.locked`，而 `initWorkdirTag()` 只挂了 `session-switched` / `session-workdir-changed` / `agent-model-changed` / `agent-tools-changed` 四条会话与代理类事件——**没有 `generating-state-changed`**（全站已有 13 个消费者挂它，生成起止都派发这一条）。于是生成结束时没人重算 chip，陈旧的 `locked="true"` 又拦在点击最前面，弹窗内部那份当场计算的判定根本没机会执行；「切走再切回」之所以像解药，只是因为会话切换会重跑一次 `updateWorkdirTag()`。队列侧更空：删除 / 清空连 DOM 事件都没有。
+- **判定收成一份**：新增 `src/side_panel/workdir-switch-lock.js` 导出 `isWorkdirSwitchBlocked(sessionId)`（`generatingSessionIds.has(sid) || getQueuedCount(sid) > 0`，纯同步内存读，渲染路径上不许发请求）。删掉 `workspace-panel.js` 里各写一遍的 `hasPendingQueue()`，chip 点击、「恢复默认目录」入口与 `showSwitchWorkdirDialog()` 全部改用它——两份实现必然漂移，漂移的表现就是要么假锁、要么正在跑却放行。
+- **锁定态跟着事件重算**：`index.js` 新增 `syncWorkdirTagLock()`（只重算 `dataset.locked`，不重新解析目录、不发 HTTP），`updateWorkdirTag()` 也改为调它，全仓只剩这一处写 `dataset.locked`；挂上 `generating-state-changed` + `generation-ended`，并 `subscribe` 队列 store（入队 / 删除 / 清空 / 暂停 / 跨窗口同步都会 `emit`，比补几条 DOM 事件覆盖得全）。
+- **点击不信快照**：chip 的 click 改成当场调 `isWorkdirSwitchBlocked()`，顺手把视觉同步回真值。即使将来又有新事件漏挂，最坏也只是「灰一下但点得开」，不会再出现点不动的死锁。
+
+- **测试**：新增 `test/unit/workdir-switch-lock.unit.test.js` 16 例（判定真值表：无会话放行、本会话在跑/在排队拦、别的会话忙不拦、结束且删空后当场放行；源码守卫：`dataset.locked` 全文件只赋值一次、重算入口不含 `resolveWorkdirForSession`、挂了 `generating-state-changed` 与 `generation-ended`、订阅了队列 store、click 里不再读 `dataset.locked`、会话/代理四条监听原样保留、弹窗侧 `hasPendingQueue` 已删且两处共用同一判定）。
+- **真实 MV3 探针**：`_workdir-ext-ui.mjs` 加第 7 段 12 项，自带一个假 LLM（Node 侧 SSE，每 500ms 一帧持续 8 秒）真跑一轮生成，**全程不切会话、不重载**：跑前 `data-locked=false` → 生成中立刻变 `true` → 生成中带草稿点击真的入队 → 停止任务后队列仍留着那条（所以按既定语义继续禁用）→ 点队列条目上的 ✕ 删掉后 `data-locked` 当场回 `false` → 再点 chip 真能弹出切换弹窗且没有「无法切换工作目录」的提示。顺带修掉探针自己的过时写法：`indexedDB.open('ai-helper-db', 6)` 在库升到 7 之后会以 `VersionError` 中断整条探针（改为不写死版本）。
+- **反向验证**（摘掉才证明监听不是装饰）：只摘两条生成事件监听 → 「任务执行中：chip 立刻变禁用」FAIL；只摘队列订阅 → 「删除最后一条排队项后 chip 当场恢复可点」FAIL（复现的正是用户那句「执行完了还是禁用的」）。两条各自独立失败、恢复后全绿。
+- **验证**：`npx vitest run` 220 文件中仅 `todo-model.unit.test.js` 5 例失败（属并发进行中的待办面板改动，与本功能无关），工作目录相关 4 个文件 47 例全过；探针 **101 项全过 / EXT_UI_PASS**；`node --test agent/test/unit/*.test.js` 825 例；`npx eslint src/ agent/` 只剩待办面板的 4 个 `no-undef`（同上，非本次改动）；`npm run build:silent` → BUILD_SUCCESS。
+
+
 ### 待办面板 UX 重做：双 Tab、标记完成入口、优先级色条、外部链接、底边不挡输入框
 
 > 来源：用户在真实扩展里用了一轮之后给出四条硬伤——「怎么都是进行中的呀？」（组名误导）、「上面那个待办上有一个数字一直是 0，前面那个是什么呢？」（`0 / 11` 看不出分子）、「完成的任务在哪里呢？怎么把任务标记完成？只有删除，没有标记完成呢？」（致命可发现性缺陷）、已完成条目被折叠分组顶到屏幕外；并追加要求：菜单不要换行（「连都换行了？好难看呀！」）、要优先级（「在前面加一个垂直的颜色条」）、要能关联外部链接、面板底部不能盖住问答输入框。列表形态经确认选**双 Tab**。

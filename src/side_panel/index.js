@@ -42,6 +42,8 @@ import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { initVoiceInput, toggleVoiceInput, handleVoiceEscape, matchVoiceShortcut } from './voice-input.js';
 import { resolveWorkdirForSession, formatWorkdirLabel } from '../shared/workdir-scope.js';
 import { reconcileSessionWorkdir } from './workdir-reconcile.js';
+import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
+import { subscribe as subscribeQueueStore } from './queue-store.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -590,6 +592,18 @@ const workdirAgentSwitchNotified = new Set();
 // 用递增 token 丢弃陈旧结果，避免先发的旧会话解析结果覆盖后发的新会话
 let workdirTagToken = 0;
 
+/**
+ * 只重算 chip 的锁定态：纯本地判定，不发网络请求。
+ * 生成开始/结束、队列增减都要调它 —— 锁定态以前只在 updateWorkdirTag 里算一次，
+ * 而 updateWorkdirTag 只挂会话/代理类事件，于是「任务跑完了入口还是灰的」，
+ * 必须切走再切回会话才会重新渲染出正确的解锁状态。
+ */
+function syncWorkdirTagLock() {
+  const el = document.getElementById('workdirTag');
+  if (!el) return;
+  el.dataset.locked = isWorkdirSwitchBlocked(state.activeSessionId) ? 'true' : 'false';
+}
+
 async function updateWorkdirTag() {
   const token = ++workdirTagToken;
   const el = document.getElementById('workdirTag');
@@ -617,8 +631,8 @@ async function updateWorkdirTag() {
   el.style.display = '';
   const homeDir = state.agentPlatform?.homeDir || '';
   nameEl.textContent = formatWorkdirLabel(workdir, { homeDir });
-  // 同会话任务执行中：禁止切换（点击只提示，不弹窗）
-  el.dataset.locked = (state.generatingSessionIds?.has(sid) || hasQueuedItems(sid)) ? 'true' : 'false';
+  // 同会话任务执行中 / 队列非空：禁止切换（点击只提示，不弹窗）
+  syncWorkdirTagLock();
   // 与代理端权威值比对。两种不一致要分开处理：
   //   1) 本会话目录解析成功、但与代理端不符 → 目录被改名/删除，chip 标异常（如实提示）
   //   2) 扩展端解析为「默认」、代理端还留着本会话旧绑定 → 两侧记录漂移（历史 bug 抹过绑定），
@@ -661,10 +675,14 @@ function initWorkdirTag() {
     el.setAttribute('aria-label', t('workdirTag.tagHint'));
     el.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (el.dataset.locked === 'true') {
+      // 当场判定，不读 dataset.locked：快照会因为任何一次漏接的事件留在旧值上，
+      // 用它拦在前面就等于把弹窗内部那份正确的判定永久否决掉了。
+      if (isWorkdirSwitchBlocked(state.activeSessionId)) {
+        syncWorkdirTagLock();
         showToast(t('workdirTag.lockedHint'), 'warning');
         return;
       }
+      syncWorkdirTagLock();
       const { showSwitchWorkdirDialog } = await import('./workspace-panel.js');
       await showSwitchWorkdirDialog({ sessionId: state.activeSessionId || null });
     });
@@ -678,6 +696,13 @@ function initWorkdirTag() {
   document.addEventListener('agent-model-changed', () => { updateWorkdirTag(); });
   // 工具勾选会改变 chip 的显隐条件（未启用 agent_exec 时整块隐藏）
   document.addEventListener('agent-tools-changed', () => { updateWorkdirTag(); });
+  // 锁定态与「在跑/在排队」同步：这两条事件覆盖生成的起止（chat-manager 标记开始、
+  // generation-lifecycle 收尾都会派发 generating-state-changed）
+  document.addEventListener('generating-state-changed', () => { syncWorkdirTagLock(); });
+  document.addEventListener('generation-ended', () => { syncWorkdirTagLock(); });
+  // 队列的删除/清空/暂停与跨窗口同步都没有 DOM 事件，只能订阅 store：
+  // 删掉最后一条排队项后 chip 必须当场解锁，否则又是同一类假锁。
+  subscribeQueueStore(() => { syncWorkdirTagLock(); });
 }
 
 /** 初始化模型名指示：绑定点击（打开模型设置）并首次刷新 */

@@ -16,6 +16,7 @@ import logger from '../shared/logger.js';
 import { showToast, copyToClipboard, clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
 import state from './state.js';
+import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, splitTableCells, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
@@ -6077,17 +6078,6 @@ function showInputDialog(title, defaultValue = '', placeholder = '') {
   });
 }
 
-/** 该会话是否有排队任务（队列非空时禁止切换目录） */
-async function hasPendingQueue(sessionId) {
-  if (!sessionId) return false;
-  try {
-    const { getQueuedCount } = await import('./queue-store.js');
-    return getQueuedCount(sessionId) > 0;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * 切换工作目录弹窗（会话级）：列出 allowedPaths 供选择，支持手动输入绝对路径
  * - 目标会话已绑定：显示「恢复默认目录」
@@ -6102,8 +6092,10 @@ async function hasPendingQueue(sessionId) {
 export async function showSwitchWorkdirDialog(options = {}) {
   const sessionId = options.sessionId !== undefined ? options.sessionId : (state.activeSessionId || null);
 
-  // 同会话任务执行中：拦截并提示，不弹窗（长任务中途换目录会让执行中请求失校）
-  if (sessionId && (state.generatingSessionIds?.has(sessionId) || await hasPendingQueue(sessionId))) {
+  // 同会话任务执行中 / 队列非空：拦截并提示，不弹窗（长任务中途换目录会让执行中请求失校）
+  // 判定与 chip 共用同一份实现，且必须当场算 —— 任何一侧读缓存状态都会出现
+  // 「任务早跑完了入口还锁着」或反过来「正在跑却放行了」的错位
+  if (isWorkdirSwitchBlocked(sessionId)) {
     showToast(t('workdirTag.lockedHint'), 'warning');
     return false;
   }

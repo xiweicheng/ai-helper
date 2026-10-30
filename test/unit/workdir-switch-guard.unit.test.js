@@ -13,6 +13,9 @@ const { getQueuedCount } = vi.hoisted(() => ({ getQueuedCount: vi.fn() }));
 
 vi.mock('../../src/side_panel/queue-store.js', () => ({
   getQueuedCount: (...args) => getQueuedCount(...args),
+  // index.js / workdir-switch-lock.js 还从 store 取这两个名字，缺了会让模块图报错
+  peekNext: () => null,
+  subscribe: () => () => {},
 }));
 
 const noop = () => {};
