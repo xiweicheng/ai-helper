@@ -55,6 +55,20 @@ export function pcm16ToFloat32(buf) {
 }
 
 /**
+ * 拆开要送进 worker 的 opts
+ *
+ * 踩过的坑：shouldSkip 是函数，而 opts 会整包 postMessage 给 worker 线程——
+ * 带函数过去直接 DataCloneError，结果是每一句精修都失败（而注入假 transcribe 的单测看不见）。
+ * 所以函数只能留在主线程这一侧，作为 runOfflineTask 的顶层参数。
+ * @param {object} opts
+ * @returns {{ workerOpts: object, shouldSkip: Function|undefined }}
+ */
+export function splitWorkerOpts(opts) {
+  const { shouldSkip, ...workerOpts } = opts || {};
+  return { workerOpts, shouldSkip: typeof shouldSkip === 'function' ? shouldSkip : undefined };
+}
+
+/**
  * 创建会话管理器（deps 可注入，便于单测）
  * @param {{
  *   getModels: () => { online: object|null, offline: object|null, vad: object|null },
@@ -78,15 +92,20 @@ export function createAsrSessionManager(deps) {
     : MAX_SESSIONS;
   const getIdleUnloadMs = deps.getIdleUnloadMs || (() => 0);
   // 默认走 worker 线程（不阻塞事件循环）；单测注入同步/异步实现，返回 Promise 或值都可
-  const transcribe = deps.transcribe || ((samples, opts) => runOfflineTask({
-    kind: 'samples',
-    samples,
-    opts,
-    idleMs: getIdleUnloadMs(),
-    timeoutMs: deps.offlineTimeoutMs,
-    modelId: opts && opts.offlineModel ? opts.offlineModel.id : undefined,
-    onLog: deps.onLog,
-  }));
+  const transcribe = deps.transcribe || ((samples, opts) => {
+    const { workerOpts, shouldSkip } = splitWorkerOpts(opts);
+    return runOfflineTask({
+      kind: 'samples',
+      samples,
+      opts: workerOpts,
+      // 出队瞬间再判一次（被取消/被背压丢弃就空转）——必须留在主线程，进不了 worker
+      shouldSkip,
+      idleMs: getIdleUnloadMs(),
+      timeoutMs: deps.offlineTimeoutMs,
+      modelId: workerOpts.offlineModel ? workerOpts.offlineModel.id : undefined,
+      onLog: deps.onLog,
+    });
+  });
 
   /**
    * 发送 JSON 帧（连接已断时静默忽略）

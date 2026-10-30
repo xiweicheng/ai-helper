@@ -692,3 +692,28 @@ describe('句级精修', () => {
     manager.release(manager._sessions.get('r7'));
   });
 });
+
+describe('splitWorkerOpts：送进 worker 的 opts 必须可结构化克隆', () => {
+  // 真机踩过的坑：shouldSkip 跟着 opts 一起 postMessage 给 worker 线程，
+  // 直接 DataCloneError → 每一句精修都失败。注入假 transcribe 的单测看不见这个错误，
+  // 所以这里用 structuredClone（与 postMessage 同一套克隆算法）把契约钉住。
+  test('shouldSkip 被摘出去，剩下的 opts 能 structuredClone', () => {
+    const skip = () => true;
+    const { workerOpts, shouldSkip } = sessionMod.splitWorkerOpts({
+      offlineModel: { id: 'sense-test' },
+      language: 'zh',
+      refine: true,
+      shouldSkip: skip,
+    });
+    assert.equal(shouldSkip, skip, '函数要留在主线程侧');
+    assert.equal('shouldSkip' in workerOpts, false, 'opts 里不得残留函数');
+    assert.doesNotThrow(() => structuredClone(workerOpts), 'opts 必须能过 worker 线程');
+    assert.equal(workerOpts.offlineModel.id, 'sense-test');
+    assert.equal(workerOpts.refine, true);
+  });
+
+  test('没传 opts / 传空对象都不炸（定稿路径不带 shouldSkip）', () => {
+    assert.deepEqual(sessionMod.splitWorkerOpts(undefined), { workerOpts: {}, shouldSkip: undefined });
+    assert.deepEqual(sessionMod.splitWorkerOpts({}), { workerOpts: {}, shouldSkip: undefined });
+  });
+});
