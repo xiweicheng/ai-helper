@@ -144,7 +144,7 @@
 
 批量的「填入输入框」「复制清单」删除（积压越多越没意义，用户原话）。`buildItemDigest(todo)` 与整单摘要共用 `itemLine` / `noteLine`，所以单条与拖拽落下的文本口径完全一致：标题行（含状态标记、高优先级、截止）+ 备注行 + 链接。拖拽复用行 `⋯` 的同一份文本（`dataTransfer.setData('text/plain', digest)`），落在 `#userInput` 即追加，不自动发送。
 
-**10.4 导入导出：先范围、再格式**
+**10.4 导入导出：先范围、再格式**（菜单形态与替换确认已被 §11 取代，保留为历史记录）
 
 - 文件内容由 `todo-model` 生成（纯逻辑、可单测）：`buildTodoExportPayload` 输出 `{kind:'todos', version:1, scope, exportedAt, todos}`（字段白名单，`prevStatus`/`order`/`completedAt` 都带，才能回导），`buildTodoMarkdownExport` 输出给人看的清单。
 - 浏览器侧 `todo-io.js` 只管落地：Blob + `URL.createObjectURL` + `a[download]`，用完 `revokeObjectURL`；选文件 `<input type=file accept=".json,application/json">` 必须同时接 `change` 与 `cancel`，否则用户取消时 Promise 永久悬着。
@@ -160,3 +160,54 @@
 - 视图拆成 `todo-stats-view.js`（纯渲染，只依赖 i18n，可直接单测柱高归一化与除零）与 `todo-stats-panel.js`（挂载/开关/键盘）。入口在头部菜单首项，独立浮层 z-index 10015（低于 `.todo-menu` 的 10020），`Esc` / 遮罩 / `×` 三种关法，关掉摘监听，开着时切语言立即重刷。
 
 **验证面**：`todo-model` 54 例、`todo-manager` 39 例、`todo-panel-structure` 87 例、`todo-io` 10 例、`todo-stats` 10 例、`todo-stats-view` 5 例；全量 `vitest run` 224 文件 / 3513 例全绿。新增探针 `test-results-probes/_todo-io-stats.mjs`（40 项）：处理中计数、header 六项菜单与二级格式菜单不越界、统计浮层数值/7 柱/层级/三种关法/完成后再开数字跟随、导出 JSON 与 Markdown 真下载且内容可回导、空范围不导空文件、合并去重与重复导入提示、坏 JSON、替换二次确认、**空文件替换不清库**、切语言后浮层与菜单立即变英文。`_todo-panel-visual.mjs` 同步修正三处过期断言（批量入口已删、`:focus-within` 会浮现操作、点哪行焦点跟哪行）。
+
+## 11. 2026-10-30 第三轮：入口收敛、快捷键可见、面板撑高、两个点击失效的 bug
+
+用户提了四个体验点 + 两个 bug：导出/导入菜单太多；行菜单里的快捷键没有标注；面板太矮只能看三四条；「复制本条 / 复制并附提问模板」点击没反应；统计菜单顶上多一条分割线。
+
+**11.1 导出/导入各收敛到一个入口 + 一张弹窗**
+
+- 头部菜单从六项降到三项：`stats` / `export-options` / `import-options`。「导出…」弹 `openExportOptions()`（`src/side_panel/todo-io-dialogs.js`），**范围三选一（各自带条数）+ 格式二选一同屏**，确认才调既有的 `exportTodoScope(scope, format)`；范围为空时确认按钮 `disabled` 并亮出 `data-io-hint`，`confirm()` 里再挡一层（不生成空文件）。
+- 「导入…」先 `pickTodoImportFile()` → `readTodoImportFile()`，解析成功才弹 `openImportOptions({count, existing})`；摘要写明「文件 N 条 / 当前清单 M 条」，选择合并/替换后各自落到 `importTodos(todos, mode)`。**替换的二次确认就是弹窗里的警告条**（选中 `replace` 即 `data-io-warn.show`），不再额外弹 `customConfirmOverlay`；坏文件根本走不到选方式这一步。
+- 弹窗是纯函数 + 瘦控制器：`buildExportDialogHtml(state, counts)` / `buildImportDialogHtml(state, info)` 可单测，控制器只做「挂载 / `change` 回写 `session.state` / `sync()` 只切 disabled 与 `.show`（不重建 DOM，免得丢焦点）/ `settle()` / `Esc`」。层级 10015，低于 `.todo-menu` 的 10020。
+
+**11.2 菜单项右侧标出快捷键**
+
+根因是数据里没有快捷键字段：`kbdHtml(shortcut)` 只在真有键时输出 `<kbd class="todo-menu-kbd">`，`menuRowHtml` 两处（普通项与色块行）插入；数据侧 `statusMenuItems` / `openRowMenu` 补 `shortcut`：`set-done`/`restore` → `Alt+D`、优先级行 → `Alt+P`、`edit-note` → `Alt+B`、`edit-link` → `Alt+L`，其余项不占位。角标 `margin-left:auto` 右对齐。
+
+**11.3 面板按输入区上沿撑高（根因修复）**
+
+旧算法用**面板自己的底边**当基准算可用高度（`rect.bottom - TOP_RESERVE`），而面板本来就悬在输入区上方，等于自己限制自己：探针实测 `inputTop 752 / rect.bottom 629 / maxH 520`，白白少掉 100px+；同时 `--fit-y` 只允许 `Math.min(0, …)`，面板悬空 123px 却没有办法贴上去。改为：
+
+- `limit = measureInputTop() - BOTTOM_GAP(8)`，`available = max(MIN_PANEL_HEIGHT(220), floor(limit - TOP_RESERVE(108)))` → 同场景 `maxH 520 → 635`（约多两条）。
+- `dy = floor(limit - rect.bottom)` 正负都写：悬空向下补齐（实测 `+115px`），越界向上让开；`.todo-panel.expanded` 自己声明 `transition: opacity 0.2s ease, visibility 0.2s`（反掉基类的 `transform` 过渡），位置一次定好后不再滑动。
+- 保持「高度只增不减」策略：条目少就按内容矮，条目多才长到 `available`，之后转列表滚动。
+
+**11.4 两个 bug 的根因**
+
+- 复制无反应：菜单点击统一进 `handleMenuAction`，而该 `switch` 没有 `copy-item` / `copy-item-prompt` 分支（落到 `default: return`）；处理器只活在 `handleClick` 里，服务的是第 9 轮已删除的行内复制按钮。修法是把 case 迁到 `handleMenuAction` 并删掉 `handleClick` 的死分支，同时补一条**静态守卫**：把 `statusMenuItems` / `openRowMenu` / `headerMenuItems` 里所有 `action` 抽出来，逐个断言 `handleMenuAction` 有对应 `case`——以后新增菜单项忘了接处理器会被单测拦住。
+- 统计顶上多一条线：`divider: true` 挂在 `headerMenuItems()` 首项上，而 `menuRowHtml` 把分割线渲染在**该项上方**，菜单顶上空无一物就得到一条没来由的横线。修在 `openMenuAt` 渲染前把首项 `divider` 归零（不在数据里逐项删，避免以后调整顺序又冒出来）。
+
+**验证面**：`todo-panel-structure` 95 例（新增「菜单动作必须有落点」「菜单分割线」「行菜单标注快捷键」三个 describe，并重写导入导出与面板几何的旧断言）、新建 `todo-io-dialogs` 13 例（jsdom：两种弹窗结构、空范围禁用、头部菜单契约、导入顺序 pick → options → importTodos、样式 token 与层级、中英词条成对）；待办相关 7 个测试文件共 224 例全绿，全量 `vitest run` 226 文件 / 3553 例（4 例失败全在 `src/background/*`，与本轮无关）。探针 `_todo-io-stats.mjs` 重写 S/T/V/W 四组（43 项全绿）：三入口菜单、弹窗内范围+格式同屏与条数、空范围禁用+硬点不出文件、真下载 JSON/Markdown、选文件后选方式、摘要条数、替换警告条、坏文件不问方式、**空文件替换不清库**、弹窗开着切语言；`_todo-panel-visual.mjs` 新增 R 组（首项无分割线、角标与真实快捷键一致、复制与复制并附模板真的调到 `clipboard.writeText`）并把 P 组断言从「底边在输入区上方」改为「底边贴住 `inputTop - 8`」，另加限高按输入区上沿算足的根因断言。
+
+## 12. 2026-10-30 第四轮：复制提到行内、下线「复制并附提问模板」、编辑态收起操作区
+
+两句需求：复制不该藏在菜单里，要与编辑图标同级；「复制并附提问模板」不要了。附带着一个实测问题：进入编辑态后行尾操作栏盖住了输入框右端。
+
+**12.1 「复制」提到行内，与编辑同级**
+
+行内动作区从「编辑 / 填入 / 更多」变成「编辑 → 复制 → 填入 → 更多」（已完成 Tab 行首多一个恢复按钮）。复制按钮 `data-action="copy-item"`，`title`/`aria-label` 用 `todo.copyItem`（「复制本条」），图标复用 `ICONS.copy`。`handleClick` 新增 `case 'copy-item'`；`openRowMenu` 与 `handleMenuAction` 里的两条复制分支同时删除。
+
+> §11.4 里「把 case 迁到 `handleMenuAction`」是当时菜单有这一项时的修法，本轮已被推翻：复制只在行内，处理器只该活在 `handleClick`。静态守卫（菜单里声明的每个 `action` 都要有 `case`）依旧成立，因为菜单里已经不再声明它。但它管不到行内动作，所以另加一条断言：`handleClick` 必须真的有 `case 'copy-item'` —— 「按钮在 DOM 里、处理器不在」正是上一轮那个 bug 的形态。
+
+**12.2 「复制并附提问模板」整体下线**
+
+不只是删菜单项：`copy-item-prompt` 动作、`todo.copyWithPrompt` / `todo.copiedPromptToast` 两个词条、`copyItem(id, withPrompt)` 的参数、`todo-model` 里 `buildItemDigest` / `buildTodoDigest` 的 `withPrompt` 分支与 `todoDigest.prompt` 文案、两条模型单测全部移除。留着任何一层都是「看起来还支持」的假象。顺手清掉早就无人引用的 `todo.copyClipboard` 死词条（它和「复制到剪贴板」的概念只差一个没人用的 key）。
+
+**12.3 编辑态收起整排操作（根因）**
+
+`.todo-item-actions` 是 `position: absolute; right: 4px; top: 5px` 的行尾浮层，还带一条向左透明的渐变底；`.todo-edit-input` 是 `width: 100%`。两者叠在一起，输入框右端必然被按钮和渐变压掉一截。更关键的是 `.todo-item:focus-within .todo-item-actions` 会在输入框获得焦点时把按钮**正好**放出来——编辑态就是 focus-within 态，纯 CSS 无从区分。
+
+修法在渲染层：`renderItem` 先算 `editing = titleEditId === todo.id || noteEditId === todo.id || dueEditId === todo.id || linkEditId === todo.id`，输出改成 `${editing ? '' : actions}`。DOM 里根本没有按钮，就不存在遮挡、也不会被 Tab 聚焦；保存或 `Esc` 退出后重渲染自然恢复。
+
+**验证面**：`todo-panel-structure` 99 例（新增「编辑态不被行内操作遮挡」describe，并重写两条与复制相关的旧守卫——它们原本断言的是「行内没有复制、复制在菜单里」，正是本轮要反转的旧契约）。其中「编辑态不渲染操作区」这条做过变异验证：把 `${editing ? '' : actions}` 改回 `${actions}` 后该例立即变红。`todo-model` 53 例（少两条 withPrompt）。探针 `_todo-panel-visual.mjs` 的 R 组重写：R4 菜单里不再有复制项、R5 行内复制与编辑同排且在右侧且悬停可见（`opacity=1`、宽 20px）、R6 点击真的把组合文本送进 `clipboard.writeText` 并给出「已复制到剪贴板」；新增 S 组：S1 编辑态 `actionsGone=true` 且 `document.elementFromPoint(input.right-3, midY)` 命中的就是 input 本身（`hitTag=input`）、S2 `Esc` 退出后复制按钮原样回来。整轮 ALL CHECKS PASSED。
