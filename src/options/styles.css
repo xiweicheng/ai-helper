@@ -3909,6 +3909,17 @@ textarea {
   max-height: none;
   overflow: visible;
 }
+/* 浮层必须整体压在下一个小节之上 —— 只放开 overflow 还不够。
+   本区块的次要说明文字用 opacity < 1 弱化（.asr-mic-hint / .asr-device-note / .asr-shortcut-hint…），
+   opacity 会让元素自建合成层，实测浏览器把这一层绘制在 z-index:1000 的绝对定位浮层之上：
+   展开「识别节奏」后第三档「精确」被下方「麦克风权限」说明压住（源码守卫看不出，只有真浏览器可见）。
+   给承载浮层的内容区 / 小节显式抬层，浮层就在这一层内部按 z-index 正常叠放，不再依赖合成层的巧合。 */
+#asrSection:not(.disabled-section) #asrSectionContent,
+#asrDeviceSection,
+#asrShortcutSection {
+  position: relative;
+  z-index: 1;
+}
 
 /* ---- 麦克风授权：与代理端状态无关的独立小节（跟随总开关显隐） ---- */
 .asr-mic-block {

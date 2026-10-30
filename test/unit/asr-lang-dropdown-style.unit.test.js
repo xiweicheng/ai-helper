@@ -57,6 +57,16 @@ describe('语音输入区块的裁剪规则', () => {
     expect(OPTIONS_HTML).toContain('asrSectionContent');
     expect(STYLES).toMatch(/\.model-selector\s*\{[^}]*position:\s*relative/);
   });
+
+  // 真实 bug（真浏览器探针 _asr-pacing-ui.mjs 才发现）：「识别节奏」展开后第三档「精确」
+  // 被下方「麦克风权限」的说明文字压住 —— 说明文字用 opacity < 1 弱化，浏览器把它提成
+  // 合成层，绘制在 z-index:1000 的绝对定位浮层之上。放开 overflow 解决不了这件事，
+  // 必须让承载浮层的内容区本身自成一栈（position + z-index），浮层在其内部按 z-index 叠放。
+  test('承载浮层的内容区 / 小节自成一栈，否则弱化说明文字会盖住浮层', () => {
+    const host = block('#asrSection:not(.disabled-section) #asrSectionContent,\n#asrDeviceSection,\n#asrShortcutSection {');
+    expect(host).toContain('position: relative');
+    expect(host).toMatch(/z-index:\s*[1-9]/);
+  });
 });
 
 describe('识别语言下拉与「界面语言」下拉同构', () => {
