@@ -80,9 +80,11 @@ describe('locateEdit：用户手改归位', () => {
     expect(r.lockedIds).toEqual([3]);
   });
 
-  it('在草稿块之后追加：不锁任何句', () => {
+  it('在草稿块末尾续写：算在改最后一句', () => {
     const r = locateEdit(items, before, '第一句。第二句。第三句。补一句');
-    expect(r.lockedIds).toEqual([]);
+    expect(r.lockedIds).toEqual([3]);
+    expect(r.items[2].text).toBe('第三句。补一句');
+    expect(r.items[1].text).toBe('第二句。');
     expect(r.shift).toBe(0);
   });
 
@@ -98,7 +100,25 @@ describe('locateEdit：用户手改归位', () => {
   });
 
   it('文本没变：不锁句、不偏移', () => {
-    expect(locateEdit(items, before, before)).toEqual({ lockedIds: [], shift: 0 });
+    const r = locateEdit(items, before, before);
+    expect(r.lockedIds).toEqual([]);
+    expect(r.shift).toBe(0);
+    expect(r.items).toBe(items);
+  });
+
+  it('把用户改后的字切回对应句（不靠下次重写覆盖回来）', () => {
+    const r = locateEdit(items, before, '第一句呀。第二句。第三句。');
+    expect(buildDraftText(r.items)).toBe('第一句呀。第二句。第三句。');
+    expect(r.items[0].text).toBe('第一句呀。');
+    expect(r.items[1].text).toBe('第二句。');
+    expect(r.len).toBe(13);
+  });
+
+  it('删除跨多句后，剩下的字按新边界切分不丢字', () => {
+    const r = locateEdit(items, before, '第一句。三句。');
+    expect(r.items.map((i) => i.text).join('')).toBe('第一句。三句。');
+    expect(r.items[1].text).toBe('');
+    expect(r.items[2].text).toBe('三句。');
   });
 });
 

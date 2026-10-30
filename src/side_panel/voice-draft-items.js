@@ -48,16 +48,23 @@ export function applySentence(items, patch) {
 
 /**
  * 用户手改归位：用「公共前缀 + 公共后缀」确定改动区间，映射回句子
+ *
+ * 只锁句还不够：被锁那几句的文本必须换成用户手上的版本，否则下一次程序化重写
+ * 就会把用户的字覆盖回模型结果 —— 那正是「改了一个字，模型又把整句改回去」的根源。
+ * 所以这里顺带把 afterText 按「旧边界 → 新边界」的映射切回每一条。
+ *
  * @param {Array} items
  * @param {string} beforeText 改动前的草稿全文
  * @param {string} afterText  改动后的输入框全文（仅草稿块部分）
- * @returns {{lockedIds: Array<number|null>, shift: number}} shift = 草稿块起点之前插入的长度
+ * @returns {{lockedIds: Array<number|null>, shift: number, items: Array, len: number}}
+ *   shift = 草稿块起点之前插入的长度；len = 改动后草稿块的应有长度
  */
 export function locateEdit(items, beforeText, afterText) {
   const before = String(beforeText || '');
   const after = String(afterText || '');
+  const keep = { lockedIds: [], shift: 0, items, len: before.length };
   if (before === after || !Array.isArray(items) || items.length === 0) {
-    return { lockedIds: [], shift: 0 };
+    return keep;
   }
 
   // 公共前缀
@@ -73,9 +80,13 @@ export function locateEdit(items, beforeText, afterText) {
   const changedFrom = p;
   const changedTo = before.length - s; // 改动区间 [changedFrom, changedTo)
 
-  // 改动纯追加在草稿块之后：不算手改，不锁句
+  // 在草稿块末尾继续打字：算改最后一句（用户多半在续写当前句，不能把那几个字弄丢）
   if (changedFrom >= before.length && changedTo >= before.length) {
-    return { lockedIds: [], shift: 0 };
+    const last = items[items.length - 1];
+    const lastLen = last && last.text ? last.text.length : 0;
+    const tail = after.slice(Math.max(0, before.length - lastLen));
+    const next = items.map((item, i) => (i === items.length - 1 ? { ...item, text: tail } : item));
+    return { lockedIds: [last.id], shift: 0, items: next, len: after.length };
   }
 
   // 有交集的句子即被用户改过
@@ -88,8 +99,27 @@ export function locateEdit(items, beforeText, afterText) {
   }
 
   // 没碰到任何句、且改动从块首开始 => 是草稿块之前插了字，返回长度偏移
-  const shift = lockedIds.length === 0 && changedFrom === 0 ? after.length - before.length : 0;
-  return { lockedIds, shift };
+  if (lockedIds.length === 0) {
+    return { lockedIds: [], shift: changedFrom === 0 ? after.length - before.length : 0, items, len: before.length };
+  }
+
+  // 旧边界 → 新边界：改动前的边界不动，改动后的整体平移，落在改动区间内的收敛到区间起点
+  const delta = after.length - before.length;
+  const newEnd = changedTo + delta;
+  const map = (b) => {
+    if (b <= changedFrom) return b;
+    if (b >= changedTo) return b + delta;
+    return changedFrom + Math.min(b - changedFrom, Math.max(0, newEnd - changedFrom));
+  };
+  let cursor = 0;
+  const next = items.map((item) => {
+    const len = (item && item.text ? item.text : '').length;
+    const from = map(cursor);
+    const to = map(cursor + len);
+    cursor += len;
+    return { ...item, text: after.slice(from, to) };
+  });
+  return { lockedIds, shift: 0, items: next, len: after.length };
 }
 
 /**
