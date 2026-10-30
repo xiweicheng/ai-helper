@@ -947,9 +947,9 @@ export function loadConfig() {
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'enableImageInput', 'imageModelName', 'imageModels',
     'imageApiBase', 'imageApiKey', 'enableFileInput',
-    'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+    'reactLoopTimeout',
     // 只为一次性清理旧残留而读：不在设置页渲染，也不参与保存
-    'reactMaxIterations',
+    'reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout',
     'toolConfirmationEnabled',
     'networkAccessEnabled',
     'enableExecutionLog',
@@ -1004,17 +1004,14 @@ export function loadConfig() {
     }
 
     // 加载 ReAct 配置（时间单位转换）
-    // reactMaxIterations 已撤出设置页：轮数上限为内部保险丝（固定取默认值），
-    // 旧 storage 残留值不再读取/回写（后台同样忽略它），首次触达保存时自然清除
-    if (result.reactMaxIterations !== undefined) {
-      chrome.storage.local.remove('reactMaxIterations');
-    }
-    document.getElementById('reactApiTimeout').value = 
-      Math.round((result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout) / 60000);
+    // reactMaxIterations / reactApiTimeout / reactToolTimeout 已撤出设置页：三者均为内部固定值，
+    // 界面只保留「整体循环超时」。旧 storage 残留值不再读取/回写（后台同样忽略），
+    // 这里一次性清除——否则用户会以为「以前调过的值还在生效」
+    const retiredReactKeys = ['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout']
+      .filter(k => result[k] !== undefined);
+    if (retiredReactKeys.length) chrome.storage.local.remove(retiredReactKeys);
     document.getElementById('reactLoopTimeout').value = 
       Math.round((result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout) / 60000);
-    document.getElementById('reactToolTimeout').value = 
-      Math.round((result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout) / 60000);
     const preselectEl = document.getElementById('enableToolPreselect');
     if (preselectEl) {
       preselectEl.checked = 
@@ -1197,10 +1194,9 @@ export function saveConfig() {
   const apiKey = document.getElementById('apiKey').value.trim();
   const systemPrompt = document.getElementById('systemPrompt').value.trim();
   
-  // 获取 ReAct 配置（时间单位转换）；最大循环次数已撤出设置页，不再读取/保存 reactMaxIterations
-  const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 5) * 60000;
+  // 获取 ReAct 配置（时间单位转换）；轮数上限 / API 请求超时 / 工具执行超时均已撤出设置页，
+  // 作为内部固定值（background/constants.js 的 DEFAULT_REACT_CONFIG），不读也不存
   const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
-  const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
   // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect 不再配置，使用默认值；预筛选最小工具数已改为常量 PRESELECT_MIN_TOOL_COUNT
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   const networkAccessEnabled = document.getElementById('networkAccessEnabled').checked;
@@ -1238,17 +1234,9 @@ export function saveConfig() {
     }
   };
   
-  // 验证 ReAct 配置范围
-  if (reactApiTimeout < 60000 || reactApiTimeout > 600000) {
-    showToast(`❌ ${t('settings.apiTimeoutRangeError')}`, 'error');
-    return;
-  }
+  // 验证 ReAct 配置范围（只剩「整体循环超时」需要校验，其余三项为内部固定值）
   if (reactLoopTimeout < 60000 || reactLoopTimeout > 86400000) {
     showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');
-    return;
-  }
-  if (reactToolTimeout < 60000 || reactToolTimeout > 3600000) {
-    showToast(`❌ ${t('settings.toolTimeoutRangeError')}`, 'error');
     return;
   }
   
@@ -1269,10 +1257,8 @@ export function saveConfig() {
     apiKey: encodeSecret(apiKey),
     modelName: currentModel || 'deepseek-v4-pro',
     systemPrompt: systemPrompt,
-    // ReAct 配置（reactMaxIterations 已撤出：轮数上限为内部保险丝，不再落盘用户值）
-    reactApiTimeout: reactApiTimeout,
+    // ReAct 配置（轮数上限 / API 请求超时 / 工具执行超时已撤出：均为内部固定值，不落盘用户值）
     reactLoopTimeout: reactLoopTimeout,
-    reactToolTimeout: reactToolTimeout,
     // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect 不再配置，使用默认值；预筛选最小工具数已改为常量 PRESELECT_MIN_TOOL_COUNT
     toolConfirmationEnabled: toolConfirmationEnabled,
     // 内网访问总闸；白名单 allowedNetworkHosts 不在这里写，避免点「保存」时覆盖用户已录入的列表

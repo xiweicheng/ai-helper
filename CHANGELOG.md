@@ -2,6 +2,28 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-10-31
+
+### 设置页超时项收敛：只留「整体循环超时」，API / 工具 / 澄清超时改为内部固定值
+
+> 来源：用户反馈「配置太多，用户也看不懂」——工具执行超时、API 请求超时都不该让用户配；并追问「命令执行好像会超过 10 分钟吧」。
+
+**撤出设置页**
+- 删掉「API 请求超时」「工具执行超时」两个输入框，「推理循环配置」区域只剩「整体循环超时」一个数字项（澄清超时本就无 UI 控件）。
+- 三项固定值：API 请求超时 **5 分钟**、工具执行超时 **10 分钟**、澄清超时 **5 分钟**。后台 `getStoredConfig` 与面板 `getReactConfig` 都不再读 `reactApiTimeout` / `reactToolTimeout`，旧 storage 残留值在设置页首次加载时一次性 `remove`。
+- 导入导出：两个 key 从 `EXPORT_KEYS` 移除并加入 `RETIRED_KEYS`——含这两个字段的旧备份仍能导入（静默丢弃，不当成非法配置）。
+- i18n 死键清理：`react.apiTimeout(Hint)`、`react.toolTimeout(Hint)`、`react.max10Minutes`、`react.max60Minutes`、`settings.apiTimeoutRangeError`、`settings.toolTimeoutRangeError`。
+
+**为什么工具超时取 10 分钟，而不是界面上的 60 分钟**
+- 命令执行（agent_exec）走独立通道：react-loop 登记值 12 分钟 > 内层 guard 10.5 分钟，而 agent 端 `TOTAL_BUDGET_CAP_MS = 600000` 是硬封顶——把全局 toolTimeout 拉到 60 分钟对它毫无作用。
+- 真正兜住长命令的是「无输出 ≥ idleTimeout 自动 detach 转 Agent 托管」：调用即时返回已收集输出，进程继续在后台跑。
+- 60 分钟只会作用于未登记的浏览器类工具（页面读取 / 点击 / 导航），它们卡死时唯一后果是白等，最多吃掉 4h 预算的 1/4。
+- 顺带消除一处自相矛盾：`options.html` 里 `max="60"` 与 agent 端 10 分钟封顶本来就对不上，而 agent 端那行注释写着「与插件端 toolTimeout 上限对齐」。
+
+**验证**
+- 接线守卫新增 5 例（设置页不得再有这两个输入项、后台/面板不得再读旧 key、固定值与 agent 端封顶一致、i18n 死键已清），该文件 39 例；全量单测 227 文件 3594 例全绿；`npm run lint` 无输出；`npm run build` 成功。
+- 文档：`.wiki/Configuration.md` / `Configuration-EN.md` 的 ReAct 配置表同步——原本还写着「最大循环次数 100 / 整体循环超时 30 分钟」，已整体校正并注明「整体循环超时是唯一可调的超时项」。
+
 ## 2026-10-30
 
 ### 推理循环预算「软着陆」+ 保险丝放宽：撞线不再杀任务，交还「部分完成 + 缺项」等用户点续跑

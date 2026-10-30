@@ -1,5 +1,7 @@
 // config/constants.js - Configuration constants
 
+// 注：REACT_CONFIG_KEYS 里的 MAX_ITERATIONS / API_TIMEOUT / TOOL_TIMEOUT / CLARIFY_TIMEOUT
+// 已撤出设置页（内部固定值，见 background/constants.js），不得再当作可配置项引用。
 export const REACT_CONFIG_KEYS = {
   MAX_ITERATIONS: 'reactMaxIterations',
   API_TIMEOUT: 'reactApiTimeout',

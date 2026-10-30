@@ -321,21 +321,14 @@
       <h2 data-i18n="react.title">⚙️ 推理循环配置</h2>
       <p class="subtitle" data-i18n="react.subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
 
-      <!-- 最大循环次数已撤出设置页：轮数上限仅作内部确定性保险丝（固定 2000），
-           面向用户的约束只有时间预算；旧 storage 残留值不再被后台读取 -->
+      <!-- 以下参数已撤出设置页，改为内部固定值（界面只剩「整体循环超时」一个数字输入）：
+           最大循环次数 2000  — 确定性保险丝，防「快而空转」；时间上限防「慢而卡」
+           API 请求超时 5 分钟 — 只覆盖建连+等响应头，流式读正文由 SSE 空闲超时独立保护
+           工具执行超时 10 分钟 — 与 Agent 端 TOTAL_BUDGET_CAP_MS 封顶对齐；命令执行的长任务
+             由 agent_exec 登记值 12 分钟 + 无输出自动 detach 托管兜住，与本项无关
+           澄清超时 5 分钟 — 等待期间不计入循环预算
+           旧 storage 残留值不再被读取，并在首次加载时清除 -->
 
-      <div class="react-config-item">
-        <label>
-          <span data-i18n="react.apiTimeout">API 请求超时</span>
-          <span class="hint-text" data-i18n="react.apiTimeoutHint">（单次 API 调用的最长等待时间）</span>
-        </label>
-        <input type="number" id="reactApiTimeout" min="1" max="10" step="1" value="5" placeholder="5">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max10Minutes">最大: 10分钟</span>
-        </div>
-      </div>
       
       <div class="react-config-item">
         <label>
@@ -350,18 +343,6 @@
         </div>
       </div>
       
-      <div class="react-config-item">
-        <label>
-          <span data-i18n="react.toolTimeout">工具执行超时</span>
-          <span class="hint-text" data-i18n="react.toolTimeoutHint">（单个工具执行的最长等待时间）</span>
-        </label>
-        <input type="number" id="reactToolTimeout" min="1" max="60" step="1" value="10" placeholder="10">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max60Minutes">最大: 60分钟</span>
-        </div>
-      </div>
       
       <div class="react-config-item">
         <label>

@@ -132,9 +132,10 @@ describe('P1 参数：默认值单一来源，设置页/存储/后台三侧一�
     expect(PANEL_UTILS_SRC).not.toMatch(/maxIterations: result\.reactMaxIterations/);
   });
 
-  test('设置页校验上下限与 constants 注释一致（1-1440min / 1-60min）', () => {
+  test('设置页只剩「整体循环超时」需要校验（其余三项已撤出，不得再出现 range 校验）', () => {
     expect(CONFIG_MANAGER_SRC).toMatch(/reactLoopTimeout < 60000 \|\| reactLoopTimeout > 86400000/);
-    expect(CONFIG_MANAGER_SRC).toMatch(/reactToolTimeout < 60000 \|\| reactToolTimeout > 3600000/);
+    expect(CONFIG_MANAGER_SRC).not.toMatch(/reactToolTimeout < 60000/);
+    expect(CONFIG_MANAGER_SRC).not.toMatch(/reactApiTimeout < 60000/);
   });
 
   test('shared/tools.js 的 DEFAULT_REACT_CONFIG 改为 re-export，消除过期副本', () => {
@@ -143,9 +144,52 @@ describe('P1 参数：默认值单一来源，设置页/存储/后台三侧一�
   });
 });
 
+describe('超时项撤出设置页：界面只剩「整体循环超时」，其余为内部固定值', () => {
+  test('options.html 不再有 API 请求超时 / 工具执行超时 输入项', () => {
+    const html = read('options.html');
+    expect(html).not.toMatch(/id="reactApiTimeout"/);
+    expect(html).not.toMatch(/id="reactToolTimeout"/);
+    expect(html).not.toMatch(/data-i18n="react\.apiTimeout"/);
+    expect(html).not.toMatch(/data-i18n="react\.toolTimeout"/);
+    // 仍然保留唯一可调项
+    expect(html).toMatch(/id="reactLoopTimeout"/);
+  });
+
+  test('后台不再从 storage 读 apiTimeout / toolTimeout（旧残留值不得让「界面没开关」变成谎话）', () => {
+    const bgConfig = read('src/background/config.js');
+    expect(bgConfig).toMatch(/apiTimeout: DEFAULT_REACT_CONFIG\.apiTimeout,/);
+    expect(bgConfig).toMatch(/toolTimeout: DEFAULT_REACT_CONFIG\.toolTimeout,/);
+    expect(bgConfig).not.toMatch(/result\.reactApiTimeout/);
+    expect(bgConfig).not.toMatch(/result\.reactToolTimeout/);
+  });
+
+  test('面板侧同样只读循环超时（看门狗仍拿得到固定的 toolTimeout/apiTimeout）', () => {
+    expect(PANEL_UTILS_SRC).toMatch(/toolTimeout: DEFAULT_REACT_CONFIG\.toolTimeout/);
+    expect(PANEL_UTILS_SRC).toMatch(/apiTimeout: DEFAULT_REACT_CONFIG\.apiTimeout/);
+    expect(PANEL_UTILS_SRC).not.toMatch(/result\.reactToolTimeout/);
+    expect(PANEL_UTILS_SRC).not.toMatch(/result\.reactApiTimeout/);
+  });
+
+  test('固定值与说明对齐：API 5min / 工具 10min（= Agent 端封顶）/ 澄清 5min', () => {
+    expect(CONSTANTS_SRC).toMatch(/apiTimeout: 300000,/);
+    expect(CONSTANTS_SRC).toMatch(/toolTimeout: 600000,/);
+    expect(CONSTANTS_SRC).toMatch(/clarifyTimeout: 300000,/);
+  });
+
+  test('i18n 死键一并移除（否则会让人以为这些配置项还在）', () => {
+    for (const rel of ['src/shared/locales/zh.js', 'src/shared/locales/en.js']) {
+      const src = read(rel);
+      expect(src).not.toMatch(/toolTimeoutRangeError/);
+      expect(src).not.toMatch(/apiTimeoutRangeError/);
+      expect(src).not.toMatch(/apiTimeout: '/);
+      expect(src).not.toMatch(/toolTimeout: '/);
+    }
+  });
+});
+
 describe('导入导出：删白名单键必须配套「静默丢弃」，否则旧备份全部导不进来', () => {
   test('RETIRED_KEYS 存在，validate 时跳过、confirmImport 时删除', () => {
-    expect(CONFIG_IO_SRC).toMatch(/const RETIRED_KEYS = \['reactMaxIterations'\]/);
+    expect(CONFIG_IO_SRC).toMatch(/const RETIRED_KEYS = \['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout'\]/);
     expect(CONFIG_IO_SRC).toMatch(/if \(RETIRED_KEYS\.includes\(key\)\) continue;/);
     expect(CONFIG_IO_SRC).toMatch(/for \(const key of RETIRED_KEYS\) delete config\[key\];/);
   });
@@ -153,16 +197,23 @@ describe('导入导出：删白名单键必须配套「静默丢弃」，否则�
   test('EXPORT_KEYS 已移除 reactMaxIterations', () => {
     const whitelist = between(CONFIG_IO_SRC, 'const EXPORT_KEYS = [', '];');
     expect(whitelist).not.toMatch(/'reactMaxIterations'/);
+    expect(whitelist).not.toMatch(/'reactApiTimeout'/);
+    expect(whitelist).not.toMatch(/'reactToolTimeout'/);
     // 但仍保留 gracefulConverge（无 UI 控件，只能靠导入导出覆盖）
     expect(whitelist).toMatch(/'gracefulConverge'/);
   });
 
-  test('config-manager 的旧值清理确实读到该 key（get 列表缺了就是死清理）', () => {
-    const getList = between(CONFIG_MANAGER_SRC, "'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',", "], (result)");
+  test('config-manager 的旧值清理确实读到这些 key（get 列表缺了就是死清理）', () => {
+    const getList = between(CONFIG_MANAGER_SRC, 'chrome.storage.local.get([', '], function(result)');
     expect(getList).toMatch(/'reactMaxIterations'/);
-    expect(CONFIG_MANAGER_SRC).toMatch(/chrome\.storage\.local\.remove\('reactMaxIterations'\)/);
-    // 已撤出 UI：不得再有 getElementById('reactMaxIterations')
+    expect(getList).toMatch(/'reactApiTimeout'/);
+    expect(getList).toMatch(/'reactToolTimeout'/);
+    expect(CONFIG_MANAGER_SRC).toMatch(/const retiredReactKeys = \['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout'\]/);
+    expect(CONFIG_MANAGER_SRC).toMatch(/chrome\.storage\.local\.remove\(retiredReactKeys\)/);
+    // 已撤出 UI：三个 key 都不得再有 getElementById
     expect(CONFIG_MANAGER_SRC).not.toMatch(/getElementById\('reactMaxIterations'\)/);
+    expect(CONFIG_MANAGER_SRC).not.toMatch(/getElementById\('reactApiTimeout'\)/);
+    expect(CONFIG_MANAGER_SRC).not.toMatch(/getElementById\('reactToolTimeout'\)/);
   });
 });
 

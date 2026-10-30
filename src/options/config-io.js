@@ -12,9 +12,10 @@ const EXPORT_KEYS = [
   'apiBase', 'modelName', 'customModels', 'systemPrompt',
   'enableImageInput', 'imageModelName', 'imageModels',
   'imageApiBase',
-  // reactMaxIterations 已撤出（轮数为内部保险丝不落盘）；gracefulConverge 无 UI 控件但可经导入导出覆盖
-  'reactApiTimeout', 'reactLoopTimeout',
-  'reactToolTimeout', 'gracefulConverge', 'enableToolPreselect', 'toolConfirmationEnabled',
+  // reactMaxIterations / reactApiTimeout / reactToolTimeout 已撤出（均为内部固定值不落盘）；
+  // gracefulConverge 无 UI 控件但可经导入导出覆盖
+  'reactLoopTimeout',
+  'gracefulConverge', 'enableToolPreselect', 'toolConfirmationEnabled',
   'reflectionConfig',
   'completionVerificationConfig',
   'enableExecutionLog',
@@ -53,7 +54,7 @@ const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
 
 // 已下线、但可能仍留在旧导出文件里的 key：导入时静默丢弃，不当作非法配置。
 // 白名单校验对未知 key 一律拒绝——只删白名单不配套这里，等于让所有旧备份文件都导不进来。
-const RETIRED_KEYS = ['reactMaxIterations'];
+const RETIRED_KEYS = ['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout'];
 
 /**
  * 导入时混淆配置中的密钥字段（确保落存储的是 enc: 格式）
@@ -296,8 +297,8 @@ export async function confirmImport() {
     delete config.allowedNetworkHosts;
     // 清理旧导出文件中可能仍存在的已下线反思配置（工具级反思），避免回灌进 storage
     stripRetiredReflectionKeys(config);
-    // 已下线 key（如 reactMaxIterations）不得回灌：轮数上限现在是内部保险丝，
-    // storage 里再留一份旧值只会让「到底谁说了算」重新长出歧义
+    // 已下线 key（reactMaxIterations / reactApiTimeout / reactToolTimeout）不得回灌：
+    // 它们现在是内部固定值，storage 里再留一份旧值只会让「到底谁说了算」重新长出歧义
     for (const key of RETIRED_KEYS) delete config[key];
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';
 

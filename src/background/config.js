@@ -12,7 +12,7 @@ export function getStoredConfig() {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
       'temperature', 'topP',
-      'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+      'reactLoopTimeout',
       'gracefulConverge',
       'enableToolPreselect',
       'toolConfirmationEnabled',
@@ -30,13 +30,14 @@ export function getStoredConfig() {
         enabledTools: result.enabledTools || ['page_content', 'query_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {
-          // 轮数上限不再从 storage 读取：已撤出设置页，作为内部确定性保险丝固定取默认值。
-          // 旧配置里残留的 reactMaxIterations（如 100）若继续生效，会在放宽时限后
-          // 反过来误杀正常长任务——这正是要避免的那类「用户没打算被限制却被限制」。
+          // 轮数上限 / API 请求超时 / 工具执行超时均已撤出设置页，不再从 storage 读取：
+          // 三者作为内部固定值（constants.js）——轮数 2000 抹「快而空转」、API 5min 抹「建连卡死」、
+          // 工具 10min 与 Agent 端 TOTAL_BUDGET_CAP_MS 封顶对齐。旧配置里残留的 reactApiTimeout、
+          // reactToolTimeout（如 600000）若继续生效，会让「界面已经没有这个开关了」变成谎话。
           maxIterations: DEFAULT_REACT_CONFIG.maxIterations,
-          apiTimeout: result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout,
+          apiTimeout: DEFAULT_REACT_CONFIG.apiTimeout,
           loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
-          toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
+          toolTimeout: DEFAULT_REACT_CONFIG.toolTimeout,
           clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,
           apiRetryBaseDelay: DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
