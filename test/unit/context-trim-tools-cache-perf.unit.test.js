@@ -222,7 +222,9 @@ describe('接线守卫：裁剪不再全量重估（O(n²) 不得复现）', () 
 });
 
 describe('接线守卫：工具定义序列化只在循环外算一次', () => {
-  const loopIdx = REACT_LOOP_SRC.indexOf('while (iteration < maxIterations)');
+  // 主循环锚点：预算软着陆后循环条件收敛为 while (true)，终止由轮首 evaluateBudgetStep 收口
+  const loopIdx = REACT_LOOP_SRC.indexOf('while (true) {');
+  if (loopIdx === -1) throw new Error('main loop anchor not found: while (true) {');
 
   test('rawToolTokens 全文件仅定义一次，且位置在 ReAct 主循环之前', () => {
     const hits = [...REACT_LOOP_SRC.matchAll(/const rawToolTokens = estimateTokens\(/g)];

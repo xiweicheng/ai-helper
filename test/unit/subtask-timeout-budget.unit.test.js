@@ -82,10 +82,11 @@ describe('A 子任务超时预算：取消硬封顶且不透支父预算', () =>
     expect(computeSubtaskLoopTimeoutMs(undefined, 2 * HOUR)).toBe(2 * HOUR);
   });
 
-  test('配置缺失/非法时回退到 DEFAULT_REACT_CONFIG.loopTimeout', () => {
-    expect(computeSubtaskLoopTimeoutMs(undefined, undefined)).toBe(7200000);
-    expect(computeSubtaskLoopTimeoutMs(undefined, 0)).toBe(7200000);
-    expect(computeSubtaskLoopTimeoutMs(undefined, Number.NaN)).toBe(7200000);
+  test('配置缺失/非法时回退到 DEFAULT_REACT_CONFIG.loopTimeout（默认值变更新默认，不钉字面量）', async () => {
+    const { DEFAULT_REACT_CONFIG } = await import('../../src/background/constants.js');
+    expect(computeSubtaskLoopTimeoutMs(undefined, undefined)).toBe(DEFAULT_REACT_CONFIG.loopTimeout);
+    expect(computeSubtaskLoopTimeoutMs(undefined, 0)).toBe(DEFAULT_REACT_CONFIG.loopTimeout);
+    expect(computeSubtaskLoopTimeoutMs(undefined, Number.NaN)).toBe(DEFAULT_REACT_CONFIG.loopTimeout);
   });
 
   test('pendingCount 非法/缺省时当作 1（不因除零得 Infinity/NaN）', () => {

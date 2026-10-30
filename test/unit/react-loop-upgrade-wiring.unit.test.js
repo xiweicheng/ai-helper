@@ -280,8 +280,12 @@ describe('P0-2/P0-3 锚点与预算接线守卫', () => {
     expect(REACT_LOOP_SRC).toMatch(/taskState,\n/); // saveCheckpointNow payload
     expect(REACT_LOOP_SRC).toMatch(/taskState: checkpoint\.taskState/); // resume 回灌
   });
-  test('收敛提示按 80% 预算触发', () => {
-    expect(REACT_LOOP_SRC).toMatch(/Math\.ceil\(maxIterations \* 0\.8\)/);
+  test('收敛预警已下沉 loop-budget-phase 并接线（轮数 80% 触发保留，新增时间维度）', () => {
+    // 旧内联 convergeAt 已改为纯函数模块决策：主循环只负责接线，阈值由模块单测覆盖
+    expect(REACT_LOOP_SRC).toMatch(/buildBudgetNotices\(\{/);
+    expect(REACT_LOOP_SRC).toMatch(/iteration, maxIterations,/); // 轮数维度透传
+    expect(REACT_LOOP_SRC).toMatch(/usedMs: timeoutReport\.usedMs, budgetMs: timeoutReport\.budgetMs/); // 时间维度透传
+    expect(REACT_LOOP_SRC).not.toMatch(/const convergeAt = Math\.ceil/); // 旧内联实现已移除
   });
   test('子任务迭代预算沿用设置页配置次数（20 轮钳制已移除），超时不再硬编码分钟封顶', () => {
     // 轮次上限只承担"防单个循环无限执行"；总量失控由时限（子任务超时实时读父剩余）+ 循环检测兜底

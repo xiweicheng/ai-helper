@@ -24,13 +24,9 @@ export const DEFAULT_CHAT_CONFIG = {
   maxMemoryMessages: 20,
 };
 
-export const DEFAULT_REACT_CONFIG = {
-  maxIterations: 100,
-  apiTimeout: 300000,
-  loopTimeout: 7200000,
-  toolTimeout: 600000,
-  clarifyTimeout: 300000,
-};
+// 直接从 background/constants.js 派生（单一数据源）：这里曾复制过一份默认值，
+// 放宽时限时两边不同步就变成第二套「事实」，读代码的人无从判断哪个生效
+export { DEFAULT_REACT_CONFIG } from '../background/constants.js';
 
 export const DEFAULT_API_BASE = 'https://api.deepseek.com';
 export const DEFAULT_MODEL = 'deepseek-v4-pro';

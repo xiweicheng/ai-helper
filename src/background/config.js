@@ -12,7 +12,8 @@ export function getStoredConfig() {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
       'temperature', 'topP',
-      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+      'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+      'gracefulConverge',
       'enableToolPreselect',
       'toolConfirmationEnabled',
       'networkAccessEnabled', 'allowedNetworkHosts',
@@ -29,13 +30,19 @@ export function getStoredConfig() {
         enabledTools: result.enabledTools || ['page_content', 'query_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {
-          maxIterations: result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations,
+          // 轮数上限不再从 storage 读取：已撤出设置页，作为内部确定性保险丝固定取默认值。
+          // 旧配置里残留的 reactMaxIterations（如 100）若继续生效，会在放宽时限后
+          // 反过来误杀正常长任务——这正是要避免的那类「用户没打算被限制却被限制」。
+          maxIterations: DEFAULT_REACT_CONFIG.maxIterations,
           apiTimeout: result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout,
           loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
           toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
           clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,
           apiRetryBaseDelay: DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
+          // 预算撞线软着陆：无 UI 控件（内部安全边界），但读 storage 以便导入/导出可覆盖；
+          // 仅显式 false 才回退旧的抛错语义
+          gracefulConverge: result.gracefulConverge !== false,
           enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
           toolConfirmationEnabled: result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled,
           // 内网地址访问：总闸 + 白名单（两者独立存储，关总闸不会清空白名单）

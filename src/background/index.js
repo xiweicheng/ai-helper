@@ -1272,6 +1272,9 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           reasoningContent: result.reasoningContent || null,
           wasRevised: result.wasRevised || false,
           resumed: true,  // 标记为恢复的任务
+          // 续跑后再次撞线同样软着陆：透传终态标记供面板维持「可续跑」入口
+          budgetEnded: result.budgetEnded === true,
+          exhaustedBy: result.exhaustedBy || null
         }).catch(err => {
           logger.warn('[Background] send RESUME completemessage failed:', err);
         });
@@ -1626,7 +1629,10 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
             executionLog: reactResult.executionLog || preselectLog,
             reflectionScore: reactResult.reflectionScore,
             wasRevised: reactResult.wasRevised || false,
-            reasoningContent: reactResult.reasoningContent || null
+            reasoningContent: reactResult.reasoningContent || null,
+            // 预算撞线软着陆：成功路径携带终态标记，面板据此把本条回复标成可续跑
+            budgetEnded: reactResult.budgetEnded || false,
+            exhaustedBy: reactResult.exhaustedBy || null
           };
         })()
       : callApiNonStream(messages, model, apiParams, sessionId);
@@ -1639,6 +1645,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         const reflectionScore = result.reflectionScore;
         const wasRevised = result.wasRevised || false;
         const reasoningContent = result.reasoningContent || null;
+        const budgetEnded = result.budgetEnded === true;
 
         // 记录非 ReAct 模式的 token 使用统计
         if (result.usage) {
@@ -1673,7 +1680,9 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           executionLog: truncatedLog,
           reflectionScore: reflectionScore,
           reasoningContent: reasoningContent,
-          wasRevised: wasRevised
+          wasRevised: wasRevised,
+          budgetEnded: budgetEnded,
+          exhaustedBy: result.exhaustedBy || null
         }).catch(err => {
           logger.warn('[Background] send backmessage failed:', err);
         });

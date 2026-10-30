@@ -947,7 +947,9 @@ export function loadConfig() {
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'enableImageInput', 'imageModelName', 'imageModels',
     'imageApiBase', 'imageApiKey', 'enableFileInput',
-    'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+    'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+    // 只为一次性清理旧残留而读：不在设置页渲染，也不参与保存
+    'reactMaxIterations',
     'toolConfirmationEnabled',
     'networkAccessEnabled',
     'enableExecutionLog',
@@ -1002,8 +1004,11 @@ export function loadConfig() {
     }
 
     // 加载 ReAct 配置（时间单位转换）
-    document.getElementById('reactMaxIterations').value = 
-      result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations;
+    // reactMaxIterations 已撤出设置页：轮数上限为内部保险丝（固定取默认值），
+    // 旧 storage 残留值不再读取/回写（后台同样忽略它），首次触达保存时自然清除
+    if (result.reactMaxIterations !== undefined) {
+      chrome.storage.local.remove('reactMaxIterations');
+    }
     document.getElementById('reactApiTimeout').value = 
       Math.round((result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout) / 60000);
     document.getElementById('reactLoopTimeout').value = 
@@ -1192,8 +1197,7 @@ export function saveConfig() {
   const apiKey = document.getElementById('apiKey').value.trim();
   const systemPrompt = document.getElementById('systemPrompt').value.trim();
   
-  // 获取 ReAct 配置（时间单位转换）
-  const reactMaxIterations = parseInt(document.getElementById('reactMaxIterations').value) || DEFAULT_REACT_CONFIG.maxIterations;
+  // 获取 ReAct 配置（时间单位转换）；最大循环次数已撤出设置页，不再读取/保存 reactMaxIterations
   const reactApiTimeout = (parseInt(document.getElementById('reactApiTimeout').value) || 5) * 60000;
   const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
   const reactToolTimeout = (parseInt(document.getElementById('reactToolTimeout').value) || 5) * 60000;
@@ -1235,19 +1239,15 @@ export function saveConfig() {
   };
   
   // 验证 ReAct 配置范围
-  if (reactMaxIterations < 10 || reactMaxIterations > 1000) {
-    showToast(`❌ ${t('settings.maxIterationsRangeError')}`, 'error');
-    return;
-  }
   if (reactApiTimeout < 60000 || reactApiTimeout > 600000) {
     showToast(`❌ ${t('settings.apiTimeoutRangeError')}`, 'error');
     return;
   }
-  if (reactLoopTimeout < 60000 || reactLoopTimeout > 7200000) {
+  if (reactLoopTimeout < 60000 || reactLoopTimeout > 86400000) {
     showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');
     return;
   }
-  if (reactToolTimeout < 60000 || reactToolTimeout > 1800000) {
+  if (reactToolTimeout < 60000 || reactToolTimeout > 3600000) {
     showToast(`❌ ${t('settings.toolTimeoutRangeError')}`, 'error');
     return;
   }
@@ -1269,8 +1269,7 @@ export function saveConfig() {
     apiKey: encodeSecret(apiKey),
     modelName: currentModel || 'deepseek-v4-pro',
     systemPrompt: systemPrompt,
-    // ReAct 配置
-    reactMaxIterations: reactMaxIterations,
+    // ReAct 配置（reactMaxIterations 已撤出：轮数上限为内部保险丝，不再落盘用户值）
     reactApiTimeout: reactApiTimeout,
     reactLoopTimeout: reactLoopTimeout,
     reactToolTimeout: reactToolTimeout,

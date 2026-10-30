@@ -320,19 +320,10 @@
     <div class="react-config">
       <h2 data-i18n="react.title">⚙️ 推理循环配置</h2>
       <p class="subtitle" data-i18n="react.subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
-      
-      <div class="react-config-item">
-        <label>
-          <span data-i18n="react.maxIterations">最大循环次数</span>
-          <span class="hint-text" data-i18n="react.maxIterationsHint">（复杂任务可适当增加）</span>
-        </label>
-        <input type="number" id="reactMaxIterations" min="10" max="1000" value="100" placeholder="100">
-        <div class="range-labels">
-          <span data-i18n="react.min">最小: 10</span>
-          <span data-i18n="react.max">最大: 1000</span>
-        </div>
-      </div>
-      
+
+      <!-- 最大循环次数已撤出设置页：轮数上限仅作内部确定性保险丝（固定 2000），
+           面向用户的约束只有时间预算；旧 storage 残留值不再被后台读取 -->
+
       <div class="react-config-item">
         <label>
           <span data-i18n="react.apiTimeout">API 请求超时</span>
@@ -351,11 +342,11 @@
           <span data-i18n="react.loopTimeout">整体循环超时</span>
           <span class="hint-text" data-i18n="react.loopTimeoutHint">（整个推理循环的最长执行时间）</span>
         </label>
-        <input type="number" id="reactLoopTimeout" min="1" max="120" step="1" value="30" placeholder="30">
+        <input type="number" id="reactLoopTimeout" min="1" max="1440" step="1" value="240" placeholder="240">
         <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
         <div class="range-labels">
           <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max120Minutes">最大: 120分钟</span>
+          <span data-i18n="react.max1440Minutes">最大: 1440分钟（24小时）</span>
         </div>
       </div>
       
@@ -364,11 +355,11 @@
           <span data-i18n="react.toolTimeout">工具执行超时</span>
           <span class="hint-text" data-i18n="react.toolTimeoutHint">（单个工具执行的最长等待时间）</span>
         </label>
-        <input type="number" id="reactToolTimeout" min="1" max="30" step="1" value="10" placeholder="10">
+        <input type="number" id="reactToolTimeout" min="1" max="60" step="1" value="10" placeholder="10">
         <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
         <div class="range-labels">
           <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max30Minutes">最大: 30分钟</span>
+          <span data-i18n="react.max60Minutes">最大: 60分钟</span>
         </div>
       </div>
       

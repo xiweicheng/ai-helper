@@ -1025,14 +1025,15 @@ export async function getCurrentActiveTabId() {
 export function getReactConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 
+      'reactApiTimeout', 'reactLoopTimeout',
       'reactToolTimeout', 'reactClarifyTimeout'
     ], (result) => {
+      // maxIterations 已撤出设置页（bg 内部保险丝固定取默认 2000），面板不再生成该字段；
+      // 默认值统一取自 constants，避免两侧各自硬编码漂移（旧 7200000 即 2h，已落后于新默认 4h）
       resolve({
-        maxIterations: result.reactMaxIterations || 30,
-        apiTimeout: result.reactApiTimeout || 60000,
-        loopTimeout: result.reactLoopTimeout || 7200000,
-        toolTimeout: result.reactToolTimeout || 30000,
+        apiTimeout: result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout,
+        loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
+        toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
         clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout
       });
     });

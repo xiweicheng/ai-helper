@@ -12,8 +12,9 @@ const EXPORT_KEYS = [
   'apiBase', 'modelName', 'customModels', 'systemPrompt',
   'enableImageInput', 'imageModelName', 'imageModels',
   'imageApiBase',
-  'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout',
-  'reactToolTimeout', 'enableToolPreselect', 'toolConfirmationEnabled',
+  // reactMaxIterations 已撤出（轮数为内部保险丝不落盘）；gracefulConverge 无 UI 控件但可经导入导出覆盖
+  'reactApiTimeout', 'reactLoopTimeout',
+  'reactToolTimeout', 'gracefulConverge', 'enableToolPreselect', 'toolConfirmationEnabled',
   'reflectionConfig',
   'completionVerificationConfig',
   'enableExecutionLog',
@@ -49,6 +50,10 @@ const EXPORT_KEYS = [
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
 const SECRET_KEYS = ['apiKey', 'imageApiKey', 'agentToken'];
+
+// 已下线、但可能仍留在旧导出文件里的 key：导入时静默丢弃，不当作非法配置。
+// 白名单校验对未知 key 一律拒绝——只删白名单不配套这里，等于让所有旧备份文件都导不进来。
+const RETIRED_KEYS = ['reactMaxIterations'];
 
 /**
  * 导入时混淆配置中的密钥字段（确保落存储的是 enc: 格式）
@@ -239,8 +244,9 @@ function validateImportData(data) {
     return { valid: false, error: t('configDialog.unrecognizedFormat') };
   }
 
-  // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）
+  // 校验每个 key 都在白名单内（或为智能体工具配置动态 key）；已下线 key 直接放行，写入前丢弃
   for (const key of Object.keys(config)) {
+    if (RETIRED_KEYS.includes(key)) continue;
     if (!EXPORT_KEYS.includes(key) && !SECRET_KEYS.includes(key) && !key.startsWith('agentEnabledTools_') && !key.startsWith('agentMcpClosedServers_')) {
       return { valid: false, error: t('configDialog.unknownConfigKey', { key }) };
     }
@@ -290,6 +296,9 @@ export async function confirmImport() {
     delete config.allowedNetworkHosts;
     // 清理旧导出文件中可能仍存在的已下线反思配置（工具级反思），避免回灌进 storage
     stripRetiredReflectionKeys(config);
+    // 已下线 key（如 reactMaxIterations）不得回灌：轮数上限现在是内部保险丝，
+    // storage 里再留一份旧值只会让「到底谁说了算」重新长出歧义
+    for (const key of RETIRED_KEYS) delete config[key];
     const strategy = document.getElementById('importStrategyReplace')?.checked ? 'replace' : 'merge';
 
     // 合并导入 + 新格式文件：厂商配置按 ID 对齐合并
