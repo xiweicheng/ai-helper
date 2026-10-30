@@ -233,7 +233,11 @@ async function exec(options) {
  * @returns {Promise<any>}
  */
 export function runOfflineTask(options) {
-  const run = queue.then(() => exec(options), () => exec(options));
+  const shouldSkip = options && typeof options.shouldSkip === 'function' ? options.shouldSkip : null;
+  // 出队瞬间再判一次：被取消的任务空转返回，不 spawn worker、不 decode。
+  // 这是 stop 抢跑的前提 —— 队列是全局串行 FIFO，否则整段定稿要排在所有待精修句子后面。
+  const dequeue = () => (shouldSkip && shouldSkip() ? null : exec(options));
+  const run = queue.then(dequeue, dequeue);
   // 队列本身不继承失败：一个任务炸掉不影响后面的任务
   queue = run.then(() => {}, () => {});
   return run;
