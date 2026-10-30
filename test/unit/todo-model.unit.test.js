@@ -20,7 +20,15 @@ import {
   formatDueAt,
   formatDoneStamp,
   isOverdue,
+  nextPriority,
   buildTodoDigest,
+  buildItemDigest,
+  TODO_EXPORT_VERSION,
+  selectTodosForExport,
+  buildTodoExportPayload,
+  buildTodoMarkdownExport,
+  parseTodoImport,
+  mergeTodoImport,
 } from '../../src/side_panel/todo-model.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -63,7 +71,7 @@ describe('两段式分组', () => {
     ]);
     expect(active.map(x => x.id)).toEqual(['b', 'a']);
     expect(done.map(x => x.id)).toEqual(['c']);
-    expect(stats).toEqual({ total: 3, done: 1, active: 2 });
+    expect(stats).toEqual({ total: 3, done: 1, active: 2, pending: 1, doing: 1 });
   });
 
   test('order 缺失时回退创建时间，不与其他条目乱序', () => {
@@ -83,8 +91,20 @@ describe('两段式分组', () => {
   });
 
   test('空表与非法入参不抛错', () => {
-    expect(groupTodos([]).stats).toEqual({ total: 0, done: 0, active: 0 });
+    expect(groupTodos([]).stats).toEqual({ total: 0, done: 0, active: 0, pending: 0, doing: 0 });
     expect(groupTodos(null).active).toEqual([]);
+  });
+
+  test('处理中单独计数（面板进度要显示它，不能只剩「完成 / 总数」）', () => {
+    const { stats } = groupTodos([
+      todo({ id: 'p1', status: TODO_STATUS.PENDING }),
+      todo({ id: 'd1', status: TODO_STATUS.DOING }),
+      todo({ id: 'd2', status: TODO_STATUS.DOING }),
+      todo({ id: 'x1', status: TODO_STATUS.DONE, completedAt: NOW }),
+    ]);
+    expect(stats.pending).toBe(1);
+    expect(stats.doing).toBe(2);
+    expect(stats.pending + stats.doing).toBe(stats.active);
   });
 
   test('已完成条目不会残留在待办组', () => {
@@ -335,5 +355,163 @@ describe('Markdown 导出', () => {
     ], { now: NOW });
     expect(md).toContain('- [ ] 第一行 第二行');
     expect(md).toContain('  - 备注：a b');
+  });
+});
+
+describe('优先级循环（快捷键 Alt+P）', () => {
+  test('高 → 中 → 低 → 未设置 → 高', () => {
+    expect(nextPriority(TODO_PRIORITY.HIGH)).toBe(TODO_PRIORITY.MEDIUM);
+    expect(nextPriority(TODO_PRIORITY.MEDIUM)).toBe(TODO_PRIORITY.LOW);
+    expect(nextPriority(TODO_PRIORITY.LOW)).toBe(null);
+    expect(nextPriority(null)).toBe(TODO_PRIORITY.HIGH);
+  });
+
+  test('脏值当作未设置，不把非法值写进库', () => {
+    expect(nextPriority('urgent')).toBe(TODO_PRIORITY.HIGH);
+    expect(nextPriority(undefined)).toBe(TODO_PRIORITY.HIGH);
+  });
+});
+
+describe('导入导出', () => {
+  const mkPending = () => todo({ id: 'a', title: '写方案', order: 0 });
+  const mkDoing = () => todo({ id: 'b', title: '对需求', status: TODO_STATUS.DOING, order: 1 });
+  const mkDone = () => todo({ id: 'c', title: '搭环境', status: TODO_STATUS.DONE, completedAt: NOW, order: 2 });
+
+  test('范围三选一：全部 / 仅待办 / 仅已完成', () => {
+    const all = [mkPending(), mkDoing(), mkDone()];
+    expect(selectTodosForExport(all, 'all').map(t => t.id)).toEqual(['a', 'b', 'c']);
+    expect(selectTodosForExport(all, 'active').map(t => t.id)).toEqual(['a', 'b']);
+    expect(selectTodosForExport(all, 'done').map(t => t.id)).toEqual(['c']);
+    expect(selectTodosForExport(null, 'all')).toEqual([]);
+  });
+
+  test('JSON 载荷带版本与范围，字段只留白名单（不把内部脏字段带出去）', () => {
+    const payload = buildTodoExportPayload([{ ...mkPending(), junk: 1 }], { scope: 'active', now: NOW });
+    expect(payload.kind).toBe('todos');
+    expect(payload.version).toBe(TODO_EXPORT_VERSION);
+    expect(payload.scope).toBe('active');
+    expect(payload.exportedAt).toBe(NOW);
+    expect(payload.todos).toHaveLength(1);
+    expect(payload.todos[0]).toEqual({
+      id: 'a',
+      title: '写方案',
+      note: '',
+      status: 'pending',
+      prevStatus: null,
+      priority: null,
+      link: '',
+      order: 0,
+      dueAt: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+      completedAt: null,
+    });
+  });
+
+  test('Markdown 导出：带头部说明，条目走与清单同一套格式', () => {
+    const md = buildTodoMarkdownExport([mkPending(), mkDone()], { scope: 'all', now: NOW });
+    expect(md.startsWith('# ')).toBe(true);
+    expect(md).toContain('- [ ] 写方案');
+    expect(md).toContain('- [x] 搭环境（10月29日 完成）');
+  });
+
+  test('Markdown 导出也受范围约束（仅待办不出现已完成）', () => {
+    const md = buildTodoMarkdownExport([mkPending(), mkDone()], { scope: 'active', now: NOW });
+    expect(md).toContain('写方案');
+    expect(md).not.toContain('搭环境');
+  });
+
+  test('解析：接受 {todos:[]} 与裸数组，坏结构判 format', () => {
+    expect(parseTodoImport({ todos: [{ id: 'x', title: 'A' }] })).toEqual({
+      ok: true,
+      todos: [{ id: 'x', title: 'A' }],
+    });
+    expect(parseTodoImport([{ title: 'A' }]).ok).toBe(true);
+    expect(parseTodoImport({})).toEqual({ ok: false, reason: 'format' });
+    expect(parseTodoImport('nope')).toEqual({ ok: false, reason: 'format' });
+    expect(parseTodoImport({ todos: 'x' })).toEqual({ ok: false, reason: 'format' });
+  });
+
+  test('合并：同 id 跳过不覆盖，新条目 order 顺延', () => {
+    const base = [todo({ id: 'a', title: 'A', order: 0 })];
+    const incoming = [
+      { id: 'a', title: 'A 改过的标题' },
+      { id: 'b', title: 'B' },
+      { title: 'C 没 id' },
+    ];
+    const r = mergeTodoImport(base, incoming, NOW);
+
+    expect(r.added).toBe(2);
+    expect(r.skipped).toBe(1);
+    expect(r.todos.map(t => t.title)).toEqual(['A', 'B', 'C 没 id']);
+    expect(r.addedItems.map(t => t.order)).toEqual([1, 2]);
+    expect(r.addedItems.every(t => !!t.id)).toBe(true);
+  });
+
+  test('无标题条目计入跳过，不入库', () => {
+    const r = mergeTodoImport([], [{ title: '  ' }, { title: 'B' }], NOW);
+    expect(r.added).toBe(1);
+    expect(r.skipped).toBe(1);
+  });
+
+  test('一个文件里重复 id 只导第一条', () => {
+    const r = mergeTodoImport([], [
+      { id: 'x', title: '第一条' },
+      { id: 'x', title: '第二条' },
+    ], NOW);
+    expect(r.added).toBe(1);
+    expect(r.todos[0].title).toBe('第一条');
+  });
+});
+
+describe('单条组合文本（填入输入框 / 拖拽 / 复制共用）', () => {
+  test('标题、状态、优先级、截止、备注、链接一行内组合好', () => {
+    const md = buildItemDigest(todo({
+      title: '写方案',
+      status: TODO_STATUS.DOING,
+      priority: TODO_PRIORITY.HIGH,
+      dueAt: new Date(2026, 9, 30).getTime(),
+      note: '先列大纲',
+      link: 'https://example.com/doc',
+    }), { now: NOW });
+
+    expect(md).toBe([
+      '- [ ] ⏳ 写方案（高优先级）（截止 明天） [example.com](https://example.com/doc)',
+      '  - 备注：先列大纲',
+    ].join('\n'));
+  });
+
+  test('已完成条目带完成时间，备注照样带出（描述不能只留在面板里）', () => {
+    const md = buildItemDigest(todo({
+      title: '搭环境',
+      status: TODO_STATUS.DONE,
+      completedAt: new Date(2026, 9, 28).getTime(),
+      note: '装了 Node 20',
+    }), { now: NOW });
+
+    expect(md).toBe([
+      '- [x] 搭环境（10月28日 完成）',
+      '  - 备注：装了 Node 20',
+    ].join('\n'));
+  });
+
+  test('空标题返回空串，不产出只有符号的脏行', () => {
+    expect(buildItemDigest(todo({ title: '   ' }), { now: NOW })).toBe('');
+    expect(buildItemDigest(null, { now: NOW })).toBe('');
+  });
+
+  test('withPrompt 追加提问模板（单条也要能直接拿去追问 AI）', () => {
+    const md = buildItemDigest(todo({ title: 'A' }), { now: NOW, withPrompt: true });
+    expect(md.endsWith('请基于以上待办，给出实施顺序与风险提示。')).toBe(true);
+  });
+
+  test('与批量清单首行口径一致：两处格式不许漂移', () => {
+    const pending = todo({ title: '写方案', status: TODO_STATUS.DOING, priority: TODO_PRIORITY.HIGH, order: 0 });
+    const done = todo({ title: '搭环境', status: TODO_STATUS.DONE, completedAt: NOW, order: 1 });
+
+    expect(buildItemDigest(pending, { now: NOW }).split('\n')[0])
+      .toBe(buildTodoDigest([pending], { now: NOW }).split('\n')[1]);
+    expect(buildItemDigest(done, { now: NOW }).split('\n')[0])
+      .toBe(buildTodoDigest([done], { now: NOW }).split('\n')[1]);
   });
 });

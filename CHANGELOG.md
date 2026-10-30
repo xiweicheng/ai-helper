@@ -4,6 +4,38 @@
 
 ## 2026-10-30
 
+### 待办第二轮：语言热切换、快捷键、单条填入与拖拽、导入导出、处理中计数与统计视图
+
+> 来源：用户实测提出六件事——切语言要重启插件才生效、待办操作要支持快捷键、批量填入没有意义只要单条、条目要能拖进输入框且带组合好 的文本、头部看不到处理中条数、需要一个统计视图看完成情况与比例。
+
+**语言热切换：三处一起修才有效**
+- 根因不是「翻译没加载」，是三条链路各自断：骨架文案写 `t(...)` 插值，只建 DOM 那一刻定稿；JS 拼的列表不归 `applyI18n` 管；`initI18n()` 异步、`initTodoPanel()` 同步，骨架可能先建在默认语言上。
+- 骨架全部改挂 `data-i18n*` + `applyI18n(containerEl)`，列表/菜单/统计浮层各自 `subscribe()` 重渲染，`initI18n().then()` 再补一次 `render()`。切语言立即生效，不必关面板更不必重开插件。
+
+**快捷键（Alt + 字母，作用对象是当前行）**
+- `Alt+T` 开关面板、`Alt+A` 聚焦添加框（面板关着也生效）；`Alt+B` 备注、`Alt+L` 链接、`Alt+D` 完成/退回、`Alt+P` 循环优先级（只对聚焦行生效）；`↑`/`↓` 移行。
+- `focusin` 记当前行 + 重渲染后 `restoreRowFocus()` 送回同一行——否则按一次方向键焦点掉到 `body`，后续快捷键全部失效。词条同步登记到 `#shortcutsModal` 与中英 locales。
+
+**只留单条填入 + 拖拽进输入框**
+- 删除批量「填入输入框」「复制清单」：积压越多，把整份清单塞进输入框越没处下手。
+- `buildItemDigest` 与整单摘要共用 `itemLine`/`noteLine`，所以行内填入与拖拽落下的是同一份文本（标题行 + 状态/优先级/截止 + 备注 + 链接），可直接追问 AI 做任务规划。拖拽 `setData('text/plain', digest)`，落在 `#userInput` 只追加不发送。
+
+**导入导出：先范围再格式，合并为主、替换二次确认**
+- 新增 `todo-io.js`（Blob + `a[download]` + 选文件）。选文件必须同时接 `change` 与 `cancel`，否则用户取消后 Promise 永久悬着。
+- 文件名 `ai-helper-todos[-active|-done]-YYYY-MM-DD.ext`；JSON 可回导（字段白名单含 `prevStatus`/`order`/`completedAt`），Markdown 给人看；范围内为空不生成空文件。
+- 合并只追加、同 `id` 跳过不覆盖，失败只摘掉本次新增；替换先弹全局确认框，**写失败把原数据写回库**；空文件 / 坏 JSON 拒绝并保留现有数据；导入成功切回待办 Tab。
+- 头部菜单六项且每项都带图标：探针截图里发现三个导出项没图标而其余有，整列文案左缘参差，已补齐并补一条结构守卫单测。
+
+**处理中计数 + 完成流水 + 统计浮层**
+- `groupTodos` 的 stats 扩到 `total/done/active/pending/doing`，进度行按需追加 `· 处理中 z`（z=0 不占字）。
+- 完成率与近 7 天趋势单靠当前清单骗不出来，加一份 90 天轻量流水 `chrome.storage.local.todoStatsLog`：独立 `writeChain` 串行读-改-写，新增 +added、进入完成 +done、撤销按 `completedAt` 那天 -done，失败只 `warn` 不影响待办。
+- 统计视图拆两层：`todo-stats-view.js` 纯渲染（只依赖 i18n，柱高归一化与除零可直接单测）、`todo-stats-panel.js` 管挂载与键盘。内容为完成率 + 四态 + 逾期 + 近 7 天柱图 + 今日新增/完成 + 连续天数 + 高优先级；`Esc`/遮罩/`×` 三种关法，层级 10015 低于菜单 10020，开着时切语言立即重刷。
+
+**验证**
+- 单测：`todo-model` 54 / `todo-manager` 39 / `todo-panel-structure` 87 / `todo-io` 10 / `todo-stats` 10 / `todo-stats-view` 5；全量 `vitest run` **224 文件 / 3513 例全绿**；`npm run lint` 与 `npm run theme:check` 无输出；`npm run build:silent` BUILD_SUCCESS。
+- 新增探针 `test-results-probes/_todo-io-stats.mjs` **40/40 ALL CHECKS PASSED**：真下载 JSON/Markdown 并校验内容、空范围不导空文件、合并去重/重复导入/坏 JSON/替换确认/空文件不清库、统计浮层数值与 7 柱与层级与三种关法、切语言后浮层与 header 菜单立即变英文。
+- `_todo-panel-visual.mjs` 同步修掉三处**过期断言**（批量入口已删、`:focus-within` 会让操作浮现、点哪行焦点跟哪行），修完整轮 ALL CHECKS PASSED。
+
 ### 用户气泡正文对比度：白字从 3.66 提到 5.59，并把这条不变量做成门禁
 
 > 来源：上一轮「点停靠条芯片定位」的探针顺带报出的既有问题——用户气泡正文对比度 **亮 3.66 / 暗 2.45**，都低于 WCAG AA 的 4.5:1。用户批准单开一项修。

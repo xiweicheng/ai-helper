@@ -15,6 +15,9 @@ const RAIL = read('src/side_panel/side-rail.js');
 const PANEL = read('src/side_panel/todo-panel.js');
 const MODEL = read('src/side_panel/todo-model.js');
 const MANAGER = read('src/side_panel/todo-manager.js');
+const MODAL_HTML = read('side_panel.html');
+const LOCALE_ZH = read('src/shared/locales/zh.js');
+const LOCALE_EN = read('src/shared/locales/en.js');
 
 // 面板自己注册的中英文案块（用于「中英成对」守卫）
 const ZH = PANEL.slice(PANEL.indexOf("registerTranslations('zh'"), PANEL.indexOf("registerTranslations('en'"));
@@ -427,7 +430,7 @@ describe('分层约束', () => {
   });
 });
 
-describe('一键填入输入框', () => {
+describe('单条填入输入框', () => {
   test('追加而非覆盖草稿，并复用 adjustInputHeight', () => {
     expect(PANEL).toContain("document.getElementById('userInput')");
     expect(PANEL).toContain('adjustInputHeight()');
@@ -435,9 +438,9 @@ describe('一键填入输入框', () => {
     expect(PANEL).toMatch(/base\s*\?\s*`\$\{base\}\\n\\n\$\{digest\}`\s*:\s*digest/);
   });
 
-  test('Markdown 由模型层生成（面板不自己拼清单）', () => {
-    expect(PANEL).toContain('buildTodoDigest');
-    expect(MODEL).toContain('export function buildTodoDigest');
+  test('组合文本由模型层生成（面板不自己拼清单）', () => {
+    expect(PANEL).toContain('buildItemDigest');
+    expect(MODEL).toContain('export function buildItemDigest');
   });
 });
 
@@ -533,5 +536,253 @@ describe('与左侧会话停靠条共存', () => {
 describe('不留无人调用的导出', () => {
   test('closeTodoPanel 全仓无调用方，不得重新引入', () => {
     expect(PANEL).not.toContain('export function closeTodoPanel');
+  });
+});
+
+describe('语言热切换（换语言不必重启插件）', () => {
+  const SKELETON = PANEL.slice(
+    PANEL.indexOf('containerEl.innerHTML = `'),
+    PANEL.indexOf("getSideRailSlot('todo')")
+  );
+
+  test('骨架文案挂 data-i18n 系列属性，交给 applyI18n 统一填充', () => {
+    expect(SKELETON).toContain('data-i18n-title="todo.toggleTitle"');
+    expect(SKELETON).toContain('data-i18n="todo.title"');
+    expect(SKELETON).toContain('data-i18n="todo.tabActive"');
+    expect(SKELETON).toContain('data-i18n="todo.tabDone"');
+    expect(SKELETON).toContain('data-i18n-placeholder="todo.placeholder"');
+    expect(SKELETON).toContain('data-i18n-title="todo.addTitle"');
+  });
+
+  test('骨架里不能再有建 DOM 时求值的 t(...)：那会在建 DOM 那一刻定稿', () => {
+    expect(SKELETON).not.toMatch(/\$\{escapeHtml\(t\('/);
+    expect(SKELETON).not.toMatch(/\$\{escapeAttr\(t\('/);
+  });
+
+  test('语言变更时既 applyI18n 也要重渲列表（列表是 JS 拼的，applyI18n 碰不到）', () => {
+    const sub = PANEL.slice(PANEL.indexOf('subscribe(() => {'));
+    expect(sub.length, '面板必须订阅语言变更').toBeGreaterThan(0);
+    const body = sub.slice(0, sub.indexOf('\n  });'));
+    expect(body).toContain('applyI18n(');
+    expect(body).toContain('render()');
+  });
+
+  test('initI18n 完成后再对齐一次，兜住「面板先初始化、语言后到」的时序', () => {
+    expect(PANEL).toContain('subscribe');
+    expect(PANEL).toContain('applyI18n');
+    expect(PANEL).toContain('initI18n');
+    expect(PANEL).toMatch(/initI18n\(\)\.then\(\(\) => \{[\s\S]*?applyI18n\(containerEl\)[\s\S]*?render\(\)[\s\S]*?\}\)/);
+  });
+});
+
+describe('单条进出输入框（批量入口已撤）', () => {
+  test('头部批量「填入输入框」按钮已删', () => {
+    expect(PANEL).not.toContain('data-action="fill-input"');
+    expect(PANEL).not.toMatch(/case 'fill-input'/);
+    expect(PANEL).not.toContain('todo-fill-btn');
+  });
+
+  test('头部菜单不再放批量复制：积压越多越无意义', () => {
+    const menu = PANEL.slice(PANEL.indexOf('function openHeaderMenu'));
+    const body = menu.slice(0, menu.indexOf('\n}'));
+    expect(body).not.toContain('copy-clipboard');
+    expect(body).not.toContain('copy-with-prompt');
+  });
+
+  test('行内可见按钮换成「填入输入框」，复制挪进行菜单', () => {
+    const item = PANEL.slice(PANEL.indexOf('function renderItem'));
+    const body = item.slice(0, item.indexOf('\n}\n'));
+    expect(body).toContain('data-action="fill-item"');
+    expect(body).not.toContain('data-action="copy-item"');
+
+    const rowMenu = PANEL.slice(PANEL.indexOf('function openRowMenu'));
+    const menuBody = rowMenu.slice(0, rowMenu.indexOf('\n}'));
+    expect(menuBody).toContain("action: 'copy-item'");
+    expect(menuBody).toContain("action: 'copy-item-prompt'");
+  });
+
+  test('填入/复制/拖拽都走单条组合文本，不再只丢一个标题', () => {
+    expect(PANEL).not.toMatch(/copyText\(todo\.title/);
+    expect(PANEL).toContain('buildItemDigest(');
+  });
+
+  test('拖出去带的是组合文本（内部重排靠 dragState，不读 dataTransfer）', () => {
+    const start = PANEL.slice(PANEL.indexOf('function handleDragStart'));
+    const body = start.slice(0, start.indexOf('\n}\n'));
+    expect(body).toContain("setData('text/plain', buildItemDigest(");
+    expect(body).toContain("effectAllowed = 'copyMove'");
+  });
+});
+
+describe('待办快捷键（Alt + 字母，作用于选中行）', () => {
+  test('条目可键盘聚焦，↑/↓ 在条目间移动', () => {
+    const item = PANEL.slice(PANEL.indexOf('function renderItem'));
+    expect(item.slice(0, item.indexOf('\n}\n'))).toContain('tabindex="0"');
+    expect(PANEL).toContain("'ArrowDown'");
+    expect(PANEL).toContain('moveRowFocus(');
+  });
+
+  test('方向键只在焦点不在输入框/编辑器时接手（不与光标移动抢）', () => {
+    expect(PANEL).toContain("'input, textarea, [contenteditable=\"true\"]'");
+    const scope = PANEL.slice(PANEL.indexOf('function moveRowFocus'));
+    expect(scope.slice(0, scope.indexOf('\n}\n'))).toContain('next.focus()');
+  });
+
+  test('六个键位：T 开关 / A 聚焦添加 / B 备注 / L 链接 / D 完成 / P 优先级', () => {
+    const table = PANEL.slice(PANEL.indexOf('const TODO_SHORTCUTS = {'));
+    const body = table.slice(0, table.indexOf('\n};'));
+    for (const code of ['KeyT', 'KeyA', 'KeyB', 'KeyL', 'KeyD', 'KeyP']) {
+      expect(body, `缺少 ${code}`).toContain(`${code}:`);
+    }
+    // 与仓库其它快捷键同一守卫：不带 shift/ctrl/meta，避免和 Alt+Shift+S 这类撞车
+    expect(PANEL).toContain('if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;');
+  });
+
+  test('一条待办都没有时不抢键（不 preventDefault）', () => {
+    const handler = PANEL.slice(PANEL.indexOf('function handleTodoShortcut'));
+    const body = handler.slice(0, handler.indexOf('\n}\n'));
+    const guardAt = body.indexOf('const id = resolveTargetId()');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(body.slice(guardAt)).toContain('if (!id) return;');
+    expect(body.slice(guardAt).indexOf('e.preventDefault()'))
+      .toBeGreaterThan(body.slice(guardAt).indexOf('if (!id) return;'));
+  });
+
+  test('重渲染后把焦点送回原来那一行（否则连按快捷键就没反应）', () => {
+    const render = PANEL.slice(PANEL.indexOf('function render() {'));
+    const body = render.slice(0, render.indexOf('\n}\n'));
+    expect(body).toContain("closest?.('.todo-item')");
+    expect(body).toContain('restoreRowFocus(');
+  });
+
+  test('快捷键登记进快捷键弹窗与中英词条（不许只存在于代码里）', () => {
+    for (const key of ['todoToggle', 'todoAdd', 'todoSelect', 'todoNote', 'todoLink', 'todoDone', 'todoPriority']) {
+      expect(MODAL_HTML, `弹窗缺 shortcuts.${key}`).toContain(`shortcuts.${key}`);
+      expect(LOCALE_ZH, `中文词条缺 ${key}`).toContain(`${key}:`);
+      expect(LOCALE_EN, `英文词条缺 ${key}`).toContain(`${key}:`);
+    }
+  });
+
+  test('键盘聚焦的行要有可见焦点环（否则方向键移动看不见）', () => {
+    expect(STYLES).toContain('.todo-item:focus-visible');
+  });
+});
+
+describe('批量导入导出（header 更多菜单）', () => {
+  test('头部菜单不再是空数组，五项入口齐全', () => {
+    const header = PANEL.slice(PANEL.indexOf('function headerMenuItems()'));
+    const body = header.slice(0, header.indexOf('\n}\n'));
+    expect(body).not.toContain('return [];');
+    for (const action of ['export-all', 'export-active', 'export-done', 'import-merge', 'import-replace']) {
+      expect(body, `菜单缺 ${action}`).toContain(`action: '${action}'`);
+    }
+  });
+
+  test('头部菜单每一项都带图标：混排会让文案左缘参差（三行导出曾整组往左缩进 20px）', () => {
+    const header = PANEL.slice(PANEL.indexOf('function headerMenuItems()'));
+    const body = header.slice(0, header.indexOf('\n}\n'));
+    const rows = body.split('\n').filter(line => line.includes("action: '"));
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const row of rows) {
+      expect(row.trim()).toContain('icon: ICONS.');
+    }
+  });
+
+  test('导出范围三选一后先选格式，再交给 io 层下载；空范围不导空文件', () => {
+    expect(PANEL).toContain("from './todo-io.js'");
+    for (const scope of ['all', 'active', 'done']) {
+      expect(PANEL, `缺少 ${scope} 的导出入口`).toContain(`openExportFormatMenu('${scope}')`);
+    }
+    const fn = PANEL.slice(PANEL.indexOf('function exportTodoScope('));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toContain('downloadTodoExport(');
+    expect(body).toContain('format');
+    expect(body).toContain('exportEmptyToast');
+  });
+
+  test('导入：选文件 → 解析 → 交给编排层，解析错有专门提示', () => {
+    const fn = PANEL.slice(PANEL.indexOf('async function importTodoFile('));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    expect(body).toContain('pickTodoImportFile(');
+    expect(body).toContain('readTodoImportFile(');
+    expect(body).toContain('importTodos(');
+    expect(body).toContain('importJsonError');
+    expect(body).toContain('importFormatError');
+  });
+
+  test('替换全部必须二次确认，且确认在落库之前', () => {
+    const fn = PANEL.slice(PANEL.indexOf('async function importTodoFile('));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    const confirmAt = body.indexOf('confirmAction(');
+    const importAt = body.indexOf('importTodos(');
+    expect(confirmAt).toBeGreaterThan(-1);
+    expect(importAt).toBeGreaterThan(confirmAt);
+    expect(body).toContain("mode === 'replace'");
+  });
+
+  test('新增入口中英词条成对（缺一个英文就是半截翻译）', () => {
+    const keys = [
+      'exportAll', 'exportActive', 'exportDone', 'exportJson', 'exportMd',
+      'importMerge', 'importReplace', 'replaceConfirmMsg', 'importedToast',
+    ];
+    for (const key of keys) {
+      expect(ZH, `中文缺 ${key}`).toContain(`${key}:`);
+      expect(EN, `英文缺 ${key}`).toContain(`${key}:`);
+    }
+  });
+});
+
+describe('统计视图（处理中计数 + 统计浮层）', () => {
+  test('进度行显示处理中条数（不能只有「完成 / 总数」）', () => {
+    expect(PANEL).toContain('stats.doing');
+    expect(ZH).toContain('progressDoing:');
+    expect(EN).toContain('progressDoing:');
+  });
+
+  test('头部菜单有统计入口，点了打开浮层', () => {
+    const header = PANEL.slice(PANEL.indexOf('function headerMenuItems()'));
+    expect(header.slice(0, header.indexOf('\n}\n'))).toContain("action: 'stats'");
+    const handler = PANEL.slice(PANEL.indexOf('async function handleMenuAction('));
+    const body = handler.slice(0, handler.indexOf('\n}\n'));
+    expect(body).toContain("case 'stats':");
+    expect(body).toContain('openTodoStats()');
+    expect(PANEL).toContain("from './todo-stats-panel.js'");
+  });
+
+  test('浮层：纯视图函数渲染，Esc / 遮罩 / 关闭按钮都能关，关掉摘监听', () => {
+    const src = read('src/side_panel/todo-stats-panel.js');
+    expect(src).toContain('buildStatsHtml(');
+    expect(src).toContain("'Escape'");
+    expect(src).toContain('e.target === overlayEl');
+    expect(src).toContain('export async function openTodoStats');
+    expect(src).toContain('export function closeTodoStats');
+    expect(src).toContain('removeEventListener');
+  });
+
+  test('浮层数字来自流水：loadStatsLog + summarizeStats + 当前清单', () => {
+    const src = read('src/side_panel/todo-stats-panel.js');
+    expect(src).toContain('loadStatsLog(');
+    expect(src).toContain('summarizeStats(');
+    expect(src).toContain('getTodoGroups(');
+  });
+
+  test('统计文案中英成对', () => {
+    const view = read('src/side_panel/todo-stats-view.js');
+    const zh = view.slice(view.indexOf("registerTranslations('zh'"), view.indexOf("registerTranslations('en'"));
+    const en = view.slice(view.indexOf("registerTranslations('en'"));
+    for (const key of ['title', 'rate', 'doneOf', 'pending', 'doing', 'done', 'overdue', 'week', 'todayAdded', 'todayDone', 'streak', 'empty']) {
+      expect(zh, `中文缺 ${key}`).toContain(`${key}:`);
+      expect(en, `英文缺 ${key}`).toContain(`${key}:`);
+    }
+  });
+
+  test('浮层样式走 token，层级低于菜单（菜单要能盖在浮层上）', () => {
+    const overlay = rule(STYLES, '.todo-stats-overlay {');
+    expect(overlay).toContain('position: fixed');
+    const card = rule(STYLES, '.todo-stats-card {');
+    expect(card).toContain('var(--bg-elevated)');
+    const z = STYLES.match(/\.todo-stats-overlay \{[\s\S]*?z-index: (\d+)/);
+    expect(z).toBeTruthy();
+    expect(Number(z[1])).toBeLessThan(10020);
   });
 });

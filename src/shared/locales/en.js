@@ -415,6 +415,13 @@ export default {
     closeCurrentSession: 'Close current session',
     editLastMessage: 'Edit last user message',
     messageFullscreen: 'View answer fullscreen / exit',
+    todoToggle: 'Toggle todo panel',
+    todoAdd: 'Focus the todo input',
+    todoSelect: 'Move between todo items (inside panel)',
+    todoNote: 'Add a note to the selected todo',
+    todoLink: 'Add a link to the selected todo',
+    todoDone: 'Mark done / back to todo',
+    todoPriority: 'Cycle priority',
   },
 
   // Version info modal

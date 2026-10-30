@@ -127,3 +127,36 @@
 **两个实现缺陷由探针暴露**（单测看不见）：① `handleChange` 的 link 分支缺 `linkEditId` 守卫，重渲染拆掉脏输入框时浏览器补发 `change` → 双写双 toast；② 「取消」按钮点下去时 `change`/`focusout` 都比 `click` 早，自动保存抢跑使取消变成死按钮 → 改为在 `pointerdown` 就 `cancelLinkEdit()`。两条都已补源码守卫单测与探针 O3b/O6b。
 
 **验证面新增**：单测 `todo-model` 39 例 / `todo-manager` 29 例 / `todo-panel-structure` 56 例（双 Tab、状态动作可见、优先级色条、外部链接、菜单不换行、几何夹取、i18n 中英成对）；探针新增 M（标记完成入口+撤销+智能恢复+菜单不换行实测）、N（色条真实渲染色与 token 同值）、O（胶囊/开标签/非法拒收/移除/取消/重载持久）、P（面板底边与输入区上沿的几何不变量、输入区增高跟随、矮窗口）、Q（Tab 来回切高度不变、添加条目仍长高、超长标题下撤销按钮不折行且文本被截断、重开面板锁定归零）五组，整轮跑 ALL CHECKS PASSED。
+
+## 10. 2026-10-30 第二轮：语言热切换、快捷键、导入导出、统计
+
+用户提了六件事：切语言必须重启插件才生效；待办操作要支持快捷键；只要单条填入、去掉批量；条目要能拖进输入框且带组合文本；头部要显示处理中条数；要一个统计视图看完成情况与比例。以下是本轮实际落地。
+
+**10.1 语言热切换（三处一起修）**
+
+单点修不掉：① 面板骨架文案原本写成 `t(...)` 插值，只会在建 DOM 那一刻定稿 → 全部改为 `data-i18n` / `data-i18n-placeholder` / `data-i18n-title` / `data-i18n-aria-label`，由 `applyI18n(containerEl)` 统一填充；② JS 拼出来的列表 / 菜单 / 统计浮层不归 `applyI18n` 管 → 各自 `subscribe()` 重渲染（统计浮层只在 `.show` 时刷）；③ `initI18n()` 是异步、`initTodoPanel()` 是同步，骨架可能先建在默认语言上 → 用 `.then()` 补一次 `render()`。结论：切语言立即生效，不用关面板、更不用重开插件。
+
+**10.2 快捷键（Alt + 字母，作用对象是当前行）**
+
+沿用仓库既定样式（`e.altKey && !shift/ctrl/meta` + `e.code`）。`Alt+T` 开关面板、`Alt+A` 聚焦添加框（这两个面板关着也生效），`Alt+B` 备注、`Alt+L` 链接、`Alt+D` 完成/退回、`Alt+P` 循环优先级（这四个只对聚焦行生效）。`↑`/`↓` 在行间移动焦点，`focusin` 把 `activeId` 记成当前行，重渲染后 `restoreRowFocus()` 送回同一行——否则按一次键焦点就掉到 `body`。全部词条登记在 `side_panel.html` 的 `#shortcutsModal` 与 `locales/{zh,en}.js`。
+
+**10.3 只留单条填入，并支持拖拽**
+
+批量的「填入输入框」「复制清单」删除（积压越多越没意义，用户原话）。`buildItemDigest(todo)` 与整单摘要共用 `itemLine` / `noteLine`，所以单条与拖拽落下的文本口径完全一致：标题行（含状态标记、高优先级、截止）+ 备注行 + 链接。拖拽复用行 `⋯` 的同一份文本（`dataTransfer.setData('text/plain', digest)`），落在 `#userInput` 即追加，不自动发送。
+
+**10.4 导入导出：先范围、再格式**
+
+- 文件内容由 `todo-model` 生成（纯逻辑、可单测）：`buildTodoExportPayload` 输出 `{kind:'todos', version:1, scope, exportedAt, todos}`（字段白名单，`prevStatus`/`order`/`completedAt` 都带，才能回导），`buildTodoMarkdownExport` 输出给人看的清单。
+- 浏览器侧 `todo-io.js` 只管落地：Blob + `URL.createObjectURL` + `a[download]`，用完 `revokeObjectURL`；选文件 `<input type=file accept=".json,application/json">` 必须同时接 `change` 与 `cancel`，否则用户取消时 Promise 永久悬着。
+- 文件名 `ai-helper-todos[-active|-done]-YYYY-MM-DD.ext`；范围内为空就在 UI 层拦掉，不生成空文件。
+- 导入默认合并：`mergeTodoImport` 只往后追加、同 `id` 跳过不覆盖，`order` 接着现有最大值往后排；失败只摘掉本次新增的条目。替换需二次确认，先 `deleteTodos` 再 `putTodos`，**写失败把 `previous` 回写库**；空文件 / 坏 JSON 直接拒绝并保留现有数据（`reason:'empty'` 与 `reason:'json'`/`'format'`）。导入成功切回待办 Tab。
+- 头部菜单六项且**每项都带图标**（混排会让文案左缘参差，这点由探针截图看出，已补结构守卫）。
+
+**10.5 处理中计数 + 完成流水 + 统计浮层**
+
+- `groupTodos` 的 `stats` 从三字段扩到 `total/done/active/pending/doing`；进度行 `完成 d / t` 后按需追加 `· 处理中 z`（z=0 不占字）。
+- 完成率与近 7 天趋势骗不出来，所以加一份轻量流水：`chrome.storage.local.todoStatsLog = { 'YYYY-MM-DD': { added, done } }`，保留 90 天，读-改-写在独立 `writeChain` 里串行，失败只 `logger.warn` 不影响待办主流程。`addTodo` +added、进入 `done` +done、离开 `done` 按 `completedAt` 那天 -done（跨天撤销要扣对那天）。
+- `summarizeStats(todos, log)` 产出四态 + 逾期 + 未完成高优先级 + 整数完成率 + 今日 added/done + 近 7 天正序 + 连续完成天数（今天还没完成就从昨天起算）。
+- 视图拆成 `todo-stats-view.js`（纯渲染，只依赖 i18n，可直接单测柱高归一化与除零）与 `todo-stats-panel.js`（挂载/开关/键盘）。入口在头部菜单首项，独立浮层 z-index 10015（低于 `.todo-menu` 的 10020），`Esc` / 遮罩 / `×` 三种关法，关掉摘监听，开着时切语言立即重刷。
+
+**验证面**：`todo-model` 54 例、`todo-manager` 39 例、`todo-panel-structure` 87 例、`todo-io` 10 例、`todo-stats` 10 例、`todo-stats-view` 5 例；全量 `vitest run` 224 文件 / 3513 例全绿。新增探针 `test-results-probes/_todo-io-stats.mjs`（40 项）：处理中计数、header 六项菜单与二级格式菜单不越界、统计浮层数值/7 柱/层级/三种关法/完成后再开数字跟随、导出 JSON 与 Markdown 真下载且内容可回导、空范围不导空文件、合并去重与重复导入提示、坏 JSON、替换二次确认、**空文件替换不清库**、切语言后浮层与菜单立即变英文。`_todo-panel-visual.mjs` 同步修正三处过期断言（批量入口已删、`:focus-within` 会浮现操作、点哪行焦点跟哪行）。

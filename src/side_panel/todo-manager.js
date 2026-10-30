@@ -26,8 +26,10 @@ import {
   nextOrder,
   nextStatus,
   isTodoStatus,
+  mergeTodoImport,
 } from './todo-model.js';
 import logger from '../shared/logger.js';
+import { recordTodoStat } from './todo-stats.js';
 
 const listeners = new Set();
 
@@ -115,6 +117,8 @@ export async function addTodo(title, extra = {}) {
     return null;
   }
   emitChange();
+  // 流水失败不拖累新增：recordTodoStat 自己吞异常
+  await recordTodoStat('added', 1, todo.createdAt);
   return todo;
 }
 
@@ -191,6 +195,12 @@ export async function setTodoStatus(id, status) {
     return false;
   }
   emitChange();
+  // 完成流水：进入已完成记 +1；离开已完成把「完成那天」的 +1 撤回去（可能已跨天）
+  if (status === TODO_STATUS.DONE && current.status !== TODO_STATUS.DONE) {
+    await recordTodoStat('done', 1, next.completedAt);
+  } else if (current.status === TODO_STATUS.DONE && status !== TODO_STATUS.DONE) {
+    await recordTodoStat('done', -1, current.completedAt);
+  }
   return true;
 }
 
@@ -321,4 +331,81 @@ export async function clearCompletedTodos() {
 /** 未完成计数（入口徽标） */
 export function countActiveTodos() {
   return getTodoGroups().active.length;
+}
+
+/**
+ * 导入待办
+ * - merge：只把新增条目追加到末尾，同 id 跳过，不动已有条目；
+ * - replace：先整表删除再写入（调用方必须已做二次确认），写失败时把旧数据写回。
+ * @param {Array<Object>} incoming - 文件里的条目（未规范化）
+ * @param {'merge'|'replace'} [mode]
+ * @returns {Promise<{ok: boolean, added: number, skipped: number, reason?: string}>}
+ */
+export async function importTodos(incoming, mode = 'merge') {
+  if (mode === 'replace') return replaceAllTodos(incoming);
+
+  const merged = mergeTodoImport(state.todos, incoming);
+  if (merged.addedItems.length === 0) {
+    return { ok: true, added: 0, skipped: merged.skipped };
+  }
+
+  const previous = state.todos;
+  state.todos = merged.todos;
+  const addedIds = new Set(merged.addedItems.map(item => item.id));
+  const ok = await queueWrite(() => putTodos(merged.addedItems)).catch(e => {
+    logger.error('[Todo] import merge failed:', e);
+    return false;
+  });
+  if (!ok) {
+    // 只摘掉本次新加的，期间别人改过的条目不连带回滚
+    state.todos = previous.filter(item => !addedIds.has(item.id));
+    emitChange();
+    return { ok: false, added: 0, skipped: merged.skipped };
+  }
+  emitChange();
+  return { ok: true, added: merged.addedItems.length, skipped: merged.skipped };
+}
+
+/** 替换：旧数据全删 + 新数据写入，两步都成才算成功 */
+async function replaceAllTodos(incoming) {
+  const { addedItems, skipped } = mergeTodoImport([], incoming);
+  if (addedItems.length === 0) {
+    // 没有可用条目不等于「清空」：宁可拒导，也不能把用户现有清单换没了
+    return { ok: false, added: 0, skipped, reason: 'empty' };
+  }
+
+  const previous = state.todos;
+  const previousIds = previous.map(item => item.id);
+  state.todos = addedItems;
+
+  const ok = await queueWrite(async () => {
+    if (previousIds.length > 0) {
+      const removed = await deleteTodos(previousIds).catch(e => {
+        logger.error('[Todo] replace delete failed:', e);
+        return false;
+      });
+      if (!removed) return false;
+    }
+    const written = await putTodos(addedItems).catch(e => {
+      logger.error('[Todo] replace write failed:', e);
+      return false;
+    });
+    if (!written) {
+      // 旧数据已经删掉了：不写回去，一次失败的替换就会真的把库清空
+      if (previousIds.length > 0) await putTodos(previous).catch(() => false);
+      return false;
+    }
+    return true;
+  }).catch(e => {
+    logger.error('[Todo] replace failed:', e);
+    return false;
+  });
+
+  if (!ok) {
+    state.todos = previous;
+    emitChange();
+    return { ok: false, added: 0, skipped };
+  }
+  emitChange();
+  return { ok: true, added: addedItems.length, skipped };
 }

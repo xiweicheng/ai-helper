@@ -9,7 +9,7 @@
 // - 拖拽只在待办 Tab 内生效，插入位置用虚线段提示；
 // - 面板底部锁定在输入区上沿，绝不遮住问答输入框。
 
-import { t, registerTranslations } from '../shared/i18n.js';
+import { t, registerTranslations, subscribe, applyI18n, initI18n } from '../shared/i18n.js';
 import { getSideRailSlot } from './side-rail.js';
 import {
   escapeHtml,
@@ -28,14 +28,19 @@ import {
   setTodoLink,
   reorderActiveTodos,
   clearCompletedTodos,
+  importTodos,
   getTodoGroups,
   subscribeTodos,
 } from './todo-manager.js';
+import { downloadTodoExport, pickTodoImportFile, readTodoImportFile } from './todo-io.js';
+import { openTodoStats } from './todo-stats-panel.js';
 import {
   TODO_STATUS,
   TODO_PRIORITY,
   nextStatus,
-  buildTodoDigest,
+  nextPriority,
+  buildItemDigest,
+  selectTodosForExport,
   formatRelativeTime,
   formatDueAt,
   formatDoneStamp,
@@ -61,6 +66,7 @@ registerTranslations('zh', {
     tabActive: '待办',
     tabDone: '已完成',
     progressLabel: '完成 {done} / {total}',
+    progressDoing: ' · 处理中 {doing}',
     startDoing: '开始处理',
     markDone: '标记完成',
     backToPending: '退回待办',
@@ -115,6 +121,25 @@ registerTranslations('zh', {
     saveFailed: '保存失败，请重试',
     deletedToast: '已删除',
     clearedToast: '已清除已完成',
+    exportAll: '导出全部',
+    exportActive: '导出待办',
+    exportDone: '导出已完成',
+    exportJson: 'JSON（可再导入）',
+    exportMd: 'Markdown（可读文本）',
+    importMerge: '导入待办（合并）',
+    importReplace: '替换全部待办…',
+    exportEmptyToast: '当前范围内没有待办',
+    exportedToast: '已导出 {name}',
+    exportFailedToast: '导出失败，请重试',
+    importJsonError: '不是有效的待办文件：JSON 解析失败',
+    importFormatError: '文件结构不对，需要待办导出文件',
+    replaceConfirmTitle: '替换全部待办',
+    replaceConfirmMsg: '将删除当前全部待办，并写入文件里的 {n} 条。此操作不可撤销，确定继续吗？',
+    importEmptyToast: '文件里没有可导入的待办，现有数据已保留',
+    importNothingNewToast: '没有新增待办（{skipped} 条已存在或无效）',
+    importedToast: '已导入 {added} 条（跳过 {skipped} 条）',
+    importFailedToast: '导入失败，请重试',
+    statsEntry: '待办统计',
   },
 });
 
@@ -133,6 +158,7 @@ registerTranslations('en', {
     tabActive: 'To do',
     tabDone: 'Done',
     progressLabel: '{done} / {total} done',
+    progressDoing: ' · {doing} in progress',
     startDoing: 'Start',
     markDone: 'Mark done',
     backToPending: 'Back to to-do',
@@ -187,6 +213,25 @@ registerTranslations('en', {
     saveFailed: 'Failed to save, try again',
     deletedToast: 'Deleted',
     clearedToast: 'Completed todos cleared',
+    exportAll: 'Export all',
+    exportActive: 'Export to-dos',
+    exportDone: 'Export done',
+    exportJson: 'JSON (re-importable)',
+    exportMd: 'Markdown (readable)',
+    importMerge: 'Import todos (merge)',
+    importReplace: 'Replace all todos…',
+    exportEmptyToast: 'Nothing to export in this range',
+    exportedToast: 'Exported {name}',
+    exportFailedToast: 'Export failed, try again',
+    importJsonError: 'Not a valid todo file: JSON parse failed',
+    importFormatError: 'Unexpected file structure, need a todo export file',
+    replaceConfirmTitle: 'Replace all todos',
+    replaceConfirmMsg: 'All current todos will be deleted and {n} todos from the file written in. This cannot be undone. Continue?',
+    importEmptyToast: 'No importable todos in the file, existing data kept',
+    importNothingNewToast: 'Nothing new to import ({skipped} existing or invalid)',
+    importedToast: 'Imported {added} todos ({skipped} skipped)',
+    importFailedToast: 'Import failed, try again',
+    statsEntry: 'Statistics',
   },
 });
 
@@ -216,6 +261,9 @@ const ICONS = {
   undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h11a5 5 0 0 1 0 10H8"/><path d="M7 6l-4 4 4 4"/></svg>',
   circle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V5"/><path d="M8 9l4-4 4 4"/><path d="M4 20h16"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v12"/><path d="M8 13l4 4 4-4"/><path d="M4 20h16"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V11"/><path d="M10 20V4"/><path d="M16 20v-6"/></svg>',
 };
 
 let containerEl = null;
@@ -227,6 +275,8 @@ let addInputEl = null;
 let toggleEl = null;
 let badgeEl = null;
 let menuEl = null;
+// 头部菜单的锚点：选中「导出」后再弹格式菜单要回到同一颗按钮下面
+let menuAnchorEl = null;
 let tabActiveEl = null;
 let tabDoneEl = null;
 
@@ -242,6 +292,8 @@ let initialized = false;
 // 刚被标记完成的那一条：{ id, title }，靠它渲染面板内撤销条
 let undoable = null;
 let undoTimer = null;
+// 快捷键的作用对象：最后一次聚焦过的条目（焦点跑了也能继续对同一行操作）
+let activeId = null;
 // 面板开着时才监听输入区尺寸变化
 let fitObserver = null;
 // 本次打开期间锁定过的高度：只增不减，切 Tab / 删条目都不回缩
@@ -269,21 +321,20 @@ export function initTodoPanel() {
   containerEl = document.createElement('div');
   containerEl.className = 'todo-panel-container';
   containerEl.id = 'todoPanelContainer';
+  // 骨架文案一律挂 data-i18n*，由 applyI18n 统一填充：写成 t(...) 插值只会在建 DOM 那一刻
+  // 定稿，之后切语言（甚至关掉面板重开）都不会变，只能重启插件才生效
   containerEl.innerHTML = `
-    <button class="todo-panel-toggle" id="todoPanelToggle" title="${escapeAttr(t('todo.toggleTitle'))}" aria-label="${escapeAttr(t('todo.toggleTitle'))}">
+    <button class="todo-panel-toggle" id="todoPanelToggle" data-i18n-title="todo.toggleTitle" data-i18n-aria-label="todo.toggleTitle">
       <span class="todo-badge" id="todoBadge" style="display:none;"></span>
       ${ICONS.listCheck}
     </button>
     <div class="todo-panel" id="todoPanel">
       <div class="todo-panel-header">
         <span class="todo-panel-icon">${ICONS.listCheck}</span>
-        <span class="todo-panel-title">${escapeHtml(t('todo.title'))}</span>
+        <span class="todo-panel-title" data-i18n="todo.title"></span>
         <div class="todo-panel-actions">
-          <button class="todo-fill-btn" data-action="fill-input" title="${escapeAttr(t('todo.fillInputTitle'))}">
-            ${ICONS.fill}<span>${escapeHtml(t('todo.fillInput'))}</span>
-          </button>
-          <button class="todo-icon-btn" data-action="header-more" title="${escapeAttr(t('todo.headerMore'))}" aria-label="${escapeAttr(t('todo.headerMore'))}">${ICONS.more}</button>
-          <button class="todo-icon-btn" data-action="close" title="${escapeAttr(t('common.close'))}" aria-label="${escapeAttr(t('common.close'))}">${ICONS.close}</button>
+          <button class="todo-icon-btn" data-action="header-more" data-i18n-title="todo.headerMore" data-i18n-aria-label="todo.headerMore">${ICONS.more}</button>
+          <button class="todo-icon-btn" data-action="close" data-i18n-title="common.close" data-i18n-aria-label="common.close">${ICONS.close}</button>
         </div>
       </div>
       <div class="todo-progress-row">
@@ -292,20 +343,22 @@ export function initTodoPanel() {
       </div>
       <div class="todo-tabs" role="tablist">
         <button class="todo-tab active" id="todoTabActive" role="tab" data-action="switch-tab" data-tab="active">
-          <span>${escapeHtml(t('todo.tabActive'))}</span><span class="todo-tab-count" id="todoTabActiveCount">0</span>
+          <span data-i18n="todo.tabActive"></span><span class="todo-tab-count" id="todoTabActiveCount">0</span>
         </button>
         <button class="todo-tab" id="todoTabDone" role="tab" data-action="switch-tab" data-tab="done">
-          <span>${escapeHtml(t('todo.tabDone'))}</span><span class="todo-tab-count" id="todoTabDoneCount">0</span>
+          <span data-i18n="todo.tabDone"></span><span class="todo-tab-count" id="todoTabDoneCount">0</span>
         </button>
       </div>
       <div class="todo-add">
-        <input type="text" class="todo-add-input" id="todoAddInput" placeholder="${escapeAttr(t('todo.placeholder'))}" autocomplete="off" />
-        <button class="todo-add-btn" data-action="add" title="${escapeAttr(t('todo.addTitle'))}" aria-label="${escapeAttr(t('todo.addTitle'))}">+</button>
+        <input type="text" class="todo-add-input" id="todoAddInput" data-i18n-placeholder="todo.placeholder" autocomplete="off" />
+        <button class="todo-add-btn" data-action="add" data-i18n-title="todo.addTitle" data-i18n-aria-label="todo.addTitle">+</button>
       </div>
       <div class="todo-body" id="todoBody"></div>
     </div>
   `;
   getSideRailSlot('todo').appendChild(containerEl);
+  // 建完 DOM 立刻填一次：骨架里不再写死文案，不填就是空标签
+  applyI18n(containerEl);
 
   toggleEl = containerEl.querySelector('#todoPanelToggle');
   panelEl = containerEl.querySelector('#todoPanel');
@@ -328,6 +381,11 @@ export function initTodoPanel() {
   bodyEl.addEventListener('drop', handleDrop);
   bodyEl.addEventListener('dragend', cleanupDrag);
   bodyEl.addEventListener('focusout', handleFocusOut);
+  // 快捷键的作用对象 = 当前聚焦 / 最后聚焦的那一行
+  bodyEl.addEventListener('focusin', (e) => {
+    const item = e.target.closest?.('.todo-item');
+    if (item?.dataset.id) activeId = item.dataset.id;
+  });
   // 「取消」在 pointerdown 就生效：change 与 focusout 都比 click 早，等到 click 时
   // 链接已经存进库了，取消就成了死按钮。先结束编辑态，两条自动保存通道自然被拦住
   containerEl.addEventListener('pointerdown', (e) => {
@@ -340,6 +398,8 @@ export function initTodoPanel() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && menuEl) closeMenu();
   });
+  // Alt+字母 快捷键：与侧边栏其它快捷键同一套（Alt+N/W/E/V/F/S）
+  document.addEventListener('keydown', handleTodoShortcut);
   document.addEventListener('click', (e) => {
     if (!menuEl) return;
     if (menuEl.contains(e.target)) return;
@@ -347,6 +407,17 @@ export function initTodoPanel() {
   }, true);
 
   subscribeTodos(() => render());
+  // 语言切换：骨架上的 data-i18n 由 applyI18n 改，列表/进度/状态提示是 JS 拼的 → 自己重渲一次
+  subscribe(() => {
+    applyI18n(containerEl);
+    render();
+  });
+  // 面板是同步初始化、initI18n 是异步的：语言晚到时骨架可能已用默认语言定稿。
+  // 这里等语言就绪再对齐一次（applyI18n 与 render 都幂等）
+  initI18n().then(() => {
+    applyI18n(containerEl);
+    render();
+  });
   render();
 }
 
@@ -481,9 +552,13 @@ function render() {
   if (!bodyEl) return;
   captureDrafts();
   const focusMarker = getFocusMarker();
+  // 键盘操作（快捷键 / ↑↓）会触发重渲染：焦点得送回同一行，否则掉到 body 上就再也按不动
+  const focusedRowId = document.activeElement?.closest?.('.todo-item')?.dataset.id || null;
   const { active, done, stats } = getTodoGroups();
 
-  countEl.textContent = t('todo.progressLabel', { done: stats.done, total: stats.total });
+  countEl.textContent = t('todo.progressLabel', { done: stats.done, total: stats.total })
+    // 处理中有几条是打开面板第一个想知道的：有才接在后面，0 不占字
+    + (stats.doing > 0 ? t('todo.progressDoing', { doing: stats.doing }) : '');
   progressEl.style.width = stats.total ? `${Math.round((stats.done / stats.total) * 100)}%` : '0%';
   updateBadge(active.length);
   updateTabs(active.length, done.length);
@@ -518,6 +593,7 @@ function render() {
   bodyEl.innerHTML = parts.join('');
   // 焦点在编辑器里 → 原处还原（含光标位置）；否则视为刚打开编辑器 → 主动聚焦
   if (focusMarker) restoreFocus(focusMarker);
+  else if (focusedRowId) restoreRowFocus(focusedRowId);
   else focusFreshEditor();
   fitPanelToInputArea();
 }
@@ -734,11 +810,11 @@ function renderItem(todo, group) {
     <div class="todo-item-actions">
       ${restoreAction}
       <button class="todo-act" data-action="edit-title" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.editItem'))}" aria-label="${escapeAttr(t('todo.editItem'))}">${ICONS.edit}</button>
-      <button class="todo-act" data-action="copy-item" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.copyItem'))}" aria-label="${escapeAttr(t('todo.copyItem'))}">${ICONS.copy}</button>
+      <button class="todo-act" data-action="fill-item" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.fillInput'))}" aria-label="${escapeAttr(t('todo.fillInput'))}">${ICONS.fill}</button>
       <button class="todo-act" data-action="row-more" data-id="${escapeAttr(todo.id)}" title="${escapeAttr(t('todo.more'))}" aria-label="${escapeAttr(t('todo.more'))}">${ICONS.more}</button>
     </div>`;
 
-  return `<div class="${classes.join(' ')}" data-id="${escapeAttr(todo.id)}" data-group="${group}"${draggable} data-priority="${escapeAttr(todo.priority || '')}">
+  return `<div class="${classes.join(' ')}" data-id="${escapeAttr(todo.id)}" data-group="${group}"${draggable} tabindex="0" data-priority="${escapeAttr(todo.priority || '')}">
       ${renderStatusButton(todo)}
       <div class="todo-main">
         ${titleHtml}
@@ -814,9 +890,9 @@ function handleClick(e) {
       e.stopPropagation();
       closePanel();
       return;
-    case 'fill-input':
+    case 'fill-item':
       e.stopPropagation();
-      fillInput(false);
+      fillInputItem(id);
       return;
     case 'header-more':
       e.stopPropagation();
@@ -861,13 +937,14 @@ function handleClick(e) {
       titleEditId = id;
       render();
       return;
-    case 'copy-item': {
+    case 'copy-item':
       e.stopPropagation();
-      const { active, done } = getTodoGroups();
-      const todo = [...active, ...done].find(item => item.id === id);
-      if (todo) copyText(todo.title, t('todo.copiedToast'));
+      copyItem(id);
       return;
-    }
+    case 'copy-item-prompt':
+      e.stopPropagation();
+      copyItem(id, true);
+      return;
     case 'row-more':
       e.stopPropagation();
       openRowMenu(actionEl, id);
@@ -941,6 +1018,16 @@ async function clearCompleted() {
 }
 
 function handleKeydown(e) {
+  // 行导航：焦点在条目上时 ↑/↓ 换行；焦点在输入框/编辑器里则让给光标移动
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown')
+    && !e.target.closest?.('input, textarea, [contenteditable="true"]')) {
+    if (e.target.closest?.('.todo-item')) {
+      e.preventDefault();
+      moveRowFocus(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+  }
+
   // 快速添加：回车新增并保持焦点，Esc 清空
   if (e.target === addInputEl) {
     if (e.key === 'Enter') {
@@ -1005,6 +1092,108 @@ function handleKeydown(e) {
       cancelLinkEdit(id);
     }
   }
+}
+
+// ==================== 快捷键（Alt + 字母） ====================
+//
+// 与侧边栏其它快捷键同一套约定（Alt+N/W/E/V/F/S）：裸字母会被正在打字的问答
+// 输入框吃掉，修饰键才能全局可用。行动作作用于「当前选中行」。
+
+const TODO_SHORTCUTS = {
+  KeyT: () => togglePanel(),
+  KeyA: () => focusAddInput(),
+  KeyB: (id) => startNoteEdit(id),
+  KeyL: (id) => startLinkEdit(id),
+  KeyD: (id) => toggleDone(id),
+  KeyP: (id) => cyclePriority(id),
+};
+
+/** 面板动作（开关/聚焦添加）不需要选中行；其余四个需要 */
+const PANEL_WIDE_SHORTCUTS = new Set(['KeyT', 'KeyA']);
+
+function handleTodoShortcut(e) {
+  if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
+  const run = TODO_SHORTCUTS[e.code];
+  if (!run) return;
+
+  if (PANEL_WIDE_SHORTCUTS.has(e.code)) {
+    e.preventDefault();
+    run();
+    return;
+  }
+
+  const id = resolveTargetId();
+  // 没有作用对象就不抢键：macOS 上 Alt+字母本来会打出特殊符号，不该被我们吞掉
+  if (!id) return;
+  e.preventDefault();
+  run(id);
+}
+
+function rowItems() {
+  return bodyEl ? Array.from(bodyEl.querySelectorAll('.todo-item')) : [];
+}
+
+/** 当前快捷键作用对象：焦点所在行 → 最后聚焦过的行 → 当前列表第一条 */
+function resolveTargetId() {
+  // 面板关着时 bodyEl 里还留着上次的行，不能让快捷键去操作看不见的条目
+  if (!isOpen()) return null;
+  const focused = document.activeElement?.closest?.('.todo-item');
+  if (focused?.dataset.id && bodyEl.contains(focused)) return focused.dataset.id;
+  const items = rowItems();
+  if (activeId && items.some(el => el.dataset.id === activeId)) return activeId;
+  return items[0]?.dataset.id || null;
+}
+
+/** ↑/↓ 在条目间移动焦点（列表边界夹住，不循环） */
+function moveRowFocus(delta) {
+  const items = rowItems();
+  if (items.length === 0) return;
+  const index = items.indexOf(document.activeElement?.closest?.('.todo-item'));
+  const next = index === -1
+    ? (delta > 0 ? items[0] : items[items.length - 1])
+    : items[Math.max(0, Math.min(items.length - 1, index + delta))];
+  if (next) next.focus();
+}
+
+/** 重渲染后把焦点送回原来那一行 */
+function restoreRowFocus(id) {
+  const el = rowItems().find(item => item.dataset.id === id);
+  if (el) el.focus();
+}
+
+/** Alt+A：面板没开就先打开（openPanel 会自己把焦点送到添加框） */
+function focusAddInput() {
+  if (isOpen()) {
+    addInputEl.focus();
+    return;
+  }
+  openPanel();
+}
+
+function startNoteEdit(id) {
+  noteEditId = id;
+  expandedNoteIds.add(id);
+  render();
+}
+
+function startLinkEdit(id) {
+  linkEditId = id;
+  render();
+}
+
+/** Alt+D：已完成 → 智能恢复；其余 → 标记完成（带撤销窗口） */
+function toggleDone(id) {
+  const todo = findTodo(id);
+  if (!todo) return;
+  if (todo.status === TODO_STATUS.DONE) restoreOne(id);
+  else markDone(id);
+}
+
+/** Alt+P：高 → 中 → 低 → 未设置 → 高 */
+function cyclePriority(id) {
+  const todo = findTodo(id);
+  if (!todo) return;
+  persist(setTodoPriority(id, nextPriority(todo.priority)));
 }
 
 function handleChange(e) {
@@ -1220,15 +1409,97 @@ function openRowMenu(anchorEl, id) {
     { action: 'edit-note', label: todo.note ? t('todo.editNote') : t('todo.addNote'), icon: ICONS.note },
     { action: 'set-due', label: t('todo.setDue'), icon: ICONS.calendar },
     { action: 'edit-link', label: todo.link ? t('todo.editLink') : t('todo.addLink'), icon: ICONS.link },
+    { action: 'copy-item', label: t('todo.copyItem'), icon: ICONS.copy },
+    { action: 'copy-item-prompt', label: t('todo.copyWithPrompt'), icon: ICONS.fill },
     { action: 'delete', label: t('todo.delete'), icon: ICONS.trash, danger: true, divider: true },
   ], id);
 }
 
 function openHeaderMenu(anchorEl) {
-  openMenuAt(anchorEl, [
-    { action: 'copy-clipboard', label: t('todo.copyClipboard'), icon: ICONS.copy },
-    { action: 'copy-with-prompt', label: t('todo.copyWithPrompt'), icon: ICONS.fill },
-  ], '');
+  const items = headerMenuItems();
+  // 没有菜单项就干脆不弹，不给用户一个空盒子
+  if (items.length === 0) return;
+  menuAnchorEl = anchorEl;
+  openMenuAt(anchorEl, items, '');
+}
+
+/** 头部「更多」菜单：导出三选一 / 导入合并 / 替换全部 */
+function headerMenuItems() {
+  return [
+    { action: 'stats', label: t('todo.statsEntry'), icon: ICONS.chart, divider: true },
+    { action: 'export-all', label: t('todo.exportAll'), icon: ICONS.download },
+    { action: 'export-active', label: t('todo.exportActive'), icon: ICONS.download },
+    { action: 'export-done', label: t('todo.exportDone'), icon: ICONS.download },
+    { action: 'import-merge', label: t('todo.importMerge'), icon: ICONS.upload, divider: true },
+    { action: 'import-replace', label: t('todo.importReplace'), icon: ICONS.upload, danger: true },
+  ];
+}
+
+/**
+ * 选完范围再选格式：两项，不再套第三层菜单
+ * 锚点沿用头部按钮；menuId 兼作 scope，选格式时才落文件
+ * @param {'all'|'active'|'done'} scope
+ */
+function openExportFormatMenu(scope) {
+  if (!menuAnchorEl) return;
+  openMenuAt(menuAnchorEl, [
+    { action: 'export-json', label: t('todo.exportJson') },
+    { action: 'export-md', label: t('todo.exportMd') },
+  ], scope);
+}
+
+/** 导出：范围为空就不生成空文件，直接告诉用户「这块没东西」 */
+function exportTodoScope(scope, format) {
+  const { active, done } = getTodoGroups();
+  const all = [...active, ...done];
+  if (selectTodosForExport(all, scope).length === 0) {
+    showToast(t('todo.exportEmptyToast'), 'info');
+    return;
+  }
+  try {
+    const name = downloadTodoExport(all, { scope, format });
+    showToast(t('todo.exportedToast', { name }), 'success');
+  } catch (e) {
+    logger.error('[Todo] export failed:', e);
+    showToast(t('todo.exportFailedToast'), 'error');
+  }
+}
+
+/**
+ * 导入：选文件 → 读解析 → （替换时先二次确认）→ 交给编排层落库
+ * @param {'merge'|'replace'} mode
+ */
+async function importTodoFile(mode) {
+  const file = await pickTodoImportFile();
+  if (!file) return;
+
+  const parsed = await readTodoImportFile(file);
+  if (!parsed.ok) {
+    showToast(t(parsed.reason === 'json' ? 'todo.importJsonError' : 'todo.importFormatError'), 'error');
+    return;
+  }
+
+  if (mode === 'replace') {
+    const ok = await confirmAction(
+      t('todo.replaceConfirmMsg', { n: parsed.todos.length }),
+      t('todo.replaceConfirmTitle'),
+    );
+    if (!ok) return;
+  }
+
+  // 先回待办 Tab：停在「已完成」页，导进来的条目看不见，用户会以为没成功
+  activeTab = 'active';
+  render();
+  const result = await importTodos(parsed.todos, mode);
+  if (!result.ok) {
+    showToast(t(result.reason === 'empty' ? 'todo.importEmptyToast' : 'todo.importFailedToast'), 'error');
+    return;
+  }
+  if (result.added === 0) {
+    showToast(t('todo.importNothingNewToast', { skipped: result.skipped }), 'info');
+    return;
+  }
+  showToast(t('todo.importedToast', { added: result.added, skipped: result.skipped }), 'success');
 }
 
 async function handleMenuAction(action, id) {
@@ -1272,8 +1543,31 @@ async function handleMenuAction(action, id) {
       }, 30);
       return;
     case 'edit-link':
-      linkEditId = id;
-      render();
+      startLinkEdit(id);
+      return;
+    case 'stats':
+      openTodoStats();
+      return;
+    case 'export-all':
+      openExportFormatMenu('all');
+      return;
+    case 'export-active':
+      openExportFormatMenu('active');
+      return;
+    case 'export-done':
+      openExportFormatMenu('done');
+      return;
+    case 'export-json':
+      exportTodoScope(id || 'all', 'json');
+      return;
+    case 'export-md':
+      exportTodoScope(id || 'all', 'md');
+      return;
+    case 'import-merge':
+      importTodoFile('merge');
+      return;
+    case 'import-replace':
+      importTodoFile('replace');
       return;
     case 'delete': {
       const ok = await confirmAction(
@@ -1285,33 +1579,27 @@ async function handleMenuAction(action, id) {
       }
       return;
     }
-    case 'copy-clipboard':
-      fillInput(true);
-      return;
-    case 'copy-with-prompt':
-      fillInput(true, true);
-      return;
     default:
   }
 }
 
-// ==================== 填入输入框 ====================
+// ==================== 单条进出输入框 ====================
+
+/** 取一条待办的组合文本（面板里找不到这条时返回空串） */
+function itemDigest(id, options = {}) {
+  const { active, done } = getTodoGroups();
+  const todo = [...active, ...done].find(item => item.id === id);
+  return todo ? buildItemDigest(todo, options) : '';
+}
 
 /**
- * 把待办清单填入问答输入框
- * @param {boolean} toClipboard - true 只复制到剪贴板（不写入输入框）
- * @param {boolean} [withPrompt] - 是否附提问模板
+ * 把一条待办填进问答输入框：标题 + 状态 + 优先级 + 截止 + 备注 + 链接
+ * 不再是整份清单：积压越积越多，一整个清单塞进输入框反而没处下手
  */
-function fillInput(toClipboard, withPrompt = false) {
-  const { active, done } = getTodoGroups();
-  const digest = buildTodoDigest([...active, ...done], { withPrompt });
+function fillInputItem(id) {
+  const digest = itemDigest(id);
   if (!digest) {
     showToast(t('todo.emptyDigestToast'), 'info');
-    return;
-  }
-
-  if (toClipboard) {
-    copyText(digest, withPrompt ? t('todo.copiedPromptToast') : t('todo.copiedToast'));
     return;
   }
 
@@ -1330,6 +1618,16 @@ function fillInput(toClipboard, withPrompt = false) {
 
   closePanel();
   showToast(t('todo.filledToast'), 'success');
+}
+
+/** 复制一条的组合文本（可选附提问模板） */
+function copyItem(id, withPrompt = false) {
+  const digest = itemDigest(id, { withPrompt });
+  if (!digest) {
+    showToast(t('todo.emptyDigestToast'), 'info');
+    return;
+  }
+  copyText(digest, withPrompt ? t('todo.copiedPromptToast') : t('todo.copiedToast'));
 }
 
 function copyText(text, successMessage) {
@@ -1356,9 +1654,13 @@ function handleDragStart(e) {
   const items = Array.from(list.querySelectorAll('.todo-item'));
   dragState = { id: item.dataset.id, from: items.indexOf(item), list };
   item.classList.add('dragging');
+  // 拖出面板（例如拖到问答输入框）= 粘上这条的组合文本，能直接拿去追问 AI。
+  // 内部重排读的是 dragState、不依赖 dataTransfer，换成文本不影响排序
+  const { active, done } = getTodoGroups();
+  const todo = [...active, ...done].find(t => t.id === item.dataset.id);
   try {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', item.dataset.id);
+    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.setData('text/plain', buildItemDigest(todo) || item.dataset.id);
   } catch (err) { /* 忽略 */ }
 }
 

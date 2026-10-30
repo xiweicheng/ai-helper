@@ -415,6 +415,13 @@ export default {
     closeCurrentSession: '关闭当前会话',
     editLastMessage: '编辑最近一条用户消息',
     messageFullscreen: '全屏查看 / 退出查看回答',
+    todoToggle: '开关待办面板',
+    todoAdd: '聚焦待办添加框',
+    todoSelect: '在待办条目间移动（面板内）',
+    todoNote: '给选中的待办加备注',
+    todoLink: '给选中的待办加链接',
+    todoDone: '标记完成 / 退回待办',
+    todoPriority: '循环切换优先级',
   },
 
   // 版本信息弹窗

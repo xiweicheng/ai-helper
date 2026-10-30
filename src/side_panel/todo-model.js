@@ -25,6 +25,13 @@ registerTranslations('zh', {
     highPriority: '高优先级',
     prompt: '请基于以上待办，给出实施顺序与风险提示。',
   },
+  todoExport: {
+    title: '待办清单',
+    count: '共 {n} 条',
+    scopeAll: '全部',
+    scopeActive: '仅待办',
+    scopeDone: '仅已完成',
+  },
 });
 
 registerTranslations('en', {
@@ -47,6 +54,13 @@ registerTranslations('en', {
     highPriority: 'high priority',
     prompt: 'Based on the todos above, propose an implementation order and call out risks.',
   },
+  todoExport: {
+    title: 'Todo list',
+    count: '{n} items',
+    scopeAll: 'All',
+    scopeActive: 'To do only',
+    scopeDone: 'Done only',
+  },
 });
 
 export const TODO_STATUS = { PENDING: 'pending', DOING: 'doing', DONE: 'done' };
@@ -64,6 +78,17 @@ const ALLOWED_LINK_PROTOCOLS = ['http:', 'https:'];
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+
+/** 导出文件格式版本：导入端靠它判断能不能认，字段只增不改语义 */
+export const TODO_EXPORT_VERSION = 1;
+
+const EXPORT_SCOPES = ['all', 'active', 'done'];
+
+/** 导出字段白名单：只带这些出去，内部临时字段不写进文件 */
+const EXPORT_FIELDS = [
+  'id', 'title', 'note', 'status', 'prevStatus', 'priority',
+  'link', 'order', 'dueAt', 'createdAt', 'updatedAt', 'completedAt',
+];
 
 /**
  * 状态圈点击循环：待处理 → 处理中 → 已完成 → 待处理
@@ -83,6 +108,19 @@ export function isTodoStatus(status) {
 /** 优先级白名单；非法值一律归为「未设置」，不报错也不丢数据 */
 export function normalizePriority(priority) {
   return PRIORITY_LEVELS.includes(priority) ? priority : null;
+}
+
+/**
+ * 优先级循环：高 → 中 → 低 → 未设置 → 高（快捷键 Alt+P）
+ * 脏值先归为未设置，不把非法值写进库
+ * @param {string|null} priority
+ * @returns {string|null}
+ */
+export function nextPriority(priority) {
+  const current = normalizePriority(priority);
+  if (!current) return PRIORITY_LEVELS[0];
+  const idx = PRIORITY_LEVELS.indexOf(current);
+  return idx === PRIORITY_LEVELS.length - 1 ? null : PRIORITY_LEVELS[idx + 1];
 }
 
 /**
@@ -134,6 +172,11 @@ export function restoreTarget(todo) {
   return prev === TODO_STATUS.DOING ? TODO_STATUS.DOING : TODO_STATUS.PENDING;
 }
 
+/** 生成新 id：时间戳 + 随机尾，同一毫秒里连建多条也不会撞 */
+function makeTodoId(now) {
+  return 'todo_' + now.toString(36) + '_' + Math.random().toString(36).substring(2, 6);
+}
+
 /**
  * 生成一条待办
  * @param {string} title
@@ -142,7 +185,7 @@ export function restoreTarget(todo) {
  */
 export function createTodo(title, extra = {}, now = Date.now()) {
   return {
-    id: 'todo_' + now.toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+    id: makeTodoId(now),
     title: String(title || '').trim(),
     note: String(extra.note || '').trim(),
     status: TODO_STATUS.PENDING,
@@ -216,7 +259,14 @@ export function groupTodos(todos) {
   return {
     active,
     done,
-    stats: { total: list.length, done: done.length, active: active.length },
+    // pending/doing 分开数：进度行要能说「处理中还有几条」，只看 active 总数看不出来
+    stats: {
+      total: list.length,
+      done: done.length,
+      active: active.length,
+      pending: active.filter(todo => todo.status === TODO_STATUS.PENDING).length,
+      doing: active.filter(todo => todo.status === TODO_STATUS.DOING).length,
+    },
   };
 }
 
@@ -336,6 +386,59 @@ function oneLine(text) {
 }
 
 /**
+ * 单条目那一行：批量清单与单条组合文本共用，避免两处格式漂移
+ * 已完成 → [x]；待处理 / 处理中 → [ ]（处理中加 ⏳）
+ */
+function itemLine(todo, now) {
+  const url = normalizeLink(todo.link).url;
+  const link = url ? ` [${linkLabel(todo)}](${url})` : '';
+  if (todo.status === TODO_STATUS.DONE) {
+    const stamp = Number.isFinite(todo.completedAt)
+      ? `（${t('todoTime.doneStamp', { date: formatTodoDate(todo.completedAt, now) })}）`
+      : '';
+    return `- [x] ${oneLine(todo.title)}${stamp}${link}`;
+  }
+  const flag = todo.status === TODO_STATUS.DOING ? '⏳ ' : '';
+  const due = Number.isFinite(todo.dueAt)
+    ? `（${t('todoDigest.due')} ${formatDueAt(todo.dueAt, now)}）`
+    : '';
+  // 只标高优先级：三档都标会让清单变成噪声，而「先做哪条」只需要顶部几条亮出来
+  const prio = todo.priority === TODO_PRIORITY.HIGH
+    ? `（${t('todoDigest.highPriority')}）`
+    : '';
+  return `- [ ] ${flag}${oneLine(todo.title)}${prio}${due}${link}`;
+}
+
+/** 备注行：缩进挂在条目下（没有备注返回空串） */
+function noteLine(todo) {
+  if (!todo.note || !todo.note.trim()) return '';
+  return `  - ${t('todoDigest.note')}：${oneLine(todo.note)}`;
+}
+
+/**
+ * 单条待办的组合文本：填入输入框 / 复制 / 拖拽三处共用
+ *
+ * 标题、状态、优先级、截止、备注、链接一次带全：拖到输入框后能直接追问 AI
+ * 做规划，不用再回面板里把信息找一遍。
+ * @param {Object} todo
+ * @param {{withPrompt?: boolean, now?: number}} [options]
+ * @returns {string} 无标题时返回空串
+ */
+export function buildItemDigest(todo, options = {}) {
+  const item = normalizeTodo(todo);
+  if (!item.title) return '';
+  const now = options.now || Date.now();
+  const lines = [itemLine(item, now)];
+  const note = noteLine(item);
+  if (note) lines.push(note);
+  if (options.withPrompt) {
+    lines.push('');
+    lines.push(t('todoDigest.prompt'));
+  }
+  return lines.join('\n');
+}
+
+/**
  * 生成填入输入框的 Markdown 清单
  * @param {Array<Object>} todos
  * @param {{withPrompt?: boolean, now?: number}} [options]
@@ -351,21 +454,9 @@ export function buildTodoDigest(todos, options = {}) {
   if (active.length > 0) {
     lines.push(`**${t('todoDigest.active')}**`);
     for (const todo of active) {
-      const flag = todo.status === TODO_STATUS.DOING ? '⏳ ' : '';
-      const due = Number.isFinite(todo.dueAt)
-        ? `（${t('todoDigest.due')} ${formatDueAt(todo.dueAt, now)}）`
-        : '';
-      // 只标高优先级：三档都标会让清单变成噪声，而「先做哪条」只需要顶部几条亮出来
-      const prio = todo.priority === TODO_PRIORITY.HIGH
-        ? `（${t('todoDigest.highPriority')}）`
-        : '';
-      const link = normalizeLink(todo.link).url
-        ? ` [${linkLabel(todo)}](${normalizeLink(todo.link).url})`
-        : '';
-      lines.push(`- [ ] ${flag}${oneLine(todo.title)}${prio}${due}${link}`);
-      if (todo.note && todo.note.trim()) {
-        lines.push(`  - ${t('todoDigest.note')}：${oneLine(todo.note)}`);
-      }
+      lines.push(itemLine(todo, now));
+      const note = noteLine(todo);
+      if (note) lines.push(note);
     }
   }
 
@@ -373,12 +464,7 @@ export function buildTodoDigest(todos, options = {}) {
     if (lines.length > 0) lines.push('');
     lines.push(`**${t('todoDigest.done')}**`);
     for (const todo of done) {
-      const stamp = Number.isFinite(todo.completedAt)
-        ? `（${t('todoTime.doneStamp', { date: formatTodoDate(todo.completedAt, now) })}）`
-        : '';
-      const url = normalizeLink(todo.link).url;
-      const link = url ? ` [${linkLabel(todo)}](${url})` : '';
-      lines.push(`- [x] ${oneLine(todo.title)}${stamp}${link}`);
+      lines.push(itemLine(todo, now));
     }
   }
 
@@ -388,4 +474,124 @@ export function buildTodoDigest(todos, options = {}) {
   }
 
   return lines.join('\n');
+}
+
+// ==================== 导入导出 ====================
+
+function resolveScope(scope) {
+  return EXPORT_SCOPES.includes(scope) ? scope : 'all';
+}
+
+/**
+ * 按导出范围挑条目：全部 / 仅待办 / 仅已完成
+ * 顺序沿用面板里的分组顺序（待办在前按手写序，已完成在后按完成时间倒序），
+ * 导出的文件打开后与用户眼前看到的一致
+ * @param {Array<Object>} todos
+ * @param {'all'|'active'|'done'} [scope]
+ */
+export function selectTodosForExport(todos, scope = 'all') {
+  const { active, done } = groupTodos(todos);
+  const picked = resolveScope(scope);
+  if (picked === 'active') return active;
+  if (picked === 'done') return done;
+  return [...active, ...done];
+}
+
+/** 只输出白名单字段，保证导出文件干净且可回导 */
+function exportableTodo(todo) {
+  const item = normalizeTodo(todo);
+  const out = {};
+  for (const key of EXPORT_FIELDS) out[key] = item[key];
+  return out;
+}
+
+/**
+ * JSON 导出载荷：带 kind/version/scope/exportedAt，导入端据此校验
+ * @param {Array<Object>} todos
+ * @param {{scope?: string, now?: number}} [options]
+ */
+export function buildTodoExportPayload(todos, options = {}) {
+  const scope = resolveScope(options.scope);
+  return {
+    kind: 'todos',
+    version: TODO_EXPORT_VERSION,
+    scope,
+    exportedAt: options.now || Date.now(),
+    todos: selectTodosForExport(todos, scope).map(exportableTodo),
+  };
+}
+
+/**
+ * Markdown 导出：头部写清范围与条数，条目复用清单格式（与填入输入框一致）
+ * @param {Array<Object>} todos
+ * @param {{scope?: string, now?: number}} [options]
+ */
+export function buildTodoMarkdownExport(todos, options = {}) {
+  const scope = resolveScope(options.scope);
+  const now = options.now || Date.now();
+  const list = selectTodosForExport(todos, scope);
+  const scopeLabel = t(`todoExport.scope${scope === 'active' ? 'Active' : scope === 'done' ? 'Done' : 'All'}`);
+  const lines = [
+    `# ${t('todoExport.title')}（${scopeLabel} · ${t('todoExport.count', { n: list.length })}）`,
+    '',
+  ];
+  for (const todo of list) {
+    lines.push(itemLine(todo, now));
+    // 导出要保真：已完成条目的备注也带上，回导后不丢信息
+    const note = noteLine(todo);
+    if (note) lines.push(note);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 解析导入内容：接受导出文件（{todos:[]}）与裸数组，其余一律判格式错
+ * 非对象条目直接剔除，由合并阶段计入跳过
+ * @param {*} raw - 已 JSON.parse 的内容
+ * @returns {{ok: true, todos: Array<Object>} | {ok: false, reason: string}}
+ */
+export function parseTodoImport(raw) {
+  let list = null;
+  if (Array.isArray(raw)) list = raw;
+  else if (raw && typeof raw === 'object' && Array.isArray(raw.todos)) list = raw.todos;
+  if (!list) return { ok: false, reason: 'format' };
+  return { ok: true, todos: list.filter(item => item && typeof item === 'object' && !Array.isArray(item)) };
+}
+
+/**
+ * 合并导入：只往后追加，同 id 跳过不覆盖（合并是安全项，覆盖留给「替换」二次确认）
+ * @param {Array<Object>} base - 库里现有条目
+ * @param {Array<Object>} incoming - 文件里的条目（原始对象，未规范化）
+ * @param {number} [now]
+ * @returns {{todos: Array<Object>, addedItems: Array<Object>, added: number, skipped: number}}
+ */
+export function mergeTodoImport(base, incoming, now = Date.now()) {
+  const existing = (Array.isArray(base) ? base : []).map(normalizeTodo);
+  const seen = new Set(existing.map(item => item.id).filter(Boolean));
+  let order = existing.reduce((acc, item) => (
+    Number.isFinite(item.order) && item.order < Number.MAX_SAFE_INTEGER
+      ? Math.max(acc, item.order)
+      : acc
+  ), -1) + 1;
+
+  const addedItems = [];
+  let skipped = 0;
+  for (const raw of Array.isArray(incoming) ? incoming : []) {
+    const title = String((raw && raw.title) || '').trim();
+    if (!title) {
+      skipped += 1;
+      continue;
+    }
+    let id = String((raw && raw.id) || '').trim();
+    if (id && seen.has(id)) {
+      skipped += 1;
+      continue;
+    }
+    if (!id) id = makeTodoId(now);
+    seen.add(id);
+    // order 由合并端重排：文件里的旧序号跟当前库无关，照抄会和现有条目撞位
+    addedItems.push({ ...normalizeTodo({ ...raw, id, title }), order: order++ });
+  }
+
+  return { todos: [...existing, ...addedItems], addedItems, added: addedItems.length, skipped };
 }

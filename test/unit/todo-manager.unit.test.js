@@ -20,6 +20,9 @@ const ctl = vi.hoisted(() => ({
   holdBulkGate: Promise.resolve(),
 }));
 
+// 完成流水的内存版存储（chrome.storage.local.todoStatsLog）
+const statsCtl = vi.hoisted(() => ({ log: {} }));
+
 vi.mock('../../src/storage/db.js', () => ({
   getAllTodos: async () => Array.from(ctl.store.values()),
   putTodo: async (todo) => {
@@ -53,6 +56,7 @@ vi.mock('../../src/storage/db.js', () => ({
 
 import state from '../../src/side_panel/state.js';
 import { TODO_STATUS, TODO_PRIORITY } from '../../src/side_panel/todo-model.js';
+import { STATS_LOG_KEY, dayKey } from '../../src/side_panel/todo-stats.js';
 import {
   loadTodos,
   addTodo,
@@ -65,6 +69,7 @@ import {
   removeTodo,
   reorderActiveTodos,
   clearCompletedTodos,
+  importTodos,
   subscribeTodos,
   getTodoGroups,
 } from '../../src/side_panel/todo-manager.js';
@@ -92,6 +97,12 @@ beforeEach(() => {
   ctl.holdBulk = false;
   ctl.holdBulkGate = Promise.resolve();
   state.todos = [];
+  statsCtl.log = {};
+  // 流水落盘用 chrome.storage.local：用内存版本接管，既能断言也能隔离用例
+  chrome.storage.local.get = async () => ({ [STATS_LOG_KEY]: statsCtl.log });
+  chrome.storage.local.set = async (obj) => {
+    if (obj && obj[STATS_LOG_KEY]) statsCtl.log = obj[STATS_LOG_KEY];
+  };
 });
 
 describe('成功路径', () => {
@@ -450,5 +461,141 @@ describe('并发写：串行落库，失败的回滚不许牵连成功的写', (
     // A 失败回滚 + B 成功各广播一次
     expect(w.count()).toBe(2);
     w.off();
+  });
+});
+
+describe('批量导入：合并只增不改，替换先删后写且失败要写回', () => {
+  it('合并：只把新增条目落库，order 顺延，广播一次', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    const r = await importTodos([{ id: 'x', title: 'X' }, { title: 'Y 没 id' }], 'merge');
+
+    expect(r.ok).toBe(true);
+    expect(r.added).toBe(2);
+    expect(state.todos).toHaveLength(3);
+    // 只写本次新增，不重写整表（重写会把别人刚落的变更盖回去）
+    const writes = ctl.order.slice(baseOrder);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].split(',')).toHaveLength(2);
+    expect(ctl.store.get(a.id).title).toBe('A');
+    expect(w.count()).toBe(1);
+    w.off();
+  });
+
+  it('合并：全是重复 id → 不写库不广播，原有条目不覆盖', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    const r = await importTodos([{ id: a.id, title: 'A 被覆盖' }], 'merge');
+
+    expect(r).toMatchObject({ ok: true, added: 0, skipped: 1 });
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(pick(a.id).title).toBe('A');
+    expect(w.count()).toBe(0);
+    w.off();
+  });
+
+  it('合并落库失败 → 只摘掉本次新增，原有条目不动并广播', async () => {
+    const a = await addTodo('A');
+    ctl.failTitles.add('会失败的导入项');
+    const w = watch();
+    const r = await importTodos([{ title: '会失败的导入项' }], 'merge');
+
+    expect(r.ok).toBe(false);
+    expect(state.todos.map(t => t.id)).toEqual([a.id]);
+    expect(ctl.store.has(a.id)).toBe(true);
+    expect(w.count()).toBe(1);
+    w.off();
+  });
+
+  it('替换：库与内存都只剩文件里的条目', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    const r = await importTodos([{ id: 'x', title: 'X' }, { id: 'y', title: 'Y' }], 'replace');
+
+    expect(r.ok).toBe(true);
+    expect(state.todos.map(t => t.title)).toEqual(['X', 'Y']);
+    expect(ctl.order.slice(baseOrder)).toEqual(['bulkdel:' + a.id, 'puts:x,y']);
+    expect(ctl.store.has(a.id)).toBe(false);
+    expect(ctl.store.get('x').title).toBe('X');
+    expect(w.count()).toBe(1);
+    w.off();
+  });
+
+  it('替换：文件里没有可用条目 → 拒绝且不删原有数据', async () => {
+    const a = await addTodo('A');
+    const baseOrder = ctl.order.length;
+    const w = watch();
+    const r = await importTodos([{ title: '   ' }], 'replace');
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('empty');
+    expect(ctl.order.length).toBe(baseOrder);
+    expect(state.todos.map(t => t.id)).toEqual([a.id]);
+    expect(ctl.store.has(a.id)).toBe(true);
+    expect(w.count()).toBe(0);
+    w.off();
+  });
+
+  it('替换：旧数据已删但新数据写失败 → 旧数据写回库，内存也还原', async () => {
+    const a = await addTodo('A');
+    ctl.failTitles.add('写不进去的新条目');
+    const w = watch();
+    const r = await importTodos([{ id: 'x', title: '写不进去的新条目' }], 'replace');
+
+    expect(r.ok).toBe(false);
+    expect(state.todos.map(t => t.id)).toEqual([a.id]);
+    // 删完写失败时若不写回，一次失败的替换会真的把库清空
+    expect(ctl.store.has(a.id)).toBe(true);
+    expect(ctl.store.has('x')).toBe(false);
+    expect(w.count()).toBe(1);
+    w.off();
+  });
+});
+
+describe('完成流水：新增计 added，完成 / 撤销计 done', () => {
+  it('新增成功记当天 added +1', async () => {
+    await addTodo('A');
+    const today = dayKey(Date.now());
+    expect(statsCtl.log[today].added).toBe(1);
+  });
+
+  it('标记完成记当天 done +1', async () => {
+    const a = await addTodo('A');
+    await setTodoStatus(a.id, TODO_STATUS.DONE);
+    const today = dayKey(Date.now());
+    expect(statsCtl.log[today].done).toBe(1);
+  });
+
+  it('撤销完成从「完成那天」扣减，不是从今天扣', async () => {
+    const doneAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    ctl.store.set('old', {
+      id: 'old',
+      title: '旧完成',
+      status: TODO_STATUS.DONE,
+      prevStatus: TODO_STATUS.PENDING,
+      completedAt: doneAt,
+      createdAt: doneAt,
+      order: 0,
+    });
+    const today = dayKey(Date.now());
+    statsCtl.log = {
+      [dayKey(doneAt)]: { done: 1, added: 0 },
+      [today]: { done: 0, added: 0 },
+    };
+    await loadTodos();
+
+    await restoreTodo('old');
+
+    expect(statsCtl.log[dayKey(doneAt)].done).toBe(0);
+    expect(statsCtl.log[today].done).toBe(0);
+  });
+
+  it('落库失败不计流水（不能给失败的写入记一笔）', async () => {
+    ctl.failTitles.add('写不进去');
+    expect(await addTodo('写不进去')).toBeNull();
+    expect(statsCtl.log[dayKey(Date.now())]).toBeUndefined();
   });
 });
