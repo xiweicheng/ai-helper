@@ -1198,6 +1198,104 @@ textarea {
   margin-left: 4px;
 }
 
+/* 「整体循环超时」档位滑杆：12 档等距，轨道/thumb/刻度口径对齐 .ctx-popover-slider */
+/* 两列网格：左列滑杆 + 刻度 + 范围标签（三者同宽），右列读数。
+   用网格而不是 flex + 右边距，范围标签才能跟随滑杆列宽度、不被读数宽度左右 */
+.loop-timeout-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+}
+
+.loop-timeout-row .range-labels {
+  grid-column: 1;
+  margin-top: 3px;
+}
+
+/* 滑杆区容器：滑杆与刻度行同宽 */
+.loop-timeout-main {
+  min-width: 0;
+}
+
+.loop-timeout-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  --loop-fill: 0%;
+}
+
+.loop-timeout-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--brand-500) 0%, var(--brand-500) var(--loop-fill), var(--info-soft-bg) var(--loop-fill), var(--info-soft-bg) 100%);
+}
+
+.loop-timeout-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--brand-500);
+  border: 2px solid var(--border-default);
+  box-shadow: 0 1px 3px var(--shadow-lg);
+  cursor: grab;
+}
+
+.loop-timeout-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+}
+
+.loop-timeout-slider:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.4);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* 只读读数：定宽 + 右对齐，拖动时滑杆不会因文案宽度变化而抖动 */
+.loop-timeout-value {
+  flex: 0 0 auto;
+  min-width: 104px;
+  text-align: right;
+  white-space: nowrap;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brand-500);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 刻度点行：margin 内缩 = thumb 半径 7px − 点半径 1.5px，使点中心与 thumb 中心轨迹对齐 */
+.loop-timeout-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 6px;
+  margin: 2px 5.5px 0;
+  pointer-events: none;
+}
+
+.loop-timeout-scale-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.loop-timeout-scale-dot.is-active {
+  background: var(--brand-500);
+  transform: scale(1.6);
+}
+
 /* 对话配置样式 */
 .chat-config {
   margin-top: 30px;

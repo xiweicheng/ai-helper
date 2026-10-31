@@ -133,7 +133,7 @@ describe('P1 参数：默认值单一来源，设置页/存储/后台三侧一�
   });
 
   test('设置页只剩「整体循环超时」需要校验（其余三项已撤出，不得再出现 range 校验）', () => {
-    expect(CONFIG_MANAGER_SRC).toMatch(/reactLoopTimeout < 60000 \|\| reactLoopTimeout > 86400000/);
+    expect(CONFIG_MANAGER_SRC).toMatch(/reactLoopTimeout < LOOP_TIMEOUT_MIN_MINUTES \* 60000 \|\| reactLoopTimeout > 86400000/);
     expect(CONFIG_MANAGER_SRC).not.toMatch(/reactToolTimeout < 60000/);
     expect(CONFIG_MANAGER_SRC).not.toMatch(/reactApiTimeout < 60000/);
   });

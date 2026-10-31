@@ -321,7 +321,7 @@
       <h2 data-i18n="react.title">⚙️ 推理循环配置</h2>
       <p class="subtitle" data-i18n="react.subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
 
-      <!-- 以下参数已撤出设置页，改为内部固定值（界面只剩「整体循环超时」一个数字输入）：
+      <!-- 以下参数已撤出设置页，改为内部固定值（界面只剩「整体循环超时」一个档位滑杆）：
            最大循环次数 2000  — 确定性保险丝，防「快而空转」；时间上限防「慢而卡」
            API 请求超时 5 分钟 — 只覆盖建连+等响应头，流式读正文由 SSE 空闲超时独立保护
            工具执行超时 10 分钟 — 与 Agent 端 TOTAL_BUDGET_CAP_MS 封顶对齐；命令执行的长任务
@@ -331,15 +331,24 @@
 
       
       <div class="react-config-item">
-        <label>
+        <label for="reactLoopTimeout">
           <span data-i18n="react.loopTimeout">整体循环超时</span>
-          <span class="hint-text" data-i18n="react.loopTimeoutHint">（整个推理循环的最长执行时间）</span>
+          <span class="hint-text" id="reactLoopTimeoutHint" data-i18n="react.loopTimeoutHint">（整个推理循环的最长执行时间）</span>
         </label>
-        <input type="number" id="reactLoopTimeout" min="1" max="1440" step="1" value="240" placeholder="240">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max1440Minutes">最大: 1440分钟（24小时）</span>
+        <!-- 档位滑杆：12 档吸附（10 分钟 – 24 小时）。min/max 是档位索引，真值在 data-minutes 上，
+             松手即落盘（不必再点保存）；拖动中只预览读数，见 options/loop-timeout-slider.js -->
+        <div class="loop-timeout-row">
+          <div class="loop-timeout-main">
+            <input type="range" id="reactLoopTimeout" class="loop-timeout-slider"
+                   min="0" max="11" step="1" value="7" data-minutes="240"
+                   aria-describedby="reactLoopTimeoutHint">
+            <div class="loop-timeout-scale" id="reactLoopTimeoutScale" aria-hidden="true"></div>
+          </div>
+          <output class="loop-timeout-value" id="reactLoopTimeoutValue" for="reactLoopTimeout">4 小时</output>
+          <div class="range-labels">
+            <span data-i18n="react.loopTimeoutMinLabel">最小: 10 分钟</span>
+            <span data-i18n="react.loopTimeoutMaxLabel">最大: 24 小时</span>
+          </div>
         </div>
       </div>
       
