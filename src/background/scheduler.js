@@ -377,15 +377,19 @@ export async function runTask(taskId, force = false) {
 
     // 5. 执行
     const callId = 'st_' + taskId + '_' + Date.now().toString(36);
+    // 定时任务没有面板消费者：跑完只写库 + 发 SCHEDULED_TASK_RUN_STATE，从不广播
+    // API_COMPLETE / API_ERROR。因此两个入口都显式关掉「可重连登记」——否则面板
+    // reattach 会为 st_ 建镜像并永久停在「生成中」（待办清单/归档/继续执行全被挡）。
+    const noReattach = { reattachable: false };
     let result;
     const tools = useTools ? await getTools(agentToolIds, agentId, agentSkillIds, null, agentMcpExcludedServerIds) : [];
     if (tools.length > 0) {
-      const r = await reactLoop(messages, model, tools, tabId, apiParams, hostSession.id, null, null, { value: 0 }, [], callId);
+      const r = await reactLoop(messages, model, tools, tabId, apiParams, hostSession.id, null, null, { value: 0 }, [], callId, null, noReattach);
       result = { content: r.content !== undefined ? r.content : r, executionLog: r.executionLog || [] };
     } else {
       // callApiNonStream 不返回 executionLog，token 用量在顶层 r.usage，
       // 需包装成 api_call 日志节点，否则结果底部不显示 token 消耗
-      const r = await callApiNonStream(messages, model, apiParams, hostSession.id, {}, callId);
+      const r = await callApiNonStream(messages, model, apiParams, hostSession.id, {}, callId, noReattach);
       const executionLog = r.usage ? [{
         id: 'st_api_' + Date.now().toString(36),
         iteration: 1,

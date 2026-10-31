@@ -26,6 +26,23 @@ export const AUTO_RESUME_INTERVAL_MIN = 0.5;
 // 自动续跑尝试次数上限：达到后停止并提示人工介入，防无限重试风暴
 export const AUTO_RESUME_MAX_ATTEMPTS = 3;
 
+// callId 自增序号：同一毫秒内连续续跑多会话时保证唯一
+let autoCallSeq = 0;
+
+/**
+ * 生成自动续跑的新 callId。
+ *
+ * 为什么必须新建而不是沿用 checkpoint.callId：那个 callId 属于「已经被系统回收的
+ * 面板实例」，新面板实例没有对应 listener；旧实例若还活着，它的 listener 又早已
+ * 随页面卸载失效。沿用等于所有 STREAM_* 消息发进真空。
+ * auto_ 前缀与面板的 call_/resume_ 前缀区分开，日志里一眼可辨来源。
+ * @returns {string}
+ */
+export function createAutoResumeCallId() {
+  autoCallSeq = (autoCallSeq + 1) % 1000000;
+  return `auto_${Date.now()}_${autoCallSeq.toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+}
+
 // 不自动续的终态：user_cancelled = 用户意志；error = 明确失败（catch 栈完整执行过，
 // 说明任务是有界终止而非蒸发，保留"用户在面板点继续/重试"的原语义）；
 // budget_exhausted = 预算撞线软着陆（已产出「部分完成 + 缺项」报告并保留现场），
@@ -127,4 +144,5 @@ export function registerAutoResumeAlarmHandler(handler) {
 export function __resetAutoResumeWatchForTest() {
   refCount = 0;
   watching = false;
+  autoCallSeq = 0;
 }

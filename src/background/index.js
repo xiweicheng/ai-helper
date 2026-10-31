@@ -17,7 +17,13 @@ import * as AgentClient from './local-agent-client.js';
 import { getAsrStatus, clearAsrStatusCache, transcribeWavBase64, openAsrSession, base64ToUint8 } from './asr-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
 import { getGoal, applyGoalCommand, removeGoal } from './goal-store.js';
-import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
+import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS, createAutoResumeCallId } from './auto-resume.js';
+// 会话级活跃 callId 登记：面板重启/重开后 reattach 需要它才能接上实时流
+import { getActiveCallMap } from './active-call-registry.js';
+// 终态落库兜底：面板不在场时（SW 重启后续跑）结果由后台写回，避免任务白跑
+import { persistCompletionWithoutPanel } from './panel-absent-persist.js';
+// 自动续跑的终态收尾：与手动 RESUME_REACT 同构（兜底落库 + 广播），否则续跑跑完没人收尾
+import { finalizeAutoResume } from './auto-resume-finalize.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import { persistCompactionSummary } from './compaction-memory.js';
 import logger from '../shared/logger.js';
@@ -74,12 +80,42 @@ registerAutoResumeAlarmHandler(async () => {
     notifyAutoResumeExhausted({ sessionId: cp.sessionId, count: AUTO_RESUME_MAX_ATTEMPTS });
   }
   for (const { checkpoint, nextAttempts } of targets) {
-    logger.info(`[Background] 🔄 auto-resume session ${checkpoint.sessionId} (attempt ${nextAttempts}/${AUTO_RESUME_MAX_ATTEMPTS}, reason=${checkpoint.interruptedReason})`);
+    // 每次续跑都生成新的 callId：checkpoint 里那个属于已经被回收的面板实例，沿用会让
+    // 新面板 listener 的 myCallId 过滤把 STREAM_* / EXECUTION_STATUS_UPDATE 全丢掉。
+    // 新 callId 与手动 RESUME_REACT 路径同构，面板 reattach 用注册表下发的同一个值。
+    const autoCallId = createAutoResumeCallId();
+    logger.info(`[Background] 🔄 auto-resume session ${checkpoint.sessionId} (attempt ${nextAttempts}/${AUTO_RESUME_MAX_ATTEMPTS}, reason=${checkpoint.interruptedReason}, callId=${autoCallId})`);
     await saveReactCheckpoint({ ...checkpoint, autoResumeAttempts: nextAttempts });
     try {
-      await resumeReactLoopFromCheckpoint(checkpoint.sessionId);
+      const result = await resumeReactLoopFromCheckpoint(checkpoint.sessionId, '', autoCallId);
+      if (!result) {
+        // checkpoint 在扫描后被清掉（正常完成）或数据损坏：没有终态可收尾
+        logger.warn(`[Background] auto-resume produced no result for session ${checkpoint.sessionId}`);
+      } else {
+        // 与手动「继续执行」同构：先兜底落库（面板不在场时结果不白跑），
+        // 再广播终态（面板重开的镜像靠它收尾渲染，写入按 callId 去重）。
+        // 不做这一步的后果：续跑跑完，气泡永远停在「生成中」，刷新后会话里什么都没有。
+        await finalizeAutoResume({
+          sessionId: checkpoint.sessionId,
+          callId: autoCallId,
+          content: result.content || '',
+          executionLog: truncateLogForMessage(result.executionLog),
+          reflectionScore: result.reflectionScore,
+          reasoningContent: result.reasoningContent || null,
+          wasRevised: result.wasRevised || false,
+          budgetEnded: result.budgetEnded === true,
+          exhaustedBy: result.exhaustedBy || null,
+        });
+      }
     } catch (e) {
       logger.warn(`[Background] auto-resume failed for session ${checkpoint.sessionId}:`, e?.message || e);
+      // 失败终态同样要入会话：静默失败等于用户回来只见「什么都没发生」
+      await finalizeAutoResume({
+        sessionId: checkpoint.sessionId,
+        callId: autoCallId,
+        error: e?.message || t('bg.resumeFailed'),
+        executionLog: truncateLogForMessage(e?.executionLog || []),
+      });
     }
   }
 });
@@ -1146,6 +1182,9 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     sendResponse({
       running: !!(sessionId && activeReactLoops.has(sessionId)),
       activeSessionIds: Array.from(activeReactLoops),
+      // 会话 → 当前活跃 callId：面板 reattach 用它在正确的 callId 上重新挂监听，
+      // 否则 STREAM_* 会被 myCallId 过滤丢弃（任务在后台跑、会话区却无输出）
+      activeCallIds: getActiveCallMap(),
     });
     return false;
   }
@@ -1320,7 +1359,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       // 确保 reactLoop 内部的 StreamController 使用新的 callId 发送 STREAM_* 消息，
       // 与前端 listener 的 myCallId 匹配，否则流式消息会被过滤掉
       resumeReactLoopFromCheckpoint(sessionId, userGuidance, resumeCallId)
-        .then(result => {
+        .then(async result => {
         // checkpoint 不存在或恢复失败返回 null
         if (!result) {
           logger.warn('[Background] RESUME_REACT: not found checkpoint  or restore failed');
@@ -1340,6 +1379,16 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         }
         logger.debug('[Background] RESUME_REACT complete,content length:', result.content?.length);
         const truncatedLog = truncateLogForMessage(result.executionLog);
+        // 面板不在场（SW 重启后续跑，广播无人接收）→ 由后台写回；面板在场时门控直接跳过
+        await persistCompletionWithoutPanel({
+          sessionId,
+          callId: resumeCallId,
+          content: result.content || '',
+          executionLog: truncatedLog,
+          reflectionScore: result.reflectionScore,
+          wasRevised: result.wasRevised || false,
+          budgetEnded: result.budgetEnded === true,
+        });
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId,
@@ -1357,11 +1406,18 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           logger.warn('[Background] send RESUME completemessage failed:', err);
         });
       })
-      .catch(error => {
+      .catch(async error => {
         const isAborted = error.name === 'AbortError' || error.message === t('bg.requestCancelled') || error.message === t('bg.reactCancelled');
         logger.debug('[Background] RESUME_REACT failed:', isAborted ? '(usercancel)' : error.message);
         const errLog = error.executionLog || [];
         const truncatedErrLog = truncateLogForMessage(errLog);
+        // 失败终态同样兜底（面板不在场时错误必须入会话，否则用户回来只见“什么都没发生”）
+        await persistCompletionWithoutPanel({
+          sessionId,
+          callId: resumeCallId,
+          error: error.message || t('bg.resumeFailed'),
+          executionLog: truncatedErrLog,
+        });
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId,
@@ -1713,10 +1769,10 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
             exhaustedBy: reactResult.exhaustedBy || null
           };
         })()
-      : callApiNonStream(messages, model, apiParams, sessionId);
+      : callApiNonStream(messages, model, apiParams, sessionId, {}, callId);
     
     apiCall
-      .then(result => {
+      .then(async result => {
         // 兼容两种返回格式：{ content, executionLog } 或 { content, usage }
         const content = result.content !== undefined ? result.content : result;
         let executionLog = result.executionLog || [];
@@ -1750,6 +1806,17 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         console.log('[Background API_COMPLETE] useTools:', useTools, '| executionLog entries:', executionLog.length, '| agent_file entries:', executionLog.filter(e => e.nodeType === 'tool_exec' && e.action?.name === 'agent_file').length, '| first few types:', executionLog.slice(0, 5).map(e => `${e.nodeType}${e.action ? `(${e.action.name})` : ''}`));
         // 安全截断：防止 executionLog 超过 chrome.runtime.sendMessage 的 64MiB 限制
         const truncatedLog = truncateLogForMessage(executionLog);
+        // 面板不在场（任务进行中面板被杀/关闭，SW 继续跑完）→ 由后台写回结果；
+        // 面板在场时门控直接跳过（正常流程行为零变化）
+        await persistCompletionWithoutPanel({
+          sessionId,
+          callId,
+          content: content || '',
+          executionLog: truncatedLog,
+          reflectionScore,
+          wasRevised,
+          budgetEnded,
+        });
         chrome.runtime.sendMessage({
           type: 'API_COMPLETE',
           sessionId: sessionId,
@@ -1765,7 +1832,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           logger.warn('[Background] send backmessage failed:', err);
         });
       })
-      .catch(error => {
+      .catch(async error => {
         const isAborted = error.name === 'AbortError' || error.message === t('bg.requestCancelled') || error.message === t('bg.reactCancelled');
         if (isAborted) {
           logger.debug('[Background] API call with by usercancel');
@@ -1775,6 +1842,13 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         // 获取 executionLog（如果可用），安全截断防止 64MiB 限制
         const errExecutionLog = error.executionLog || [];
         const truncatedErrLog = truncateLogForMessage(errExecutionLog);
+        // 失败终态兜底：面板不在场时错误入会话
+        await persistCompletionWithoutPanel({
+          sessionId,
+          callId,
+          error: error.message || t('bg.apiCallFailed'),
+          executionLog: truncatedErrLog,
+        });
         chrome.runtime.sendMessage({
           type: 'API_ERROR',
           sessionId: sessionId,
