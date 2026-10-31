@@ -136,6 +136,9 @@ export function createGoal(params = {}) {
     stagnationCount: 0,
     evaluatorFailures: 0,
     lastVerdict: null,
+    // 撞线归因（'turns' | 'time'）：恢复时要据此决定补哪一档预算，
+    // 只补轮数会让「时间耗尽 → 继续」第一轮就再次撞线。
+    budgetStopReason: null,
     createdBy: params.createdBy === 'intent' ? 'intent' : 'toggle',
     // 敏感操作自动放行授权。只认面板开关这类显式 UI 授予：
     // 意图识别（一句话「按目标模式执行」）永不能授予，否则网页里一段注入文案
@@ -187,6 +190,10 @@ export function normalizeGoal(raw, now = Date.now()) {
         missing: Array.isArray(raw.lastVerdict.missing) ? raw.lastVerdict.missing.slice(0, MAX_CONSTRAINTS) : [],
         at: Number.isFinite(raw.lastVerdict.at) ? raw.lastVerdict.at : now,
       }
+      : null,
+    // 旧数据没有归因字段：回落 null，恢复时按「轮数耗尽」处理（与修复前行为一致）。
+    budgetStopReason: raw.budgetStopReason === 'time' || raw.budgetStopReason === 'turns'
+      ? raw.budgetStopReason
       : null,
     createdBy: raw.createdBy === 'intent' ? 'intent' : 'toggle',
     // 反序列化时同样不采信 intent 目标的放行授权（老数据 / 被篡改的 storage 亦然）
@@ -338,7 +345,12 @@ export function applyGoalVerdict(goal, verdict = {}, opts = {}) {
   const budget = checkGoalBudget(staged, { now, fallbackTimeBudgetMs: opts.fallbackTimeBudgetMs });
   if (budget.exhausted) {
     return {
-      goal: { ...staged, status: GOAL_STATUS.BUDGET_LIMITED, updatedAt: now },
+      goal: {
+        ...staged,
+        status: GOAL_STATUS.BUDGET_LIMITED,
+        budgetStopReason: budget.reason,
+        updatedAt: now,
+      },
       action: GOAL_ACTIONS.STOP_BUDGET,
       stopReason: budget.reason,
     };
@@ -361,22 +373,31 @@ export function pauseGoal(goal, now = Date.now()) {
 
 /**
  * 用户手动恢复：只允许从 paused / budget_limited 恢复。
- * 从 budget_limited 恢复时额外补一档轮预算（对齐 Qoder 的 resume 语义），否则用户点「继续」后
- * 一动就再次撞线，等于没恢复。
+ * 恢复时必须把「撞到的那一档」补齐，否则用户点「继续」后一动就再次撞线，等于没恢复：
+ *   - 撞轮数 → 补一档轮预算（对齐 Qoder 的 resume 语义，+20 上限 200）；
+ *   - 撞时间 → 把已结算时长归零，重新计一份（timeBudgetMs=0 跟随 loopTimeout 时也适用）；
+ * 反向的松绑必须避免：撞轮数时不能顺带白送一份时间，否则时间预算形同虚设。
+ * 归因缺失（旧数据）按撞轮数处理，保持修复前行为。
  */
 export function resumeGoal(goal, now = Date.now()) {
   if (!goal) return goal;
   if (goal.status !== GOAL_STATUS.PAUSED && goal.status !== GOAL_STATUS.BUDGET_LIMITED) return goal;
   const wasBudgetLimited = goal.status === GOAL_STATUS.BUDGET_LIMITED;
+  const timeExhausted = wasBudgetLimited && goal.budgetStopReason === 'time';
+  // 两条预算同时撞死时（时间先耗尽又恰好用满轮数）两档都要补，否则恢复后依然动不了
+  const turnsExhausted = wasBudgetLimited
+    && (!timeExhausted || goal.turnsUsed >= goal.turnBudget);
   return {
     ...goal,
     status: GOAL_STATUS.ACTIVE,
     startedAt: now,
+    elapsedMs: timeExhausted ? 0 : goal.elapsedMs,
     stagnationCount: 0,
     evaluatorFailures: 0,
-    turnBudget: wasBudgetLimited
+    turnBudget: turnsExhausted
       ? Math.min(goal.turnBudget + DEFAULT_GOAL_LIMITS.turnBudget, DEFAULT_GOAL_LIMITS.maxTurnBudget)
       : goal.turnBudget,
+    budgetStopReason: null,
     updatedAt: now,
   };
 }

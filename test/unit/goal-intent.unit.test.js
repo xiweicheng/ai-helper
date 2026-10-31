@@ -58,6 +58,12 @@ describe('不该命中的情况（误判防控）', () => {
     '不要按目标模式执行，普通跑就行',
     '别用目标模式',
     '关闭目标模式',
+    // 英文否定：曾因否定词表只有中文，被反向点亮开关（用户明确拒绝却被自动开启）
+    "don't use goal mode for this one",
+    'do not enable goal mode',
+    'never use goal mode here',
+    "please don't switch to goal mode",
+    'avoid using goal mode',
     '这次不按目标模式',
     '把首页 LCP 降到 2.5s 以内',
     '修好这个登录 bug',
@@ -77,6 +83,14 @@ describe('不该命中的情况（误判防控）', () => {
     for (const v of [null, undefined, 0, {}, []]) {
       expect(detectGoalIntent(v)).toEqual({ detected: false, strength: 'none', matches: [] });
     }
+  });
+
+  it('英文否定表不误伤肯定句与「别停」', () => {
+    // 「别用」要压，「别停」要放：否定词表按「否定词 + 可选动词 + 结尾」锚定，
+    // 而 don't stop until 的匹配点从 don't 起头，前缀为空，不会被当成否定。
+    expect(detectGoalIntent('run in goal mode').detected).toBe(true);
+    expect(detectGoalIntent("don't stop until tests pass").detected).toBe(true);
+    expect(detectGoalIntent("I'm not sure, use goal mode").detected).toBe(true);
   });
 
   it('超长粘贴只在扫描窗口内判断（贴日志不该触发）', () => {

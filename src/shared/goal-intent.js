@@ -46,8 +46,20 @@ export const GOAL_INTENT_WEAK_PATTERNS = [
 // （「这次不按目标模式」里匹配从「按」开始，前缀只剩「这次不」），没有单字兜底就会误开目标。
 const NEGATION_PREFIX = /(?:不要|不用|不必|无需|取消|关闭|停用|停止|退出|不按|不以|别|不)\s*$/;
 
+// 英文否定：`don't use goal mode` / `do not enable goal mode` / `never switch to goal mode`。
+// 只收「否定词 + 可选动词」这种紧邻结构，不收裸 `not`——`I'm not sure, use goal mode`
+// 仍应算命中。缺了这张表，英文用户说「别开目标模式」会被上面 use/enable 的 strong 规则
+// 反向点亮开关：用户明确拒绝却被自动开启，比漏识别严重得多。
+// 动词必须写成可选组：匹配点本身就从 `use/enable` 起头（前缀里只剩 `do not `），
+// 强制要求动词出现在前缀里会一个都命中不了。
+const NEGATION_PREFIX_EN = /\b(?:do\s+not|don'?t|does\s+not|doesn'?t|never|avoid|without|no\s+need\s+to)\s+(?:(?:use|using|enable|enabling|enter|entering|switch(?:ing)?\s+to|turn\s+on|activate|run(?:\s+in)?|go(?:\s+with)?)\s*)?$/i;
+
 // 扫描窗口：意图只可能出现在开头或指令部分，超长粘贴（贴代码/日志）不应拉高误判概率。
 const SCAN_CHARS = 2000;
+
+// 否定回看窗口：必须容得下 `please don't switch to `（23 字符）这类带客套前缀的英文句；
+// 中文否定靠 `$` 锚定紧邻关系，放宽窗口不会把「不用纠结，按目标模式」误判成否定。
+const NEGATION_LOOKBEHIND = 40;
 
 function collectMatches(text, patterns, negationAware) {
   const found = [];
@@ -58,8 +70,8 @@ function collectMatches(text, patterns, negationAware) {
     let m;
     while ((m = gre.exec(text)) !== null) {
       if (m[0].length === 0) break; // 防零宽匹配死循环
-      const before = text.slice(Math.max(0, m.index - 8), m.index);
-      if (negationAware && NEGATION_PREFIX.test(before)) continue;
+      const before = text.slice(Math.max(0, m.index - NEGATION_LOOKBEHIND), m.index);
+      if (negationAware && (NEGATION_PREFIX.test(before) || NEGATION_PREFIX_EN.test(before))) continue;
       found.push(m[0].trim());
       if (m[0].length === 0) break;
     }

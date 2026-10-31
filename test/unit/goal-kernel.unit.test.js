@@ -332,6 +332,68 @@ describe('用户操作：暂停 / 恢复 / 清除', () => {
     expect(maxed.turnBudget).toBe(DEFAULT_GOAL_LIMITS.maxTurnBudget);
   });
 
+  it('撞线时记下撞的是哪条预算（恢复要据此补对额度）', () => {
+    const byTime = {
+      ...createGoal({ objective: 'x', limits: { timeBudgetMs: 60_000 }, now: T0 }),
+      elapsedMs: 61_000,
+      startedAt: T0,
+    };
+    const timeVerdict = applyGoalVerdict(
+      byTime,
+      { verdict: GOAL_VERDICTS.UNMET, toolCallsSucceeded: 1 },
+      { now: T0 }
+    );
+    expect(timeVerdict.action).toBe(GOAL_ACTIONS.STOP_BUDGET);
+    expect(timeVerdict.goal.status).toBe(GOAL_STATUS.BUDGET_LIMITED);
+    expect(timeVerdict.goal.budgetStopReason).toBe('time');
+
+    const byTurns = {
+      ...createGoal({ objective: 'x', limits: { turnBudget: 5 }, now: T0 }),
+      turnsUsed: 5,
+      startedAt: T0,
+    };
+    const turnVerdict = applyGoalVerdict(
+      byTurns,
+      { verdict: GOAL_VERDICTS.UNMET, toolCallsSucceeded: 1 },
+      { now: T0 }
+    );
+    expect(turnVerdict.action).toBe(GOAL_ACTIONS.STOP_BUDGET);
+    expect(turnVerdict.goal.budgetStopReason).toBe('turns');
+  });
+
+  it('时间预算耗尽后恢复必须重新计一份时间，否则点「继续」一动就再次撞线', () => {
+    const limited = {
+      ...createGoal({ objective: 'x', limits: { timeBudgetMs: 60_000 }, now: T0 }),
+      status: GOAL_STATUS.BUDGET_LIMITED,
+      budgetStopReason: 'time',
+      elapsedMs: 61_000,
+      startedAt: T0,
+    };
+    const resumed = resumeGoal(limited, T0 + 1000);
+    expect(resumed.status).toBe(GOAL_STATUS.ACTIVE);
+    expect(resumed.elapsedMs).toBe(0);
+    expect(resumed.budgetStopReason).toBeNull();
+    // 轮数没耗尽就不白送轮预算
+    expect(resumed.turnBudget).toBe(DEFAULT_GOAL_LIMITS.turnBudget);
+    // 恢复后能跑满一份，超出才再次撞线
+    expect(checkGoalBudget(resumed, { now: T0 + 1000 }).exhausted).toBe(false);
+    expect(checkGoalBudget(resumed, { now: T0 + 60_000 }).exhausted).toBe(false);
+    expect(checkGoalBudget(resumed, { now: T0 + 61_000 }).exhausted).toBe(true);
+  });
+
+  it('轮数预算耗尽后恢复只补轮数，不白送时间预算', () => {
+    const limited = {
+      ...createGoal({ objective: 'x', limits: { turnBudget: 10 }, now: T0 }),
+      status: GOAL_STATUS.BUDGET_LIMITED,
+      budgetStopReason: 'turns',
+      turnsUsed: 10,
+      elapsedMs: 5000,
+    };
+    const resumed = resumeGoal(limited, T0 + 10);
+    expect(resumed.turnBudget).toBe(10 + DEFAULT_GOAL_LIMITS.turnBudget);
+    expect(resumed.elapsedMs).toBe(5000);
+  });
+
   it('clear 落 cleared 终态', () => {
     const cleared = clearGoal(createGoal({ objective: 'x', now: T0 }), T0 + 1);
     expect(cleared.status).toBe(GOAL_STATUS.CLEARED);
