@@ -410,7 +410,7 @@ export const BROWSER_TOOLS = [
     type: 'function',
     function: {
       name: 'read_image',
-      description: 'Deep-read one image and return a text analysis from the vision model. Provide ONE of two sources: (a) an image extracted from an attached document (docx/pdf/xlsx) in this session — pass file + image index from the document image manifest; (b) any image file on the connected agent — pass path (e.g. a screenshot you generated via agent_exec). Use it when you need specific details from an image. For agent-generated screenshots, save them into the working directory (a relative path like ./shot.png) and pass that same path.',
+      description: 'Deep-read one image and return a text analysis from the vision model. Provide ONE of three sources: (a) an image extracted from an attached document (docx/pdf/xlsx) in this session — pass file + image index from the document image manifest; (b) any image file on the connected agent — pass path (e.g. a screenshot you generated via agent_exec). Use it when you need specific details from an image. For agent-generated screenshots, save them into the working directory (a relative path like ./shot.png) and pass that same path. (c) an image the user pasted straight into the chat — pass file="chat-images" plus its 1-based index. Pasted images are sent only once and stripped from later turns, so re-read them here whenever you need the picture again. The manifest line starts with [Chat images a-b / chat-images] or [对话图片 a-b / chat-images].',
       parameters: {
         type: 'object',
         properties: {

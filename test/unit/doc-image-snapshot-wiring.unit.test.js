@@ -34,7 +34,7 @@ const PROMPT_SRC = readFileSync(join(process.cwd(), 'src/side_panel/prompt-manag
 
 describe('发送链路快照写入（双链路对齐守卫）', () => {
   // 会话标识形如 state.activeSessionId（prompt-manager 链路）或 mySessionId（chat-manager 支持跨会话派发）
-  const callRe = /await saveDocImageSnapshot\(([\w.]+), attachedFilesSnapshot\)/;
+  const callRe = /await saveDocImageSnapshot\(([\w.]+), attachedFilesSnapshot, attachedImagesSnapshot\)/;
 
   it('chat-manager 附件注入段调用 saveDocImageSnapshot', () => {
     expect(CHAT_SRC).toContain('import { buildFileContentText');
@@ -57,6 +57,22 @@ describe('发送链路快照写入（双链路对齐守卫）', () => {
       expect(around).toContain('try');
       expect(around).toContain('catch');
     }
+  });
+
+  it('两条链路都接上贴图重取（快照存图 + 可寻址线索）', () => {
+    for (const src of [CHAT_SRC, PROMPT_SRC]) {
+      // 序号区间只能由写快照的那一次调用给出：先落快照（拿到累计起点），再拼线索
+      expect(src).toMatch(/chatRange = await saveDocImageSnapshot\(/);
+      expect(src).toMatch(/buildChatImageHint\(chatRange\?\.chatStart, chatRange\?\.chatCount\)/);
+      expect(src).toMatch(/(?:finalText|userMessage) \+= chatImageHint/);
+      // 只有贴图、没有文件时同样要写快照
+      expect(src).toMatch(/if \(attachedFilesSnapshot\.length > 0 \|\| attachedImagesSnapshot\.length > 0\)/);
+    }
+  });
+
+  it('贴图线索不外泄：历史回放与编辑回填都剥掉', () => {
+    expect(CHAT_SRC).toContain("const displayContent = role === 'user' ? stripChatImageHint(rawDisplayContent) : rawDisplayContent;");
+    expect(CHAT_SRC).toMatch(/stripArtifactMarkers\(role === 'user'/);
   });
 });
 

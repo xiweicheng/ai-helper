@@ -27,7 +27,27 @@ import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subage
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
 import { weightTrimFallback } from './trim-fallback.js';
-import { createRoutingEvidenceCollector, annotateOneSubtaskCompletion } from './completion-verifier.js';
+import { createRoutingEvidenceCollector, annotateOneSubtaskCompletion, verifySubtaskCompletion } from './completion-verifier.js';
+// 目标模式（Goal）：纯内核（状态机/提示词）+ 独立评估器 + 会话级注册表。
+// 关键设计：不新增并行循环，只在「模型交回纯文本」那一拍做评估与续跑判定，
+// 从而白拿实时日志 / checkpoint / 取消 / 循环检测 / 预算软着陆。
+import {
+  GOAL_STATUS,
+  GOAL_ACTIONS,
+  buildGoalAnchorText,
+  buildGoalContinuationText,
+  normalizeGoal,
+  checkGoalBudget,
+  applyGoalVerdict,
+  markGoalBudgetExhausted,
+  startGoalRunClock,
+  goalIsFinished,
+  goalIsRunning,
+  goalHaltCheckpointReason,
+} from '../shared/goal.js';
+import { evaluateGoal } from './goal-evaluator.js';
+import { setGoal as persistGoalToStore, getGoal as readGoalMirror, updateGoal as updateGoalInStore } from './goal-store.js';
+import { buildResumeState } from './checkpoint-state.js';
 import { drainPendingInjections, dropPendingInjections, buildInjectionContent } from './injection.js';
 
 // 注册 reactLoop 命名空间翻译
@@ -85,6 +105,15 @@ registerTranslations('zh', {
     budgetSubtasksDone: '已完成的子任务：',
     budgetSubtasksPending: '未完成的子任务：',
     budgetSubtasksFailed: '失败的子任务：',
+    // —— 目标模式（Goal）——
+    goalAttemptNode: '🎯 目标评估 {turns}/{budget} · {verdict}',
+    goalVerdictError: '评估失败',
+    goalHaltNode: '🎯 目标 {status}',
+    goalUnmetNote: '\n\n> 🎯 目标模式：独立评估判定此目标**无法达成**（理由：{reason}）。以上为当前实际进展，未声称已完成。',
+    goalBudgetNotice: '🎯 目标的尝试次数/时间预算已用完（已尝试 {turns} 次，上限 {budget} 次），现场已保留。点击「继续执行」可接着做（会补充一批次数）；目标仍然有效。',
+    goalPausedNotice: '🎯 连续 {turns} 次未取得实质进展，目标已暂停（现场已保留）。补充说明或点「继续执行」即可恢复。',
+    goalUserPausedNotice: '🎯 目标已按你的操作暂停，本轮到此为止（现场已保留）。补充说明、点「继续执行」或重新点亮 🎯 即可恢复。',
+    goalEvaluatorDownNotice: '🎯 评估器连续不可用（网络/解析异常），目标已暂停以免无限续跑（未消耗尝试次数）。点「继续执行」可重试。',
   },
 });
 
@@ -141,6 +170,15 @@ registerTranslations('en', {
     budgetSubtasksDone: 'Completed subtasks: ',
     budgetSubtasksPending: 'Unfinished subtasks: ',
     budgetSubtasksFailed: 'Failed subtasks: ',
+    // —— Goal mode ——
+    goalAttemptNode: '🎯 Goal check {turns}/{budget} · {verdict}',
+    goalVerdictError: 'evaluator error',
+    goalHaltNode: '🎯 Goal {status}',
+    goalUnmetNote: '\n\n> 🎯 Goal mode: the independent evaluator judged this goal **not achievable** (reason: {reason}). The above is the actual progress; completion is not claimed.',
+    goalBudgetNotice: '🎯 The goal attempts/time budget is used up ({turns} attempts, cap {budget}). The scene is preserved — press "Continue" to keep going (extra attempts are granted); the goal stays active.',
+    goalPausedNotice: '🎯 No substantive progress for {turns} consecutive attempts, so the goal is paused (scene preserved). Add guidance or press "Continue" to resume.',
+    goalUserPausedNotice: '🎯 The goal was paused by your action, so this run stops here (scene preserved). Add guidance, press "Continue", or re-arm 🎯 to resume.',
+    goalEvaluatorDownNotice: '🎯 The evaluator has been unavailable repeatedly (network/parse errors), so the goal is paused to avoid endless retries (no attempts were consumed). Press "Continue" to retry.',
   },
 });
 import { summarizeRoundsBatch, extractAllRounds } from './context-summarizer.js';
@@ -219,6 +257,12 @@ export function hasLoopApproval(sessionId) {
 }
 
 /**
+ * 目标模式无人值守标记（按根任务会话记账）。
+ * 独立于 loopApprovedSessions：见 hasGoalUnattended 的说明。
+ */
+const goalUnattendedSessions = new Set();
+
+/**
  * 撤销任务级放行：清掉该会话自身的授权，以及它派生出去的整棵子任务树授权。
  *
  * 必要性：grantTaskLoopApproval 按根任务会话记账，而会话 ID 在很多场景下就是聊天会话 ID
@@ -233,6 +277,28 @@ export function revokeTaskLoopApproval(sessionId) {
   for (const id of [...loopApprovedSessions]) {
     if (id === sessionId || id.startsWith(prefix)) loopApprovedSessions.delete(id);
   }
+  // 无人值守随放行同生同灭：两者由同一次授权授予，也必须同时收回
+  for (const id of [...goalUnattendedSessions]) {
+    if (id === sessionId || id.startsWith(prefix)) goalUnattendedSessions.delete(id);
+  }
+}
+
+/**
+ * 查询会话是否处于「目标模式无人值守」。
+ *
+ * 与 hasLoopApproval 分开记账是必要的：任务级放行只回答「敏感操作要不要弹窗」，
+ * 而这个谓词还要回答「模型能不能停下来问人」（clarify_question）。两者授权来源不同——
+ * 用户点「当前任务放行」只该放开确认弹窗，不该顺带让模型失去提问能力；
+ * 只有目标模式的无人值守授权才同时具备这两种语义。
+ *
+ * 按根任务会话记账，故 plan_task 子任务 / dispatch_task 子代理（sessionId 带派生后缀）
+ * 共享同一份判定，无需逐层透传 taskContext。
+ * @param {string|null} sessionId
+ * @returns {boolean}
+ */
+export function hasGoalUnattended(sessionId) {
+  if (!sessionId) return false;
+  return getSessionAncestry(sessionId).some((id) => goalUnattendedSessions.has(id));
 }
 
 /**
@@ -1065,7 +1131,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
     checkpoint.executionLog || [],
     resumeCallId || checkpoint.callId || null,  // 优先使用新的 resumeCallId
-    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null, notesState: Array.isArray(checkpoint.notesState) ? checkpoint.notesState : [] }  // 回灌计划锚点、子任务完成进度与 scratchpad 便签，恢复后防重放/便签存活
+    buildResumeState(checkpoint)  // 计划锚点 / 子任务进度 / 便签 / 目标现场：读写两侧共用同一构造函数，杜绝「写得进、读不回」
   );
 
   // 恢复成功后清理 checkpoint —— 但「续跑又撞线」时必须保留现场：
@@ -1382,6 +1448,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   // 每个 reactLoopImpl 作用域（含子任务递归）各持一份 → 天然隔离；子任务经 Inherited Context 只读见父笔记。
   // 恢复时从 resumeState 回灌 checkpoint 中的便签
   let notesState = Array.isArray(resumeState?.notesState) ? resumeState.notesState : [];
+  // 目标模式（Goal）：引擎侧的会话级目标快照。真实值在读完 reactConfig 后确定
+  // （面板意图 apiParams.goal vs checkpoint 现场 resumeState.goalState）；此处先声明，
+  // 因为下面的锚点构造器以闭包形式引用它。子任务不参与目标评估，故恒为 null。
+  let goalState = null;
 
   /**
    * 构建任务进度锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
@@ -1425,6 +1495,20 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   };
 
   /**
+   * 构建目标锚点消息（瞬态注入：不写入 currentMessages，不受 trim 裁剪、不累积）
+   * 与计划锚点同构：注入位置必须在上下文压力裁剪块之后，否则 critical 分支的
+   * filterApiMessages 重建会把它整段吞掉。只在目标处于 active 时产出。
+   */
+  const buildGoalAnchorMessage = () => {
+    // 无人值守文案与工具表摘澄清同判据：只有用户亲手授予了放行（hasGoalUnattended）
+    // 才能剥夺模型提问权，否则就是「prompt 说别问、工具表里还挂着 clarify_question」
+    const text = buildGoalAnchorText(goalState, {
+      unattended: !!(sessionId && hasGoalUnattended(sessionId)),
+    });
+    return text ? { role: 'user', content: text } : null;
+  };
+
+  /**
    * 落盘一次 checkpoint（只负责序列化与写，节流/尾随调度交给 checkpointThrottle）
    * @param {string} reason - 保存原因，写进 interruptedReason 供续跑决策
    */
@@ -1447,6 +1531,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       subtaskPlan,
       taskState,
       notesState,
+      goalState,
       subtaskProgress: Object.fromEntries(subtaskProgress),
       currentSubtaskIndex,
       totalReflectionRounds,
@@ -1593,6 +1678,291 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       logger.debug('[Background] sendexecution statusupdate exception:', e.message);
     }
   }
+
+  // ============================================================
+  // 目标模式（Goal mode）
+  // ============================================================
+  const goalCfg = reactConfig.goal || {};
+  // 子任务不参与目标评估：目标属于整个任务，由父循环在收尾那一拍统一裁定
+  const goalEnabled = goalCfg.enabled !== false && !isSubtask;
+  // 本跑实际下发给模型的目标模式工具表。默认等于 tools；
+  // 目标模式下摘掉 clarify_question —— 无人值守时模型一旦调用它只能空等到 clarifyTimeout，
+  // 整条循环被一个问不出来的问题拖死（而目标是「自己决策往前走」）。
+  let goalTools = tools;
+
+  if (goalEnabled) {
+    // 恢复现场优先：checkpoint 里的 goalState 才是「这一跑做到哪」的权威；
+    // 但已终态的目标不接管本次运行，否则用户「重新设定目标」会被旧目标盖回去。
+    const fromCheckpoint = normalizeGoal(resumeState?.goalState);
+    goalState = (fromCheckpoint && !goalIsFinished(fromCheckpoint))
+      ? fromCheckpoint
+      : normalizeGoal(apiParams?.goal);
+    if (goalState && !goalState.sessionId && sessionId) goalState = { ...goalState, sessionId };
+    // 计时起点挪到本次 run 开始：时间预算衡量「引擎真正在跑多久」，
+    // 不能把 SW 被回收 / 面板关着的空窗累计进去（否则隔天点继续，第一轮就撞时间预算）。
+    if (goalState) {
+      goalState = startGoalRunClock(goalState);
+      // 时钟必须同步进 store：收尾裁决（handleGoalClosingAttempt）以 store 为权威回查并整份
+      // 覆盖闭包副本，只改副本会被旧起点盖回来，时间预算照旧把停机空窗算成执行时长。
+      // store 里没有这条目标（SW 被回收丢了防抖写入）时把现场补写回去，免得裁决把
+      // 「镜像为空」误判成「用户已清除」，把整段目标语义丢掉。
+      if (sessionId) {
+        const resynced = await updateGoalInStore(sessionId, (g) => {
+          if (!g) return goalState;
+          return g.status === GOAL_STATUS.ACTIVE ? startGoalRunClock(g) : g;
+        });
+        if (resynced) goalState = resynced;
+      }
+    }
+    if (goalState) {
+      logger.debug(`[Background] goal mode active: ${goalState.objective.slice(0, 60)} (${goalState.turnsUsed}/${goalState.turnBudget})`);
+    }
+    // 敏感操作放行（目标模式 = 无人值守的真本钱）。三个条件缺一不可：
+    //   ① 目标还在 active；② 授权来自面板开关（意图识别目标的 autoApprove 恒 false）；
+    //   ③ sessionId 存在（无会话无法按任务树记账）。
+    // 撤销不需要额外代码：reactLoopImpl 的 finally 已统一 revokeTaskLoopApproval，
+    // 所以目标进终态 / 本次运行退出时自动恢复逐次确认。
+    if (goalState && goalState.status === GOAL_STATUS.ACTIVE && goalState.autoApprove === true && sessionId) {
+      grantTaskLoopApproval(sessionId);
+      // 无人值守与放行同时授予（同一份授权、同一个根会话记账）
+      const unattendedRoot = getRootSessionId(sessionId);
+      if (unattendedRoot) goalUnattendedSessions.add(unattendedRoot);
+      logger.debug(`[Background] goal auto-approve granted: session=${sessionId} (sensitive confirm bypassed for this goal)`);
+    }
+  }
+
+  // 无人值守时摘掉 clarify_question。判定放在授权之后，且用会话谓词而非 goalState：
+  // 子任务 / dispatch_task 子代理这一跑里 goalState 恒为 null（不参与评估），
+  // 但它们的工具集自带 clarify_question，一旦调用同样会弹框把无人值守打断。
+  // 用 hasGoalUnattended 沿 ancestor 链命中父循环刚记下的授权，无需逐层透传 taskContext。
+  if (hasGoalUnattended(sessionId)) {
+    goalTools = tools.filter(t => t.function?.name !== 'clarify_question');
+  }
+
+  /** 目标状态回推面板（面板刷新 / SW 重启后据此恢复 goal bar） */
+  function emitGoalUpdate() {
+    if (!goalState) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'GOAL_UPDATE', sessionId, callId, goal: goalState }).catch(() => {});
+    } catch {
+      // 面板已关闭：下次打开时从 goal-store 拉
+    }
+  }
+
+  /** 目标状态写镜像（内存权威 + storage.local）。失败不影响执行。 */
+  async function syncGoalState() {
+    if (!sessionId || !goalState) return;
+    try {
+      await persistGoalToStore(sessionId, goalState);
+    } catch (e) {
+      logger.warn('[Background] persist goal state failed:', e?.message);
+    }
+  }
+
+  /**
+   * 本轮新增的日志（从上一个目标裁决节点之后算起）。
+   * 停滞闸问的是「本轮有没有工具真的成功」，而 executionLog 是整个运行累计的：
+   * 不切片，历史里成功过一次就永远算「有进展」，闸门变成死闸。
+   * 用「上一个 goalNode」做边界而不是记下标：trimExecutionLogMemory 会从头部
+   * splice，下标会漂，标记节点不会。
+   */
+  function sliceLogSinceLastGoalNode() {
+    for (let i = executionLog.length - 1; i >= 0; i -= 1) {
+      if (executionLog[i]?.goalNode) return executionLog.slice(i + 1);
+    }
+    return executionLog;
+  }
+
+  /**
+   * 目标评估节点日志。复用 nodeType:'reflection' + 自定义 nodeName——
+   * execution-log-render 有三处 nodeType 分支，新增类型要改三处，不值得。
+   */
+  function pushGoalLogNode({ nodeName, status, observation, extra }) {
+    executionLog.push({
+      id: crypto.randomUUID(),
+      iteration,
+      timestamp: new Date().toISOString(),
+      nodeType: 'reflection',
+      nodeName,
+      status,
+      observation: String(observation || '').slice(0, 500),
+      goalNode: true,
+      ...(extra || {}),
+    });
+  }
+
+  /**
+   * 客观取证：把 goal.doneCriteria 交给 completion-verifier 的取证路由（DOM/命令双通道）。
+   * 尽力而为——任何异常都归「取不到证」，绝不折成「未达成」（继承 completion-verifier 红线）。
+   */
+  async function gatherGoalEvidence() {
+    try {
+      const collector = createRoutingEvidenceCollector({
+        tabId,
+        resolveTabId: () => getLastOperatedTab(sessionId) ?? tabId,
+        execWait: execCommandWait,
+        isOnline: async () => { const c = await getAgentConfig(); return !!(c && c.connected); },
+        // 目标模式不做回炉，命令取证沿用只读硬拦（与 completion-verifier Phase A 一致）
+        commandReadOnlyGate: true,
+      });
+      const result = await verifySubtaskCompletion({
+        doneCriteria: goalState.doneCriteria,
+        gatherEvidence: collector,
+        gates: {}, // 四闸门由目标状态机统一裁决，这里不参与
+        config: { objectiveChecksEnabled: goalCfg.objectiveEvidence !== false },
+      });
+      return result.checkResults || [];
+    } catch (e) {
+      logger.warn('[Background] goal evidence collection failed (treated as unverified):', e?.message);
+      return [];
+    }
+  }
+
+  /**
+   * 目标「非正常达成」的收尾：预算耗尽 / 停滞暂停 / 评估器连续失败。
+   * 与 finalizeBudgetEnded 同一条纪律——保留现场（checkpoint），等用户点「继续执行」，
+   * 绝不 auto-resume 把任务接走重跑。
+   */
+  async function finalizeGoalHalt({ content, reasoningContent, stopReason }) {
+    const noticeKey = stopReason === 'stagnation' ? 'reactLoop.goalPausedNotice'
+      : stopReason === 'user_paused' ? 'reactLoop.goalUserPausedNotice'
+        : stopReason === 'evaluator_unavailable' ? 'reactLoop.goalEvaluatorDownNotice'
+          : 'reactLoop.goalBudgetNotice';
+    const notice = t(noticeKey, { turns: goalState.turnsUsed, budget: goalState.turnBudget });
+    const finalContent = content ? `${content}\n\n${notice}` : notice;
+    currentMessages.push({ role: 'assistant', content: finalContent });
+    pushGoalLogNode({
+      nodeName: t('reactLoop.goalHaltNode', { status: goalState.status }),
+      status: 'success',
+      observation: finalContent,
+      extra: { goalStatus: goalState.status, stopReason: stopReason || null },
+    });
+    await saveCheckpointNow(goalHaltCheckpointReason(goalState.status), true);
+    sendExecutionStatusUpdate(notice, 'success');
+    taskCompleted = true;
+    logger.warn(`[Background] goal halted: status=${goalState.status}, reason=${stopReason}, turns=${goalState.turnsUsed}/${goalState.turnBudget}`);
+    return {
+      content: finalContent,
+      executionLog,
+      reasoningContent: reasoningContent || null,
+      goalStatus: goalState.status,
+      goalStopped: true,
+    };
+  }
+
+  /**
+   * 一次「收尾尝试」的目标裁决。
+   * @returns {{kind:'continue'}|{kind:'finalize', content:string, reasoningContent:string|null}|{kind:'halt', result:object}}
+   */
+  async function handleGoalClosingAttempt({ content, reasoningContent }) {
+    // ⓪ 权威回查：goalState 是本次运行启动时的闭包副本，用户这一跑里点的暂停/继续/清除
+    //    只写进 goal-store。不回查就会出现「面板显示已暂停、引擎接着评估续跑」，
+    //    而且裁决后还会拿旧副本把用户刚写的状态盖回去。
+    if (sessionId) {
+      let mirror = null;
+      try {
+        mirror = await readGoalMirror(sessionId);
+      } catch (e) {
+        logger.debug('[Background] read goal mirror failed:', e?.message);
+      }
+      // 清除落的是一个 status=cleared 的对象（clearGoal），不是 null：
+      // 只判 !mirror 会让这段「目标已消失、按普通任务正常收尾」永远进不去 ——
+      // 用户点「清除」想收工拿答案，实际却以 goal_paused 停住、还得再点一次继续。
+      if (!mirror || mirror.status === GOAL_STATUS.CLEARED) {
+        // 目标在运行中被清除：目标语义已消失，按普通任务的正常收尾走
+        logger.debug('[Background] goal cleared during run, finalize without goal semantics');
+        goalState = null;
+        return { kind: 'finalize', content, reasoningContent };
+      }
+      // 以镜像为权威：它既可能比闭包新（用户点了暂停），也可能就是引擎自己刚同步的那份
+      goalState = mirror;
+      if (!goalIsRunning(goalState)) {
+        const stopReason = goalState.status === GOAL_STATUS.BUDGET_LIMITED ? 'budget' : 'user_paused';
+        return { kind: 'halt', result: await finalizeGoalHalt({ content, reasoningContent, stopReason }) };
+      }
+    }
+
+    // ① 预算闸先判：别为一个已经没预算的目标白烧一次评估调用
+    const budget = checkGoalBudget(goalState, { fallbackTimeBudgetMs: loopTimeout });
+    if (budget.exhausted) {
+      goalState = markGoalBudgetExhausted(goalState, budget.reason);
+      await syncGoalState();
+      emitGoalUpdate();
+      return { kind: 'halt', result: await finalizeGoalHalt({ content, reasoningContent, stopReason: budget.reason }) };
+    }
+
+    // ② 客观取证（可选）+ 独立评估（当前模型的一次短调用，不引入第二个模型）
+    const evidence = (goalCfg.objectiveEvidence !== false && goalState.doneCriteria.length > 0)
+      ? await gatherGoalEvidence()
+      : [];
+    const verdict = await evaluateGoal(goalState, {
+      config,
+      model,
+      sessionId,
+      signal: abortSignal,
+      // 停滞闸只看「本轮」新增的工具节点：历史里成功过不算本轮有进展
+      executionLog: sliceLogSinceLastGoalNode(),
+      evidence,
+      answer: content,
+      goalConfig: goalCfg,
+    });
+
+    // ③ 状态机裁决（唯一边移入口，全部可单测）。limits 只传有限值——
+    // 传 undefined 会盖掉 DEFAULT_GOAL_LIMITS 里的默认值，让停滞闸门失效。
+    const goalLimits = {};
+    if (Number.isFinite(goalCfg.stagnationLimit)) goalLimits.stagnationLimit = goalCfg.stagnationLimit;
+    if (Number.isFinite(goalCfg.evaluatorFailureLimit)) goalLimits.evaluatorFailureLimit = goalCfg.evaluatorFailureLimit;
+    const applied = applyGoalVerdict(goalState, verdict, {
+      fallbackTimeBudgetMs: loopTimeout,
+      limits: goalLimits,
+    });
+    goalState = applied.goal;
+    await syncGoalState();
+    emitGoalUpdate();
+
+    pushGoalLogNode({
+      nodeName: t('reactLoop.goalAttemptNode', {
+        turns: goalState.turnsUsed,
+        budget: goalState.turnBudget,
+        verdict: verdict.evaluatorError ? t('reactLoop.goalVerdictError') : (verdict.verdict || '-'),
+      }),
+      status: verdict.evaluatorError ? 'failed' : 'success',
+      observation: verdict.reason || '',
+      extra: {
+        goalVerdict: verdict.verdict,
+        goalMissing: verdict.missing,
+        goalEvidence: evidence,
+        goalTurnsUsed: goalState.turnsUsed,
+      },
+    });
+
+    if (applied.action === GOAL_ACTIONS.CONTINUE) {
+      // 续跑：先把模型这次的收尾陈述入历史（否则下一轮它看不到自己说过什么，会重做已完成步骤），
+      // 再追加纠正指令。关键：绝不清 checkpoint —— 现场就是续跑的资本。
+      if (content) currentMessages.push({ role: 'assistant', content });
+      currentMessages.push({ role: 'user', content: buildGoalContinuationText(goalState, verdict) });
+      await saveCheckpointNow('goal_continue');
+      logger.debug(`[Background] goal not met, continuing (${goalState.turnsUsed}/${goalState.turnBudget})`);
+      return { kind: 'continue' };
+    }
+
+    if (applied.action === GOAL_ACTIONS.STOP_ACHIEVED) {
+      return { kind: 'finalize', content, reasoningContent };
+    }
+
+    if (applied.action === GOAL_ACTIONS.STOP_UNMET) {
+      // 判不可能：如实上报，把理由补进最终回答（绝不谎报成功），随后走正常收尾
+      const note = t('reactLoop.goalUnmetNote', { reason: verdict.reason || '-' });
+      return {
+        kind: 'finalize',
+        content: content ? `${content}\n\n${note}` : note,
+        reasoningContent,
+      };
+    }
+
+    // STOP_PAUSED / STOP_BUDGET：保留现场，等用户点「继续」
+    return { kind: 'halt', result: await finalizeGoalHalt({ content, reasoningContent, stopReason: applied.stopReason }) };
+  }
   
   // 整体循环超时控制 - 使用动态调整机制
   const loopStartTime = Date.now();
@@ -1682,6 +2052,20 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    * 已列入 auto-resume 的 TERMINAL_REASONS，保证闹钟不会静把任务接走重跑。
    */
   async function finalizeBudgetEnded({ content, reasoningContent, report }) {
+    // 目标模式：循环预算撞线与目标轮预算是两把尺，但落点一致——保留现场等用户决定是否继续。
+    // 判定必须读 store 的当前值，而不是本次 run 启动时的闭包副本：用户这一跑里可能刚点过暂停，
+    // 用 active 副本整份覆写会把「已暂停」改回「预算用完」，顺带把 autoApprove 复活
+    // （下一次读 store 就重新授予放行）；反过来也只在 active 上结算，避免重复累计时长。
+    if (sessionId && goalState) {
+      const settledBudget = await updateGoalInStore(sessionId, (g) => (
+        g && g.status === GOAL_STATUS.ACTIVE ? markGoalBudgetExhausted(g, budgetExhaustedBy) : g
+      ));
+      if (settledBudget) goalState = settledBudget;
+    }
+    if (goalState && goalState.status === GOAL_STATUS.BUDGET_LIMITED) {
+      await syncGoalState();
+      emitGoalUpdate();
+    }
     // 收尾文案必须进历史：否则续跑时模型看不到「自己已经交代过什么」，会把已完成的工作重做。
     // 本地兜底报告同样要进——它才是「缺项清单」的唯一载体，丢了等于续跑从零开始。
     const finalContent = content || buildBudgetFallbackReport({
@@ -1722,12 +2106,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   // 逐档更激进；防止重试风暴，同时避免一次性自愈复发即猝死
   let contextHealAttempts = 0;
 
-  // 工具定义 token 估算：tools 为 reactLoopImpl 形参，循环内无任何重赋值/变更，
-  // 清理版 JSON（剔 id）的序列化估算结果任务级恒定 → 提到循环外只算一次，
-  // 避免长任务每轮 API 调用前重复 map+stringify+估算；校准（getCalibratedTokens）
-  // 随实际用量演进，仍在每轮应用原始值时逐轮进行。
+  // 工具定义 token 估算：实际下发的是 goalTools（目标模式下已摘掉 clarify_question），
+  // 循环内无任何重赋值/变更，清理版 JSON（剔 id）的序列化估算结果任务级恒定
+  // → 提到循环外只算一次，避免长任务每轮 API 调用前重复 map+stringify+估算；
+  // 校准（getCalibratedTokens）随实际用量演进，仍在每轮应用原始值时逐轮进行。
   const rawToolTokens = estimateTokens(
-    JSON.stringify(tools.map(t => { const { id, ...clean } = t; return clean; }))
+    JSON.stringify(goalTools.map(t => { const { id, ...clean } = t; return clean; }))
   );
 
   try {
@@ -1810,7 +2194,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 宽限轮不携带任何工具：「预算已用完、请交报告」必须由结构保证，
       // 而不能只靠提示词里的“请不要调工具”——后者在模型强烈想继续动作时经常被无视。
       // 工具定义本轮也不再参与 token 估算（请求体里没有它）。
-      const apiTools = inGrace ? [] : tools;
+      const apiTools = inGrace ? [] : goalTools;
       if (hasPlanTask) {
         logger.debug('[Background] current iterationcontains plan_task,using Agent limittool into  task decomposition,tool count :', apiTools.length);
       }
@@ -1893,6 +2277,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       if (notesState.length > 0) {
         const noteAnchor = buildNotesAnchorMessage();
         if (noteAnchor) filteredMessages = [...filteredMessages, noteAnchor];
+      }
+      // 目标锚点：与计划/便签锚点同一位置（裁剪块之后），否则 critical 分支重建会吞掉它。
+      // 只在 active 时产出；每轮重申目标与验收标准，长任务压缩后也不丢。
+      if (goalState) {
+        const goalAnchor = buildGoalAnchorMessage();
+        if (goalAnchor) filteredMessages = [...filteredMessages, goalAnchor];
       }
       if (inGrace) {
         // 宽限轮收尾指令：每轮都注入（指令短，重申成本远低于模型漏读一次）；
@@ -2905,7 +3295,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         continue;
       }
       
-      const content = assistantMessage?.content || '';
+      let content = assistantMessage?.content || '';
       const reasoningContent = assistantMessage?.reasoning_content || null;
 
       // 宽限轮交回了纯文本报告：走软着陆统一收尾（保留 budget_exhausted checkpoint 供续跑，
@@ -2916,6 +3306,18 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       }
 
       logger.debug('[Background] ReAct loop complete,finalcontent length:', content.length);
+
+      // 目标模式（唯一接线点）：模型交回纯文本 = 一次「收尾尝试」。
+      // 先把现场与 checkpoint 都保着，让独立评估器判——未达成则注入纠正指令并 continue，
+      // 达成/判不可能才允许走到下面「清 checkpoint + 后置反思」的正常收尾。
+      // 只对仍在 active 的目标做裁决：paused / budget_limited 是「等用户下指令」的状态，
+      // 放进来会走到 applyGoalVerdict 的非 active 早退，白烧一次评估调用还不计轮次
+      if (goalEnabled && goalIsRunning(goalState)) {
+        const goalStep = await handleGoalClosingAttempt({ content, reasoningContent });
+        if (goalStep.kind === 'continue') continue;
+        if (goalStep.kind === 'halt') return goalStep.result;
+        content = goalStep.content;
+      }
 
       // 任务正常完成：先保存最终 checkpoint（供反思失败时仍可续接），然后清理
       await saveCheckpointNow('final_answer');

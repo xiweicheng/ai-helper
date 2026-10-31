@@ -41,9 +41,20 @@ describe('decideAutoResume 自动续跑决策', () => {
     }
   });
 
-  test('终态 checkpoint 不自动续：user_cancelled（用户意志）、error（明确失败保持人工确认）与 budget_exhausted（软着陆后等用户点续跑）', () => {
+  test('终态 checkpoint 不自 动续：user_cancelled（用户意志）、error（明确失败保持人工确认）与 budget_exhausted（软着陆后等用户点续跑）', () => {
     for (const reason of ['user_cancelled', 'error', 'budget_exhausted']) {
       const { targets, justExhausted } = decideAutoResume([cp({ interruptedReason: reason })], new Set());
+      expect(targets.length, reason).toBe(0);
+      expect(justExhausted.length, reason).toBe(0);
+    }
+  });
+
+  test('目标停住的两类现场同样不自动续（闹钟不许替用户按「继续」）', async () => {
+    const { GOAL_HALT_CHECKPOINT_REASONS } = await import('../../src/shared/goal.js');
+    const m = await import('../../src/background/auto-resume.js');
+    expect(GOAL_HALT_CHECKPOINT_REASONS.length).toBeGreaterThan(0);
+    for (const reason of GOAL_HALT_CHECKPOINT_REASONS) {
+      const { targets, justExhausted } = m.decideAutoResume([cp({ interruptedReason: reason })], new Set());
       expect(targets.length, reason).toBe(0);
       expect(justExhausted.length, reason).toBe(0);
     }

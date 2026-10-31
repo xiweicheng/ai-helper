@@ -1,6 +1,6 @@
 // options/config-manager.js - 配置管理与状态
 
-import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_GOAL_CONFIG } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
 import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
@@ -942,6 +942,42 @@ export function syncQueueAutoCarryFields() {
   row.style.display = toggle.checked ? '' : 'none';
 }
 
+/**
+ * 同步目标模式子项的显隐与开关的「已启用/已停用」文案。
+ * 与 reflection / completionVerification 同一套模式：总开关收起子项。
+ */
+export function syncGoalFields() {
+  const master = document.getElementById('goalEnabled');
+  const show = !!(master && master.checked);
+  document.querySelectorAll('.goal-sub').forEach((el) => { el.style.display = show ? 'block' : 'none'; });
+  const masterLabel = document.getElementById('goalEnabledLabel');
+  if (masterLabel) masterLabel.textContent = show ? t('common.enabled') : t('common.disabled');
+  const intentEl = document.getElementById('goalIntentDetection');
+  const intentLabel = document.getElementById('goalIntentDetectionLabel');
+  if (intentLabel) intentLabel.textContent = intentEl && intentEl.checked ? t('common.enabled') : t('common.disabled');
+}
+
+/**
+ * 目标模式的布尔开关：切换即落盘。
+ * 为什么只在这两个键上即时写：「关掉目标模式」必须当场生效，否则用户以为已关，
+ * 下一条消息却仍在目标模式里跑（与 networkAccessEnabled / completionVerificationRerunEnabled 同口径）。
+ * 必须「读回整份只翻一个键」：goalConfig 是按整份对象浅合并消费的，
+ * 直接写 { enabled } 会把其余字段顶成 undefined。
+ *
+ * 预算与阈值（turnBudget / timeBudgetMs / stagnationLimit / evaluatorFailureLimit /
+ * objectiveEvidence）不再开放给用户：这几项用户无法预判后果，改由 DEFAULT_GOAL_CONFIG 固定。
+ * @param {'enabled'|'intentDetection'} field
+ * @param {boolean} value
+ */
+export function persistGoalSwitch(field, value) {
+  chrome.storage.local.get(['goalConfig'], (result) => {
+    if (chrome.runtime.lastError) return;
+    const cfg = Object.assign({}, DEFAULT_GOAL_CONFIG, result.goalConfig || {}, { [field]: value !== false });
+    chrome.storage.local.set({ goalConfig: cfg });
+  });
+}
+
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([
@@ -956,6 +992,7 @@ export function loadConfig() {
     'enableExecutionLog',
     'reflectionConfig',
     'completionVerificationConfig',
+    'goalConfig',
     'streamEnabled',
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
@@ -1050,6 +1087,15 @@ export function loadConfig() {
       completionVerificationRerunEl.checked = !!(result.completionVerificationConfig && result.completionVerificationConfig.rerunEnabled === true);
       completionVerificationRerunEl.dispatchEvent(new Event('change'));
     }
+
+    // 加载目标模式（Goal）配置。缺字段一律回退 DEFAULT_GOAL_CONFIG（与后台 getStoredConfig 同一真源），
+    // 而不是留 undefined：goal.turnBudget 传 undefined 会在状态机里把默认预算弄成 NaN
+    const goalCfg = Object.assign({}, DEFAULT_GOAL_CONFIG, result.goalConfig || {});
+    const goalEnabledEl = document.getElementById('goalEnabled');
+    if (goalEnabledEl) goalEnabledEl.checked = goalCfg.enabled !== false;
+    const goalIntentEl = document.getElementById('goalIntentDetection');
+    if (goalIntentEl) goalIntentEl.checked = goalCfg.intentDetection !== false;
+    syncGoalFields();
 
     // 加载对话配置
 
@@ -1246,7 +1292,16 @@ export function saveConfig() {
       enabled: document.getElementById('subtaskReflectionEnabled').checked
     }
   };
-  
+
+  // 获取目标模式（Goal）配置。以 DEFAULT_GOAL_CONFIG 打底再覆写，保证落库的永远是
+  // 字段齐全的一份：后台只做浅合并，存进残缺对象会把预算阈值变成 undefined。
+  // 只开放两个布尔开关；预算与阈值（turnBudget / timeBudgetMs / stagnationLimit /
+  // evaluatorFailureLimit / objectiveEvidence）已从设置页移除，固定取默认值。
+  const goalConfig = {
+    ...DEFAULT_GOAL_CONFIG,
+    enabled: document.getElementById('goalEnabled')?.checked !== false,
+    intentDetection: document.getElementById('goalIntentDetection')?.checked !== false,
+  };
   // 验证 ReAct 配置范围（只剩「整体循环超时」，下限与滑杆首档对齐；其余三项为内部固定值）
   if (reactLoopTimeout < LOOP_TIMEOUT_MIN_MINUTES * 60000 || reactLoopTimeout > 86400000) {
     showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');
@@ -1284,6 +1339,8 @@ export function saveConfig() {
     imageApiKey: encodeSecret(imageApiKey),
     // 反思配置
     reflectionConfig: reflectionConfig,
+    // 目标模式配置（整份一份，字段齐全）
+    goalConfig: goalConfig,
     // 注（#13）：completionVerificationConfig 不在此「保存」写——它由 options/index.js 开关 change 即时写整份对象，
     // 真源单一（避免点保存时用面板残值覆盖切换写入的其他字段）；此处的 storage key 列表仍含它仅供加载。
     // 流式输出配置

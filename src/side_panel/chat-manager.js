@@ -20,6 +20,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { enqueueFromInput } from './queue-runner.js';
+import { prepareGoalForSend, summarizeGoalAttachments } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
 // 从提取的子模块导入
@@ -27,7 +28,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, getFileIcon, formatFileSize, renderFilePreviews } from './file-extract.js';
-import { saveDocImageSnapshot } from './doc-images.js';
+import { saveDocImageSnapshot, buildChatImageHint, stripChatImageHint } from './doc-images.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
@@ -1211,9 +1212,6 @@ export async function sendMessage(opts = {}) {
     if (fileContent) {
       finalText += fileContent;
     }
-    // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
-    try { await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot); }
-    catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
       if (f.status === 'done') {
@@ -1221,6 +1219,19 @@ export async function sendMessage(opts = {}) {
       }
     });
   }
+
+  // 贴图重取：图片只随本条消息发出，之后每轮请求前都会被 stripImagesFromContent 剥掉。
+  // 快照（存图）+ 一行线索（告诉模型能重读第几张）缺一不可，否则第 2 轮起就彻底失忆。
+  const attachedImagesSnapshot = (inputCtx.attachedImages || []).slice();
+  // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）。
+  // 必须先落快照再拼线索：序号由快照当前的累计位置决定（第二条消息里的图可能从 3 开始）。
+  let chatRange = null;
+  if (attachedFilesSnapshot.length > 0 || attachedImagesSnapshot.length > 0) {
+    try { chatRange = await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
+    catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
+  }
+  const chatImageHint = buildChatImageHint(chatRange?.chatStart, chatRange?.chatCount);
+  if (chatImageHint) finalText += chatImageHint;
 
   // 用户消息：激活会话走 DOM + 内存历史；非激活只登记到目标会话的独立历史（由 finally 统一落盘）
   const userMsgId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
@@ -1386,6 +1397,27 @@ export async function sendMessage(opts = {}) {
 
     const apiParams = await getApiParams(isActive ? null : { temperature: sess.temperature, topP: sess.topP });
     if (isActive) apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
+
+    // 目标模式：把本轮用户输入交给后台换成权威 goal 快照随 CALL_API 下发。
+    // 语义与两条入口全部收在后台 / goal-panel：已有可推进目标 → 追加为约束（累加不替换），
+    // 否则以本轮文本新开一个目标；🎯 开关没亮时还会走一次确定性意图识别。
+    // 用原始 text 而不是 finalText —— 后者已经拼上了引用/选中/技能/MCP/知识库/网页/文件内容，
+    // 塞进 objective 会污染目标描述。
+    // 不能在这里用 state.goalMode 做门控：那等于只支持开关入口，意图识别就白实现了。
+    if (isActive) {
+      try {
+        // 附件清单只传「有什么」：正文仍只走 finalText（objective 用原始 text），
+        // 但目标必须知道「这个任务依赖哪些看不见的东西」——图片从第 2 次 API 调用起就被剥掉。
+        const goal = await prepareGoalForSend({
+          sessionId: mySessionId,
+          text,
+          attachments: summarizeGoalAttachments(inputCtx),
+        });
+        if (goal) apiParams.goal = goal;
+      } catch (e) {
+        logger.warn('[SidePanel] prepare goal for send failed:', e?.message);
+      }
+    }
 
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = 0;
@@ -1586,6 +1618,8 @@ export async function sendMessage(opts = {}) {
         // 目录绑定随写回保持目标会话自己的值（不因面板切走而被串改）
         workdir: sess.workdir,
         workdirAgentId: sess.workdirAgentId,
+        // 目标模式开关属于会话状态，后台派发写回时要保留目标会话自己的值
+        goalMode: sess.goalMode,
       });
       document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
     }
@@ -1780,15 +1814,19 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   messageDiv.dataset.messageId = messageId;
 
   // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
-  const displayContent = Array.isArray(content)
+  // 贴图线索是给模型看的内部指令：历史回放同样走这里，展示前必须剥掉
+  const rawDisplayContent = Array.isArray(content)
     ? content.filter(c => c.type === 'text').map(c => c.text).join('')
     : content;
+  const displayContent = role === 'user' ? stripChatImageHint(rawDisplayContent) : rawDisplayContent;
   const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
 
   // 存储原始内容：数组格式需要序列化，字符串直接存
   messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : stripArtifactMarkers(content);
   // 额外存储纯文本版本，供复制/编辑/引用使用（优先使用 rawTextContent 以保留完整上下文格式）
-  messageDiv.dataset.textContent_ = stripArtifactMarkers(rawTextContent || displayContent);
+  messageDiv.dataset.textContent_ = stripArtifactMarkers(role === 'user'
+    ? stripChatImageHint(rawTextContent || displayContent)
+    : (rawTextContent || displayContent));
   
   const textContent = displayContent;
   

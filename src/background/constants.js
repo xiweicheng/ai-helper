@@ -86,6 +86,23 @@ export const DEFAULT_COMPLETION_VERIFICATION_CONFIG = {
   maxTokens: 1024
 };
 
+// 目标模式（Goal）配置默认值
+// 与 completion-verifier 的落地方式一致：enabled 默认开，但关闭时必须让请求体与行为
+// 逐字节回落到「没有这个功能」的基线；其余字段全部深合并打底，避免 options 只写一个
+// 字段就把其余默认值顶成 undefined。
+export const DEFAULT_GOAL_CONFIG = {
+  enabled: true,               // 总开关：关=面板不显 chip、引擎侧不评估不续跑
+  turnBudget: 20,              // 收尾尝试次数上限（"轮"=一次收尾，不是一次 API 往返）
+  timeBudgetMs: 0,             // 0=跟随 reactConfig.loopTimeout（不另设一套时间语义）
+  stagnationLimit: 3,          // 连续无工具进展的未达成轮数 → 暂停
+  evaluatorFailureLimit: 2,    // 评估器连续失败次数 → 暂停（不烧轮次）
+  objectiveEvidence: true,     // 复用 completion-verifier 做客观取证（只对 goal 生效）
+  intentDetection: true,       // 文本意图识别 + 可撤销提示条（零 token）
+  model: null,                 // 评估模型，null=跟随当前会话模型（不引入第二个模型）
+  temperature: 0,              // 判定要可复现
+  maxTokens: 600,              // 只输出短 JSON
+};
+
 // 流式输出配置默认值
 export const DEFAULT_STREAM_CONFIG = {
   streamEnabled: true,           // LLM 流式输出默认开启

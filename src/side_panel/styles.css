@@ -2475,6 +2475,21 @@ body {
   border-color: rgba(var(--brand-rgb), 0.40);
 }
 
+/* 目标已停住（暂停 / 预算耗尽）但仍点着「目标」：下一条消息会把它复活（store 的 set 分支）。
+   选中底色从品牌紫换成警示橙，和上方目标条「已暂停 / 预算耗尽」的标签对上，
+   免得「已暂停」+「目标」亮着看起来像自相矛盾。chip 熄灭时不标——目标条自己会说明。 */
+#goalGroup[data-goal-idle="1"] {
+  background: rgba(var(--warning-rgb), 0.14);
+  border-color: rgba(var(--warning-rgb), 0.40);
+}
+#goalGroup[data-goal-idle="1"]:hover {
+  background: rgba(var(--warning-rgb), 0.20);
+  border-color: rgba(var(--warning-rgb), 0.52);
+}
+#goalGroup[data-goal-idle="1"] .check-toggle input:checked ~ .tool-toggle-label {
+  color: var(--warning-strong);
+}
+
 /* === 文字标签样式 === */
 .input-bottom-left .check-toggle {
   user-select: none;
@@ -2521,6 +2536,104 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0;
+}
+
+/* === 目标条（Goal mode）===
+   输入框上方的常驻条。宽度跟随输入区，不新造浮层：
+   左侧状态徽标 + 目标摘要（单行截断） + 轮次元信息 + 右侧操作按钮。 */
+.goal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  min-width: 0;
+  border: 1px solid rgba(var(--brand-rgb), 0.28);
+  border-radius: 8px;
+  background: rgba(var(--brand-rgb), 0.08);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.goal-bar-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
+}
+.goal-bar-status {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--brand-500);
+  background: rgba(var(--brand-rgb), 0.16);
+}
+/* 终态与异常态分色：达成=绿、未达成/预算耗尽=橙、暂停/清除=灰 */
+.goal-bar[data-status="achieved"] .goal-bar-status {
+  color: var(--success-500);
+  background: rgba(var(--success-rgb), 0.16);
+}
+.goal-bar[data-status="unmet"] .goal-bar-status,
+.goal-bar[data-status="budget_limited"] .goal-bar-status {
+  color: var(--warning-strong);
+  background: rgba(var(--warning-rgb), 0.18);
+}
+.goal-bar[data-status="paused"] .goal-bar-status {
+  color: var(--text-secondary);
+  background: rgba(var(--overlay-rgb), 0.06);
+}
+.goal-bar-objective {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.goal-bar-meta {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+/* 自动放行徽标：点击撤销。必须可见——静默放行是不可接受的 */
+.goal-bar-approve {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(var(--warning-rgb), 0.18);
+}
+.goal-bar-approve:hover {
+  background: rgba(var(--warning-rgb), 0.3);
+}
+.goal-bar-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.goal-bar-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.goal-bar-btn:hover {
+  color: var(--brand-500);
+  border-color: rgba(var(--brand-rgb), 0.4);
+  background: rgba(var(--brand-rgb), 0.1);
+}
+.goal-bar-btn-danger:hover {
+  color: var(--danger-500);
+  border-color: rgba(var(--danger-rgb), 0.4);
+  background: rgba(var(--danger-rgb), 0.1);
 }
 
 /* 隐藏标签区域滚动条 */

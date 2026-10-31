@@ -4,7 +4,8 @@ import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogA
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
-import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
+import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint, revokeTaskLoopApproval } from './react-loop.js';
+import { goalIsRunning } from '../shared/goal.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
@@ -15,6 +16,7 @@ import { enqueueInjection } from './injection.js';
 import * as AgentClient from './local-agent-client.js';
 import { getAsrStatus, clearAsrStatusCache, transcribeWavBase64, openAsrSession, base64ToUint8 } from './asr-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
+import { getGoal, applyGoalCommand, removeGoal } from './goal-store.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import { persistCompactionSummary } from './compaction-memory.js';
@@ -1146,6 +1148,82 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       activeSessionIds: Array.from(activeReactLoops),
     });
     return false;
+  }
+
+  // ===== 目标模式（Goal）：会话级状态通道 =====
+  // 面板只表达意图，状态迁移全部由后台执行（引擎是权威）——
+  // 否则多个面板实例各自维护一份，最终会和引擎里的 goalState 走样。
+  if (message.type === 'GET_GOAL') {
+    const { sessionId } = message;
+    if (!sessionId) {
+      sendResponse({ goal: null });
+      return false;
+    }
+    getGoal(sessionId).then(goal => {
+      sendResponse({ goal });
+    }).catch(err => {
+      logger.warn('[Background] GET_GOAL failed:', err?.message);
+      sendResponse({ goal: null });
+    });
+    return true;
+  }
+
+  // 目标指令：set / constraint / pause / resume / clear
+  // goal 模式关闭时一律拒绝——避免「开关说关了但后台还能建目标」的谎话
+  if (message.type === 'SET_GOAL') {
+    const { sessionId, action } = message;
+    if (!sessionId) {
+      sendResponse({ success: false, goal: null });
+      return false;
+    }
+    // 只回包一次：早期的写法在 disabled 分支里先 sendResponse 再 return null，
+    // 链上下一个 then 会拿 null 再发一次（action 丢失 + 每次都刷 message port closed）。
+    getStoredConfig().then(async (cfg) => {
+      if (cfg?.reactConfig?.goal?.enabled === false) return { disabled: true };
+      // 设置页的预算只作为「新建目标时的快照」注入：面板不需要知道这两个键，
+      // 也不让一次改设置把正在跑的目标预算换掉（累加语义只增约束，不动预算）
+      const goalCfg = cfg?.reactConfig?.goal || {};
+      const cmd = { ...message };
+      if (cmd.turnBudget === undefined && Number.isFinite(goalCfg.turnBudget)) {
+        cmd.turnBudget = goalCfg.turnBudget;
+      }
+      if (cmd.timeBudgetMs === undefined && Number.isFinite(goalCfg.timeBudgetMs)) {
+        cmd.timeBudgetMs = goalCfg.timeBudgetMs;
+      }
+      const goal = await applyGoalCommand(sessionId, cmd);
+      // 目标一旦不再自动推进，就当场收回本次运行的放行授权。
+      // 撤销若只写在引擎的 finally 里，一次 run 可能还要跑几十分钟——
+      // 用户点了「暂停 / 清除 / 撤销放行」之后，agent_exec 灰名单命令仍会静默 auto-pass。
+      if (goal && !goalIsRunning(goal)) revokeTaskLoopApproval(sessionId);
+      return { goal };
+    }).then((res) => {
+      if (res?.disabled) {
+        sendResponse({ success: false, goal: null, disabled: true, action: action || 'set' });
+        return;
+      }
+      sendResponse({ success: !!res?.goal, goal: res?.goal || null, action: action || 'set' });
+    }).catch(err => {
+      logger.warn('[Background] SET_GOAL failed:', err?.message);
+      sendResponse({ success: false, goal: null });
+    });
+    return true;
+  }
+
+  // 会话被删除：清掉它的目标镜像。面板只删 IndexedDB 里的会话，而 goal 的权威在这层——
+  // 不接这一手，sessionGoals 里会按已经查不到的 sessionId 永久留着孤儿条目。
+  if (message.type === 'DROP_GOAL') {
+    const { sessionId } = message;
+    if (!sessionId) {
+      sendResponse({ success: false });
+      return false;
+    }
+    removeGoal(sessionId).then(() => {
+      sendResponse({ success: true });
+    }).catch(err => {
+      logger.warn('[Background] DROP_GOAL failed:', err?.message);
+      sendResponse({ success: false });
+    });
+    return true;
   }
 
   // ==================== 语音输入（本地 STT） ====================

@@ -163,6 +163,9 @@ export async function saveCurrentSession() {
   currentSession.topP = state.topP;
   // 上下文压缩记录（会话级；undefined 时 JSON 序列化自动省略字段）
   currentSession.contextCompaction = state.activeCompaction || undefined;
+  // 目标模式开关（会话级）：与 isolateChat/useTools 同一条「会话状态随会话走」的原则。
+  // 只存开关本身，目标对象由后台 goal-store 单独持久化 —— 面板不该成为目标状态的权威。
+  currentSession.goalMode = !!state.goalMode;
 
   // 会话级工作目录绑定：只写本会话自己的值（null = 跟随代理默认）
   // workdirAgentId 是「绑定时生效的代理」，换代理后绑定仍保留（切回原代理仍生效）
@@ -258,7 +261,7 @@ export async function persistSessionState(sessionId, snapshot = {}) {
     return false;
   }
 
-  const { messageHistory, model, useTools, enabledTools, agentId, temperature, topP, activeCompaction, workdir, workdirAgentId } = snapshot;
+  const { messageHistory, model, useTools, enabledTools, agentId, temperature, topP, activeCompaction, workdir, workdirAgentId, goalMode } = snapshot;
   if (model !== undefined) target.model = model;
   if (useTools !== undefined) target.useTools = useTools;
   if (enabledTools !== undefined) target.enabledTools = [...enabledTools];
@@ -266,6 +269,7 @@ export async function persistSessionState(sessionId, snapshot = {}) {
   if (temperature !== undefined) target.temperature = temperature;
   if (topP !== undefined) target.topP = topP;
   if (activeCompaction !== undefined) target.contextCompaction = activeCompaction || undefined;
+  if (goalMode !== undefined) target.goalMode = !!goalMode;
   // 跨会话接力时目标会话的目录绑定不能丢（否则会拿到面板当前会话的目录）
   if (workdir !== undefined) target.workdir = workdir || null;
   if (workdirAgentId !== undefined) target.workdirAgentId = workdirAgentId || null;
@@ -301,6 +305,8 @@ export async function createSession() {
     order: Date.now(),
     isGenerating: false,
     lastExecutionLog: [],
+    // 新会话默认不开目标模式（目标是一个会话级的重决定，不随上一个会话继承）
+    goalMode: false,
     // 新建会话不绑定目录：跟随代理默认
     workdir: null,
     workdirAgentId: null,
@@ -308,6 +314,9 @@ export async function createSession() {
 
   await idb.putSession(newSession);
   await idb.setActiveSessionId(sessionId);
+  // 新会话一律从「未开目标」开始：调用方（新建按钮/首次启动）会直接改 state.activeSessionId
+  // 而不经过 switchToSession，这里不同步就会出现「会话里是 false、UI 却还亮着开关」
+  state.goalMode = false;
   return newSession;
 }
 
@@ -442,6 +451,8 @@ export async function switchToSession(sessionId) {
   state.temperature = targetSession.temperature !== undefined ? targetSession.temperature : state.temperature;
   state.topP = targetSession.topP !== undefined ? targetSession.topP : state.topP;
   state.useTools = targetSession.useTools !== undefined ? targetSession.useTools : state.useTools;
+  // 目标模式开关随之切换（老会话无此字段 → false）
+  state.goalMode = !!targetSession.goalMode;
   state.activeAgentId = targetSession.agentId || null;
   // 会话级工作目录：只恢复目标会话自己的绑定，不触碰代理全局 workdir。
   // 绑定是否生效由 resolveWorkdirForSession 判定（代理不匹配时回落默认，记录保留）

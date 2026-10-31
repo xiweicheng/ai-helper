@@ -23,7 +23,7 @@ import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
 import { executeSnapshotQuery, shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
-import { requestToolConfirmation, hasLoopApproval } from './react-loop.js';
+import { requestToolConfirmation, hasLoopApproval, hasGoalUnattended } from './react-loop.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -41,6 +41,7 @@ registerTranslations('zh', {
     noTabAvailable: '没有可用的标签页',
     noTitle: '(无标题)',
     clarifyDialogFailed: '无法显示澄清对话框: {error}',
+    clarifyUnattended: '目标模式无人值守，无法向用户提问（原问题：{question}）。请基于现有信息自行做出最合理的决定并继续执行，不要重复调用澄清工具。若信息确实不足，选择风险最低且可回退的方案，并在最终回答里说明你的假设。',
     clarifyTimeout: '用户未在规定时间内完成澄清 ({seconds}秒)',
     clarifyTimeoutDefaulted: '澄清弹窗超时（{seconds}秒），用户未作答，已按推荐项「{option}」继续。请不要就同一个问题再次追问；若后续发现新信息与该假设冲突，再告知用户并重新确认。',
     clarifyPanelClosed: 'Side Panel 已关闭，澄清操作中止',
@@ -263,6 +264,7 @@ registerTranslations('en', {
     noTabAvailable: 'No tab available',
     noTitle: '(No title)',
     clarifyDialogFailed: 'Cannot show clarify dialog: {error}',
+    clarifyUnattended: 'Goal mode is running unattended, so the user cannot be asked (original question: {question}). Decide on the most reasonable option yourself and keep going; do not call the clarify tool again. If information is genuinely missing, pick the lowest-risk reversible path and state the assumption in your final answer.',
     clarifyTimeout: 'User did not complete clarification within the time limit ({seconds}s)',
     clarifyTimeoutDefaulted: 'The clarification dialog timed out ({seconds}s) with no answer, so the recommended option "{option}" was applied by default. Do not ask the same question again; if later evidence contradicts this assumption, tell the user and re-confirm.',
     clarifyPanelClosed: 'Side Panel closed, clarification aborted',
@@ -2727,6 +2729,14 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
   const recommendedIndex = Number.isInteger(parsedRecommended) && parsedRecommended >= 0 && parsedRecommended < options.length
     ? parsedRecommended
     : 0;
+  
+  // 目标模式无人值守兜底：工具表已在 reactLoopImpl 里摘掉 clarify_question，此处是第二道闸——
+  // 技能 / 自动化 / MCP 等非 ReAct 通道的工具集不经过那层过滤，弹出来同样会把目标卡在
+  // clarifyTimeout 上空等。直接告知模型「问不到人，自己决策」，让循环继续往前走。
+  if (hasGoalUnattended(sessionId)) {
+    logger.debug('[Background] clarify skipped (goal unattended):', String(question || '').slice(0, 120));
+    return makeResult(true, t('toolExec.clarifyUnattended', { question: String(question || '-') }));
+  }
   
   console.log('[Background] exec clarificationtool:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   

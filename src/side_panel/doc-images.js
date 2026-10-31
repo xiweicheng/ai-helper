@@ -21,6 +21,7 @@ registerTranslations('zh', {
     previewCompactDeep: ' · {count}',
     previewFail: '📷 图片抽取失败',
     previewOff: '图片不会被识别（可在设置中开启图片识别）',
+    chatImageHint: '[对话图片 {start}-{end} / chat-images] 这 {count} 张图只随本条消息发出，后续轮次不会再发送；需要复查时调用 read_image(file="{file}", image=N) 重新看图，N 取 {start}~{end}。',
   },
 });
 registerTranslations('en', {
@@ -38,6 +39,7 @@ registerTranslations('en', {
     previewCompactDeep: ' · {count}',
     previewFail: '📷 image extraction failed',
     previewOff: 'Images will not be recognized (enable image recognition in settings)',
+    chatImageHint: '[Chat images {start}-{end} / chat-images] These {count} image(s) travel with this message only and are stripped from later turns; call read_image(file="{file}", image=N) to look at image N again, N = {start}~{end}.',
   },
 });
 
@@ -47,6 +49,8 @@ export const VISION_CONSTANTS = {
   MAX_IMAGES: 20, // 单文档抠图上限
   MAX_RAW_BYTES: 5 * 1024 * 1024, // 单图原始字节上限
   SNAPSHOT_BUDGET: 4 * 1024 * 1024, // session 快照中转预算
+  MAX_CHAT_IMAGE_SNAPSHOT: 8, // 对话贴图落快照上限（按消息内顺序取前 N 张）
+  MAX_SESSION_DOC_FILES: 6, // 会话内跨消息留存的文档图条目上限（超了丢最旧）
   SCANNED_PAGE_TEXT_THRESHOLD: 50, // 页文本层低于此字符数视为扫描件候选
 };
 
@@ -570,29 +574,100 @@ function snapshotEntryBytes(e) {
     : 0), 0);
 }
 
+/** 对话贴图在中转快照里的伪文件名：read_image(file="chat-images", image=N) 取第 N 张。 */
+export const CHAT_IMAGE_FILE = 'chat-images';
+
+/**
+ * 对话贴图 → 快照条目。序号一经分配就固定（第 N 张图永远对应 image N），只存压缩图：
+ * 原图 base64 会几倍撞 4MB 预算，连带把别的会话的文档图挤掉。
+ * 先过滤再编号：没有图源的占位项不占序号，否则线索写「1-2」而快照里实际是 1、3。
+ * @param {Array} attachedImages
+ * @param {number} [startIndex=1] 起始序号（续接已有快照时传入，保证跨消息不重排）
+ * @returns {Array<{index:number, dataUrl:string}>}
+ */
+export function normalizeChatImageSnapshot(attachedImages, startIndex = 1) {
+  const start = Number.isFinite(startIndex) && startIndex > 0 ? Math.floor(startIndex) : 1;
+  return (Array.isArray(attachedImages) ? attachedImages : [])
+    .map((im) => im?.compressedUrl || im?.dataUrl || im?.originalUrl || '')
+    .filter((url) => !!url)
+    .slice(0, VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT)
+    .map((dataUrl, i) => ({ index: start + i, dataUrl }));
+}
+
+/**
+ * 贴图文本线索：只随本条消息发出的图片，从第 2 次请求起就被 stripImagesFromContent 剥走。
+ * 没有这行，模型既不知道图还存在，也不知道还能用 read_image 再读一次。
+ * 必须报真实区间：快照是按会话累加的，第二条消息里的图可能从 3 开始。
+ * @param {number} startOrCount 起始序号（只传一个数时按「张数」兼容旧签名）
+ * @param {number} [count]
+ */
+export function buildChatImageHint(startOrCount, count) {
+  const hasRange = Number.isFinite(count);
+  const start = hasRange ? Math.max(1, Math.floor(Number(startOrCount) || 1)) : 1;
+  const n = Math.max(0, Math.floor(Number(hasRange ? count : startOrCount) || 0));
+  if (n <= 0) return '';
+  const end = start + n - 1;
+  return '\n' + t('docImages.chatImageHint', { start, end, count: n, file: CHAT_IMAGE_FILE });
+}
+
+/** 线索是给模型看的内部指令：历史回放 / 复制 / 编辑回填都要剥掉（中英两版都认）。 */
+export function stripChatImageHint(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text.replace(/\n?\[(?:对话图片|Chat images) \d+-\d+ \/ chat-images\][^\n]*/g, '');
+}
+
 /**
  * 发送前写入 session 级图片快照；超预算从最旧 session 起淘汰，
- * 仅剩当前 session 仍超时剥除 dataUrl 保留清单
+ * 仅剩当前 session 仍超时剥除 dataUrl 保留清单。
+ * @returns {Promise<{chatStart:number, chatCount:number}>} 本条消息贴图的真实序号区间（供线索使用）
  */
-export async function saveDocImageSnapshot(sessionId, attachedFiles) {
+export async function saveDocImageSnapshot(sessionId, attachedFiles, attachedImages = []) {
   const store0 = await new Promise((r) => chrome.storage.local.get([SNAPSHOT_KEY], r));
   const snap = store0[SNAPSHOT_KEY] || {};
   const withImages = (attachedFiles || []).filter((f) => f.status === 'done' && (f.images || []).length > 0);
-  if (withImages.length === 0) {
+  // 对话贴图复用同一份中转快照：read_image 来源二按文件名查表，贴图挂一条伪文件即可，
+  // 不给工具加第三个参数（file + image 既有契约原样生效）。
+  // 序号必须跨消息单调递增：历史里每条消息的线索（[对话图片 3-4 / chat-images]）是永久的，
+  // 若每次发送都从 1 重排并整份替换，旧线索就会指向新图 —— 模型「重看第 1 张」拿到的是别的图。
+  const prevFiles = Array.isArray(snap[sessionId]?.files) ? snap[sessionId].files : [];
+  const prevChat = prevFiles.find((f) => f.name === CHAT_IMAGE_FILE);
+  const prevChatImages = Array.isArray(prevChat?.images) ? prevChat.images : [];
+  const nextIndex = prevChatImages.reduce((m, im) => Math.max(m, Number(im.index) || 0), 0) + 1;
+  const chatImages = normalizeChatImageSnapshot(attachedImages, nextIndex);
+  // 超上限丢最旧，但不重排留下的序号：重排等于篡改历史线索。
+  const mergedChat = [...prevChatImages, ...chatImages];
+  const chatCap = VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT;
+  const keptChat = mergedChat.length > chatCap ? mergedChat.slice(mergedChat.length - chatCap) : mergedChat;
+  const chatRange = chatImages.length > 0
+    ? { chatStart: chatImages[0].index, chatCount: chatImages.length }
+    : { chatStart: 0, chatCount: 0 };
+  // 文档图同样跨消息累加：一条纯文本的追问不能把上一条消息里 [文档图片 …] 的线索指向空表。
+  // 同名文件以本轮为准（用户重新上传了同一份），超过上限丢最旧的几份。
+  const roundNames = new Set(withImages.map((f) => f.name));
+  const keptDocs = prevFiles.filter((f) => (
+    f && f.name !== CHAT_IMAGE_FILE && Array.isArray(f.images) && !roundNames.has(f.name)
+  ));
+  const docFiles = [...keptDocs, ...withImages].slice(-VISION_CONSTANTS.MAX_SESSION_DOC_FILES);
+  if (docFiles.length === 0 && keptChat.length === 0) {
     delete snap[sessionId];
   } else {
+    const snapshotFiles = docFiles.map((f) => ({
+      name: f.name,
+      imageSource: f.imageSource,
+      images: f.images.map((im) => {
+        const c = { index: im.index, page: im.page ?? null };
+        if (im.path) c.path = im.path;
+        if (im.dataUrl) c.dataUrl = im.dataUrl;
+        return c;
+      }),
+    }));
+    // 本轮没有新贴图也要留住之前的：否则上一条消息的线索会指向空表（重读直接失败）
+    if (keptChat.length > 0) {
+      snapshotFiles.push({ name: CHAT_IMAGE_FILE, imageSource: 'local', images: keptChat });
+    }
     snap[sessionId] = {
       updatedAt: Date.now(),
-      files: withImages.map((f) => ({
-        name: f.name,
-        imageSource: f.imageSource,
-        images: f.images.map((im) => {
-          const c = { index: im.index, page: im.page ?? null };
-          if (im.path) c.path = im.path;
-          if (im.dataUrl) c.dataUrl = im.dataUrl;
-          return c;
-        }),
-      })),
+      files: snapshotFiles,
     };
     const total = () => Object.values(snap).reduce((s, e) => s + snapshotEntryBytes(e), 0);
     while (total() > VISION_CONSTANTS.SNAPSHOT_BUDGET && Object.keys(snap).length > 1) {
@@ -609,6 +684,7 @@ export async function saveDocImageSnapshot(sessionId, attachedFiles) {
     }
   }
   await new Promise((r) => chrome.storage.local.set({ [SNAPSHOT_KEY]: snap }, r));
+  return chatRange;
 }
 
 export async function removeDocImageSnapshot(sessionId) {

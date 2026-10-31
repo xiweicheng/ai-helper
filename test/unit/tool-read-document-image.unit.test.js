@@ -12,6 +12,7 @@ const snapshots = {
       { name: 'a.docx', imageSource: 'agent', images: [{ index: 1, page: null, path: '/ws/_attachments/a/img-1.png' }] },
       { name: 'b.pdf', imageSource: 'local', images: [{ index: 1, page: 2, dataUrl: 'data:image/png;base64,AAA' }] },
       { name: 'c.pdf', imageSource: 'local', images: [{ index: 1, page: 2 }] },
+      { name: 'chat-images', imageSource: 'local', images: [{ index: 1, dataUrl: 'data:image/png;base64,CHAT' }, { index: 2 }] },
     ],
   },
 };
@@ -246,6 +247,25 @@ describe('read_image — 代理端任意路径来源', () => {
     const r = await call({ path: 'shot.png', file: 'b.pdf', image: 1 });
     expect(r.success).toBe(false);
     expect(r.content).toContain('二选一');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('对话贴图来源：file=chat-images + 序号直读快照（无需新参数）', async () => {
+    const r = await call({ file: 'chat-images', image: 1, question: '图里是什么' });
+    expect(r.success).toBe(true);
+    expect(visionReqBody().messages[0].content[1].image_url.url).toBe('data:image/png;base64,CHAT');
+  });
+
+  it('对话贴图预算兜底剥了 dataUrl（只剩序号）→ 明确报取不到图', async () => {
+    const r = await call({ file: 'chat-images', image: 2 });
+    expect(r.success).toBe(false);
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('对话贴图序号超范围 → 拒绝且不调视觉', async () => {
+    const r = await call({ file: 'chat-images', image: 9 });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('chat-images');
     expect(visionCall()).toBeUndefined();
   });
 

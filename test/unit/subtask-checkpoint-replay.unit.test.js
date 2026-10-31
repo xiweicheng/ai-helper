@@ -13,6 +13,10 @@ const REACT_LOOP_SRC = readFileSync(
   new URL('../../src/background/react-loop.js', import.meta.url),
   'utf8'
 );
+const CHECKPOINT_STATE_SRC = readFileSync(
+  new URL('../../src/background/checkpoint-state.js', import.meta.url),
+  'utf8'
+);
 
 // 测试工具：按花括号配平取「从 header 起的真实函数体」。
 // 取代替旧的「indexOf(header) 到下一个 async function」窗口（评审 L-d），理由见下方合成用例：
@@ -215,7 +219,9 @@ describe('防重放接线守卫（源码正则）', () => {
   });
 
   test('resume 入口把 checkpoint.subtaskProgress 回灌进 reactLoop 的 resumeState', () => {
-    expect(REACT_LOOP_SRC).toMatch(/subtaskProgress:\s*checkpoint\.subtaskProgress\s*\|\|\s*null/);
+    // 字段集收在 checkpoint-state.js（读写两侧共用），react-loop 只负责转交 checkpoint
+    expect(REACT_LOOP_SRC).toMatch(/buildResumeState\(checkpoint\)/);
+    expect(CHECKPOINT_STATE_SRC).toMatch(/subtaskProgress:\s*c\.subtaskProgress\s*\|\|\s*null/);
   });
 
   test('executeSubtasks 内跳过分支：命中进度且 success 才跳过（失败记录不跳过）', () => {

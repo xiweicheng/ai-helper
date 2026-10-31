@@ -1,6 +1,6 @@
 // background/config.js - 配置管理
 
-import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG, DEFAULT_COMPLETION_VERIFICATION_CONFIG } from './constants.js';
+import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_STREAM_CONFIG, DEFAULT_COMPLETION_VERIFICATION_CONFIG, DEFAULT_GOAL_CONFIG } from './constants.js';
 import { normalizeCustomModels } from '../shared/token-counter.js';
 import { decodeSecret } from '../shared/secret.js';
 
@@ -25,6 +25,7 @@ export function getStoredConfig() {
       'networkAccessEnabled', 'allowedNetworkHosts',
       'reflectionConfig',
       'completionVerificationConfig',
+      'goalConfig',
       'streamEnabled', 'streamChunkDelay', 'agentStreamEnabled'
     ], (result) => {
       resolve({
@@ -61,7 +62,11 @@ export function getStoredConfig() {
           // 深合并：默认值打底，避免 options 只写 {enabled} 时其余默认字段被残缺对象顶替清空
           completionVerification: Object.assign({}, DEFAULT_COMPLETION_VERIFICATION_CONFIG,
             result.completionVerificationConfig && typeof result.completionVerificationConfig === 'object'
-              ? result.completionVerificationConfig : {})
+              ? result.completionVerificationConfig : {}),
+          // 目标模式配置（默认 enabled:true，但只有面板真正下发 goal 快照时引擎才会进入评估分支，
+          // 所以默认开不会改变任何现有请求的形状）。同样深合并打底。
+          goal: Object.assign({}, DEFAULT_GOAL_CONFIG,
+            result.goalConfig && typeof result.goalConfig === 'object' ? result.goalConfig : {})
         },
         // 流式输出配置
         streamConfig: {

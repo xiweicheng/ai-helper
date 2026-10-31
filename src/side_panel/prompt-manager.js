@@ -13,7 +13,7 @@ import { clearPageSelection } from './page-selector.js';
 import { refreshKnowledgePickedState, renderKnowledgeIndicator } from './agent-at-selector.js';
 import { buildFileContentText, renderFilePreviews } from './file-extract.js';
 import { renderImagePreviewsFromChat } from './image-preview.js';
-import { saveDocImageSnapshot } from './doc-images.js';
+import { saveDocImageSnapshot, buildChatImageHint } from './doc-images.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
@@ -791,14 +791,12 @@ export async function sendPromptByCode(code) {
 
   // 注入文件内容（发送给模型，但不显示在用户消息气泡中），与主发送链路保持对齐
   const attachedFilesSnapshot = ctxSnapshot.attachedFiles;
+  const attachedImagesSnapshot = (ctxSnapshot.attachedImages || []).slice();
   if (attachedFilesSnapshot.length > 0) {
     const fileContent = buildFileContentText(attachedFilesSnapshot);
     if (fileContent) {
       userMessage += fileContent;
     }
-    // 图片快照中转：与主发送链路（chat-manager sendMessage）对齐，失败不影响发送
-    try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot); }
-    catch (e) { logger.warn('[Prompt] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
       if (f.status === 'done') {
@@ -807,12 +805,21 @@ export async function sendPromptByCode(code) {
     });
   }
 
+  // 贴图重取：与主发送链路对齐——先落快照拿到真实序号，再拼线索；
+  // 否则第 2 轮请求起图片被剥离后既不能重读，也说不清该读第几张。
+  let chatRange = null;
+  if (attachedFilesSnapshot.length > 0 || attachedImagesSnapshot.length > 0) {
+    try { chatRange = await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
+    catch (e) { logger.warn('[Prompt] save doc image snapshot failed:', e.message); }
+  }
+  const chatImageHint = buildChatImageHint(chatRange?.chatStart, chatRange?.chatCount);
+  if (chatImageHint) userMessage += chatImageHint;
+
   // 构建用户消息 content（支持图片附件；用入口处取的批次快照）
-  const inputImagesSnapshot = ctxSnapshot.attachedImages;
-  const userContent = buildUserContent(userMessage, inputImagesSnapshot);
+  const userContent = buildUserContent(userMessage, attachedImagesSnapshot);
 
   // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复，文件标签由 attachedFilesSnapshot 渲染
-  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content, inputImagesSnapshot), true, [], null, false, userMessage, null, attachedFilesSnapshot);
+  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content, attachedImagesSnapshot), true, [], null, false, userMessage, null, attachedFilesSnapshot);
 
   // 更新消息历史（附带上下文气泡信息，供刷新恢复）
   state.messageHistory.push({ role: 'user', content: userContent, messageId, timestamp, contextBubbles });
@@ -837,14 +844,14 @@ export async function sendPromptByCode(code) {
   const loadingId = addLoadingMessage();
   const mySessionId = state.activeSessionId;
 
-  const model = state.enableImageInput && inputImagesSnapshot.length > 0
+  const model = state.enableImageInput && attachedImagesSnapshot.length > 0
     ? (state.imageModelName || state.currentModel)
     : state.currentModel;
 
   // 图片已包含在本条 userContent 快照中：只移除"本条那批"并重绘预览栏
   // （发送期间用户新挂的图片属于下一条消息，绝不能被这次清理带走）
-  if (inputImagesSnapshot.length > 0) {
-    const consumedImages = new Set(inputImagesSnapshot);
+  if (attachedImagesSnapshot.length > 0) {
+    const consumedImages = new Set(attachedImagesSnapshot);
     const keptImages = state.attachedImages.filter((img) => !consumedImages.has(img));
     if (keptImages.length !== state.attachedImages.length) {
       state.attachedImages = keptImages;

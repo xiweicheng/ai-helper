@@ -16,6 +16,7 @@ import {
 import { executeTakeNote } from '../../src/background/tool-executor.js';
 
 const REACT_LOOP = readFileSync(join(process.cwd(), 'src/background/react-loop.js'), 'utf8');
+const CHECKPOINT_STATE_SRC = readFileSync(join(process.cwd(), 'src/background/checkpoint-state.js'), 'utf8');
 
 // 与 untrusted-content.unit.test.js 同款分类过滤：每个工具必须显式二选一
 function unclassifiedIds(tools) {
@@ -145,7 +146,9 @@ describe('react-loop 源不变量：notesState / 锚点 / 回灌 / checkpoint', 
   });
 
   test('恢复入口 resumeState 白名单含 notesState', () => {
-    expect(REACT_LOOP).toMatch(/notesState: Array\.isArray\(checkpoint\.notesState\)/);
+    // 字段集收在 checkpoint-state.js（读写两侧共用），react-loop 只负责转交 checkpoint
+    expect(REACT_LOOP).toMatch(/buildResumeState\(checkpoint\)/);
+    expect(CHECKPOINT_STATE_SRC).toMatch(/notesState: Array\.isArray\(c\.notesState\)/);
   });
 
   test('锚点注入在裁剪块之后且不受 !isSubtask 门控（每作用域回注自己那份）', () => {

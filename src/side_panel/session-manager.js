@@ -138,6 +138,18 @@ export async function deleteSession(sessionId) {
     void queueAttachments.deleteSessionAttachments(sessionId);
   }
   const result = await store.deleteStoreSession(sessionId);
+  // 目标镜像的权威在后台（chrome.storage.local.sessionGoals），面板删不到它。
+  // 不通知一声，已删会话的目标会作为孤儿条目永久留着——既看不见也删不掉，
+  // 和上面队列条目是同一类“沉默的僵尸数据”。失败不阻塞删除（最多少清一条）。
+  try {
+    chrome.runtime.sendMessage({ type: 'DROP_GOAL', sessionId }, () => {
+      if (chrome.runtime.lastError) {
+        logger.debug('[SessionManager] DROP_GOAL skipped:', chrome.runtime.lastError.message);
+      }
+    });
+  } catch (e) {
+    logger.debug('[SessionManager] DROP_GOAL send failed:', e?.message);
+  }
   // 同步清理该会话的"完成待查看"标记，避免脏数据残留
   if (state.completedSessionIds.has(sessionId)) {
     state.completedSessionIds.delete(sessionId);

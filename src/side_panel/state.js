@@ -12,6 +12,12 @@ export let activeSessionId = null;   // 当前活跃会话 ID
 export let sessions = [];             // 所有会话列表缓存
 export let useTools = true;
 export let isolateChat = true;
+// 目标模式（Goal）开关：会话级，随会话持久化。仅为意图表达，
+// 真正的目标对象与状态机在后台（goal-store / react-loop）
+export let goalMode = false;
+// 当前会话的目标快照（后台 GOAL_UPDATE 回推 / GET_GOAL 拉取），供 goal bar 渲染
+// 结构与 shared/goal.js 的 goal 一致；null = 无目标
+export let goalSnapshot = null;
 // 当前会话的上下文压缩记录（会话级，随会话持久化；null 表示未压缩）
 export let activeCompaction = null;
 export let enableSelectionQuery = false;
@@ -201,6 +207,10 @@ export default {
   set useTools(v) { useTools = v; },
   get isolateChat() { return isolateChat; },
   set isolateChat(v) { isolateChat = v; },
+  get goalMode() { return goalMode; },
+  set goalMode(v) { goalMode = v; },
+  get goalSnapshot() { return goalSnapshot; },
+  set goalSnapshot(v) { goalSnapshot = v; },
   get activeCompaction() { return activeCompaction; },
   set activeCompaction(v) { activeCompaction = v; },
   get enableSelectionQuery() { return enableSelectionQuery; },

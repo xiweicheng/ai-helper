@@ -469,6 +469,39 @@
 
       <div class="react-config-item">
         <label>
+          <span data-i18n="react.goalMode">目标模式（Goal）</span>
+          <span class="hint-text" data-i18n="react.goalModeHint">（模型宣布完成后独立评估是否真达成，未达成则自动续跑，直到达成 / 判为不可能 / 预算耗尽）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="goalEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="goalEnabledLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalModeDesc1">启用后，侧边栏输入区出现 🎯 开关；点亮的那轮任务会作为会话目标持续自动推进。评估是往当前会话模型发一次独立短调用（温度 0，只输出一个 JSON 裁决），不会引入第二个模型。</span><br>
+          <span data-i18n="react.goalModeDesc2">推进节奏内置：最多 20 轮收尾尝试，时间上限跟随上方「整体循环超时」。撞线后目标标为「预算耗尽」并保留现场，点「继续」再给 20 轮，不会自动接走重跑。</span><br>
+          <span data-i18n="react.goalModeDesc3">关闭后：引擎不评估不续跑、后台拒绝设定目标，行为与未实现目标模式时一致；已落库的目标现场保留，重新开启可继续。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalIntent">意图识别</span>
+          <span class="hint-text" data-i18n="react.goalIntentHint">（从输入文本里识别“按目标模式执行”，零 token）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="goalIntentDetection" checked>
+          <span class="toggle-switch"></span>
+          <span id="goalIntentDetectionLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalIntentDesc1">开启后，即使没点亮 🎯 开关，你说“按目标模式一直跑下去”这类话时也会自动开启本轮目标，并给出可撤销提示。是发送前的确定性正则判定，不交给模型自己选。</span><br>
+          <span data-i18n="react.goalIntentDesc2">识别出的目标不会自动放行敏感操作：能越过确认弹窗的授权只能由你亲手点开关授予。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item">
+        <label>
           <span data-i18n="react.enableExecutionLog">启用执行日志</span>
           <span class="hint-text" data-i18n="react.enableExecutionLogHint">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
         </label>

@@ -12,10 +12,13 @@
  * - 会话仍在 activeReactLoops 中不重复续（防双执行）；
  * - 连续续跑 AUTO_RESUME_MAX_ATTEMPTS 次仍失败 → 停止并在"刚耗尽"的当拍桌面通知一次（防风暴）。
  *
- * 本模块只依赖 shared/logger（叶子分层，规避循环依赖，与 sw-heartbeat.js 同约定）；
+ * 本模块只依赖 shared 叶子模块（logger，以及 goal.js 里那两个纯常量表；
+ * goal.js 自身只 import 纯函数 completion-verdict.js，不会反过来碰 background，
+ * 因此不构成循环依赖，与 sw-heartbeat.js 的叶子约定一致）；
  * 续跑执行逻辑通过 registerAutoResumeAlarmHandler 由 index.js 接线注入。
  */
 import { logger } from '../shared/logger.js';
+import { GOAL_HALT_CHECKPOINT_REASONS } from '../shared/goal.js';
 
 export const AUTO_RESUME_ALARM_NAME = 'react-auto-resume-watch';
 // 0.5 分钟 = 30s：桌面 Chrome 允许的最小周期
@@ -26,8 +29,15 @@ export const AUTO_RESUME_MAX_ATTEMPTS = 3;
 // 不自动续的终态：user_cancelled = 用户意志；error = 明确失败（catch 栈完整执行过，
 // 说明任务是有界终止而非蒸发，保留"用户在面板点继续/重试"的原语义）；
 // budget_exhausted = 预算撞线软着陆（已产出「部分完成 + 缺项」报告并保留现场），
-// 用户选定语义是「停在缺项清单、等用户点继续」，静默自动续跑等于烧掉第二份预算
-const TERMINAL_REASONS = new Set(['user_cancelled', 'error', 'budget_exhausted']);
+// 用户选定语义是「停在缺项清单、等用户点继续」，静默自动续跑等于烧掉第二份预算。
+// goal_* 同理且更硬：目标停住（暂停/预算耗尽）本身就是在等用户下指令，
+// 闹钟把现场接走等于替用户按了他没按的按钮——故与 checkpoint 写侧共用同一张表。
+const TERMINAL_REASONS = new Set([
+  'user_cancelled',
+  'error',
+  'budget_exhausted',
+  ...GOAL_HALT_CHECKPOINT_REASONS,
+]);
 
 /**
  * 自动续跑决策（纯函数，可单测）

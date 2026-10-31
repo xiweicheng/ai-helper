@@ -59,7 +59,8 @@ describe('主循环：轮数上限必须由轮首 evaluateBudgetStep 收口', ()
 describe('宽限轮：禁用工具 + 配对安全', () => {
   test('宽限轮请求体不带 tools 字段', () => {
     // 空数组会被部分网关当成非法请求拒绝，因此整段展开而不是 tools: []
-    expect(REACT_LOOP_SRC).toMatch(/const apiTools = inGrace \? \[\] : tools;/);
+    // 工具来源是 goalTools（目标模式下已摘掉 clarify_question），宽限轮一律置空
+    expect(REACT_LOOP_SRC).toMatch(/const apiTools = inGrace \? \[\] : goalTools;/);
     expect(REACT_LOOP_SRC).toMatch(/\.\.\.\(inGrace \? \{\} : \{\s*\n\s*tools: apiTools\.map/);
   });
 
@@ -90,9 +91,19 @@ describe('续跑：撞线现场不能被自己的 resume 删掉', () => {
     expect(branch).toMatch(/\} else \{\s*\n\s*await clearCheckpoint\(sessionId\);/);
   });
 
-  test('budget_exhausted 已列入 auto-resume 终态（不自动续跑）', () => {
+  test('budget_exhausted 已列入 auto-resume 终态（不自动续跑）', async () => {
     const autoResume = read('src/background/auto-resume.js');
-    expect(autoResume).toMatch(/TERMINAL_REASONS = new Set\(\['user_cancelled', 'error', 'budget_exhausted'\]\)/);
+    // 断言的是「行为」而不是字面集合：用户_cancelled / error / budget_exhausted 各自不续跑，
+    // 且 goal 停住的两个原因随同一张表入列（写侧与读侧共用一个表，不许各写一份）
+    expect(autoResume).toMatch(/GOAL_HALT_CHECKPOINT_REASONS/);
+    const { decideAutoResume } = await import('../../src/background/auto-resume.js');
+    for (const reason of ['user_cancelled', 'error', 'budget_exhausted', 'goal_paused', 'goal_budget_limited']) {
+      const { targets } = decideAutoResume(
+        [{ sessionId: 's1', interruptedReason: reason, autoResumeAttempts: 0 }],
+        new Set(),
+      );
+      expect(targets.length, reason).toBe(0);
+    }
   });
 });
 
