@@ -38,6 +38,17 @@ describe('切句契约', () => {
     expect(src).toMatch(/MAX_SENTENCE_MS\s*=\s*\d+/);
     expect(src).toMatch(/LOOKBACK_MS\s*=\s*\d+/);
   });
+
+  // 配置页曾把「智能断句」列为一项识别能力，但那是永远不会亮起的死标签：
+  // 磁盘无 vad 类型模型包时 capability.vad 恒为 false；即便有，engine.js 的 getVad 也会因
+  // sherpa-onnx-node 的 vad.front() 必 SIGSEGV 而默认短路返回 null。断句已改由上面的帧级 RMS 完成。
+  // 所以 UI 不得再宣传它 —— 重新加回来要么是空承诺，要么说明有人又把 VAD 接回去了（那会崩进程）。
+  it('配置页不得再宣传「智能断句」这个能力', () => {
+    const ui = read('src/options/toolbox-asr.js');
+    expect(ui).not.toContain('asrCapVad');
+    expect(read('src/shared/locales/zh.js')).not.toContain('asrCapVad:');
+    expect(read('src/shared/locales/en.js')).not.toContain('asrCapVad:');
+  });
 });
 
 describe('精修不阻塞定稿契约', () => {

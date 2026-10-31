@@ -273,6 +273,12 @@ function renderStatusBlock(status) {
   const currentPacing = PACING_CODES.includes(status.asrPacing) ? status.asrPacing : 'balanced';
   const pacingOptions = PACING_CODES.map((code) => `<div class="model-option${code === currentPacing ? ' selected' : ''}" role="option" aria-selected="${code === currentPacing ? 'true' : 'false'}" data-pacing="${code}">${escapeHtml(pacingLabel(code))}</div>`).join('');
 
+  // 能力行只有两个 chip：流式草稿 + 高精度定稿。
+  // 曾有第三个「智能断句」(cap.vad)，已删：那是永远不会亮起的死标签 —— 磁盘上没有 vad 类型
+  // 模型包时 capability.vad 恒为 false，而即便有也不可用（engine.js getVad 因 sherpa-onnx-node
+  // 的 vad.front() 必 SIGSEGV 而默认短路返回 null），逐句断句实际由纯 JS RMS 切句完成
+  //（见 agent/src/asr/sentence-splitter.js）。代理端仍如实上报 capability.vad —— 那是状态契约，
+  // 不是给用户看的能力承诺。这段只能写成 JS 注释：写进模板会随 HTML 一起发到浏览器。
   return `
     <div class="asr-status-card">
       <div class="asr-status-head">
@@ -289,7 +295,6 @@ function renderStatusBlock(status) {
         <span>${escapeHtml(t('toolbox.asrCapabilityLabel'))}</span>
         <span class="asr-cap-item ${cap.online ? 'ok' : ''}">${t('toolbox.asrCapDraft')}</span>
         <span class="asr-cap-item ${cap.offline ? 'ok' : ''}">${t('toolbox.asrCapFinal')}</span>
-        <span class="asr-cap-item ${cap.vad ? 'ok' : ''}">${t('toolbox.asrCapVad')}</span>
       </div>
       <div class="asr-actions">
         <button class="toolbox-add-btn asr-install-btn" id="asrInstallBtn" type="button" ${depsReady || installing ? 'disabled' : ''}>

@@ -1017,7 +1017,6 @@ export default {
     asrCapabilityLabel: 'Capabilities:',
     asrCapDraft: 'Streaming draft',
     asrCapFinal: 'Accurate finalize',
-    asrCapVad: 'Smart segmentation',
     asrInstallBtn: 'Install dependency',
     asrDepsInstalled: 'Dependency installed',
     asrInstalling: 'Installing…',
