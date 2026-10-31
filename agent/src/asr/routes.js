@@ -127,6 +127,8 @@ async function buildStatus(t) {
     enabled: config.enabled,
     language: config.language,
     languages: SUPPORTED_LANGUAGES,
+    // 识别节奏档位（配置页据此渲染选中项；会话创建时同样读这份持久化配置）
+    asrPacing: config.asrPacing,
     maxRecordingMs: MAX_RECORDING_MS,
     deps: {
       ready: depsReady,
@@ -197,6 +199,7 @@ export async function asrRouter(req, res, pathname, url, t, requestBody = {}) {
       const patch = {};
       if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
       if (typeof body.language === 'string') patch.language = body.language;
+      if (typeof body.asrPacing === 'string') patch.asrPacing = body.asrPacing;
       if (body.streamingModelId === null || typeof body.streamingModelId === 'string') {
         patch.streamingModelId = body.streamingModelId === null ? null : normalizeModelId(body.streamingModelId);
       }

@@ -185,11 +185,25 @@ describe('POST /api/asr/config', () => {
     assert.equal(good.body.config.offlineModelId, 'sense-test');
   });
 
+  test('asrPacing 三档白名单：合法值写入并在 status 回显，非法值回落 balanced', async () => {
+    const good = await call('POST', '/api/asr/config', { body: { asrPacing: 'precise' } });
+    assert.equal(good.body.config.asrPacing, 'precise');
+    const st = await call('GET', '/api/asr/status');
+    assert.equal(st.body.asrPacing, 'precise', 'status 必须回显当前档位（配置页据此渲染选中项）');
+
+    const bad = await call('POST', '/api/asr/config', { body: { asrPacing: 'turbo' } });
+    assert.equal(bad.body.config.asrPacing, 'balanced', '非法档位回落默认');
+
+    // 恢复默认，避免影响后续用例
+    await call('POST', '/api/asr/config', { body: { asrPacing: 'balanced' } });
+  });
+
   test('idleUnloadMs 数值化；配置持久化后 status 同步反映', async () => {
     await call('POST', '/api/asr/config', { body: { idleUnloadMs: 1234 } });
     const st = await call('GET', '/api/asr/status');
     assert.equal(st.body.enabled, true);
     assert.equal(st.body.language, 'zh');
+    assert.equal(st.body.asrPacing, 'balanced', '缺省识别节奏为 balanced');
     // 依赖未就绪时 available 恒为 false（三分离：deps × models × enabled）
     assert.equal(st.body.available, false);
     assert.equal(st.body.reason, 'deps_missing');

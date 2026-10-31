@@ -64,10 +64,18 @@ export const RSS_LIMIT_BYTES = Number(process.env.AI_HELPER_ASR_RSS_LIMIT) > 0
 // 支持的识别语言（SenseVoice 覆盖语种 + auto）
 export const SUPPORTED_LANGUAGES = ['auto', 'zh', 'en', 'ja', 'ko', 'yue'];
 
+// 识别节奏档位：
+//   instant  —— 只出流式草稿，不逐句精修（= 引入句级精修之前的行为）
+//   balanced —— 边说边逐句精修（默认）
+//   precise  —— 不出逐字草稿，每句说完才出文本
+export const SUPPORTED_PACING = ['instant', 'balanced', 'precise'];
+
 // 默认配置：enabled=false —— 装了依赖也不自动启用，避免「装了就该能用」的误解
 export const DEFAULT_ASR_CONFIG = {
   enabled: false,
   language: 'auto',
+  // 识别节奏档位（见 SUPPORTED_PACING；balanced = 逐句精修）
+  asrPacing: 'balanced',
   // 指定模型包 id（null = 按 capability 自动选第一个可用包）
   streamingModelId: null,
   offlineModelId: null,
@@ -86,6 +94,7 @@ export function sanitizeAsrConfig(raw) {
   return {
     enabled: src.enabled === true,
     language: SUPPORTED_LANGUAGES.includes(src.language) ? src.language : DEFAULT_ASR_CONFIG.language,
+    asrPacing: SUPPORTED_PACING.includes(src.asrPacing) ? src.asrPacing : DEFAULT_ASR_CONFIG.asrPacing,
     streamingModelId: typeof src.streamingModelId === 'string' && src.streamingModelId.trim()
       ? src.streamingModelId.trim()
       : null,

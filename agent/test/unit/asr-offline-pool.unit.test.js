@@ -67,6 +67,33 @@ describe('runOfflineTask：主线程不被阻塞', () => {
   });
 });
 
+describe('runOfflineTask：出队回调（句级精修的背压靠它区分「在跑」与「排队」）', () => {
+  test('开跑前回调 onStart；被 shouldSkip 丢掉的空转任务不回调', async () => {
+    let started = 0;
+    await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(32),
+      opts: {},
+      idleMs: 0,
+      onStart: () => { started += 1; },
+    });
+    assert.equal(started, 1, '真正开始 decode 必须回调 onStart');
+
+    // stop / 背压丢弃：出队即空转，既不跑模型也不该被当成「已开始」
+    let skippedStart = 0;
+    const result = await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(32),
+      opts: {},
+      idleMs: 0,
+      shouldSkip: () => true,
+      onStart: () => { skippedStart += 1; },
+    });
+    assert.equal(result, null, '被跳过的任务返回 null');
+    assert.equal(skippedStart, 0, '没开跑就不该回调 onStart');
+  });
+});
+
 describe('runOfflineTask：串行与错误穿透', () => {
   test('同一 worker 串行执行：先提交的先完成', async () => {
     const done = [];
@@ -187,5 +214,50 @@ describe('warmupAsrEngines', () => {
     assert.equal(result.failed.length, 1);
     assert.equal(result.failed[0].kind, 'offline');
     assert.ok(result.failed[0].error.length > 0, '应带上失败原因');
+  });
+});
+
+describe('runOfflineTask：shouldSkip 让排队中的任务空转', () => {
+  test('shouldSkip 为真的任务不执行，直接返回 null', async () => {
+    const calls = [];
+    const result = await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(16000),
+      shouldSkip: () => { calls.push('checked'); return true; },
+    });
+    assert.equal(result, null);
+    assert.deepEqual(calls, ['checked'], 'shouldSkip 应被调用一次');
+  });
+
+  test('排在前面的任务被 skip 后，后面的任务立即开始（模拟 stop 抢跑）', async () => {
+    let aborted = false;
+    const order = [];
+
+    const slow = pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(16000),
+      shouldSkip: () => { order.push('slow-check'); return aborted; },
+    });
+
+    // 模拟 stop：第一件已经在队里，出队前把 aborted 置真
+    aborted = true;
+    const fast = pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(16000),
+      shouldSkip: () => { order.push('fast-check'); return false; },
+    });
+
+    assert.equal(await slow, null, '被中止的任务必须空转返回 null');
+    const fastResult = await fast;
+    assert.ok(fastResult, '后者必须真的执行并返回结果');
+    assert.deepEqual(order, ['slow-check', 'fast-check'], '严格按入队顺序出队');
+  });
+
+  test('不传 shouldSkip 时行为不变', async () => {
+    const result = await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(1600),
+    });
+    assert.equal(result.text, 'fake:1600');
   });
 });

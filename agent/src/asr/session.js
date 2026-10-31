@@ -24,12 +24,35 @@ import {
 import { tidyJoin, tidyChineseSpacing, stripSenseVoiceTags } from './transcribe.js';
 import { getOnlineRecognizer as defaultGetOnline } from './engine.js';
 import { runOfflineTask } from './offline-pool.js';
+import { chooseCutIndex, rmsOf, SILENCE_RMS } from './sentence-splitter.js';
 
 // 草稿推送节流（150ms：肉眼连贯且不会把 WS 打满）
 const PARTIAL_THROTTLE_MS = 150;
 
+// 句级精修：太短的句子 SenseVoice 质量会掉，干脆不送
+const REFINE_MIN_SAMPLES = 16000 * 0.6;
+// 背压：待执行超过 3 个就丢掉最旧未开始的（保住用户刚说的那句）
+const MAX_PENDING_REFINE = 3;
+// 自适应降级：精修耗时 > 句长 × 1.5 记一次「慢」，连续 3 次判定这台机器跟不上
+const REFINE_SLOW_RATIO = 1.5;
+const REFINE_SLOW_STREAK = 3;
+
 // 单帧最大字节数（10s @16k mono PCM16 = 320KB；超过视为异常客户端）
 const MAX_FRAME_BYTES = 320 * 1024;
+
+/**
+ * 一帧 PCM 实际对应的时长（ms）
+ *
+ * 不能假定每帧都是 100ms：worklet 正常时是 100ms，但 ScriptProcessor 兜底路径按 4096 样本切块，
+ * 16k 采样下就是 256ms。套用 100ms 会把「连续 3 帧静音」算成 300ms（实际 768ms）、
+ * 把 12s 上限拖成 30s、把 2s 回溯拖成 5s。
+ * @param {Float32Array} samples
+ * @returns {number}
+ */
+function frameMsOf(samples) {
+  const count = samples && samples.length ? samples.length : 0;
+  return count > 0 ? (count / 16000) * 1000 : 0;
+}
 
 /**
  * PCM16LE Buffer → Float32Array（-1..1）
@@ -46,10 +69,29 @@ export function pcm16ToFloat32(buf) {
 }
 
 /**
+ * 拆开要送进 worker 的 opts
+ *
+ * 踩过的坑：shouldSkip 是函数，而 opts 会整包 postMessage 给 worker 线程——
+ * 带函数过去直接 DataCloneError，结果是每一句精修都失败（而注入假 transcribe 的单测看不见）。
+ * 所以函数只能留在主线程这一侧，作为 runOfflineTask 的顶层参数。
+ * @param {object} opts
+ * @returns {{ workerOpts: object, shouldSkip: Function|undefined, onStart: Function|undefined }}
+ */
+export function splitWorkerOpts(opts) {
+  const { shouldSkip, onStart, ...workerOpts } = opts || {};
+  return {
+    workerOpts,
+    shouldSkip: typeof shouldSkip === 'function' ? shouldSkip : undefined,
+    onStart: typeof onStart === 'function' ? onStart : undefined,
+  };
+}
+
+/**
  * 创建会话管理器（deps 可注入，便于单测）
  * @param {{
  *   getModels: () => { online: object|null, offline: object|null, vad: object|null },
  *   getIdleUnloadMs?: () => number,
+ *   getPacing?: () => string,   // 识别节奏档位：instant | balanced | precise
  *   getOnlineRecognizer?: Function,
  *   getOfflineRecognizer?: Function,
  *   getVad?: Function,
@@ -68,15 +110,22 @@ export function createAsrSessionManager(deps) {
     : MAX_SESSIONS;
   const getIdleUnloadMs = deps.getIdleUnloadMs || (() => 0);
   // 默认走 worker 线程（不阻塞事件循环）；单测注入同步/异步实现，返回 Promise 或值都可
-  const transcribe = deps.transcribe || ((samples, opts) => runOfflineTask({
-    kind: 'samples',
-    samples,
-    opts,
-    idleMs: getIdleUnloadMs(),
-    timeoutMs: deps.offlineTimeoutMs,
-    modelId: opts && opts.offlineModel ? opts.offlineModel.id : undefined,
-    onLog: deps.onLog,
-  }));
+  const transcribe = deps.transcribe || ((samples, opts) => {
+    const { workerOpts, shouldSkip, onStart } = splitWorkerOpts(opts);
+    return runOfflineTask({
+      kind: 'samples',
+      samples,
+      opts: workerOpts,
+      // 出队瞬间再判一次（被取消/被背压丢弃就空转）——必须留在主线程，进不了 worker
+      shouldSkip,
+      // 真正开始 decode 的那一刻回调：背压要能区分「在跑」与「排队」
+      onStart,
+      idleMs: getIdleUnloadMs(),
+      timeoutMs: deps.offlineTimeoutMs,
+      modelId: workerOpts.offlineModel ? workerOpts.offlineModel.id : undefined,
+      onLog: deps.onLog,
+    });
+  });
 
   /**
    * 发送 JSON 帧（连接已断时静默忽略）
@@ -104,6 +153,8 @@ export function createAsrSessionManager(deps) {
     }
     session.onlineStream = null;
     session.chunks = [];
+    session.segFrames = [];
+    session.refineQueue = [];
     sessions.delete(session.id);
   }
 
@@ -175,30 +226,157 @@ export function createAsrSessionManager(deps) {
     session.lastPartialAt = t;
     session.lastSentText = text;
 
-    send(session, { type: 'partial', text: tidyJoin([session.committedText, text]) });
+    // 精确档不出逐字草稿：只在该句被 sentence 帧转正后才有文本
+    if (session.pacing === 'precise') return;
+
+    // open = 当前未切句的那一段；text = 含已精修句的全文（前端只该改开放句）
+    send(session, { type: 'partial', text: tidyJoin([session.committedText, text]), open: text });
   }
 
   /**
-   * 句子结束：把当前草稿提交为稳定片段并重置流
+   * 精修是否可用（档位 / RSS / 降级 / 无 offline 模型时关闭）
+   */
+  function isRefineEnabled(session) {
+    if (session.pacing === 'instant') return false; // 即时档：不逐句精修（= 今天的行为）
+    if (session.refineAborted || session.refineDisabled) return false;
+    const models = session.models || {};
+    if (!models.offline) return false;
+    const rss = typeof process.memoryUsage === 'function' ? process.memoryUsage().rss : 0;
+    if (rss > RSS_LIMIT_BYTES) return false;
+    return true;
+  }
+
+  /**
+   * 永久关掉本会话的精修（只通知一次）
+   */
+  function disableRefine(session, reason) {
+    if (session.refineDisabled) return;
+    session.refineDisabled = true;
+    deps.onLog?.('asr_refine_disabled', { reason });
+    send(session, { type: 'refine', enabled: false, reason });
+  }
+
+  /**
+   * 切句：segFrames 切成 head（本句）/ tail（下一句），head 送去精修
+   * @param {object} session
+   * @param {number} cut 帧索引；=== frames.length 表示整段静音，直接丢弃
+   */
+  function cutSentence(session, cut) {
+    const frames = session.segFrames;
+    if (!Array.isArray(frames) || frames.length === 0) return;
+    const at = Math.min(Math.max(0, cut), frames.length);
+    const head = frames.slice(0, at);
+    session.segFrames = frames.slice(at);
+    if (head.length === 0) return; // 整段静音：丢弃，不产生空句
+
+    // 当前 zipformer 草稿属于这一句；切完重置流，下一句从干净状态开始
+    const draftText = session.currentText || '';
+    // 纯静音尾巴（endpoint 在静音段触发）不是一句话：发出去只会得到一个空句帧、
+    // 白占一个 id 和一次串行离线队列位，还可能把用户正在手改的开放句锁丢。
+    // 但「有声音、流式却没解出字」不能丢 —— offline 精修能把这种句救回来。
+    if (!draftText && head.every((f) => f.rms < SILENCE_RMS)) {
+      resetSentenceStream(session);
+      return;
+    }
+
+    resetSentenceStream(session);
+    if (draftText) session.committedText = tidyJoin([session.committedText, draftText]);
+
+    const id = session.refineSeq + 1;
+    session.refineSeq = id;
+    // 先告诉前端「这句结束了、id 是这个」——精修回来要靠它定位
+    send(session, { type: 'sentence', id, draft: draftText, refined: null });
+
+    const samples = concatChunks(head.map((f) => f.samples));
+    scheduleRefine(session, id, draftText, samples);
+  }
+
+  /**
+   * 切完之后重置流式状态：草稿归零、下一句从干净状态开始
+   * @param {object} session
+   */
+  function resetSentenceStream(session) {
+    session.currentText = '';
+    session.lastSentText = '';
+    try { session.onlineRecognizer?.reset?.(session.onlineStream); } catch { /* 版本差异 */ }
+  }
+
+  /**
+   * 发起该句的精修（异步；失败保持草稿，不影响邻句）
+   */
+  function scheduleRefine(session, id, draftText, samples) {
+    if (!isRefineEnabled(session)) return;
+    if (samples.length < REFINE_MIN_SAMPLES) return;
+
+    // 背压：超过上限就把最旧「还没开始 decode」的那句标成 skip（出队时空转，保住最新的那句）。
+    // 不能把正在跑的那句标掉：池子串行且不能抢占，标了也停不下来，只会白跑一次 decode
+    // 加一条 asr_refine_dropped 日志，让人误以为背压生效了。
+    const ticket = { skip: false, started: false, startedAt: 0 };
+    session.refineQueue.push(ticket);
+    if (session.refineQueue.length > MAX_PENDING_REFINE) {
+      const oldest = session.refineQueue.find((t) => !t.skip && !t.started && t !== ticket);
+      if (oldest) {
+        oldest.skip = true;
+        deps.onLog?.('asr_refine_dropped', { reason: 'backpressure', pending: session.refineQueue.length });
+      }
+    }
+
+    const startedAt = now();
+    const durationMs = (samples.length / 16000) * 1000;
+    session.refinePending += 1;
+
+    Promise.resolve()
+      .then(() => transcribe(samples, {
+        offlineModel: (session.models || {}).offline,
+        vadModel: (session.models || {}).vad || null,
+        idleUnloadMs: getIdleUnloadMs(),
+        language: session.language,
+        refine: true,
+        // 排队中若已 stop / 被背压丢弃，出队瞬间空转，别让 final 等它
+        shouldSkip: () => ticket.skip || session.refineAborted || session.released,
+        // 真正开始 decode：从这里开始计时/区分在跑与排队
+        onStart: () => { ticket.started = true; ticket.startedAt = now(); },
+      }))
+      .then((result) => {
+        settle();
+        if (!result || !result.text) return;
+        if (session.refineAborted || session.released) return;
+
+        // 自适应降级：连续慢说明这台机器边说边跑 offline 跟不上。
+        // 口径是 decode 本身（engineMs），不含排队等待 —— 三句短句排长队不代表机器跟不上，
+        // 把排队算进去会让「只说了三句短话」的用户被永久关掉精修。
+        const engineMs = result && Number.isFinite(result.engineMs)
+          ? result.engineMs
+          : now() - (ticket.started ? ticket.startedAt : startedAt);
+        if (engineMs > durationMs * REFINE_SLOW_RATIO) {
+          session.refineSlowStreak += 1;
+          if (session.refineSlowStreak >= REFINE_SLOW_STREAK) disableRefine(session, 'too_slow');
+        } else {
+          session.refineSlowStreak = 0;
+        }
+
+        send(session, { type: 'sentence', id, draft: draftText, refined: result.text });
+      }, (err) => {
+        settle();
+        deps.onError?.('refine_failed', err);
+      });
+
+    function settle() {
+      session.refinePending = Math.max(0, session.refinePending - 1);
+      const idx = session.refineQueue.indexOf(ticket);
+      if (idx >= 0) session.refineQueue.splice(idx, 1);
+    }
+  }
+
+  /**
+   * 句子结束：交给 cutSentence 统一处理（切帧、发 sentence、发起精修、重置流）
    */
   function handleEndpoint(session) {
     const rec = session.onlineRecognizer;
     const stream = session.onlineStream;
     if (!rec || !stream) return;
-    let text = '';
-    try {
-      const result = rec.getResult(stream);
-      text = tidyChineseSpacing(stripSenseVoiceTags(result && result.text ? result.text : ''));
-    } catch {
-      text = '';
-    }
-    if (text) {
-      session.committedText = tidyJoin([session.committedText, text]);
-      send(session, { type: 'endpoint', text: session.committedText });
-    }
-    session.currentText = '';
-    session.lastSentText = '';
-    try { rec.reset(stream); } catch { /* 版本差异：重置失败仍可继续累积 */ }
+    cutSentence(session, session.segFrames.length);
+    send(session, { type: 'endpoint', text: session.committedText });
   }
 
   /**
@@ -209,15 +387,24 @@ export function createAsrSessionManager(deps) {
    * @returns {Promise<void>} 定稿帧发出（或放弃）后 resolve
    */
   function finalize(session) {
+    // 先中止排队中的精修：它们出队即空转，final 不必排在它们后面
+    session.refineAborted = true;
     const models = session.models || deps.getModels();
     const samples = concatChunks(session.chunks);
     session.chunks = [];
 
     const draftText = tidyJoin([session.committedText, session.currentText]);
-    const finishWith = (text, fallback) => send(session, { type: 'final', text, fallback });
+    const finishWith = (text, fallback, texts) => send(session, {
+      type: 'final',
+      text,
+      fallback,
+      // segments 仍是分段数量（既有语义）；逐句文本在 texts，供前端做字词补正
+      segments: Array.isArray(texts) ? texts.length : 0,
+      texts: texts || [],
+    });
 
     if (!models.offline) {
-      finishWith(draftText, true);
+      finishWith(draftText, true, []);
       return Promise.resolve();
     }
 
@@ -225,12 +412,12 @@ export function createAsrSessionManager(deps) {
     const rss = typeof process.memoryUsage === 'function' ? process.memoryUsage().rss : 0;
     if (rss > RSS_LIMIT_BYTES) {
       deps.onLog?.('asr_offline_skipped', { reason: 'rss_pressure', rss });
-      finishWith(draftText, true);
+      finishWith(draftText, true, []);
       return Promise.resolve();
     }
 
     if (samples.length === 0) {
-      finishWith(draftText, !draftText);
+      finishWith(draftText, !draftText, []);
       return Promise.resolve();
     }
 
@@ -243,10 +430,10 @@ export function createAsrSessionManager(deps) {
         language: session.language,
       }))
       .then((result) => {
-        finishWith((result && result.text) || draftText, false);
+        finishWith((result && result.text) || draftText, false, result && result.texts);
       }, (err) => {
         deps.onError?.('offline_finalize_failed', err);
-        finishWith(draftText, true);
+        finishWith(draftText, true, []);
       });
   }
 
@@ -259,7 +446,12 @@ export function createAsrSessionManager(deps) {
     if (type === 'start') {
       if (typeof message.language === 'string') session.language = message.language;
       const draft = ensureOnline(session);
-      send(session, { type: 'ready', draft, finalize: Boolean(session.models.offline) });
+      send(session, {
+        type: 'ready',
+        draft,
+        finalize: Boolean(session.models.offline),
+        refine: Boolean(session.models.offline) && session.pacing !== 'instant',
+      });
       return;
     }
 
@@ -302,7 +494,12 @@ export function createAsrSessionManager(deps) {
     // 保留整段波形用于 stop 时 offline 定稿（5min @16k = 4.8M float ≈ 19MB，可接受）
     session.chunks.push(samples);
 
-    if (session.onlineStream && session.onlineRecognizer) {
+    // 句帧只按引用存（不复制），供 RMS 切句用；没有流式草稿时不需要切句
+    const online = Boolean(session.onlineStream && session.onlineRecognizer);
+    if (online) session.segFrames.push({ samples, rms: rmsOf(samples) });
+
+    let endpoint = false;
+    if (online) {
       try {
         session.onlineStream.acceptWaveform({ sampleRate: 16000, samples });
       } catch (err) {
@@ -313,11 +510,22 @@ export function createAsrSessionManager(deps) {
       if (session.onlineStream) {
         pumpPartial(session);
         if (typeof session.onlineRecognizer.isEndpoint === 'function') {
-          let endpoint = false;
           try { endpoint = session.onlineRecognizer.isEndpoint(session.onlineStream) === true; } catch { endpoint = false; }
-          if (endpoint) handleEndpoint(session);
         }
       }
+    }
+
+    // endpoint 优先；否则看 RMS 静音 / 超长回溯
+    if (endpoint) {
+      handleEndpoint(session);
+      return;
+    }
+    const cut = chooseCutIndex(session.segFrames, { frameMs: frameMsOf(samples) });
+    if (cut >= session.segFrames.length) {
+      // 整段静音：帧丢掉，不产生空句（cut === length 是纯函数的「丢弃」约定）
+      session.segFrames = [];
+    } else if (cut >= 0) {
+      cutSentence(session, cut);
     }
   }
 
@@ -358,6 +566,16 @@ export function createAsrSessionManager(deps) {
       released: false,
       idleTimer: null,
       maxTimer: null,
+      // 句级精修
+      segFrames: [],
+      refineSeq: 0,
+      refinePending: 0,
+      refineQueue: [],
+      refineAborted: false,
+      refineDisabled: false,
+      refineSlowStreak: 0,
+      // 识别节奏档位（缺省 balanced = 逐句精修）
+      pacing: typeof deps.getPacing === 'function' ? deps.getPacing() : 'balanced',
     };
     sessions.set(id, session);
     touch(session);
