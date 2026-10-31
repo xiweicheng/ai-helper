@@ -92,7 +92,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 
 **D. Ask your own knowledge base.** Start the Agent, import documents into a knowledge base from Options → Knowledge Base, then ask away in the side panel — answers come back with citation bubbles pointing at the exact source chunks. [Technical details →](agent/README.md#knowledge-base-rag)
 
-**E. Speak instead of typing.** Enable the optional voice component (Options → Voice tab, one click) and drop a model pack into the Agent, then press `Alt+V` — anywhere, including while reading a page (or a single right Alt / right Ctrl once enabled under Options → Voice). A streaming draft appears as you speak; when you stop, a higher-accuracy pass adds punctuation and normalizes numbers. Nothing is sent automatically. [Setup & model pack →](docs/Voice-Input-Local-STT.md)
+**E. Speak instead of typing.** Enable the optional voice component (Options → Voice tab, one click) and drop a model pack into the Agent, then press `Alt+V` — anywhere, including while reading a page (or a single right Alt / right Ctrl once enabled under Options → Voice). A draft appears as you speak and **each finished sentence is refined on the spot** (Instant / Balanced / Precise under Recognition pacing); releasing re-transcribes the whole clip for authority while sentence boundaries come from the per-sentence pass, and sentences you edited by hand stay locked. Nothing is sent automatically. [Setup and model packs →](docs/Voice-Input-Local-STT.md)
 
 ## 30-second quickstart
 

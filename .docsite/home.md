@@ -36,8 +36,14 @@ features:
   - title: MV3 架构
     details: Service Worker 生命周期、消息契约、Side Panel 渲染体系全解。
     link: /系统架构设计/
+  - title: 目标模式（Goal）
+    details: 一句话交办，引擎自己推到达成：独立评估器裁决 + 四道闸，放行可一点撤销。
+    link: /智能对话系统/ReAct-推理循环/
+  - title: 侧边栏待办
+    details: 对话途中冒出的事随手记下，双 Tab 三段状态、行内编辑、统计与 JSON/Markdown 导入导出。
+    link: /用户界面系统/
   - title: 本地语音输入
-    details: 本地 ONNX 流式识别 + 定稿补标点，音频不出本机、不落盘、不自动发送。
+    details: 本地 ONNX 识别，三档节奏（即时/均衡/精确）+ 句级即时精修，音频不出本机、不自动发送。
     link: /语音输入/
 ---
 
