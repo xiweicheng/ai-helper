@@ -28,7 +28,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, getFileIcon, formatFileSize, renderFilePreviews } from './file-extract.js';
-import { saveDocImageSnapshot } from './doc-images.js';
+import { saveDocImageSnapshot, buildChatImageHint, stripChatImageHint, normalizeChatImageSnapshot } from './doc-images.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
@@ -1212,15 +1212,23 @@ export async function sendMessage(opts = {}) {
     if (fileContent) {
       finalText += fileContent;
     }
-    // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
-    try { await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot); }
-    catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
     // 收集文件信息用于持久化
     attachedFilesSnapshot.forEach(f => {
       if (f.status === 'done') {
         contextBubbles.push({ type: 'file', name: f.name, size: f.size, fileType: f.type });
       }
     });
+  }
+
+  // 贴图重取：图片只随本条消息发出，之后每轮请求前都会被 stripImagesFromContent 剥掉。
+  // 快照（存图）+ 一行线索（告诉模型能重读第几张）缺一不可，否则第 2 轮起就彻底失忆。
+  const attachedImagesSnapshot = (inputCtx.attachedImages || []).slice();
+  const chatImageHint = buildChatImageHint(normalizeChatImageSnapshot(attachedImagesSnapshot).length);
+  if (chatImageHint) finalText += chatImageHint;
+  // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
+  if (attachedFilesSnapshot.length > 0 || attachedImagesSnapshot.length > 0) {
+    try { await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
+    catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
   }
 
   // 用户消息：激活会话走 DOM + 内存历史；非激活只登记到目标会话的独立历史（由 finally 统一落盘）
@@ -1804,15 +1812,19 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
   messageDiv.dataset.messageId = messageId;
 
   // 提取纯文本内容用于显示（content 可能是数组格式，当包含图片时）
-  const displayContent = Array.isArray(content)
+  // 贴图线索是给模型看的内部指令：历史回放同样走这里，展示前必须剥掉
+  const rawDisplayContent = Array.isArray(content)
     ? content.filter(c => c.type === 'text').map(c => c.text).join('')
     : content;
+  const displayContent = role === 'user' ? stripChatImageHint(rawDisplayContent) : rawDisplayContent;
   const hasImages = Array.isArray(content) && content.some(c => c.type === 'image_url');
 
   // 存储原始内容：数组格式需要序列化，字符串直接存
   messageDiv.dataset.rawContent = Array.isArray(content) ? JSON.stringify(content) : stripArtifactMarkers(content);
   // 额外存储纯文本版本，供复制/编辑/引用使用（优先使用 rawTextContent 以保留完整上下文格式）
-  messageDiv.dataset.textContent_ = stripArtifactMarkers(rawTextContent || displayContent);
+  messageDiv.dataset.textContent_ = stripArtifactMarkers(role === 'user'
+    ? stripChatImageHint(rawTextContent || displayContent)
+    : (rawTextContent || displayContent));
   
   const textContent = displayContent;
   

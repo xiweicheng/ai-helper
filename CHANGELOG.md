@@ -4,6 +4,25 @@
 
 ## 2026-10-31
 
+### 图片：对话里直接贴的图，第 2 轮起也能被 `read_image` 重读
+
+> 来源：上一版只让目标「记住依赖哪些附件」，但贴图本身仍然只能看一次——锚点写着「先转成笔记」，模型却没有再读一次图的手段。这是那条链路上最后一个缺口。
+
+**问题（一句话）**
+- 文档里抽出的图有 `_docImageSnapshot` 中转，`read_image(file, image)` 随时能取；**聊天贴图没有任何快照**，只在首条消息里当 `image_url` 发一次，之后被 `stripImagesFromContent` 剥干净，连「重新读一次」的入口都没有。
+
+**改动：加一条伪文件条目，不动工具契约**
+- 快照侧：`saveDocImageSnapshot` 增加第三参数 `attachedImages`，把贴图归一成一条 `name: 'chat-images'` 的伪文件（位置即序号，只存压缩图；上限 8 张），与文档图共用同一份 4MB 预算与淘汰逻辑。
+- 线索侧：新增 `buildChatImageHint`，消息末尾追加一行 `[对话图片 1-N / chat-images] … read_image(file="chat-images", image=N)`。**没有这一行，模型既不知道图还在，也不知道能再读**——这是整件事的关键。
+- 剥离侧：新增 `stripChatImageHint`，在 `addMessage` 里对用户消息的展示文本和 `dataset.textContent_`（复制/编辑回填）统一剥掉，中英两版都认。否则历史回放会凭空多出一行内部指令。
+- 双链路对齐：`chat-manager.sendMessage` 与 `prompt-manager.sendPromptByCode` 都接上；并且**只有贴图、没有文件时也写快照**（原逻辑嵌在文件块里，纯贴图批次根本不落快照）。
+- 工具侧零改动：`read_image` 来源二本来就按文件名查表，伪文件天然命中；只把工具描述补成「三选一」并点明 `chat-images`。
+- 目标锚点同步：`image` 那条 caveat 从「不会再发」改成「可随时用 `read_image` 重读」，并说明贴图是唯一例外。
+
+**验证**
+- 新增 13 例（快照 5 / 线索与剥离 3 / `read_image` 贴图来源 3 / 双链路接线 2），同步 3 处既有断言；全量 237 个文件 3943 例通过，lint 无输出，构建成功。
+- dist 产物确认含 `chat-images` 伪文件名、`Provide ONE of three sources` 与可重读 caveat。
+
 ### Goal 目标模式（附件）：目标不再对图片 / 文件 / 网页 / 知识库「装作没看见」
 
 > 来源：用户问「任务里带图片、文件、网页或引用知识库时，目标模式会怎么处理」。查证结论是：附件只跟着首条消息走，objective 里一个字都没有；图片从第 2 次 API 调用起就被剥掉，而锚点每轮重申的却是一句脱离附件就看不懂的话。

@@ -72,7 +72,7 @@ export const GOAL_ATTACHMENT_KINDS = Object.freeze(['image', 'file', 'page', 'kn
 // 而图片从第 2 次 API 调用起就被剥掉（react-loop 只保留最后一条消息的图），
 // 文件 / 知识库正文会随上下文压缩变成摘要。锚点必须点名「它们不会再来」。
 const ATTACHMENT_CAVEATS = {
-  image: 'the actual image travels only with the first request and will not be re-sent',
+  image: 'sent once with the first request and not re-sent later, but re-readable any time via read_image(file="chat-images", image=N)',
   file: 'its text was inlined once; re-read it with file tools once it is trimmed',
   page: 'only title/URL/tab were injected; read the content with browser tools',
   knowledge: 'a one-shot retrieval snapshot; query again with knowledge_search',
@@ -590,7 +590,7 @@ export function buildGoalAnchorText(goal, opts = {}) {
   }
   // 附件清单：目标文本只收用户原话，图片/文件/网页/知识库全在消息里。
   // 而它们会衰减（图片从第 2 次请求起被剥离，正文会随压缩变摘要），
-  // 所以锚点必须点名「这些不在目标里、也回不来」，并要求先转成笔记。
+  // 所以锚点必须点名「这些不在目标里、也不会再发」，并要求先转成笔记。
   const attachments = normalizeGoalAttachments(goal.attachments);
   if (attachments.length > 0) {
     lines.push('Attached material (it is NOT part of the objective text above, and it is NOT re-sent on later attempts):');
@@ -598,7 +598,7 @@ export function buildGoalAnchorText(goal, opts = {}) {
       lines.push(`  - ${a.kind}: ${a.name}${a.detail ? ` (${a.detail})` : ''} — ${ATTACHMENT_CAVEATS[a.kind]}`);
     }
     lines.push(
-      'Before your first tool call, write down what each of these tells you (working notes), then keep working from those notes: the attachments will not come back in later attempts. Never claim an attached item was inspected or verified unless you actually read it.'
+      'Before your first tool call, write down what each of these tells you (working notes), then keep working from those notes: the attachments will not be re-sent in later attempts. Pasted images are the one exception — re-read them with read_image(file="chat-images", image=N). Never claim an attached item was inspected or verified unless you actually read it.'
     );
   }
   lines.push(

@@ -665,11 +665,11 @@ describe('附件清单（目标只收用户原话，附件靠清单存活）', (
     });
     const text = buildGoalAnchorText(goal);
     expect(text).toContain('Attached material (it is NOT part of the objective text above');
-    expect(text).toContain('- image: 图片 1 张 — the actual image travels only with the first request');
+    expect(text).toContain('- image: 图片 1 张 — sent once with the first request');
     expect(text).toContain('- file: spec.md (inline text)');
     expect(text).toContain('- page: 产品页 (tab 12)');
     expect(text).toContain('- knowledge: 产品手册');
-    expect(text).toContain('the attachments will not come back in later attempts');
+    expect(text).toContain('the attachments will not be re-sent in later attempts');
     // 目标正文必须还是用户原话，没被附件清单污染
     expect(text).toContain('Objective: 按这张图改按钮颜色');
   });

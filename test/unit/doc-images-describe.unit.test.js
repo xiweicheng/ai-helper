@@ -13,7 +13,7 @@ globalThis.chrome = {
 };
 globalThis.fetch = vi.fn();
 
-const { describeImages, buildImageBlock, buildPreviewStatusText, buildPreviewCompactText, saveDocImageSnapshot, removeDocImageSnapshot, compressForVision, VISION_CONSTANTS } = await import('../../src/side_panel/doc-images.js');
+const { describeImages, buildImageBlock, buildPreviewStatusText, buildPreviewCompactText, saveDocImageSnapshot, removeDocImageSnapshot, compressForVision, VISION_CONSTANTS, CHAT_IMAGE_FILE, normalizeChatImageSnapshot, buildChatImageHint, stripChatImageHint } = await import('../../src/side_panel/doc-images.js');
 const { setLanguage } = await import('../../src/shared/i18n.js');
 
 beforeEach(() => {
@@ -233,5 +233,72 @@ describe('buildPreviewCompactText', () => {
     setLanguage('en', false);
     const images = [{ index: 1, dataUrl: 'data:x' }, { index: 2, dataUrl: 'data:x' }];
     expect(buildPreviewCompactText({ images, imageDescriptions: { 1: 'a' } })).toBe('📷 1/2 · 1');
+  });
+});
+
+
+describe('对话贴图快照（chat-images 伪文件）', () => {
+  it('按位置编号写入伪文件，优先压缩图（原图 base64 会撞预算）', async () => {
+    await saveDocImageSnapshot('c1', [], [
+      { originalUrl: 'data:image/png;base64,ORIG1', compressedUrl: 'data:image/jpeg;base64,C1' },
+      { originalUrl: 'data:image/png;base64,ORIG2' },
+    ]);
+    const files = store._docImageSnapshot.c1.files;
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe(CHAT_IMAGE_FILE);
+    expect(files[0].name).toBe('chat-images');
+    expect(files[0].imageSource).toBe('local');
+    expect(files[0].images[0]).toEqual({ index: 1, dataUrl: 'data:image/jpeg;base64,C1' });
+    expect(files[0].images[1]).toEqual({ index: 2, dataUrl: 'data:image/png;base64,ORIG2' });
+  });
+
+  it('文档图与贴图共存：伪文件排在文档之后，互不覆盖', async () => {
+    await saveDocImageSnapshot('c2',
+      [{ status: 'done', name: 'a.docx', imageSource: 'local', images: [{ index: 1, dataUrl: 'data:image/png;base64,D' }] }],
+      [{ compressedUrl: 'data:image/jpeg;base64,C1' }]);
+    expect(store._docImageSnapshot.c2.files.map((f) => f.name)).toEqual(['a.docx', 'chat-images']);
+  });
+
+  it('位置即序号：无图源的贴图项只跳过、不重排（序号必须与消息里第几个一致）', async () => {
+    const items = normalizeChatImageSnapshot([{}, { compressedUrl: 'data:image/jpeg;base64,C9' }]);
+    expect(items).toEqual([{ index: 2, dataUrl: 'data:image/jpeg;base64,C9' }]);
+  });
+
+  it('超过上限只保留前 N 张，序号连续且与消息顺序一致', async () => {
+    const many = Array.from({ length: VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT + 3 }, (_, i) => ({ compressedUrl: `data:image/jpeg;base64,C${i}` }));
+    await saveDocImageSnapshot('c4', [], many);
+    const images = store._docImageSnapshot.c4.files[0].images;
+    expect(images).toHaveLength(VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT);
+    expect(images[images.length - 1].index).toBe(VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT);
+  });
+
+  it('既无文档图也无贴图 → 清掉该 session（不留下空快照）', async () => {
+    store._docImageSnapshot = { c5: { updatedAt: 1, files: [] } };
+    await saveDocImageSnapshot('c5', [], []);
+    expect(store._docImageSnapshot.c5).toBeUndefined();
+  });
+});
+
+describe('buildChatImageHint / stripChatImageHint', () => {
+  it('没有贴图就不产出线索（纯文字消息不多一行噪声）', () => {
+    expect(buildChatImageHint(0)).toBe('');
+    expect(buildChatImageHint(undefined)).toBe('');
+  });
+
+  it('线索含伪文件名与序号范围，且以换行开头贴在上一条内容后', () => {
+    const hint = buildChatImageHint(3);
+    expect(hint.startsWith('\n')).toBe(true);
+    expect(hint).toContain('chat-images');
+    expect(hint).toContain('1~3');
+  });
+
+  it('中英线索都能剥干净，正文一字不动', () => {
+    const body = '把按钮改成圆角';
+    for (const lang of ['zh', 'en']) {
+      setLanguage(lang, false);
+      expect(stripChatImageHint(body + buildChatImageHint(2))).toBe(body);
+      expect(stripChatImageHint(body)).toBe(body);
+      expect(stripChatImageHint(null)).toBe(null);
+    }
   });
 });
