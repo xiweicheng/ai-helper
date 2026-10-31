@@ -138,6 +138,24 @@ function langLabel(code) {
   return key ? t(key) : String(code || '');
 }
 
+// 识别节奏档位 → 文案键（协议侧仍是 instant/balanced/precise）
+const PACING_CODES = ['instant', 'balanced', 'precise'];
+const PACING_I18N_KEYS = {
+  instant: 'toolbox.asrPacingInstant',
+  balanced: 'toolbox.asrPacingBalanced',
+  precise: 'toolbox.asrPacingPrecise',
+};
+
+/**
+ * 节奏档位编码 → 可读文案
+ * @param {string} code
+ * @returns {string}
+ */
+function pacingLabel(code) {
+  const key = PACING_I18N_KEYS[code];
+  return key ? t(key) : String(code || '');
+}
+
 /**
  * 模型下载进度区文本（空字符串 = 无内容可展示）
  * @param {object|undefined} download
@@ -251,6 +269,10 @@ function renderStatusBlock(status) {
   // 样式全部来自 .model-dropdown / .model-option 基类
   const langOptions = langs.map((code) => `<div class="model-option${code === currentLang ? ' selected' : ''}" role="option" aria-selected="${code === currentLang ? 'true' : 'false'}" data-lang="${escapeHtml(code)}">${escapeHtml(langLabel(code))}</div>`).join('');
 
+  // 识别节奏三档（旧代理不返回 asrPacing → 按默认 balanced 渲染，不报错）
+  const currentPacing = PACING_CODES.includes(status.asrPacing) ? status.asrPacing : 'balanced';
+  const pacingOptions = PACING_CODES.map((code) => `<div class="model-option${code === currentPacing ? ' selected' : ''}" role="option" aria-selected="${code === currentPacing ? 'true' : 'false'}" data-pacing="${code}">${escapeHtml(pacingLabel(code))}</div>`).join('');
+
   return `
     <div class="asr-status-card">
       <div class="asr-status-head">
@@ -301,6 +323,16 @@ function renderStatusBlock(status) {
         <div class="model-dropdown asr-lang-menu" id="asrLangDropdown" role="listbox">${langOptions}</div>
       </div>
       <div class="asr-hint">${escapeHtml(t('toolbox.asrLangHint'))}</div>
+    </div>
+
+    <div class="asr-subsection">
+      <div class="asr-subsection-title">${escapeHtml(t('toolbox.asrPacing'))}</div>
+      <!-- 与「识别语言」同一套 .model-selector + readonly input：样式/箭头/focus ring 全走基类 -->
+      <div class="model-selector asr-lang-field" id="asrPacingField">
+        <input type="text" id="asrPacingInput" readonly value="${escapeHtml(pacingLabel(currentPacing))}" aria-haspopup="listbox" aria-expanded="false">
+        <div class="model-dropdown asr-lang-menu" id="asrPacingDropdown" role="listbox">${pacingOptions}</div>
+      </div>
+      <div class="asr-hint">${escapeHtml(t('toolbox.asrPacingHint'))}</div>
     </div>
   `;
 }
@@ -687,6 +719,7 @@ function bindSectionEvents() {
   });
 
   bindLangSelectEvents();
+  bindPacingSelectEvents();
 
   const toggle = document.getElementById('asrEnableToggle');
   if (toggle && !toggle.dataset.bound) {
@@ -749,6 +782,7 @@ function bindDropdownSelect(input, menu, onPick) {
 /** 需要「点别处收起」的下拉（列表会整体重建，所以监听挂 document 上只挂一次、按 id 现查） */
 const DISMISSABLE_DROPDOWNS = [
   { inputId: 'asrLangInput', menuId: 'asrLangDropdown' },
+  { inputId: 'asrPacingInput', menuId: 'asrPacingDropdown' },
   { inputId: 'asrDeviceInput', menuId: 'asrDeviceDropdown' },
 ];
 let dropdownDismissBound = false;
@@ -790,6 +824,36 @@ function bindLangSelectEvents() {
         el.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
       });
       showToast(t('toolbox.asrLangSaved'));
+      notifyStatusChanged();
+    } else {
+      showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');
+    }
+  });
+}
+
+/**
+ * 识别节奏下拉：展开 + 选择
+ *
+ * 档位是长期偏好（instant 不逐句精修 / balanced 逐句精修 / precise 不出逐字草稿），
+ * 与识别语言一样写进 /api/asr/config，会话创建时读一次——不往 WS 帧里塞。
+ */
+function bindPacingSelectEvents() {
+  const trigger = document.getElementById('asrPacingInput');
+  const menu = document.getElementById('asrPacingDropdown');
+  if (!trigger || !menu) return;
+  bindDropdownDismissOnce();
+
+  bindDropdownSelect(trigger, menu, async (option) => {
+    const pacing = option.getAttribute('data-pacing') || 'balanced';
+    const res = await agentApi('POST', '/api/asr/config', { asrPacing: pacing });
+    if (res && res.success !== false) {
+      trigger.value = pacingLabel(pacing);
+      menu.querySelectorAll('.model-option').forEach((el) => {
+        const isCurrent = el.getAttribute('data-pacing') === pacing;
+        el.classList.toggle('selected', isCurrent);
+        el.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      });
+      showToast(t('toolbox.asrPacingSaved'));
       notifyStatusChanged();
     } else {
       showToast(res?.error || t('toolbox.asrSaveFailed'), 'error');

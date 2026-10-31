@@ -148,27 +148,33 @@ describe('D 超时文案：实际耗时 + 预算 + 澄清与确认双豁免', ()
     expect(formatDurationMs(NaN)).toBe('0s');
   });
 
-  test('formatDurationMs：时长单位与设置页输入单位对齐（都是分钟）', () => {
-    // 评审 L-b 原表述「与设置页『2 小时』不同形」经核对不成立：options.html 的
-    // reactLoopTimeout 是 number 输入、单位标签为分钟、config-manager 按 /60000 换算。
-    // 这里把「对齐」从口头结论变成可执行守卫：设置页单位一旦改成小时/秒，
-    // 而文案仍输出 min/s，本例必须红。
+  test('formatDurationMs：时长单位与设置页读数单位对齐（都是分钟）', () => {
+    // 设置页的「整体循环超时」已从 number 输入改成 28 档吸附滑杆：输入本身只存档位索引，
+    // 真分钟数在 data-minutes 上，读数由 options/loop-timeout-slider.js 格式化。
+    // 这里把「对齐」从口头结论变成可执行守卫：滑杆末档分钟数必须读成「Nmin」，
+    // 且末档索引必须与档位表长度一致（否则拖到底也不是 24 小时）。
     const optionsSrc = readFileSync(
       new URL('../../options.html', import.meta.url),
       'utf8'
     );
     const inputMatch = optionsSrc.match(/<input[^>]*id="reactLoopTimeout"[^>]*>/);
     expect(inputMatch).not.toBeNull();
-    const maxMatch = inputMatch[0].match(/max="(\d+)"/);
-    expect(maxMatch).not.toBeNull();
-    const maxMinutes = Number(maxMatch[1]);
+    expect(inputMatch[0]).toMatch(/type="range"/);
+    const maxIndexMatch = inputMatch[0].match(/max="(\d+)"/);
+    expect(maxIndexMatch).not.toBeNull();
+
+    const sliderSrc = readFileSync(
+      new URL('../../src/options/loop-timeout-slider.js', import.meta.url),
+      'utf8'
+    );
+    const ladderMatch = sliderSrc.match(/LOOP_TIMEOUT_LADDER = \[([^\]]+)\]/);
+    expect(ladderMatch).not.toBeNull();
+    const ladder = ladderMatch[1].split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
+    expect(ladder.length - 1).toBe(Number(maxIndexMatch[1]));
+
+    const maxMinutes = ladder[ladder.length - 1];
     expect(maxMinutes).toBeGreaterThan(15); // 硬封顶放开后上限必须真的高于旧 15min
-    // 输入框同行单位标签必须是分钟。窗口 400 只为覆盖「input 起始 → 同块单位标签」
-    // 的实际距离（当前约 160 字符）；结构大改时按块边界（下一个 <input）重写，勿调大窗口
-    const UNIT_LABEL_WINDOW = 400;
-    const unitLabel = optionsSrc.slice(inputMatch.index, inputMatch.index + UNIT_LABEL_WINDOW);
-    expect(unitLabel).toMatch(/unitMinute/);
-    // 满额配置读出来必须是「Nmin」形态（与用户输入的那个 N 同单位）
+    // 满额配置读出来必须是「Nmin」形态（与滑杆读数同单位）
     expect(formatDurationMs(maxMinutes * MIN)).toBe(`${maxMinutes}min`);
   });
 

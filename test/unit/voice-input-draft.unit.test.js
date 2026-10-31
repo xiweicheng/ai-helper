@@ -1,13 +1,14 @@
 // test/unit/voice-input-draft.unit.test.js
 // 语音输入草稿替换 / 回滚的纯函数测试（不起 DOM、不碰 chrome）。
 // 关键行为：
-//   1) 未 dirty：草稿原地替换 [start, start+len)，不会把上一版草稿累积进去；
-//   2) 用户中途手改（dirty）或浏览器不支持 setRangeText：退化为「在光标处追加」，绝不覆盖用户输入；
+//   1) 草稿原地替换 [start, start+len)，不会把上一版草稿累积进去；
+//   2) 浏览器不支持 setRangeText：退化为「在光标处追加」，绝不覆盖用户输入；
 //   3) 取消录音：只回滚本次草稿区间，已定稿/用户输入原样保留。
+// 用户手改的逐句隔离在句表层（voice-draft-items.js + voice-sentence-items 用例）。
 import { describe, it, expect } from 'vitest';
 import { computeDraftEdit, computeDraftRollback } from '../../src/side_panel/voice-input.js';
 
-const draft = (over = {}) => ({ start: 0, len: 0, dirty: false, ...over });
+const draft = (over = {}) => ({ start: 0, len: 0, ...over });
 
 describe('computeDraftEdit：草稿写入区间', () => {
   it('无草稿：原样返回，光标落到末尾', () => {
@@ -47,12 +48,13 @@ describe('computeDraftEdit：草稿写入区间', () => {
     expect(r.len).toBe(2);
   });
 
-  it('dirty（用户手改过）：退化为在光标处追加，不覆盖用户输入', () => {
+  it('未支持替换（canReplace=false）：退化为在光标处追加，不覆盖用户输入', () => {
     const r = computeDraftEdit({
       value: '用户自己写的',
-      draft: draft({ start: 0, len: 3, dirty: true }),
+      draft: draft({ start: 0, len: 3 }),
       text: '新的定稿',
       caret: 5,
+      canReplace: false,
     });
     expect(r.value).toBe('用户自己写新的定稿的');
     expect(r.len).toBe(0);
@@ -84,26 +86,17 @@ describe('computeDraftEdit：草稿写入区间', () => {
     expect(r.len).toBe(0);
   });
 
-  it('caret 缺省时追加到末尾', () => {
-    const r = computeDraftEdit({ value: 'ab', draft: draft({ dirty: true }), text: 'c' });
+  it('canReplace=false 且没给 caret 时追加到末尾', () => {
+    const r = computeDraftEdit({ value: 'ab', draft: draft(), text: 'c', canReplace: false });
     expect(r.value).toBe('abc');
   });
 });
 
 describe('computeDraftRollback：取消时回滚', () => {
-  it('未 dirty：删除草稿区间，光标回到区间起点', () => {
+  it('删除草稿区间，光标回到区间起点', () => {
     const r = computeDraftRollback({ value: '前缀草稿后缀', draft: draft({ start: 2, len: 2 }) });
     expect(r.value).toBe('前缀后缀');
     expect(r.caret).toBe(2);
-  });
-
-  it('dirty：原样保留（用户手改过的内容不能被撤销）', () => {
-    const r = computeDraftRollback({
-      value: '用户内容',
-      draft: draft({ start: 0, len: 4, dirty: true }),
-    });
-    expect(r.value).toBe('用户内容');
-    expect(r.caret).toBe(4);
   });
 
   it('len<=0（从未写入草稿）：不删任何字', () => {

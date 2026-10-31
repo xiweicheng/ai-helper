@@ -6,6 +6,7 @@ import { t } from '../shared/i18n.js';
 import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
 import { formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
 import { closeCtxPopover } from './ctx-popover.js';
+import { renderLoopTimeoutSlider, attachLoopTimeoutSlider, LOOP_TIMEOUT_MIN_MINUTES } from './loop-timeout-slider.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
 
 
@@ -1029,8 +1030,15 @@ export function loadConfig() {
     const retiredReactKeys = ['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout']
       .filter(k => result[k] !== undefined);
     if (retiredReactKeys.length) chrome.storage.local.remove(retiredReactKeys);
-    document.getElementById('reactLoopTimeout').value = 
-      Math.round((result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout) / 60000);
+    // 「整体循环超时」28 档滑杆：渲染存储值 + 绑定「松手即落盘」（attach 幂等，
+    // loadConfig 可能被重复调用，重复绑定会重复写 storage）
+    renderLoopTimeoutSlider(Math.round((result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout) / 60000));
+    attachLoopTimeoutSlider({
+      onCommit: (minutes) => {
+        chrome.storage.local.set({ reactLoopTimeout: minutes * 60000 });
+        showStatus(`✅ ${t('react.loopTimeoutSaved')}`, 'success');
+      }
+    });
     const preselectEl = document.getElementById('enableToolPreselect');
     if (preselectEl) {
       preselectEl.checked = 
@@ -1176,7 +1184,7 @@ export function loadConfig() {
       radio.addEventListener('change', () => {
         if (radio.checked) {
           chrome.storage.local.set({ sidePanelScope: radio.value });
-          syncAutoGroupTabsDisabled();
+          syncAutoGroupTabsVisibility();
         }
       });
     });
@@ -1184,14 +1192,16 @@ export function loadConfig() {
     // 加载自动分组开关（默认开启，undefined 视为 true）
     const autoGroupTabsEl = document.getElementById('autoGroupTabs');
     if (autoGroupTabsEl) autoGroupTabsEl.checked = result.autoGroupTabs !== false;
-    // 自动分组只在标签页绑定模式下生效：全局模式下面板对所有 tab 可用，分组失去意义，
-    // 因此把开关置灰不可改（保留用户原有勾选值，切回绑定模式后继续生效）
-    function syncAutoGroupTabsDisabled() {
-      if (!autoGroupTabsEl) return;
+    // 自动分组是标签页绑定模式的二级选项：存储上 sidePanelScope 是总开关，
+    // autoGroupTabs 只在绑定模式下被 background 读取生效；界面上未选中绑定模式时
+    // 整块隐藏（保留用户原有勾选值，切回绑定模式后继续生效）
+    function syncAutoGroupTabsVisibility() {
+      const wrap = document.getElementById('autoGroupTabsWrap');
+      if (!wrap) return;
       const scope = document.querySelector('input[name="sidePanelScope"]:checked')?.value || 'global';
-      autoGroupTabsEl.disabled = scope !== 'tab-specific';
+      wrap.style.display = scope === 'tab-specific' ? 'block' : 'none';
     }
-    syncAutoGroupTabsDisabled();
+    syncAutoGroupTabsVisibility();
     // 分组开关切换立即生效：background 在归组时实时读取该设置
     if (autoGroupTabsEl && !autoGroupTabsEl.dataset.groupListenerBound) {
       autoGroupTabsEl.dataset.groupListenerBound = '1';
@@ -1237,9 +1247,12 @@ export function saveConfig() {
   const apiKey = document.getElementById('apiKey').value.trim();
   const systemPrompt = document.getElementById('systemPrompt').value.trim();
   
-  // 获取 ReAct 配置（时间单位转换）；轮数上限 / API 请求超时 / 工具执行超时均已撤出设置页，
-  // 作为内部固定值（background/constants.js 的 DEFAULT_REACT_CONFIG），不读也不存
-  const reactLoopTimeout = (parseInt(document.getElementById('reactLoopTimeout').value) || 5) * 60000;
+  // 获取 ReAct 配置；轮数上限 / API 请求超时 / 工具执行超时均已撤出设置页，
+  // 作为内部固定值（background/constants.js 的 DEFAULT_REACT_CONFIG），不读也不存。
+  // 「整体循环超时」是滑杆：滑杆本身只存档位索引，真分钟数在 dataset.minutes 上
+  const loopTimeoutMinutes = parseInt(document.getElementById('reactLoopTimeout')?.dataset.minutes, 10)
+    || Math.round(DEFAULT_REACT_CONFIG.loopTimeout / 60000);
+  const reactLoopTimeout = loopTimeoutMinutes * 60000;
   // clarifyTimeout / apiRetryCount / apiRetryBaseDelay / enableToolPreselect 不再配置，使用默认值；预筛选最小工具数已改为常量 PRESELECT_MIN_TOOL_COUNT
   const toolConfirmationEnabled = document.getElementById('toolConfirmationEnabled').checked;
   const networkAccessEnabled = document.getElementById('networkAccessEnabled').checked;
@@ -1306,8 +1319,8 @@ export function saveConfig() {
     }
   }
   
-  // 验证 ReAct 配置范围（只剩「整体循环超时」需要校验，其余三项为内部固定值）
-  if (reactLoopTimeout < 60000 || reactLoopTimeout > 86400000) {
+  // 验证 ReAct 配置范围（只剩「整体循环超时」，下限与滑杆首档对齐；其余三项为内部固定值）
+  if (reactLoopTimeout < LOOP_TIMEOUT_MIN_MINUTES * 60000 || reactLoopTimeout > 86400000) {
     showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');
     return;
   }

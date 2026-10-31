@@ -1032,7 +1032,9 @@ export function getReactConfig() {
       // （旧 7200000 即 2h，已落后于新默认 4h）；看门狗仍要靠 toolTimeout/apiTimeout 换算余量。
       resolve({
         apiTimeout: DEFAULT_REACT_CONFIG.apiTimeout,
-        loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
+        // 与后台 getStoredConfig 同口径钳制上下限（10 分钟 – 24 小时）：面板看门狗要靠它换算，
+        // 旧备份/残留值不能绕过滑杆档位把看门狗拉到违规的小预算
+        loopTimeout: Math.min(Math.max(result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout, 600000), 86400000),
         toolTimeout: DEFAULT_REACT_CONFIG.toolTimeout,
         clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout
       });

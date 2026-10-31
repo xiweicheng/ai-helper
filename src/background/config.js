@@ -4,6 +4,12 @@ import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CON
 import { normalizeCustomModels } from '../shared/token-counter.js';
 import { decodeSecret } from '../shared/secret.js';
 
+// 「整体循环超时」硬边界：与 options/loop-timeout-slider.js 档位上下限、面板看门狗换算口径一致。
+// 必须在读取侧钳制（而非只靠设置页保存校验）才能同时挡住「旧备份导入」与「历史残留值」两条
+// 绕过 UI 的写入路径——否则滑杆把 1 分钟就近显示成 10 分钟、后台却仍按 1 分钟跑，一次工具调用就撞线。
+const LOOP_TIMEOUT_MIN_MS = 600000;    // 10 分钟（低于它连一轮工具调用都跑不完）
+const LOOP_TIMEOUT_MAX_MS = 86400000;  // 24 小时
+
 /**
  * 获取存储的配置
  */
@@ -37,7 +43,7 @@ export function getStoredConfig() {
           // reactToolTimeout（如 600000）若继续生效，会让「界面已经没有这个开关了」变成谎话。
           maxIterations: DEFAULT_REACT_CONFIG.maxIterations,
           apiTimeout: DEFAULT_REACT_CONFIG.apiTimeout,
-          loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
+          loopTimeout: Math.min(Math.max(result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout, LOOP_TIMEOUT_MIN_MS), LOOP_TIMEOUT_MAX_MS),
           toolTimeout: DEFAULT_REACT_CONFIG.toolTimeout,
           clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,

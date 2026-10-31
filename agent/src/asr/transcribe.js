@@ -252,16 +252,17 @@ export function transcribeWav(wavBuffer, opts = {}) {
 /**
  * 对已重采样到 16k 的 Float32 波形做整段定稿识别（WS 会话 stop 路径复用）
  * @param {Float32Array} samples 16k mono
- * @param {{ offlineModel: object, vadModel?: object|null, idleUnloadMs?: number }} opts
- * @returns {{ text: string, segments: number, peak: number }}
+ * @param {{ offlineModel: object, vadModel?: object|null, idleUnloadMs?: number, decode?: (seg: Float32Array) => string }} opts
+ * @returns {{ text: string, segments: number, texts: string[], peak: number, engineMs: number }}
  */
 export function transcribeSamples(samples, opts = {}) {
+  const startedAt = Date.now();
   const src = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
   const peak = peakAmplitude(src);
 
   // 全静音：不跑模型，直接回空文本（前端据此提示「未识别到语音」）
   if (peak < 0.003 || src.length < TARGET_SAMPLE_RATE * 0.2) {
-    return { text: '', segments: 0, peak };
+    return { text: '', segments: 0, texts: [], peak, engineMs: Date.now() - startedAt };
   }
 
   if (!opts.offlineModel) {
@@ -270,7 +271,17 @@ export function transcribeSamples(samples, opts = {}) {
     throw err;
   }
 
-  const recognizer = getOfflineRecognizer(opts.offlineModel, { idleUnloadMs: opts.idleUnloadMs });
+  // 识别器惰性加载：注入 decode（单测用）时绝不碰 native 模型
+  let recognizer = null;
+  const decodeOne = typeof opts.decode === 'function'
+    ? opts.decode
+    : (seg) => {
+      if (!recognizer) {
+        recognizer = getOfflineRecognizer(opts.offlineModel, { idleUnloadMs: opts.idleUnloadMs });
+      }
+      return decodeSegment(recognizer, seg, TARGET_SAMPLE_RATE);
+    };
+
   let vad = null;
   if (opts.vadModel) {
     try {
@@ -283,11 +294,13 @@ export function transcribeSamples(samples, opts = {}) {
   const segments = splitByVad(vad, src, TARGET_SAMPLE_RATE);
   const texts = [];
   for (const seg of segments) {
-    const text = decodeSegment(recognizer, seg, TARGET_SAMPLE_RATE);
+    const text = decodeOne(seg);
     if (text) texts.push(text);
   }
 
-  return { text: tidyJoin(texts), segments: segments.length, peak };
+  // texts 供前端按句做字词补正；segments 仍是分段数量（既有调用方依赖这个语义）。
+  // engineMs 是 decode 本身的耗时（不含排队），逐句精修的自适应降级按它判定。
+  return { text: tidyJoin(texts), segments: segments.length, texts, peak, engineMs: Date.now() - startedAt };
 }
 
 /**

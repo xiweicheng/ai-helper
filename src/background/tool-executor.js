@@ -43,6 +43,7 @@ registerTranslations('zh', {
     clarifyDialogFailed: '无法显示澄清对话框: {error}',
     clarifyUnattended: '目标模式无人值守，无法向用户提问（原问题：{question}）。请基于现有信息自行做出最合理的决定并继续执行，不要重复调用澄清工具。若信息确实不足，选择风险最低且可回退的方案，并在最终回答里说明你的假设。',
     clarifyTimeout: '用户未在规定时间内完成澄清 ({seconds}秒)',
+    clarifyTimeoutDefaulted: '澄清弹窗超时（{seconds}秒），用户未作答，已按推荐项「{option}」继续。请不要就同一个问题再次追问；若后续发现新信息与该假设冲突，再告知用户并重新确认。',
     clarifyPanelClosed: 'Side Panel 已关闭，澄清操作中止',
     missingUrlParam: '缺少 URL 参数',
     invalidUrlFormat: '无效的 URL 格式: {url}',
@@ -265,6 +266,7 @@ registerTranslations('en', {
     clarifyDialogFailed: 'Cannot show clarify dialog: {error}',
     clarifyUnattended: 'Goal mode is running unattended, so the user cannot be asked (original question: {question}). Decide on the most reasonable option yourself and keep going; do not call the clarify tool again. If information is genuinely missing, pick the lowest-risk reversible path and state the assumption in your final answer.',
     clarifyTimeout: 'User did not complete clarification within the time limit ({seconds}s)',
+    clarifyTimeoutDefaulted: 'The clarification dialog timed out ({seconds}s) with no answer, so the recommended option "{option}" was applied by default. Do not ask the same question again; if later evidence contradicts this assumption, tell the user and re-confirm.',
     clarifyPanelClosed: 'Side Panel closed, clarification aborted',
     missingUrlParam: 'Missing URL parameter',
     invalidUrlFormat: 'Invalid URL format: {url}',
@@ -2720,6 +2722,13 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
   
   // 确保 options 是数组，防止 LLM 返回非数组类型
   const options = Array.isArray(args.options) ? args.options : (args.options ? [String(args.options)] : []);
+
+  // recommendedOption 来自 LLM 生成的 JSON，可能是数字字符串（"2"）或越界值；先归一成合法索引，
+  // 让面板预选高亮与超时兜底取到同一个值——否则会出现「推荐徽标在第3项、超时却按第1项继续」的自相矛盾。
+  const parsedRecommended = Number.parseInt(recommendedOption, 10);
+  const recommendedIndex = Number.isInteger(parsedRecommended) && parsedRecommended >= 0 && parsedRecommended < options.length
+    ? parsedRecommended
+    : 0;
   
   // 目标模式无人值守兜底：工具表已在 reactLoopImpl 里摘掉 clarify_question，此处是第二道闸——
   // 技能 / 自动化 / MCP 等非 ReAct 通道的工具集不经过那层过滤，弹出来同样会把目标卡在
@@ -2739,7 +2748,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     const clarifyData = {
       question,
       options: options,
-      recommendedOption: recommendedOption !== undefined ? recommendedOption : 0,
+      recommendedOption: recommendedIndex,
       allowCustomInput,
       allowAdditionalInfo,
       toolCallId,
@@ -2754,6 +2763,11 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     // 用户手动延长倒计时的次数上限（防被遗忘后无限延长→任务悬挂）；每次延长一个完整超时窗口
     const CLARIFY_MAX_EXTENDS = 3;
     let extendCount = 0;
+
+    // 超时兜底值：弹窗里的「推荐」只是预选高亮，用户没看到 / 没点选时不能既不算答也不作数——
+    // 任务会白白等下去（澄清等待不计入循环预算，可无限期挂着）。口径与面板预选一致：直接取上面
+    // 归一化好的 recommendedIndex；options 为空则无值可兜底，退回未澄清失败。
+    const fallbackOption = options.length > 0 ? options[recommendedIndex] : null;
     
     /**
      * 清理函数：确保监听器和计时器都被正确清理
@@ -2785,18 +2799,31 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
         // 澄清等待超时 → 清除交互提醒
         clearInteractionNotification(sessionId);
 
-        // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）
+        // 通知前端倒计时结束（与初始发送同通道：定向优先，避免其他实例误响铃）。
+        // defaultOption 让面板能直接说出「替你选了哪一项」，不必自己重算一遍推荐值
         sendToInitiator({
           type: 'CLARIFY_TIMEOUT',
           toolCallId: toolCallId,
-          sessionId
+          sessionId,
+          reason: 'timeout',
+          defaultOption: fallbackOption
         });
 
-        resolve({ 
-          success: false, 
-          error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout/1000) }),
-          tool_call_id: toolCallId 
-        });
+        if (fallbackOption) {
+          // 有兜底值 → 按推荐项结算：success 为真（这确实是一个可用的答案），
+          // 但内容里写明「这是超时默认值」，并要求模型回显、不得就同一问题重问
+          resolve(makeResult(true, t('toolExec.clarifyTimeoutDefaulted', {
+            seconds: Math.round(clarifyTimeout / 1000),
+            option: fallbackOption,
+          }), { tool_call_id: toolCallId }));
+        } else {
+          // 连选项都没有（options 为空）→ 无值可代选，只能按未澄清失败收口
+          resolve({
+            success: false,
+            error: t('toolExec.clarifyTimeout', { seconds: Math.round(clarifyTimeout / 1000) }),
+            tool_call_id: toolCallId
+          });
+        }
       }, ms);
     };
 
@@ -2920,7 +2947,10 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
               sendToInitiator({
                 type: 'CLARIFY_TIMEOUT',
                 toolCallId: toolCallId,
-                sessionId
+                sessionId,
+                // 面板被主动关掉不算「等满时限」：不代选，任务按未澄清中止
+                reason: 'panel_closed',
+                defaultOption: null
               });
               resolve({
                 success: false,

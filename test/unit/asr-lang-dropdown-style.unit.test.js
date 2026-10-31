@@ -57,6 +57,16 @@ describe('语音输入区块的裁剪规则', () => {
     expect(OPTIONS_HTML).toContain('asrSectionContent');
     expect(STYLES).toMatch(/\.model-selector\s*\{[^}]*position:\s*relative/);
   });
+
+  // 真实 bug（真浏览器探针 _asr-pacing-ui.mjs 才发现）：「识别节奏」展开后第三档「精确」
+  // 被下方「麦克风权限」的说明文字压住 —— 说明文字用 opacity < 1 弱化，浏览器把它提成
+  // 合成层，绘制在 z-index:1000 的绝对定位浮层之上。放开 overflow 解决不了这件事，
+  // 必须让承载浮层的内容区本身自成一栈（position + z-index），浮层在其内部按 z-index 叠放。
+  test('承载浮层的内容区 / 小节自成一栈，否则弱化说明文字会盖住浮层', () => {
+    const host = block('#asrSection:not(.disabled-section) #asrSectionContent,\n#asrDeviceSection,\n#asrShortcutSection {');
+    expect(host).toContain('position: relative');
+    expect(host).toMatch(/z-index:\s*[1-9]/);
+  });
 });
 
 describe('识别语言下拉与「界面语言」下拉同构', () => {
@@ -114,5 +124,29 @@ describe('输入设备下拉与识别语言同构', () => {
   test('选项是纯文本 .model-option（不带额外包裹层）', () => {
     expect(TOOLBOX_ASR_JS).toContain('class="model-option${current ? \' selected\' : \'\'}"');
     expect(STYLES).not.toContain('.asr-device-menu .model-option');
+  });
+});
+
+describe('识别节奏下拉与识别语言同构', () => {
+  // 背景：识别节奏（即时/均衡/精确）是 Task 7 新增的第三个下拉。
+  // 三颗下拉必须共用同一套触发器+浮层+交互绑定，否则又会长出第二套外观。
+
+  test('触发器用 .model-selector + readonly input，且挂在同一个 .asr-lang-field 上', () => {
+    expect(TOOLBOX_ASR_JS).toMatch(/class="model-selector asr-lang-field" id="asrPacingField"/);
+    expect(TOOLBOX_ASR_JS).toMatch(/<input type="text" id="asrPacingInput" readonly/);
+  });
+
+  test('浮层列表复用 .model-dropdown，选项带 data-pacing 三档', () => {
+    expect(TOOLBOX_ASR_JS).toContain('class="model-dropdown asr-lang-menu" id="asrPacingDropdown"');
+    expect(TOOLBOX_ASR_JS).toContain('data-pacing="${code}"');
+    expect(TOOLBOX_ASR_JS).toContain("const PACING_CODES = ['instant', 'balanced', 'precise']");
+  });
+
+  test('点外面收起靠 DISMISSABLE_DROPDOWNS 登记（漏登记就会出现“点别处不收起”）', () => {
+    expect(TOOLBOX_ASR_JS).toContain("inputId: 'asrPacingInput', menuId: 'asrPacingDropdown'");
+  });
+
+  test('选择后写入 /api/asr/config 的 asrPacing 字段（与会话读取的键一致）', () => {
+    expect(TOOLBOX_ASR_JS).toMatch(/agentApi\('POST', '\/api\/asr\/config', \{ asrPacing: pacing \}\)/);
   });
 });

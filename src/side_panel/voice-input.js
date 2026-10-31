@@ -20,6 +20,7 @@ import {
   DEFAULT_VOICE_SHORTCUT_CONFIG,
 } from '../shared/voice-shortcut.js';
 import { loadSelectedDeviceId, acquireAudioStream } from '../shared/audio-input-device.js';
+import { buildDraftText, applySentence, locateEdit, mergeRefined } from './voice-draft-items.js';
 
 registerTranslations('zh', {
   voice: {
@@ -49,6 +50,10 @@ registerTranslations('zh', {
     keyRightCtrl: '右侧 Ctrl',
     btnTitle: '语音输入（{keys}）',
     deviceFallback: '原麦克风不可用，已改用系统默认',
+    refineListening: '正在听…（已定稿 {n} 句）',
+    refineCorrecting: '正在校正…',
+    refineCorrected: '已校正 {n} 处',
+    refineDegraded: '本机性能有限，已关闭逐句精修（松手后仍会整体校正）',
   },
 });
 registerTranslations('en', {
@@ -79,6 +84,10 @@ registerTranslations('en', {
     keyRightCtrl: 'Right Ctrl',
     btnTitle: 'Voice input ({keys})',
     deviceFallback: 'Selected microphone unavailable — using the system default',
+    refineListening: 'Listening… ({n} sentences finalized)',
+    refineCorrecting: 'Refining…',
+    refineCorrected: '{n} correction(s) applied',
+    refineDegraded: 'This machine is too slow for per-sentence refinement (the final pass still runs)',
   },
 });
 
@@ -116,10 +125,15 @@ const st = {
   timer: null,
   silentSince: 0,
   silenceWarned: false,
-  draft: null, // {start, len, dirty}
+  // 草稿区间：{start, len, items: [{id, text, state}]}；items 末位是 id:null 的「正在说」开放句
+  draft: null,
   lastText: '',
-  // 已写进输入框的那一版文本：用户接手草稿（dirty）后只能追加「比它多出来的尾巴」
+  // 已写进输入框的那一版文本（整块），用来算用户手改产生的净增量
   appliedText: '',
+  // 上一次程序化写入后的完整输入框值：用户净增量 = 当前长度 - 它
+  appliedValue: '',
+  // 服务端当前「未切句」的原文，用户改过开放句后只能追加它多出来的尾巴
+  openText: '',
   // ScriptProcessor 兜底的 0 增益中继（不进 destination 不会被回调，真进去又会被听见）
   mute: null,
   programmatic: false,
@@ -210,36 +224,39 @@ export function computeArmed(status) {
 }
 
 /**
- * 纯函数：把草稿文本写入区间（可单测，不依赖 DOM）。
- * - 未 dirty 且支持替换：原地替换 [start, start+len)
- * - 已 dirty（用户手改过）：退化为在光标处追加，绝不覆盖用户输入
- * @param {{value: string, draft: {start:number, len:number, dirty:boolean}, text: string, caret?: number, canReplace?: boolean}} input
+ * 纯函数：把文本写入草稿区间（可单测，不依赖 DOM）。
+ * - 支持替换：原地替换 [start, start+len)
+ * - 不支持（缺 setRangeText）：退化为在光标处追加，绝不覆盖用户输入
+ *
+ * 用户手改的隔离不在这里做：那一层已经精确到句（句表 locked），
+ * 所以每次重写都是「整块草稿区间」，不需要「用户改过就只追加」的开关。
+ * @param {{value: string, draft: {start:number, len:number}, text: string, caret?: number, canReplace?: boolean}} input
  * @returns {{value: string, caret: number, len: number}}
  */
 export function computeDraftEdit({ value, draft, text, caret, canReplace = true }) {
   const base = typeof value === 'string' ? value : '';
   if (!draft) return { value: base, caret: base.length, len: 0 };
-  if (!draft.dirty && canReplace) {
-    const from = Math.min(Math.max(0, draft.start), base.length);
-    const to = Math.min(Math.max(from, draft.start + draft.len), base.length);
-    return {
-      value: base.slice(0, from) + text + base.slice(to),
-      caret: from + text.length,
-      len: text.length,
-    };
+  if (!canReplace) {
+    const at = typeof caret === 'number' ? Math.min(Math.max(0, caret), base.length) : base.length;
+    return { value: base.slice(0, at) + text + base.slice(at), caret: at + text.length, len: 0 };
   }
-  const at = typeof caret === 'number' ? Math.min(Math.max(0, caret), base.length) : base.length;
-  return { value: base.slice(0, at) + text + base.slice(at), caret: at + text.length, len: 0 };
+  const from = Math.min(Math.max(0, draft.start), base.length);
+  const to = Math.min(Math.max(from, draft.start + draft.len), base.length);
+  return {
+    value: base.slice(0, from) + text + base.slice(to),
+    caret: from + text.length,
+    len: text.length,
+  };
 }
 
 /**
- * 纯函数：取消时回滚草稿区间（已 dirty 则不动用户内容）
+ * 纯函数：取消时回滚草稿区间（用户改过的句由调用方先筛掉，这里只管区间）
  * @param {{value: string, draft: object, canReplace?: boolean}} input
  * @returns {{value: string, caret: number}}
  */
 export function computeDraftRollback({ value, draft, canReplace = true }) {
   const base = typeof value === 'string' ? value : '';
-  if (!draft || draft.dirty || !canReplace || draft.len <= 0) {
+  if (!draft || !canReplace || draft.len <= 0) {
     return { value: base, caret: base.length };
   }
   const from = Math.min(Math.max(0, draft.start), base.length);
@@ -276,19 +293,52 @@ async function refreshGating() {
 // ==================== 草稿注入 ====================
 
 function markDirty() {
-  if (st.draft) st.draft.dirty = true;
+  if (!st.draft || !st.input) return;
+  const expected = buildDraftText(st.draft.items);
+  const full = st.input.value;
+  const prev = s(st.appliedValue);
+  const start = st.draft.start;
+  const end = start + expected.length;
+
+  // 不能用「整框净增量」当块内增量：用户在块外编辑时，块尾 = start + 长度 + delta 不成立，
+  // 块后删字会把块尾截短，块前删字会把块首切掉（实测「开头甲。」删掉「头」→ 句表变成「。」，
+  // 首句被误锁，后续精修再也改不回来）。先用公共前缀/后缀定位这次编辑，再看它落在哪一侧。
+  let p = 0;
+  while (p < prev.length && p < full.length && prev[p] === full[p]) p += 1;
+  let q = 0;
+  const maxQ = Math.min(prev.length - p, full.length - p);
+  while (q < maxQ && prev[prev.length - 1 - q] === full[full.length - 1 - q]) q += 1;
+  const editFrom = p;
+  const editTo = prev.length - q;
+
+  if (editTo <= start) {
+    // 改动全在块之前（含紧贴块首的插入）：块内容不变，只平移块起点
+    st.draft.start = Math.max(0, start + (full.length - prev.length));
+    return;
+  }
+  if (editFrom > end) return; // 改动全在块之后（块尾续写仍有交集，交给 locateEdit 锁末句）
+
+  // 块内（含跨越块边界）：块的新内容 = 块起点 → 块尾（块尾之后那段未变后缀之前）
+  const tail = Math.max(0, prev.length - end);
+  const actual = full.slice(start, Math.max(start, full.length - tail));
+  const r = locateEdit(st.draft.items, expected, actual);
+  if (r.shift) st.draft.start += r.shift; // 块前插了字：草稿起点跟着挪
+  if (r.lockedIds.length === 0) return; // 改动不在块内（尾巴追加）：草稿长度不变
+  // 锁住被改的那几句，并把用户手上的文字一并收进句表（否则下次重写会盖回去）
+  st.draft.items = r.items.map((i) => (r.lockedIds.includes(i.id) ? { ...i, state: 'locked' } : i));
+  st.draft.len = r.len;
 }
 
 function captureInsertPoint() {
   const input = st.input;
-  if (!input) return { start: 0, len: 0, dirty: false };
+  if (!input) return { start: 0, len: 0, items: [] };
   const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
   const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
   if (start !== end) {
     // 有选区：直接替换选区内容
     input.setRangeText('', start, end, 'end');
   }
-  return { start, len: 0, dirty: false };
+  return { start, len: 0, items: [] };
 }
 
 /**
@@ -312,6 +362,7 @@ function writeInput(value, caret) {
   const input = st.input;
   if (!input) return;
   st.programmatic = true;
+  st.appliedValue = value; // 上一次程序化写入的完整值，用户净增量靠它算
   input.value = value;
   try { input.setSelectionRange(caret, caret); } catch { /* 忽略 */ }
   st.programmatic = false;
@@ -323,48 +374,78 @@ function writeInput(value, caret) {
 }
 
 /**
- * 把文本写入草稿区间。
- * 用户中途手改 → dirty=true → 只追加新增的尾巴：既不覆盖用户输入，也不重复整段。
- * （早先这里退化成「在光标处追加整段」，而 partial 每 150ms 一次、dirty 又永不复位，
- *   用户改一个字之后输入框里会一层层堆出重复文本 —— 5 分钟能堆出几十份。）
+ * 把句表整块重写进输入框（草稿区间不变，只换内容）。
+ * 文本没变时直接返回：partial 每 150ms 一次，无意义重写会把光标不断拖到句尾。
  */
-function applyDraft(text) {
+function rewriteDraftBlock(force = false) {
   const input = st.input;
   if (!input || !st.draft) return;
-
-  if (st.draft.dirty) {
-    const delta = appendOnlyDelta(st.appliedText, text);
-    st.appliedText = s(text);
-    if (!delta) return;
-    const caret = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
-    writeInput(input.value.slice(0, caret) + delta + input.value.slice(caret), caret + delta.length);
-    return;
-  }
-
+  const nextText = buildDraftText(st.draft.items);
+  if (!force && nextText === s(st.appliedText)) return;
   const caret = typeof input.selectionStart === 'number' ? input.selectionStart : undefined;
+  const blockStart = st.draft.start;
+  const blockEnd = blockStart + st.draft.len;
   const next = computeDraftEdit({
     value: input.value,
-    draft: st.draft,
-    text,
+    draft: { start: blockStart, len: st.draft.len },
+    text: nextText,
     caret,
     canReplace: st.draftSupported,
   });
-  if (next.len > 0) st.draft.len = next.len;
-  st.appliedText = s(text);
+  // 替换模式下 computeDraftEdit 把光标放在新文本末尾。但用户此刻可能正把光标停在草稿块
+  // 中间（点进去还没敲键，所以还没 locked），每个 partial 都把光标拽到块尾会直接打断他 ——
+  // 落块内就保持原偏移（老实现走 appendOnlyDelta 时是保光标的，这是句表化后的回归）。
+  if (typeof caret === 'number' && caret > blockStart && caret < blockEnd) {
+    next.caret = blockStart + Math.min(caret - blockStart, nextText.length);
+  }
+  st.draft.len = nextText.length;
+  st.appliedText = nextText;
   writeInput(next.value, next.caret);
 }
 
-/** 回滚本次草稿（取消时） */
+/**
+ * 只更新「正在说」的那一句（句表末位的开放句），整块重写。
+ *
+ * 为什么不是整段重写：已定稿的句子有自己的 id，精修回来要能「只改那一句」；
+ * 而用户改过的句子（state=locked）绝不能因为流式草稿刷新而被模型结果覆盖。
+ */
+function applyDraft(openText) {
+  const input = st.input;
+  if (!input || !st.draft) return;
+  const items = Array.isArray(st.draft.items) ? st.draft.items : [];
+  const idx = items.findIndex((i) => i.id === null);
+  const incoming = s(openText);
+
+  if (idx >= 0 && items[idx].state === 'locked') {
+    // 用户改过正在说的这一句：只追加新多出来的尾巴，不覆盖用户的字
+    const delta = appendOnlyDelta(st.openText, incoming);
+    st.openText = incoming;
+    if (!delta) return;
+    st.draft.items = items.map((i, k) => (k === idx ? { ...i, text: i.text + delta } : i));
+  } else {
+    st.openText = incoming;
+    st.draft.items = idx >= 0
+      ? items.map((i, k) => (k === idx ? { ...i, text: incoming } : i))
+      : items.concat([{ id: null, text: incoming, state: 'draft' }]);
+  }
+  rewriteDraftBlock();
+}
+
+/** 回滚本次草稿（取消时）。用户改过的句子不删，宁可留一段也不想毁掉手写内容 */
 function rollbackDraft() {
   const input = st.input;
   if (!input || !st.draft) return;
-  const next = computeDraftRollback({
-    value: input.value,
-    draft: st.draft,
-    canReplace: st.draftSupported,
-  });
+  const locked = Array.isArray(st.draft.items) && st.draft.items.some((i) => i.state === 'locked');
+  const next = locked
+    ? { value: input.value, caret: input.value.length }
+    : computeDraftRollback({
+      value: input.value,
+      draft: st.draft,
+      canReplace: st.draftSupported,
+    });
   if (next.value !== input.value) {
     st.programmatic = true;
+    st.appliedValue = next.value;
     input.value = next.value;
     const caret = Math.min(next.caret, input.value.length);
     try { input.setSelectionRange(caret, caret); } catch { /* 忽略 */ }
@@ -373,6 +454,8 @@ function rollbackDraft() {
   }
   st.draft = null;
   st.lastText = '';
+  st.appliedText = '';
+  st.openText = '';
 }
 
 // ==================== 录音条 UI ====================
@@ -430,6 +513,8 @@ function releaseBarFocus() {
 
 function hideBar() {
   if (!st.bar) return;
+  // 延后收起的定时器可能在面板销毁后才触发（关标签/切走）：此时 document 已不存在
+  if (typeof document === 'undefined' || !document.body) return;
   releaseBarFocus();
   showPermButton(false);
   st.bar.classList.remove('show');
@@ -693,7 +778,9 @@ async function startRecording(opts = {}) {
   st.phase = 'starting';
   st.lastText = '';
   st.appliedText = '';
+  st.openText = '';
   st.draft = captureInsertPoint();
+  st.appliedValue = st.input ? st.input.value : '';
   st.draftSupported = true;
   st.silentSince = 0;
   st.silenceWarned = false;
@@ -827,8 +914,12 @@ function cancelRecording({ rollback = true } = {}) {
 
 /**
  * 定稿收尾
+ *
+ * 文本策略：字词取整段补正、断句取逐句（mergeRefined）。
+ * 实测：两路字词差异最大 1 字（它/他），但整段会把 4 句串成 2 个句号；
+ * 所以默认只缝字不动标点，差异超阈值才让整段接管。
  * @param {string} text
- * @param {{fallback?: boolean}} [opts]
+ * @param {{fallback?: boolean, texts?: string[]}} [opts]
  */
 function finalizeText(text, opts = {}) {
   const finalText = s(text).trim();
@@ -840,12 +931,46 @@ function finalizeText(text, opts = {}) {
     setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 2200);
     return;
   }
-  applyDraft(finalText);
+  if (!st.draft) {
+    // 已无草稿区间（重入 / 提前收尾）：直接插到光标处，不能把结果丢掉
+    const input = st.input;
+    if (input) {
+      const caret = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+      writeInput(input.value.slice(0, caret) + finalText + input.value.slice(caret), caret + finalText.length);
+    }
+    setBarStatus(t('voice.done'));
+    resetToIdle();
+    setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 1200);
+    return;
+  }
+
+  const texts = Array.isArray(opts.texts)
+    ? opts.texts.filter((x) => typeof x === 'string' && x.trim())
+    : [];
+  // 没有逐句帧（流式缺席/旧代理）：整段结果已按 texts 分好句，直接拿来当句表。
+  // 但句表里已有用户手改（locked）时不能推倒重建 —— 那会把用户写的字一起换掉。
+  if (texts.length > 1 && !st.draft.items.some((i) => i.id !== null || i.state === 'locked')) {
+    st.draft.items = texts.map((tx, i) => ({ id: i + 1, text: tx, state: 'refined' }));
+  }
+  // 句表全空（流式草稿一次都没出过）：定稿文本整个作为唯一一句，不能丢结果
+  if (st.draft.items.length === 0) {
+    st.draft.items = [{ id: null, text: finalText, state: 'refined' }];
+  }
+
+  const { items, changed, takeAll } = mergeRefined(st.draft.items, finalText);
+  st.draft.items = items;
+  rewriteDraftBlock(true);
+  if (takeAll) {
+    // 整段接管：句表已合并成一条，行尾多余的空响应已消失
+    logger.debug('[Voice] final text took over the whole draft');
+  }
   st.draft = null;
   st.lastText = '';
+  st.appliedText = '';
+  st.openText = '';
   resetToIdle();
-  setBarStatus(t('voice.done'));
-  setTimeout(() => { if (st.phase === 'idle') hideBar(); }, 1200);
+  setBarStatus(changed > 0 ? t('voice.refineCorrected', { n: changed }) : t('voice.done'));
+  setTimeout(() => { if (st.phase === 'idle') hideBar(); }, changed > 0 ? 1800 : 1200);
 }
 
 /** 代理端事件分发 */
@@ -860,10 +985,69 @@ function onAgentEvent(evt) {
     return;
   }
 
-  if (evt.type === 'partial' || evt.type === 'endpoint') {
+  if (evt.type === 'partial') {
     if (st.phase !== 'recording' && st.phase !== 'finalizing') return;
     st.lastText = s(evt.text);
-    if (st.lastText) applyDraft(st.lastText);
+    // open = 未切句的那一段；text = 含已定稿句的全文（只有开放句该被草稿刷新）
+    applyDraft(typeof evt.open === 'string' ? evt.open : st.lastText);
+    return;
+  }
+
+  // endpoint 只表示「服务端把这一句定稿了」：内容已经由 sentence 帧落到句表，
+  // 这里再整段写一次会把尚未精修的另一句盖成旧文本。
+  if (evt.type === 'endpoint') {
+    if (st.phase !== 'recording' && st.phase !== 'finalizing') return;
+    return;
+  }
+
+  // sentence：同一 id 发两次 —— refined:null 是切句（草稿转正），带 refined 是精修回填
+  if (evt.type === 'sentence') {
+    if (st.phase !== 'recording' && st.phase !== 'finalizing') return;
+    if (!st.draft || typeof evt.id !== 'number') return;
+    const refined = typeof evt.refined === 'string' && evt.refined ? evt.refined : null;
+    const items = Array.isArray(st.draft.items) ? st.draft.items : [];
+    const openIdx = items.findIndex((i) => i.id === null);
+    let nextItems = items;
+
+    if (!refined && openIdx >= 0) {
+      // 切句：开放句就地转正（id 由服务端给）；下一个 partial 会另起一条开放句。
+      // 这一句若已被用户手改（locked），只认领 id —— draft 是用户改字之前的模型结果，
+      // 盖上等于把用户的字改回去，而且会让迟到的精修把我们刚写成 draft 的这句再盖一次。
+      const openItem = items[openIdx];
+      nextItems = items.map((i, k) => (k === openIdx
+        ? (openItem.state === 'locked'
+          ? { ...i, id: evt.id }
+          : { id: evt.id, text: s(evt.draft) || i.text, state: 'draft' })
+        : i));
+      st.openText = '';
+    }
+
+    if (refined) {
+      if (nextItems.some((i) => i.id === evt.id)) {
+        nextItems = applySentence(nextItems, { id: evt.id, text: refined })
+          .map((i) => (i.id === evt.id && i.state !== 'locked' ? { ...i, state: 'refined' } : i));
+      } else if (!nextItems.some((i) => i.id === null)) {
+        // 句表里没有对应句（重连/丢帧）：补一条，不能把精修结果丢掉
+        nextItems = nextItems.concat([{ id: evt.id, text: refined, state: 'refined' }]);
+      }
+    }
+
+    if (nextItems !== items) {
+      st.draft.items = nextItems;
+      rewriteDraftBlock();
+    }
+    if (refined && st.phase === 'recording') {
+      const done = st.draft.items.filter((i) => i.id !== null && i.state === 'refined').length;
+      setBarStatus(t('voice.refineListening', { n: done }));
+    }
+    return;
+  }
+
+  // refine：本会话的精修被永久关掉（机器跟不上），松手后的整段校正照旧
+  if (evt.type === 'refine') {
+    if (evt.enabled === false && (st.phase === 'recording' || st.phase === 'finalizing')) {
+      setBarStatus(t('voice.refineDegraded'), 'warn');
+    }
     return;
   }
 
@@ -871,7 +1055,7 @@ function onAgentEvent(evt) {
     // 已收尾（发送 / 取消 / 超时重入）后迟到的 final 一律丢弃：
     // 否则发送完再弹一条「已完成」的空条，看起来像又录了一次
     if (st.phase !== 'recording' && st.phase !== 'finalizing') return;
-    finalizeText(evt.text || st.lastText, { fallback: evt.fallback === true });
+    finalizeText(evt.text || st.lastText, { fallback: evt.fallback === true, texts: evt.texts });
     return;
   }
 

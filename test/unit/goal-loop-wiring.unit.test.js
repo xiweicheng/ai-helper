@@ -239,12 +239,14 @@ describe('⑦ 无人值守：放行与澄清', () => {
     const TE = readFileSync(join(process.cwd(), 'src/background/tool-executor.js'), 'utf8');
     const start = TE.indexOf('export async function executeClarifyQuestion(');
     expect(start).toBeGreaterThan(-1);
-    const body = TE.slice(start, start + 1200);
+    // 截到下一个 export 为止，不用定长窗口：函数体会长（推荐项归一、超时延长等），
+    // 定长窗口一短就会把后面的内容切掉，报出与真实接线无关的假失败
+    const body = TE.slice(start, TE.indexOf('\nexport ', start + 1));
     expect(body).toContain('if (hasGoalUnattended(sessionId)) {');
     expect(body).toContain("t('toolExec.clarifyUnattended'");
     // 兜底必须早于配置读取与弹窗：晚一步就白等一个 clarifyTimeout
-    expect(body.indexOf('hasGoalUnattended(sessionId)')).toBeLessThan(
-      body.indexOf('const clarifyTimeout'),
-    );
+    const gate = body.indexOf('hasGoalUnattended(sessionId)');
+    expect(body.indexOf('const clarifyTimeout')).toBeGreaterThan(gate);
+    expect(body.indexOf('return new Promise(')).toBeGreaterThan(gate);
   });
 });
