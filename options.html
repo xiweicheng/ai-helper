@@ -303,14 +303,14 @@
         <span class="toggle-text" data-i18n="settings.sidePanelScopeTab">标签页绑定模式</span>
       </label>
       <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.sidePanelScopeTabHint">侧边栏仅在打开它的标签页可见，切换到其他标签页时自动隐藏</span>
-    </div>
-
-    <div class="form-group">
-      <label class="toggle-label">
-        <input type="checkbox" id="autoGroupTabs">
-        <span class="toggle-text" data-i18n="settings.autoGroupTabs">标签页绑定模式下，把打开侧边栏的标签页归入分组</span>
-      </label>
-      <span class="hint" style="display:block;margin-top:4px;" data-i18n="settings.autoGroupTabsHint">仅标签页绑定模式生效；把这些标签页归入一个彩色标签组便于识别（标签页会被移动到分组所在位置），关闭某个标签页的侧边栏或切回全局模式时会移出分组</span>
+      <!-- 自动分组是「标签页绑定模式」的二级选项：只在选中绑定模式时显示，未选中时整块隐藏 -->
+      <div id="autoGroupTabsWrap" style="display:none;margin:8px 0 0 26px;">
+        <label class="toggle-label" style="cursor:pointer;">
+          <input type="checkbox" id="autoGroupTabs">
+          <span class="toggle-text" data-i18n="settings.autoGroupTabs">把打开侧边栏的标签页归入分组</span>
+        </label>
+        <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.autoGroupTabsHint">把这些标签页归入一个彩色标签组便于识别（标签页会被移动到分组所在位置），关闭某个标签页的侧边栏或切回全局模式时会移出分组</span>
+      </div>
     </div>
 
     </div><!-- /tab-basic -->
@@ -320,57 +320,38 @@
     <div class="react-config">
       <h2 data-i18n="react.title">⚙️ 推理循环配置</h2>
       <p class="subtitle" data-i18n="react.subtitle">控制 AI 推理循环的行为参数（高级配置）</p>
+
+      <!-- 以下参数已撤出设置页，改为内部固定值（界面只剩「整体循环超时」一个档位滑杆）：
+           最大循环次数 2000  — 确定性保险丝，防「快而空转」；时间上限防「慢而卡」
+           API 请求超时 5 分钟 — 只覆盖建连+等响应头，流式读正文由 SSE 空闲超时独立保护
+           工具执行超时 10 分钟 — 与 Agent 端 TOTAL_BUDGET_CAP_MS 封顶对齐；命令执行的长任务
+             由 agent_exec 登记值 12 分钟 + 无输出自动 detach 托管兜住，与本项无关
+           澄清超时 5 分钟 — 等待期间不计入循环预算
+           旧 storage 残留值不再被读取，并在首次加载时清除 -->
+
       
       <div class="react-config-item">
-        <label>
-          <span data-i18n="react.maxIterations">最大循环次数</span>
-          <span class="hint-text" data-i18n="react.maxIterationsHint">（复杂任务可适当增加）</span>
-        </label>
-        <input type="number" id="reactMaxIterations" min="10" max="1000" value="100" placeholder="100">
-        <div class="range-labels">
-          <span data-i18n="react.min">最小: 10</span>
-          <span data-i18n="react.max">最大: 1000</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
-          <span data-i18n="react.apiTimeout">API 请求超时</span>
-          <span class="hint-text" data-i18n="react.apiTimeoutHint">（单次 API 调用的最长等待时间）</span>
-        </label>
-        <input type="number" id="reactApiTimeout" min="1" max="10" step="1" value="5" placeholder="5">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max10Minutes">最大: 10分钟</span>
-        </div>
-      </div>
-      
-      <div class="react-config-item">
-        <label>
+        <label for="reactLoopTimeout">
           <span data-i18n="react.loopTimeout">整体循环超时</span>
-          <span class="hint-text" data-i18n="react.loopTimeoutHint">（整个推理循环的最长执行时间）</span>
+          <span class="hint-text" id="reactLoopTimeoutHint" data-i18n="react.loopTimeoutHint">（整个推理循环的最长执行时间）</span>
         </label>
-        <input type="number" id="reactLoopTimeout" min="1" max="120" step="1" value="30" placeholder="30">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max120Minutes">最大: 120分钟</span>
+        <!-- 档位滑杆：28 档吸附（10 分钟 – 24 小时，1 小时起每小时一档）。min/max 是档位索引，真值在 data-minutes 上，
+             松手即落盘（不必再点保存）；拖动中只预览读数，见 options/loop-timeout-slider.js -->
+        <div class="loop-timeout-row">
+          <div class="loop-timeout-main">
+            <input type="range" id="reactLoopTimeout" class="loop-timeout-slider"
+                   min="0" max="27" step="1" value="7" data-minutes="240"
+                   aria-describedby="reactLoopTimeoutHint">
+            <div class="loop-timeout-scale" id="reactLoopTimeoutScale" aria-hidden="true"></div>
+          </div>
+          <output class="loop-timeout-value" id="reactLoopTimeoutValue" for="reactLoopTimeout">4 小时</output>
+          <div class="range-labels">
+            <span data-i18n="react.loopTimeoutMinLabel">最小: 10 分钟</span>
+            <span data-i18n="react.loopTimeoutMaxLabel">最大: 24 小时</span>
+          </div>
         </div>
       </div>
       
-      <div class="react-config-item">
-        <label>
-          <span data-i18n="react.toolTimeout">工具执行超时</span>
-          <span class="hint-text" data-i18n="react.toolTimeoutHint">（单个工具执行的最长等待时间）</span>
-        </label>
-        <input type="number" id="reactToolTimeout" min="1" max="30" step="1" value="10" placeholder="10">
-        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
-        <div class="range-labels">
-          <span data-i18n="react.min1Minute">最小: 1分钟</span>
-          <span data-i18n="react.max30Minutes">最大: 30分钟</span>
-        </div>
-      </div>
       
       <div class="react-config-item">
         <label>

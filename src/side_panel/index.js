@@ -2609,7 +2609,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (msg.htmlContent) {
           restoreMessageFromHtml(msg.htmlContent, msg.messageId, msg.resumable);
         } else {
-          addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised, null, msg.messageId, [], false, msg.timestamp ?? null);
+          // resumable 必须透传：非流式（无 htmlContent）的软着陆/中断消息重建时
+          // 写死 false 会把「继续执行」入口整条丢掉（预算软着陆在非流式下必然命中）
+          addMessage(msg.role, msg.content, false, msg.executionLog || [], msg.reflectionScore, msg.wasRevised, null, msg.messageId, [], msg.resumable || false, msg.timestamp ?? null);
         }
       });
       // 统一绑定事件委托（避免逐条消息重复绑定）

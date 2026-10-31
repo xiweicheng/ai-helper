@@ -12,6 +12,15 @@ import { t, registerTranslations } from '../shared/i18n.js';
 import { wrapUntrusted, applyUntrustedContract, getContractText } from '../shared/untrusted-content.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { createLoopDetector } from './loop-detector.js';
+// 预算撞线软着陆的阶段决策（纯逻辑模块，可单测）：预警 / 宽限收尾轮 / 本地兜底报告
+import {
+  BUDGET_PHASE_CONFIG,
+  evaluateBudgetStep,
+  buildBudgetNotices,
+  buildGraceNotice,
+  summarizeBudgetProgress,
+  buildBudgetFallbackReport,
+} from './loop-budget-phase.js';
 import { isAgentPaired, writeFile as writeAgentFile, execCommandWait, getAgentConfig } from './local-agent-client.js';
 import { beginSessionRun, endSessionRun, getEffectiveWorkdir } from '../shared/workdir-scope.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
@@ -60,6 +69,22 @@ registerTranslations('zh', {
     jsonParseFailed: 'JSON 解析失败 (HTTP {status}): {error}。响应前100字符: {preview}',
     streamIdleTimeout: '流式响应空闲超时（{seconds} 秒未收到任何数据），已自动中断。可能是网络或服务提供商暂时不稳定，请重试。',
     userInjection: '用户插话',
+    budgetGraceNode: '预算收尾总结',
+    budgetEndedStatus: '执行预算已用完（部分完成）',
+    subtaskBudgetExhausted: '子任务 {index}（{name}）预算已用完 · 部分完成，续跑时会重试',
+    budgetGraceSkipped: '已跳过（执行预算已用完，本轮工具调用不再执行）',
+    budgetTimeCause: '本次任务的执行时间预算（{timeout}）已用尽，实际用时 {elapsed}（其中澄清/确认等待 {paused} 不计入）。',
+    budgetRoundsCause: '本次任务已达内部轮数保险丝上限（{maxIterations} 轮）。',
+    budgetTitle: '执行预算已用完 · 部分完成',
+    budgetCompleted: '已完成的工作',
+    budgetRemaining: '尚未完成',
+    budgetResumeHint: '点击「继续执行」可在新的预算下接着未完成的部分继续；也可以先补充说明再继续。',
+    budgetNone: '（暂无可确认的产出记录）',
+    budgetStepsDone: '成功的操作节点：',
+    budgetStepsFailed: '失败的操作节点：',
+    budgetSubtasksDone: '已完成的子任务：',
+    budgetSubtasksPending: '未完成的子任务：',
+    budgetSubtasksFailed: '失败的子任务：',
   },
 });
 
@@ -100,6 +125,22 @@ registerTranslations('en', {
     jsonParseFailed: 'JSON parse failed (HTTP {status}): {error}. First 100 chars: {preview}',
     streamIdleTimeout: 'Stream idle timeout (no data received for {seconds}s), automatically interrupted. This may be caused by an unstable network or provider, please retry.',
     userInjection: 'User interjection',
+    budgetGraceNode: 'Budget wrap-up summary',
+    budgetEndedStatus: 'Execution budget exhausted (partially complete)',
+    subtaskBudgetExhausted: 'Subtask {index} ({name}) budget exhausted · partially complete, will retry on resume',
+    budgetGraceSkipped: 'Skipped (execution budget exhausted; tool calls in this round are not executed)',
+    budgetTimeCause: 'The execution time budget of this task ({timeout}) has been used up; {elapsed} actually spent (excluding {paused} of clarification/confirmation wait).',
+    budgetRoundsCause: 'This task reached the internal round fuse of {maxIterations} rounds.',
+    budgetTitle: 'Execution budget exhausted · partially complete',
+    budgetCompleted: 'Completed work',
+    budgetRemaining: 'Still remaining',
+    budgetResumeHint: 'Press "Continue" to resume the unfinished part with a fresh budget, or add guidance before continuing.',
+    budgetNone: '(no confirmed output recorded)',
+    budgetStepsDone: 'Successful operation nodes: ',
+    budgetStepsFailed: 'Failed operation nodes: ',
+    budgetSubtasksDone: 'Completed subtasks: ',
+    budgetSubtasksPending: 'Unfinished subtasks: ',
+    budgetSubtasksFailed: 'Failed subtasks: ',
   },
 });
 import { summarizeRoundsBatch, extractAllRounds } from './context-summarizer.js';
@@ -1027,8 +1068,14 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null, notesState: Array.isArray(checkpoint.notesState) ? checkpoint.notesState : [] }  // 回灌计划锚点、子任务完成进度与 scratchpad 便签，恢复后防重放/便签存活
   );
 
-  // 恢复成功后清理 checkpoint
-  await clearCheckpoint(sessionId);
+  // 恢复成功后清理 checkpoint —— 但「续跑又撞线」时必须保留现场：
+  // finalizeBudgetEnded 刚写入的 budget_exhausted 就是用户下一次点「继续执行」的凭据，
+  // 无条件清掉会把第二次撞线变成「按钮还在、点下去报 checkpoint 不存在」，等于只能续跑一次。
+  if (result?.budgetEnded) {
+    logger.debug('[Background] resumed loop soft-landed on budget again, keep checkpoint for next manual resume');
+  } else {
+    await clearCheckpoint(sessionId);
+  }
   return result;
 }
 
@@ -1471,6 +1518,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     : reactConfig.loopTimeout;
   const toolTimeout = reactConfig.toolTimeout;
   const clarifyTimeout = reactConfig.clarifyTimeout;
+  // 预算撞线软着陆开关（默认开）：关闭则回退旧的「撞线即抛错」语义
+  const gracefulConverge = reactConfig.gracefulConverge !== false;
   
   // 同时兼容 plan_task 子任务（taskContext.subtaskId）和 dispatch_task 子 Agent（taskContext.type === 'subagent'）
   const isSubtask = taskContext && (taskContext.subtaskId || taskContext.type === 'subagent');
@@ -1596,6 +1645,76 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   // 收到前一个请求残留的 CANCEL_REACT 消息导致的误取消
   resetReactCancel(sessionId || tabId);
 
+  // 【预算软着陆】运行时状态：撞线不抛错，而是进入有界的「禁用工具收尾轮」
+  //   graceEntered    —— 已进入宽限期（同时放开 while 的轮数条件，并强制本轮起 tools 不发送）
+  //   graceRoundsUsed —— 已消耗的宽限轮数（上限 BUDGET_PHASE_CONFIG.graceMaxRounds，有界）
+  //   budgetExhaustedBy —— 撞线归因（time / rounds），决定给用户看的说明文案
+  //   lastTimeWarnDecile —— 时间维度预警已推进到的十分位，保证同档不重申、跨档才重申
+  let graceEntered = false;
+  let graceRoundsUsed = 0;
+  let budgetExhaustedBy = null;
+  let lastTimeWarnDecile = -1;
+
+  // 本地兜底报告需要的用户可见文案（模块保持无 i18n 依赖，文案在此处注入）
+  const buildBudgetLabels = (report) => ({
+    title: t('reactLoop.budgetTitle'),
+    completed: t('reactLoop.budgetCompleted'),
+    remaining: t('reactLoop.budgetRemaining'),
+    resume: t('reactLoop.budgetResumeHint'),
+    none: t('reactLoop.budgetNone'),
+    timeCause: t('reactLoop.budgetTimeCause', {
+      timeout: formatDurationMs(report.budgetMs),
+      elapsed: formatDurationMs(report.usedMs),
+      paused: formatDurationMs(report.pausedMs),
+    }),
+    roundsCause: t('reactLoop.budgetRoundsCause', { maxIterations }),
+    stepsDone: t('reactLoop.budgetStepsDone'),
+    stepsFailed: t('reactLoop.budgetStepsFailed'),
+    subtasksDone: t('reactLoop.budgetSubtasksDone'),
+    subtasksPending: t('reactLoop.budgetSubtasksPending'),
+    subtasksFailed: t('reactLoop.budgetSubtasksFailed'),
+  });
+
+  /**
+   * 预算耗尽统一收尾（宽限轮拿到答案 / 本地兜底均走此路径）
+   * 与「正常完成」的关键差异：不清理 checkpoint，而是以 budget_exhausted 落盘保留现场——
+   * 用户选定的语义是「停在缺项清单、等用户点「继续执行」」，而不是自动续跑。该原因
+   * 已列入 auto-resume 的 TERMINAL_REASONS，保证闹钟不会静把任务接走重跑。
+   */
+  async function finalizeBudgetEnded({ content, reasoningContent, report }) {
+    // 收尾文案必须进历史：否则续跑时模型看不到「自己已经交代过什么」，会把已完成的工作重做。
+    // 本地兜底报告同样要进——它才是「缺项清单」的唯一载体，丢了等于续跑从零开始。
+    const finalContent = content || buildBudgetFallbackReport({
+      exhaustedBy: budgetExhaustedBy,
+      progress: summarizeBudgetProgress(executionLog, taskState),
+      budget: { usedMs: report?.usedMs, budgetMs: report?.budgetMs, iteration, maxIterations },
+      labels: buildBudgetLabels(report || { budgetMs: loopTimeout, usedMs: 0, pausedMs: 0 }),
+    });
+    currentMessages.push({ role: 'assistant', content: finalContent });
+    executionLog.push({
+      id: crypto.randomUUID(),
+      iteration,
+      timestamp: new Date().toISOString(),
+      nodeType: 'reflection',
+      nodeName: t('reactLoop.budgetGraceNode'),
+      status: 'success',
+      observation: String(finalContent).slice(0, 500),
+      budgetEnded: true,
+      exhaustedBy: budgetExhaustedBy,
+    });
+    await saveCheckpointNow('budget_exhausted', true);
+    sendExecutionStatusUpdate(t('reactLoop.budgetEndedStatus'), 'success');
+    taskCompleted = true;
+    logger.warn(`[Background] ReAct loop soft-landed on budget: reason=${budgetExhaustedBy}, iteration=${iteration}, usedMs=${Math.round((report?.usedMs || 0) / 1000)}s`);
+    return {
+      content: finalContent,
+      executionLog,
+      reasoningContent: reasoningContent || null,
+      budgetEnded: true,
+      exhaustedBy: budgetExhaustedBy,
+    };
+  }
+
   // 任务是否正常完成（用于 finally 决定是否清理 checkpoint）
   let taskCompleted = false;
 
@@ -1612,23 +1731,50 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   );
 
   try {
-    while (iteration < maxIterations) {
+    // 循环的终止条件只有轮首的 evaluateBudgetStep 与循环体内的 return：
+    //   撞线 → enter_grace（软着陆）/ hard_stop（关开关时抛错）；宽限轮用满 → finalize_local。
+    // 不能再保留 `iteration < maxIterations` 这类上界：条件先变假时「轮数撞线」那一拍根本
+    // 进不到循环体，轮数维度的软着陆变成死代码；退出循环后函数还会隐式返回 undefined，
+    // 让上层 reactResult.executionLog 直接抛 TypeError。
+    while (true) {
       if (isCancelled(tabId) || (sessionId && isCancelled(sessionId))) {
         throw createErrorWithLog(t('bg.reactCancelled'), executionLog);
       }
       
-      // 检查超时（使用动态调整后的超时时间）
       // 超时口径单一来源：判定按加长后的预算，展示用剔除等待后的有效耗时
       const timeoutReport = computeLoopTimeoutReport({
         now: Date.now(), loopStartTime, totalPausedDuration, loopTimeout,
       });
-      if (timeoutReport.exceeded) {
-        throw createErrorWithLog(t('reactLoop.loopTimeout', {
-          timeout: formatDurationMs(timeoutReport.budgetMs),
-          elapsed: formatDurationMs(timeoutReport.usedMs),
-          paused: formatDurationMs(timeoutReport.pausedMs),
-        }), executionLog);
+      // 【预算软着陆】撞线不再是任务终点：先进入有界的禁用工具收尾轮，
+      // 产不出报告时再用本地兜底；开关关闭（gracefulConverge=false）时走 hard_stop 保持旧抛错语义
+      const budgetStep = evaluateBudgetStep({
+        enabled: gracefulConverge,
+        cfg: BUDGET_PHASE_CONFIG,
+        iteration, maxIterations,
+        usedMs: timeoutReport.usedMs, budgetMs: timeoutReport.budgetMs,
+        graceEntered, graceRoundsUsed, exhaustedBy: budgetExhaustedBy,
+      });
+      if (budgetStep.step === 'hard_stop') {
+        // 关掉软着陆时保持旧语义，且文案必须跟着归因走：轮数撞线却报「时间预算用尽」会误导用户去改时限
+        throw createErrorWithLog(budgetStep.exhaustedBy === 'rounds'
+          ? t('reactLoop.maxIterationsExceeded', { maxIterations })
+          : t('reactLoop.loopTimeout', {
+            timeout: formatDurationMs(timeoutReport.budgetMs),
+            elapsed: formatDurationMs(timeoutReport.usedMs),
+            paused: formatDurationMs(timeoutReport.pausedMs),
+          }), executionLog);
       }
+      if (budgetStep.step === 'finalize_local') {
+        // 宽限轮用满仍拿不到可交付答案：用执行日志 + 任务锚点本地拼「部分完成 + 缺项」
+        return await finalizeBudgetEnded({ content: '', report: timeoutReport });
+      }
+      const inGrace = budgetStep.step === 'enter_grace' || budgetStep.step === 'grace_iterate';
+      if (budgetStep.step === 'enter_grace') {
+        budgetExhaustedBy = budgetStep.exhaustedBy;
+        graceEntered = true;
+        logger.warn(`[Background] budget exhausted (${budgetExhaustedBy}), entering bounded grace wrap-up`);
+      }
+      if (inGrace) graceRoundsUsed++;
       
       iteration++;
       // 递增 API 调用计数器（预筛选已经用了第1次）
@@ -1661,7 +1807,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 如果工具集中包含 plan_task，展示当前可用工具即可（Agent 已做了工具过滤）
       // 不再展开为全量工具，避免绕过 Agent 的工具限制
       const hasPlanTask = tools.some(t => t.function?.name === 'plan_task');
-      const apiTools = tools;
+      // 宽限轮不携带任何工具：「预算已用完、请交报告」必须由结构保证，
+      // 而不能只靠提示词里的“请不要调工具”——后者在模型强烈想继续动作时经常被无视。
+      // 工具定义本轮也不再参与 token 估算（请求体里没有它）。
+      const apiTools = inGrace ? [] : tools;
       if (hasPlanTask) {
         logger.debug('[Background] current iterationcontains plan_task,using Agent limittool into  task decomposition,tool count :', apiTools.length);
       }
@@ -1672,11 +1821,13 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       const filteredTokens = getCalibratedTokens(rawFilteredTokens);
       const contextWindow = getContextWindow(model || config.modelName, 0, chatConfig.customModelMap);
       
-      // 工具定义 token：序列化估算已在循环外缓存（rawToolTokens），此处仅逐轮应用校准
-      const actualToolTokens = getCalibratedTokens(rawToolTokens);
+      // 工具定义 token：序列化估算已在循环外缓存（rawToolTokens），此处仅逐轮应用校准。
+      // 宽限轮的请求体里没有 tools 字段（见 apiTools / requestBody），必须按 0 计：
+      // 否则会凭空抬高上下文压力，在「只想让模型交报告」的收尾轮触发无谓裁剪
+      const actualToolTokens = inGrace ? 0 : getCalibratedTokens(rawToolTokens);
       const totalEstimate = filteredTokens + actualToolTokens + 4096; // +输出预留
       // 保存不含输出预留的原始估算值，用于后续与 API 实际 prompt_tokens 对比校准
-      const preCallPromptEstimate = rawFilteredTokens + rawToolTokens;
+      const preCallPromptEstimate = rawFilteredTokens + (inGrace ? 0 : rawToolTokens);
       const pressure = assessContextPressure(totalEstimate, contextWindow);
       
       if (pressure.level !== 'safe') {
@@ -1743,12 +1894,30 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         const noteAnchor = buildNotesAnchorMessage();
         if (noteAnchor) filteredMessages = [...filteredMessages, noteAnchor];
       }
-      const convergeAt = Math.ceil(maxIterations * 0.8);
-      if (iteration >= convergeAt && (iteration - convergeAt) % 10 === 0) {
+      if (inGrace) {
+        // 宽限轮收尾指令：每轮都注入（指令短，重申成本远低于模型漏读一次）；
+        // 第二轮为「违规补答」语义——上一轮调了工具被丢弃，本轮只允许纯文本报告
         filteredMessages = [...filteredMessages, {
           role: 'user',
-          content: `[System Notice] Iteration budget warning: ${iteration}/${maxIterations} rounds used. Start converging now: stop exploratory tool calls and produce the best possible final answer based on the information already gathered. If the goal cannot be fully reached, summarize the completed parts and clearly state what remains.`
+          content: buildGraceNotice({
+            exhaustedBy: budgetExhaustedBy, iteration, maxIterations,
+            usedMs: timeoutReport.usedMs, budgetMs: timeoutReport.budgetMs,
+            round: graceRoundsUsed,
+          })
         }];
+      } else {
+        // 撞线前的常规预警：轮数维度（80% 起，逻辑与旧 convergeAt 完全一致）+
+        // 新增时间维度（85% 起按十分位推进）。预警是干预模型行为的主力，撞线软着陆只是保险丝
+        const budgetNotices = buildBudgetNotices({
+          iteration, maxIterations,
+          usedMs: timeoutReport.usedMs, budgetMs: timeoutReport.budgetMs,
+          lastTimeWarnDecile,
+          cfg: BUDGET_PHASE_CONFIG,
+        });
+        lastTimeWarnDecile = budgetNotices.timeWarnDecile;
+        if (budgetNotices.notices.length > 0) {
+          filteredMessages = [...filteredMessages, { role: 'user', content: budgetNotices.notices.join('\n\n') }];
+        }
       }
 
       executionLog.push({
@@ -1778,9 +1947,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         const requestBody = {
           model: model || config.modelName,
           messages: sanitizeImageUrlsForApi(filteredMessages),
-          tools: apiTools.map(t => {
-            const { id, ...clean } = t;
-            return clean;
+          // 宽限轮：干脆不发送 tools 字段（空数组会被部分网关当成非法请求拒绝）
+          ...(inGrace ? {} : {
+            tools: apiTools.map(t => {
+              const { id, ...clean } = t;
+              return clean;
+            })
           }),
           stream: apiStreamEnabled
         };
@@ -1790,7 +1962,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           requestBody.stream_options = { include_usage: true };
         }
         
-        logger.debug('[Background] API requestbody stream mode:', requestBody.stream, 'tool count  count :', requestBody.tools.length, 'messagecount:', requestBody.messages.length, 'model:', requestBody.model);
+        logger.debug('[Background] API requestbody stream mode:', requestBody.stream, 'tool count  count :', apiTools.length, 'messagecount:', requestBody.messages.length, 'model:', requestBody.model);
         
         // 添加 temperature 和 top_p 参数
         if (apiParams.temperature !== undefined) {
@@ -2043,6 +2215,28 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       
       // 检查是否有工具调用
       if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
+        // 宽限轮违规：本轮结构上已不发送 tools 字段，模型仍输出 tool_calls 时不执行、
+        // 不计入循环检测（它不是真实动作），只回灌一条「工具已不可用」纯文本提醒；
+        // 有界 graceMaxRounds 保证这条路径不可能无限循环
+        if (inGrace) {
+          logger.warn(`[Background] grace round emitted tool_calls (${assistantMessage.tool_calls.length}), discarded; asking for text-only report`);
+          // 注意：此分支不 push assistantMessage（它带 tool_calls），避免产生无配对 tool 消息的
+          // assistant 破坏下一请求的配对校验；收尾报告以日志 observation 留痕即可
+          executionLog.push({
+            id: crypto.randomUUID(),
+            iteration,
+            timestamp: new Date().toISOString(),
+            nodeType: 'reflection',
+            nodeName: t('reactLoop.budgetGraceNode'),
+            status: 'success',
+            observation: t('reactLoop.budgetGraceSkipped'),
+            budgetGraceViolation: true,
+          });
+          // 不再往 filteredMessages 追加「最终轮」指令：它写的是本轮已构造好的局部变量，
+          // 紧跟着的 continue 直接丢弃，属于无效写入。下一轮轮首的 inGrace 分支会以
+          // round=graceRoundsUsed（此时已为 2）重新注入更强硬的同义指令，语义不缺。
+          continue;
+        }
         logger.debug('[Background] recei to tool call:', assistantMessage.tool_calls);
         
         // 计算本轮工具调用的入参指纹（仅用于日志排查；循环判定由 loop-detector 在轮末基于记录完成）
@@ -2713,6 +2907,14 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       
       const content = assistantMessage?.content || '';
       const reasoningContent = assistantMessage?.reasoning_content || null;
+
+      // 宽限轮交回了纯文本报告：走软着陆统一收尾（保留 budget_exhausted checkpoint 供续跑，
+      // 不进正常完成路径——那会清 checkpoint，还会触发后置反思再烧一轮预算）
+      if (inGrace) {
+        logger.warn('[Background] grace round produced final report, soft-landing budget');
+        return await finalizeBudgetEnded({ content, reasoningContent, report: timeoutReport });
+      }
+
       logger.debug('[Background] ReAct loop complete,finalcontent length:', content.length);
 
       // 任务正常完成：先保存最终 checkpoint（供反思失败时仍可续接），然后清理
@@ -2756,10 +2958,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       taskCompleted = true;
       return { content, executionLog, reasoningContent };
     }
-
-    const error = new Error(t('reactLoop.maxIterationsExceeded', { maxIterations }));
-    error.executionLog = executionLog;
-    throw error;
+    // 不可达：循环只经 return / throw 退出（轮首 evaluateBudgetStep 是唯一收口）。
+    // 保留一条显式兜底，避免日后有人把 while 改回有界形式时这里又静默返回 undefined。
+    throw createErrorWithLog(t('reactLoop.maxIterationsExceeded', { maxIterations }), executionLog);
   } catch (error) {
     // 任务异常中断：强制保存 checkpoint 供后续恢复（绕过节流）
     // 取消（AbortError）和真实错误都保存，让用户可以选择是否续接
@@ -3289,6 +3490,37 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
           });
         }
         
+        // 子任务预算撞线软着陆：拿到的是「部分完成 + 缺项」报告，绝不能按成功落定——
+        // 成功会被写进 subtaskProgress（onDone）并把锚点标 done，续跑时 shouldSkipSubtaskReplay
+        // 直接跳过它，缺项就永久丢失。按未完成落定，且当场不重试（父剩余预算已见底，再试只会再撞一次）。
+        if (subtaskResult.budgetEnded) {
+          const budgetNodeName = t('reactLoop.subtaskBudgetExhausted', { index: subtaskIndex + 1, name: subtask.name });
+          logger.warn(`[Background] subtask ${subtask.name} soft-landed on budget (${subtaskResult.exhaustedBy || 'unknown'}), mark as incomplete`);
+          const budgetLogIndex = parentExecutionLog.findIndex(log => log.id === subtaskLogId);
+          if (budgetLogIndex !== -1) {
+            parentExecutionLog[budgetLogIndex] = {
+              ...parentExecutionLog[budgetLogIndex],
+              status: 'failed',
+              duration: Date.now() - new Date(parentExecutionLog[budgetLogIndex].timestamp).getTime(),
+              error: budgetNodeName,
+              budgetEnded: true,
+              exhaustedBy: subtaskResult.exhaustedBy || null,
+              result: String(subtaskResult.content || '').slice(0, 600),
+            };
+          }
+          sendSubtaskStatusUpdate(budgetNodeName, 'failed', parentExecutionLog, { taskGroup, subtaskIndex, subtaskTotal: sortedSubtasks.length, subtaskName: subtask.name });
+          return {
+            success: false,
+            subtaskId: subtask.id,
+            subtaskName: subtask.name,
+            result: subtaskResult.content || '',
+            executionLog: subtaskResult.executionLog || [],
+            retryCount: retry,
+            budgetEnded: true,
+            error: new Error(budgetNodeName),
+          };
+        }
+
         // 更新子任务日志为成功
         const logIndex = parentExecutionLog.findIndex(log => log.id === subtaskLogId);
         if (logIndex !== -1) {
@@ -3561,9 +3793,12 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         logger.debug(`[Background] subtask ${subtask.name} failed,failedstrategy: ${failureStrategy}`);
         
         if (failureStrategy === 'stop') {
-          // 停止执行并回滚
-          logger.debug('[Background] execute rollback');
-          await rollbackCompletedTasks();
+          // 预算撞线不是业务失败：回滚会抹掉「已经在盘上的成果」，而软着陆的整个意义就是
+          // 保住这些成果等用户续跑。只停不回滚，缺项保留在结果里。
+          if (!result.budgetEnded) {
+            logger.debug('[Background] execute rollback');
+            await rollbackCompletedTasks();
+          }
           return results;
         }
         
@@ -3613,8 +3848,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
       }
     });
     
-    // 如果有失败且策略是 stop，执行回滚
-    if (hasFailed && failureStrategy === 'stop') {
+    // 如果有失败且策略是 stop，执行回滚（预算撞线除外：见顺序策略同处注释）
+    if (hasFailed && failureStrategy === 'stop' && !results.some(r => r && r.budgetEnded)) {
       logger.debug('[Background] parallel execoccurred failed,execute rollback');
       await rollbackCompletedTasks();
     }
@@ -3730,12 +3965,12 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
     return executeTool(toolCall, tabId, sessionId);
   }
   
-  // 其他工具：支持按工具自定义超时，同时受全局超时上限约束
+  // 其他工具：登记在 TOOL_TIMEOUT_MS 里的工具以「本表值」为权威超时，未登记的沿用全局 toolTimeout。
+  // 不能再取 min(本表值, 全局)：agent_exec 登记 12min 的意义正是严格大于它内层的 guard（≈10.5min），
+  // 取 min 会被全局默认 10min 压回去 —— 外层先到点、内层延长裁决与已收集输出整段丢弃，登记形同虚设。
   const toolSpecificTimeout = TOOL_TIMEOUT_MS[toolName];
-  // 取 min(工具自定义超时, 全局超时)，确保工具超时不超过全局上限
-  // 未配置自定义超时的工具沿用全局 toolTimeout
-  const effectiveTimeout = toolSpecificTimeout ? Math.min(toolSpecificTimeout, timeoutMs) : timeoutMs;
-  logger.debug(`[Background] tool ${toolName} usingtimeout: ${effectiveTimeout}ms${toolSpecificTimeout ? ` (custom: ${toolSpecificTimeout}ms, globallimit: ${timeoutMs}ms)` : ''}`);
+  const effectiveTimeout = toolSpecificTimeout || timeoutMs;
+  logger.debug(`[Background] tool ${toolName} usingtimeout: ${effectiveTimeout}ms${toolSpecificTimeout ? ` (custom: ${toolSpecificTimeout}ms)` : ''}`);
   
   // 创建工具级 AbortController，支持用户手动终止等待
   const toolAbortController = getOrCreateToolAbortController(sessionId);

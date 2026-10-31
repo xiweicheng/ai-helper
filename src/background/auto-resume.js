@@ -24,8 +24,10 @@ export const AUTO_RESUME_INTERVAL_MIN = 0.5;
 export const AUTO_RESUME_MAX_ATTEMPTS = 3;
 
 // 不自动续的终态：user_cancelled = 用户意志；error = 明确失败（catch 栈完整执行过，
-// 说明任务是有界终止而非蒸发，保留"用户在面板点继续/重试"的原语义）
-const TERMINAL_REASONS = new Set(['user_cancelled', 'error']);
+// 说明任务是有界终止而非蒸发，保留"用户在面板点继续/重试"的原语义）；
+// budget_exhausted = 预算撞线软着陆（已产出「部分完成 + 缺项」报告并保留现场），
+// 用户选定语义是「停在缺项清单、等用户点继续」，静默自动续跑等于烧掉第二份预算
+const TERMINAL_REASONS = new Set(['user_cancelled', 'error', 'budget_exhausted']);
 
 /**
  * 自动续跑决策（纯函数，可单测）

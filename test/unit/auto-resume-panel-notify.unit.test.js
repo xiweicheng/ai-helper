@@ -41,8 +41,8 @@ describe('decideAutoResume 自动续跑决策', () => {
     }
   });
 
-  test('终态 checkpoint 不自动续：user_cancelled（用户意志）与 error（明确失败保持人工确认）', () => {
-    for (const reason of ['user_cancelled', 'error']) {
+  test('终态 checkpoint 不自动续：user_cancelled（用户意志）、error（明确失败保持人工确认）与 budget_exhausted（软着陆后等用户点续跑）', () => {
+    for (const reason of ['user_cancelled', 'error', 'budget_exhausted']) {
       const { targets, justExhausted } = decideAutoResume([cp({ interruptedReason: reason })], new Set());
       expect(targets.length, reason).toBe(0);
       expect(justExhausted.length, reason).toBe(0);

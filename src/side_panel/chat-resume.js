@@ -14,6 +14,8 @@ registerTranslations('zh', {
   chatResume: {
     title: '继续执行任务',
     desc: '任务执行被中断，你可以提供补充说明帮助模型继续。',
+    budgetTitle: '执行预算已用完（部分完成）',
+    budgetDesc: '任务已到时间/轮数预算上限，以上回复是已完成部分与缺项清单。点击继续将在新的预算下接着未完成部分执行，可先补充说明调整目标。',
     placeholder: '输入补充说明（可选）…',
     continueBtn: '继续',
     interruptedAgo: '（{duration}前）',
@@ -29,6 +31,8 @@ registerTranslations('en', {
   chatResume: {
     title: 'Continue Task',
     desc: 'The task was interrupted. You can provide additional guidance to help the model continue.',
+    budgetTitle: 'Execution budget exhausted (partially complete)',
+    budgetDesc: 'The task hit its time/round budget. The reply above lists what is completed and what remains. Press Continue to resume the unfinished parts with a fresh budget; you may add guidance first.',
     placeholder: 'Enter additional guidance (optional)…',
     continueBtn: 'Continue',
     interruptedAgo: ' ({duration} ago)',
@@ -54,7 +58,7 @@ import {
  * 显示"继续执行任务"对话框，返回用户输入的指导文本
  * @returns {Promise<string|null>} 用户输入的文本（留空时为 ''），取消时为 null
  */
-export function showResumeDialog() {
+export function showResumeDialog(options = {}) {
   return new Promise((resolve) => {
     // 构建弹窗 DOM
     const overlay = document.createElement('div');
@@ -66,11 +70,11 @@ export function showResumeDialog() {
     container.style.cssText = 'background:var(--bg-surface);border-radius:8px;padding:24px;width:90%;max-width:480px;box-shadow:0 8px 32px var(--shadow-md);';
 
     const title = document.createElement('h3');
-    title.textContent = t('chatResume.title');
+    title.textContent = t(options.budgetEnded ? 'chatResume.budgetTitle' : 'chatResume.title');
     title.style.cssText = 'margin:0 0 8px 0;font-size:16px;color:var(--text-primary);';
 
     const desc = document.createElement('p');
-    desc.textContent = t('chatResume.desc');
+    desc.textContent = t(options.budgetEnded ? 'chatResume.budgetDesc' : 'chatResume.desc');
     desc.style.cssText = 'margin:0 0 16px 0;font-size:13px;color:var(--text-secondary);line-height:1.5;';
 
     const textarea = document.createElement('textarea');
@@ -131,6 +135,11 @@ export function showResumeDialog() {
  */
 export function _clearResumableFlagsForSession(sessionId) {
   if (!sessionId) return;
+  // state.messageHistory 与 DOM 永远只代表「当前激活会话」：传入的却是任意会话时
+  // （跨会话队列派发、续跑期间用户切走），无条件清理抹掉的是用户正看着的那个会话的
+  // 续跑入口，还会随 saveChatHistory 落盘成永久丢失。非激活会话的陈旧标记交给
+  // _verifyCheckpointAndHideButton 在恢复渲染时按 checkpoint 实况自愈。
+  if (sessionId !== state.activeSessionId) return;
   let changed = false;
   // 清除 messageHistory 中的 resumable 标记
   for (const msg of state.messageHistory) {
@@ -142,7 +151,9 @@ export function _clearResumableFlagsForSession(sessionId) {
   // 清除 DOM 中的"继续执行"按钮
   const chatContainer = document.getElementById('chatContainer');
   if (chatContainer) {
-    const resumableEls = chatContainer.querySelectorAll('.message[data-resumable="true"]');
+    // 不能只匹配 "true"：预算软着陆的标记是 'budget'（见 _mountResumeButton），
+    // 漏掉它会留下点不动的陈旧按钮（现场已被新的 checkpoint 取代）
+    const resumableEls = chatContainer.querySelectorAll('.message[data-resumable]:not([data-resumable="false"])');
     resumableEls.forEach(el => {
       el.removeAttribute('data-resumable');
       const btn = el.querySelector('.resume-task-btn');
@@ -178,6 +189,58 @@ export async function _verifyCheckpointAndHideButton(messageDiv, sessionId) {
   } catch (e) {
     // 通信失败时保持按钮可见（乐观策略）
   }
+}
+
+/**
+ * 给已渲染的消息挂上「继续执行」按钮（addMessage / 流式收尾 / 续跑收尾共用）
+ *
+ * 流式回复不会走 addMessage（元素由 chat-streaming 的 finalizeStreamingMessage 收尾），
+ * 所以「标记了 resumable 却没有按钮」是必然结果：用户当场看不到续跑入口，必须先切会话
+ * 或刷新（走 restoreMessageFromHtml）才出现。此处统一挂载，两条渲染路径行为一致。
+ *
+ * @param {HTMLElement|null} messageDiv 已带 .message-footer 的消息根元素
+ * @param {boolean|string} resumable  true / 'budget'
+ * @returns {HTMLButtonElement|null}
+ */
+export function _mountResumeButton(messageDiv, resumable) {
+  if (!messageDiv || !resumable) return null;
+  const footer = messageDiv.querySelector(':scope > .message-footer');
+  if (!footer) return null;
+  const existing = footer.querySelector('.resume-task-btn');
+  if (existing) return existing;  // 幂等：重复调用不会挂第二个按钮
+
+  const budgetSemantics = resumable === 'budget';
+  const resumeBtn = document.createElement('button');
+  resumeBtn.className = 'resume-task-btn';
+  resumeBtn.type = 'button';
+  resumeBtn.title = t(budgetSemantics ? 'chatMsg.resumeTaskTitleBudget' : 'chatMsg.resumeTaskTitle');
+  resumeBtn.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+    </svg>
+    <span>${t('chatMsg.resumeTaskBtn')}</span>
+  `;
+  resumeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (resumeBtn.disabled) return;
+    // 先弹出对话框，让用户可选地追加任务描述（预算软着陆终态使用专属文案）
+    const guidance = await showResumeDialog({ budgetEnded: budgetSemantics });
+    if (guidance === null) return;  // 用户取消
+    resumeBtn.disabled = true;
+    resumeBtn.style.opacity = '0.6';
+    resumeBtn.style.cursor = 'not-allowed';
+    resumeTask(state.activeSessionId, guidance).finally(() => {
+      resumeBtn.disabled = false;
+      resumeBtn.style.opacity = '';
+      resumeBtn.style.cursor = '';
+    });
+  });
+  footer.appendChild(resumeBtn);
+  // 在 messageDiv 上标记，便于恢复时识别（'budget' 与 'true' 都表示可续跑）
+  messageDiv.dataset.resumable = String(resumable);
+  // 异步验证 checkpoint 是否存在，不存在则隐藏按钮（避免刷新后按钮失效）
+  _verifyCheckpointAndHideButton(messageDiv, state.activeSessionId);
+  return resumeBtn;
 }
 
 /**
@@ -234,7 +297,7 @@ export async function _checkForAbandonedCheckpoint() {
         }
         // 移除旧的 resumable 消息元素（用多种方式查找）
         if (chatContainer) {
-          let oldResumableEl = chatContainer.querySelector('.message[data-resumable="true"]');
+          let oldResumableEl = chatContainer.querySelector('.message[data-resumable]:not([data-resumable="false"])');
           if (!oldResumableEl) {
             const messages = chatContainer.querySelectorAll('.message.assistant');
             for (const msgEl of messages) {
@@ -337,6 +400,7 @@ export async function resumeTask(sessionId, userGuidance = '') {
   let reflectionScore = null;
   let wasRevised = false;
   let wasStreamed = false;
+  let budgetEnded = false;
   let streamingHtml = null;
   let streamingConnected = true;
   let streamingMsgId = null;
@@ -356,12 +420,16 @@ export async function resumeTask(sessionId, userGuidance = '') {
     streamingHtml = result.streamingHtml || null;
     streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
     streamingMsgId = result.streamingMsgId || null;
+    // 续跑同样可能再次撞线软着陆（后台已保留新的 budget_exhausted 现场）
+    budgetEnded = result.budgetEnded === true;
   } catch (errorResult) {
     // 已切换到其他会话：保存到原会话历史，不修改当前 DOM
     if (state.activeSessionId !== mySessionId) {
-      const resumable = !!errorResult.checkpoint || errorResult.swRestarted ||
-                        errorResult.message === '任务已被用户停止';
-      if (errorResult.message === '任务已被用户停止') {
+      // 必须走 t()：字面量只匹配中文，英文界面下「用户取消」会被误判成恢复失败，
+      // 于是既不写 taskCancelled 文案、也不给 resumable，续跑入口当场丢失
+      const taskStopped = errorResult.message === t('chatMsg.errTaskStopped');
+      const resumable = !!errorResult.checkpoint || errorResult.swRestarted || taskStopped;
+      if (taskStopped) {
         appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
       } else if (errorResult.swRestarted) {
         appendMessageToSession(mySessionId, { role: 'assistant', content: t('chatResume.swRestarted'), executionLog: errorResult.executionLog || [], resumable, resumed: true });
@@ -376,7 +444,7 @@ export async function resumeTask(sessionId, userGuidance = '') {
     }
 
     // 用户主动取消
-    if (errorResult.message === '任务已被用户停止') {
+    if (errorResult.message === t('chatMsg.errTaskStopped')) {
       removeLoadingMessage(loadingId);
       const { messageId } = addMessage('assistant', t('chatResume.taskCancelled'), false, errorResult.executionLog || []);
       state.messageHistory.push({ role: 'assistant', content: t('chatResume.taskCancelled'), executionLog: errorResult.executionLog || [], messageId, resumable: true, resumed: true });
@@ -407,13 +475,15 @@ export async function resumeTask(sessionId, userGuidance = '') {
     notifyGenerationEnded(mySessionId);
   }
 
-  // 恢复成功：SW 已清理 checkpoint，前端同步移除所有"继续执行"按钮
-  // 避免用户在已恢复的任务上看到无效的"继续执行"按钮
+  // 恢复成功：上一轮 checkpoint 已被消费，先清掉旧入口，避免同一现场挂两个按钮。
+  // 但「续跑又撞线」时后台保留了新的 budget_exhausted 现场，必须给本轮回复重新挂入口——
+  // 否则用户第二次撞线就再也没有「继续执行」可点（只能改稿重发）。
   _clearResumableFlagsForSession(mySessionId);
+  const resumable = budgetEnded ? 'budget' : false;
 
   // 成功路径：检查是否已切换会话
   if (state.activeSessionId !== mySessionId) {
-    const msgEntry = { role: 'assistant', content, executionLog, reflectionScore, wasRevised, resumed: true };
+    const msgEntry = { role: 'assistant', content, executionLog, reflectionScore, wasRevised, resumable, resumed: true };
     if (wasStreamed && streamingHtml) {
       msgEntry.htmlContent = streamingHtml;
     }
@@ -434,23 +504,29 @@ export async function resumeTask(sessionId, userGuidance = '') {
       executionLog,
       reflectionScore,
       wasRevised,
+      resumable,
       messageId: assistantMsgId,
       resumed: true,
       htmlContent: streamingHtml,
     });
     saveChatHistory();
+    if (resumable) {
+      const streamedEl = assistantMsgId ? document.querySelector(`[data-message-id="${assistantMsgId}"]`) : null;
+      _mountResumeButton(streamedEl, resumable);
+    }
     return true;
   }
 
   // 非流式降级路径：移除 loading，添加 assistant 消息
   removeLoadingMessage(loadingId);
-  const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+  const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised, null, null, [], resumable);
   state.messageHistory.push({
     role: 'assistant',
     content,
     executionLog,
     reflectionScore,
     wasRevised,
+    resumable,
     messageId,
     resumed: true,
   });

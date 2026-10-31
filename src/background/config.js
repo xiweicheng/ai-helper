@@ -4,6 +4,12 @@ import { DEFAULT_API_BASE, DEFAULT_MODEL, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CON
 import { normalizeCustomModels } from '../shared/token-counter.js';
 import { decodeSecret } from '../shared/secret.js';
 
+// 「整体循环超时」硬边界：与 options/loop-timeout-slider.js 档位上下限、面板看门狗换算口径一致。
+// 必须在读取侧钳制（而非只靠设置页保存校验）才能同时挡住「旧备份导入」与「历史残留值」两条
+// 绕过 UI 的写入路径——否则滑杆把 1 分钟就近显示成 10 分钟、后台却仍按 1 分钟跑，一次工具调用就撞线。
+const LOOP_TIMEOUT_MIN_MS = 600000;    // 10 分钟（低于它连一轮工具调用都跑不完）
+const LOOP_TIMEOUT_MAX_MS = 86400000;  // 24 小时
+
 /**
  * 获取存储的配置
  */
@@ -12,7 +18,8 @@ export function getStoredConfig() {
     chrome.storage.local.get([
       'apiBase', 'apiKey', 'modelName', 'enabledTools',
       'temperature', 'topP',
-      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 'reactToolTimeout',
+      'reactLoopTimeout',
+      'gracefulConverge',
       'enableToolPreselect',
       'toolConfirmationEnabled',
       'networkAccessEnabled', 'allowedNetworkHosts',
@@ -29,13 +36,20 @@ export function getStoredConfig() {
         enabledTools: result.enabledTools || ['page_content', 'query_elements', 'clipboard'],
         // ReAct 配置项
         reactConfig: {
-          maxIterations: result.reactMaxIterations || DEFAULT_REACT_CONFIG.maxIterations,
-          apiTimeout: result.reactApiTimeout || DEFAULT_REACT_CONFIG.apiTimeout,
-          loopTimeout: result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout,
-          toolTimeout: result.reactToolTimeout || DEFAULT_REACT_CONFIG.toolTimeout,
+          // 轮数上限 / API 请求超时 / 工具执行超时均已撤出设置页，不再从 storage 读取：
+          // 三者作为内部固定值（constants.js）——轮数 2000 抹「快而空转」、API 5min 抹「建连卡死」、
+          // 工具 10min 与 Agent 端 TOTAL_BUDGET_CAP_MS 封顶对齐。旧配置里残留的 reactApiTimeout、
+          // reactToolTimeout（如 600000）若继续生效，会让「界面已经没有这个开关了」变成谎话。
+          maxIterations: DEFAULT_REACT_CONFIG.maxIterations,
+          apiTimeout: DEFAULT_REACT_CONFIG.apiTimeout,
+          loopTimeout: Math.min(Math.max(result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout, LOOP_TIMEOUT_MIN_MS), LOOP_TIMEOUT_MAX_MS),
+          toolTimeout: DEFAULT_REACT_CONFIG.toolTimeout,
           clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout,
           apiRetryCount: DEFAULT_REACT_CONFIG.apiRetryCount,
           apiRetryBaseDelay: DEFAULT_REACT_CONFIG.apiRetryBaseDelay,
+          // 预算撞线软着陆：无 UI 控件（内部安全边界），但读 storage 以便导入/导出可覆盖；
+          // 仅显式 false 才回退旧的抛错语义
+          gracefulConverge: result.gracefulConverge !== false,
           enableToolPreselect: result.enableToolPreselect !== undefined ? result.enableToolPreselect : DEFAULT_REACT_CONFIG.enableToolPreselect,
           toolConfirmationEnabled: result.toolConfirmationEnabled !== undefined ? result.toolConfirmationEnabled : DEFAULT_REACT_CONFIG.toolConfirmationEnabled,
           // 内网地址访问：总闸 + 白名单（两者独立存储，关总闸不会清空白名单）

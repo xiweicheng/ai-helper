@@ -1025,14 +1025,17 @@ export async function getCurrentActiveTabId() {
 export function getReactConfig() {
   return new Promise((resolve) => {
     chrome.storage.local.get([
-      'reactMaxIterations', 'reactApiTimeout', 'reactLoopTimeout', 
-      'reactToolTimeout', 'reactClarifyTimeout'
+      'reactLoopTimeout'
     ], (result) => {
+      // maxIterations / apiTimeout / toolTimeout / clarifyTimeout 均已撤出设置页（内部固定值），
+      // 面板只读用户仍可调的「整体循环超时」。默认值统一取自 constants，避免两侧硬编码漂移
+      // （旧 7200000 即 2h，已落后于新默认 4h）；看门狗仍要靠 toolTimeout/apiTimeout 换算余量。
       resolve({
-        maxIterations: result.reactMaxIterations || 30,
-        apiTimeout: result.reactApiTimeout || 60000,
-        loopTimeout: result.reactLoopTimeout || 7200000,
-        toolTimeout: result.reactToolTimeout || 30000,
+        apiTimeout: DEFAULT_REACT_CONFIG.apiTimeout,
+        // 与后台 getStoredConfig 同口径钳制上下限（10 分钟 – 24 小时）：面板看门狗要靠它换算，
+        // 旧备份/残留值不能绕过滑杆档位把看门狗拉到违规的小预算
+        loopTimeout: Math.min(Math.max(result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout, 600000), 86400000),
+        toolTimeout: DEFAULT_REACT_CONFIG.toolTimeout,
         clarifyTimeout: DEFAULT_REACT_CONFIG.clarifyTimeout
       });
     });

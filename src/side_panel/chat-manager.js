@@ -51,6 +51,7 @@ import {
   _clearResumableFlagsForSession,
   _verifyCheckpointAndHideButton,
   _checkForAbandonedCheckpoint,
+  _mountResumeButton,
   resumeTask
 } from './chat-resume.js';
 // 重导出 _checkForAbandonedCheckpoint 保持对外接口不变（index.js 仍从本模块导入）
@@ -116,6 +117,7 @@ registerTranslations('zh', {
     forkSession: '从此处分叉会话（仅复制到此条消息）',
     deleteMessageTitle: '删除消息',
     resumeTaskTitle: '从上次中断处继续执行任务',
+    resumeTaskTitleBudget: '执行预算已用完（部分完成）：点击后可在新的预算下接着未完成的部分继续',
     resumeTaskBtn: '继续执行',
     clickToEnlarge: '点击查看大图',
     fileExtracting: ' 提取中...',
@@ -193,6 +195,7 @@ registerTranslations('en', {
     forkSession: 'Fork session from here (copy up to this message only)',
     deleteMessageTitle: 'Delete message',
     resumeTaskTitle: 'Resume task from last interruption',
+    resumeTaskTitleBudget: 'Execution budget exhausted (partially complete): click to continue the unfinished parts with a fresh budget',
     resumeTaskBtn: 'Resume',
     clickToEnlarge: 'Click to view full size',
     fileExtracting: ' extracting...',
@@ -1408,6 +1411,7 @@ export async function sendMessage(opts = {}) {
     let streamingHtml = null;
     let streamingConnected = true;
     let streamingMsgId = null;
+    let budgetEnded = false;
 
     try {
       const result = await callApi(messages, model, useToolsForSend, apiParams, { forcedMcpServerIds, sessionId: mySessionId, agent: agentForSend });
@@ -1419,6 +1423,8 @@ export async function sendMessage(opts = {}) {
       streamingHtml = result.streamingHtml || null;
       streamingConnected = result.streamingConnected !== undefined ? result.streamingConnected : true;
       streamingMsgId = result.streamingMsgId || null;
+      // 预算撞线软着陆：成功返回但预算已尽（内容即「部分完成 + 缺项」报告），标记为可续跑（budget 语义）
+      budgetEnded = result.budgetEnded === true;
     } catch (errorResult) {
       // 不在前台（本来就是后台派发，或生成期间用户切走了会话）
       if (!isActive || state.activeSessionId !== mySessionId) {
@@ -1479,7 +1485,7 @@ export async function sendMessage(opts = {}) {
 
     // 不在前台（成功路径）：结果写回目标会话，不碰 DOM
     if (!isActive || state.activeSessionId !== mySessionId) {
-      const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: streamingMsgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)) };
+      const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, resumable: budgetEnded ? 'budget' : false, messageId: streamingMsgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)) };
       if (wasStreamed && streamingHtml) {
         msgEntry.htmlContent = streamingHtml;
       }
@@ -1505,7 +1511,7 @@ export async function sendMessage(opts = {}) {
       }
 
       if (!wasStreamed) {
-        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised);
+        const { element: messageDiv, messageId } = addMessage('assistant', content, true, executionLog, reflectionScore, wasRevised, null, null, [], budgetEnded ? 'budget' : false);
         assistantMsgId = messageId;
         await renderMessageMermaid(messageDiv);
         // 非流式模式下，内容一次性到达，若用户已上滚则显示 badge 提醒
@@ -1523,8 +1529,16 @@ export async function sendMessage(opts = {}) {
       assistantMsgId = streamingMsgId;
     }
 
+    // 流式成功路径不走 addMessage（元素已由 finalizeStreamingMessage 收尾），
+    // 预算软着陆的续跑入口必须在这里补挂：否则用户当下没有「继续执行」可点，
+    // 必须先切会话/刷新（那条路径靠 restoreMessageFromHtml 补按钮）才出现
+    if (budgetEnded) {
+      const streamedEl = assistantMsgId ? document.querySelector(`[data-message-id="${assistantMsgId}"]`) : null;
+      _mountResumeButton(streamedEl, 'budget');
+    }
+
     // 保存消息历史：流式模式下捕获完整 HTML 用于持久化
-    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, messageId: assistantMsgId };
+    const msgEntry = { role: 'assistant', content: content, executionLog: executionLog, reflectionScore: reflectionScore, wasRevised: wasRevised, resumable: budgetEnded ? 'budget' : false, messageId: assistantMsgId };
     if (wasStreamed && streamingHtml) {
       msgEntry.htmlContent = streamingHtml;
       // 如果流式元素不在 DOM 中（用户切换过会话导致 DOM 被清空），重新渲染
@@ -1532,7 +1546,10 @@ export async function sendMessage(opts = {}) {
       if (!streamingConnected) {
         const existingEl = document.querySelector(`[data-message-id="${assistantMsgId}"]`);
         if (!existingEl) {
-          restoreMessageFromHtml(streamingHtml);
+          // 预算软着陆时这次重渲染就是用户唯一能看到的回复：上面的 _mountResumeButton 因为
+          // 元素当时不在 DOM 里已经放弃了挂载，这里不把 resumable 传下去，用户就会看到
+          // 「部分完成」报告却没有任何续跑入口（必须切会话/刷新才出现）
+          restoreMessageFromHtml(streamingHtml, assistantMsgId, budgetEnded ? 'budget' : false);
           bindExecutionLogDelegate();
           bindReflectionBadgeDelegate();
           const chatContainerEl = document.getElementById('chatContainer');
@@ -1745,6 +1762,9 @@ function stripMcpContext(text) {
   } while (out !== prev);
   return out;
 }
+
+// 预算软着陆终态判定：resumable 标记为 'budget' 时「继续执行」按钮与弹窗使用专属文案
+const _isBudgetResume = (el) => !!el && el.dataset.resumable === 'budget';
 
 export function addMessage(role, content, scroll = true, executionLog = [], reflectionScore = null, wasRevised = false, rawTextContent = null, existingMessageId = null, attachedFiles = [], resumable = false, existingTimestamp = undefined) {
   const chatContainer = document.getElementById('chatContainer');
@@ -2137,42 +2157,11 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
 
     footer.appendChild(rightActionsContainer);
 
-    // "继续执行"按钮：仅当消息标记为 resumable 时显示
-    // 用于从中断的 checkpoint 恢复 ReAct 任务
-    if (resumable) {
-      const resumeBtn = document.createElement('button');
-      resumeBtn.className = 'resume-task-btn';
-      resumeBtn.type = 'button';
-      resumeBtn.title = t('chatMsg.resumeTaskTitle');
-      resumeBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        <span>${t('chatMsg.resumeTaskBtn')}</span>
-      `;
-      resumeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (resumeBtn.disabled) return;
-        // 先弹出对话框，让用户可选地追加任务描述
-        const guidance = await showResumeDialog();
-        if (guidance === null) return;  // 用户取消
-        resumeBtn.disabled = true;
-        resumeBtn.style.opacity = '0.6';
-        resumeBtn.style.cursor = 'not-allowed';
-        resumeTask(state.activeSessionId, guidance).finally(() => {
-          resumeBtn.disabled = false;
-          resumeBtn.style.opacity = '';
-          resumeBtn.style.cursor = '';
-        });
-      });
-      footer.appendChild(resumeBtn);
-      // 在 messageDiv 上标记，便于恢复时识别
-      messageDiv.dataset.resumable = 'true';
-      // 异步验证 checkpoint 是否存在，不存在则隐藏按钮（避免刷新后按钮失效）
-      _verifyCheckpointAndHideButton(messageDiv, state.activeSessionId);
-    }
-
     messageDiv.appendChild(footer);
+
+    // "继续执行"按钮：仅当消息标记为 resumable 时显示
+    // 用于从中断/预算耗尽的 checkpoint 恢复 ReAct 任务（实现与流式收尾路径共用）
+    if (resumable) _mountResumeButton(messageDiv, resumable);
   } else {
     let displayText = textContent;
     displayText = displayText.replace(/^\[网页上下文\]\n标题: .+\nURL: .+\ntabId: \d+\n/, '');
@@ -2649,41 +2638,10 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
     messageEl.dataset.messageId = messageId;
   }
 
-  // 如果标记为可恢复，在 footer 中添加"继续执行"按钮（HTML 中可能不存在）
-  if (resumable) {
-    messageEl.dataset.resumable = 'true';
-    const footer = messageEl.querySelector(':scope > .message-footer');
-    if (footer && !footer.querySelector('.resume-task-btn')) {
-      const resumeBtn = document.createElement('button');
-      resumeBtn.className = 'resume-task-btn';
-      resumeBtn.type = 'button';
-      resumeBtn.title = t('chatMsg.resumeTaskTitle');
-      resumeBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        <span>${t('chatMsg.resumeTaskBtn')}</span>
-      `;
-      resumeBtn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (resumeBtn.disabled) return;
-        const guidance = await showResumeDialog();
-        if (guidance === null) return;
-        resumeBtn.disabled = true;
-        resumeBtn.style.opacity = '0.6';
-        resumeBtn.style.cursor = 'not-allowed';
-        resumeTask(state.activeSessionId, guidance).finally(() => {
-          resumeBtn.disabled = false;
-          resumeBtn.style.opacity = '';
-          resumeBtn.style.cursor = '';
-        });
-      });
-      footer.appendChild(resumeBtn);
-      // 异步验证 checkpoint 是否存在，不存在则隐藏按钮（避免刷新后按钮失效）
-      _verifyCheckpointAndHideButton(messageEl, state.activeSessionId);
-    }
-  }
-  
+  // 如果标记为可恢复，在 footer 中挂「继续执行」入口（HTML 中可能不存在）
+  // 单一实现在 chat-resume._mountResumeButton：这里的旧内联副本已合并，避免两处按钮行为漂移
+  if (resumable) _mountResumeButton(messageEl, resumable);
+
   // 移除 streaming 类（持久化后不再是流式状态）
   messageEl.classList.remove('streaming');
   
@@ -2897,7 +2855,7 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
       existingResumeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (existingResumeBtn.disabled) return;
-        const guidance = await showResumeDialog();
+        const guidance = await showResumeDialog({ budgetEnded: _isBudgetResume(messageEl) });
         if (guidance === null) return;
         existingResumeBtn.disabled = true;
         existingResumeBtn.style.opacity = '0.6';
@@ -3187,7 +3145,7 @@ export function rebindAllMessages(container) {
       resumeBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (resumeBtn.disabled) return;
-        const guidance = await showResumeDialog();
+        const guidance = await showResumeDialog({ budgetEnded: _isBudgetResume(messageEl) });
         if (guidance === null) return;
         resumeBtn.disabled = true;
         resumeBtn.style.opacity = '0.6';
@@ -3514,7 +3472,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   const sentAgentMcpExcludedServerIds = agentOverride ? agentOverride.agentMcpExcludedServerIds : state.activeAgentMcpExcludedServerIds;
 
   const reactConfig = await getReactConfig();
-  const timeoutMs = reactConfig.loopTimeout;
+  // 面板看门狗必须晚于后台的预算软着陆：后台只在「轮首」判定 loopTimeout，到点后
+  // 还要先让在飞的工具调用收尾（≤ toolTimeout），再跑有界宽限轮（≤ 2 轮纯文本请求，
+  // 每轮 ≤ apiTimeout），最后才返回。若这里仍直接拿 loopTimeout 当硬超时，面板必然先到点
+  // 发 CANCEL_REACT —— 后台的时间维度软着陆永远跑不到，checkpoint 还会被落成 user_cancelled。
+  const graceWatchdogSlackMs = (reactConfig.toolTimeout || 0)
+    + 3 * (reactConfig.apiTimeout || 0)
+    + 60000;
+  const timeoutMs = reactConfig.loopTimeout + graceWatchdogSlackMs;
   
   const reflectionConfig = await new Promise((resolve) => {
     chrome.storage.local.get('reflectionConfig', (result) => {
@@ -3658,7 +3623,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     }
 
     let executionLog = [];
-    const timeoutSeconds = Math.round(timeoutMs / 1000);
+    // 超时文案仍按循环预算展示：看门狗的富余量只是给后台软着陆留的收尾期，
+    // 不该让用户读到「超时 X 小时」而以为设置页的配置被改了
+    const timeoutSeconds = Math.round(reactConfig.loopTimeout / 1000);
     
     // 流式输出状态
     _se(null);
@@ -4240,7 +4207,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           wasRevised: message.wasRevised,
           streamingHtml,
           streamingConnected,
-          streamingMsgId
+          streamingMsgId,
+          // 预算软着陆终态：随 API_COMPLETE 透传，成功路径据此标记可续跑
+          budgetEnded: message.budgetEnded === true
         });
         return false;
       } else if (message.type === 'API_ERROR') {

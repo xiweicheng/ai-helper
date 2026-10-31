@@ -189,6 +189,30 @@ describe('澄清弹窗并发队列（不再互相覆盖）', () => {
     expect(state.currentClarifyToolCallId).toBe('call-B');
   });
 
+  test('超时代选：toast 必须说出「已按推荐项 X 继续」，不能只报一句「已超时」', async () => {
+    showClarifyDialog(request('call-A', 'S_0', '用哪个包管理器？', ['npm', 'pnpm']));
+    await vi.advanceTimersByTimeAsync(0);
+
+    handleClarifyTimeout({ toolCallId: 'call-A', sessionId: 'S_0', reason: 'timeout', defaultOption: 'pnpm' });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const toastText = document.getElementById('toastContainer').textContent;
+    expect(toastText).toContain(t('clarify.timedOutDefaulted', { option: 'pnpm' }));
+    expect(toastText).toContain('pnpm');
+  });
+
+  test('面板被关掉（无 defaultOption）：不得谎称替用户做了选择', async () => {
+    showClarifyDialog(request('call-A', 'S_0', '问题甲'));
+    await vi.advanceTimersByTimeAsync(0);
+
+    handleClarifyTimeout({ toolCallId: 'call-A', sessionId: 'S_0', reason: 'panel_closed', defaultOption: null });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const toastText = document.getElementById('toastContainer').textContent;
+    expect(toastText).toContain(t('clarify.timedOut'));
+    expect(toastText).not.toContain('推荐项');
+  });
+
   test('撤销按 toolCallId 精确匹配：另一会话的超时不得刷掉正在显示的澄清', async () => {
     showClarifyDialog(request('call-A', 'S_0', '问题甲'));
     await vi.advanceTimersByTimeAsync(0);

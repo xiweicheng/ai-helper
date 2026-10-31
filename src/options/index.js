@@ -39,6 +39,7 @@ import { initInstallGuide } from './install-guide.js';
 import { showCustomConfirm } from './toolbox-shared.js';
 import logger from '../shared/logger.js';
 import { initI18n, applyI18n, subscribe, setLanguage, getLanguage, SUPPORTED_LANGUAGES, t } from '../shared/i18n.js';
+import { repaintLoopTimeout } from './loop-timeout-slider.js';
 
 let currentTools = [];
 
@@ -133,6 +134,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   applyI18n();
   subscribe(() => {
     applyI18n();
+    // 滑杆读数与 aria-valuetext 由 JS 拼接，applyI18n 只认静态 data-i18n 标签、刷不到 → 切语言后按当前档位重绘
+    repaintLoopTimeout();
     // 语言切换时重新加载并渲染工具栏列表（内置工具名称随语言变化）
     loadToolbarTools().then((tools) => {
       currentTools = tools;
