@@ -303,14 +303,14 @@
         <span class="toggle-text" data-i18n="settings.sidePanelScopeTab">标签页绑定模式</span>
       </label>
       <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.sidePanelScopeTabHint">侧边栏仅在打开它的标签页可见，切换到其他标签页时自动隐藏</span>
-    </div>
-
-    <div class="form-group">
-      <label class="toggle-label">
-        <input type="checkbox" id="autoGroupTabs">
-        <span class="toggle-text" data-i18n="settings.autoGroupTabs">标签页绑定模式下，把打开侧边栏的标签页归入分组</span>
-      </label>
-      <span class="hint" style="display:block;margin-top:4px;" data-i18n="settings.autoGroupTabsHint">仅标签页绑定模式生效；把这些标签页归入一个彩色标签组便于识别（标签页会被移动到分组所在位置），关闭某个标签页的侧边栏或切回全局模式时会移出分组</span>
+      <!-- 自动分组是「标签页绑定模式」的二级选项：只在选中绑定模式时显示，未选中时整块隐藏 -->
+      <div id="autoGroupTabsWrap" style="display:none;margin:8px 0 0 26px;">
+        <label class="toggle-label" style="cursor:pointer;">
+          <input type="checkbox" id="autoGroupTabs">
+          <span class="toggle-text" data-i18n="settings.autoGroupTabs">把打开侧边栏的标签页归入分组</span>
+        </label>
+        <span class="hint" style="display:block;margin:4px 0 0 26px;font-size:12px;color:var(--text-secondary);" data-i18n="settings.autoGroupTabsHint">把这些标签页归入一个彩色标签组便于识别（标签页会被移动到分组所在位置），关闭某个标签页的侧边栏或切回全局模式时会移出分组</span>
+      </div>
     </div>
 
     </div><!-- /tab-basic -->

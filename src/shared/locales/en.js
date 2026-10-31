@@ -191,9 +191,9 @@ export default {
     sidePanelScopeTab: 'Tab-bound mode',
     sidePanelScopeGlobalHint: 'All tabs in the same window share one side panel instance, and it stays visible when you switch tabs',
     sidePanelScopeTabHint: 'Side panel shows only on the tabs where you opened it; you can open it on multiple tabs, auto-hides when switching away and restores when switching back',
-    // Auto tab grouping
-    autoGroupTabs: 'In Tab-bound mode, group tabs where the side panel is opened',
-    autoGroupTabsHint: 'Applies to Tab-bound mode only; puts those tabs into a colored tab group for easy identification (tabs move to the group position), and removes a tab when its side panel is closed or you switch back to Global mode',
+    // Auto tab grouping (sub-option of Tab-bound mode, only shown when Tab-bound mode is selected)
+    autoGroupTabs: 'Group tabs where the side panel is opened',
+    autoGroupTabsHint: 'Puts those tabs into a colored tab group for easy identification (tabs move to the group position), and removes a tab when its side panel is closed or you switch back to Global mode',
   },
 
   // Header bar
