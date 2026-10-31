@@ -17,7 +17,7 @@
 import { callChatCompletion, resolveUseStream } from '../shared/chat-client.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { fetchWithRetry } from './tool-executor.js';
-import { parseGoalVerdictJson } from '../shared/goal.js';
+import { parseGoalVerdictJson, normalizeGoalAttachments } from '../shared/goal.js';
 import logger from '../shared/logger.js';
 
 // 评估调用的默认档位。设置页（goalConfig）可覆盖 model/temperature/maxTokens；
@@ -132,6 +132,20 @@ export function buildGoalEvaluationPrompt(goal, ctx = {}) {
     goal.doneCriteria.forEach((c) => {
       lines.push(`- ${c.check}${c.target ? ` target=${c.target}` : ''}${c.expected ? ` expected=${c.expected}` : ''}`);
     });
+  }
+  // 附件清单：评估器看不到任何附件（prompt 全文本），但必须知道目标依赖它们。
+  // 否则「按这张图改」这类目标只能靠模型的收尾自述判 met —— 正是最容易被骗的组合。
+  // 口径与红线④一致：看不到的是「缺证据」，不是「失败证据」。
+  const attachments = normalizeGoalAttachments(goal.attachments);
+  if (attachments.length > 0) {
+    lines.push('\n## Material this goal depends on (you cannot inspect it)');
+    for (const a of attachments) {
+      lines.push(`- ${a.kind}: ${a.name}${a.detail ? ` (${a.detail})` : ''}`);
+    }
+    lines.push('You were given none of this material: no image, no file content, no page content.');
+    lines.push(
+      'If confirming the objective requires inspecting it, you cannot confirm it: name the specific item in "missing" (for example "the attached image was never inspected") instead of accepting the assistant claim. When the objective is otherwise verified by tool evidence, treat this as missing evidence, never as proof of failure.'
+    );
   }
   lines.push('\n## Machine-collected objective evidence');
   lines.push(formatObjectiveEvidence(ctx.evidence));

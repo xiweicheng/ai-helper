@@ -64,7 +64,8 @@ describe('① 意图识别接线（否则 goal-intent.js 是孤儿模块）', ()
   test('发送链路不再用 state.goalMode 门控 prepareGoalForSend', () => {
     // 这条断言锁的是「调用点」而不是函数内部：调用点带 && state.goalMode 时，
     // 函数里的意图识别分支永远进不去，测试全绿但功能没接上
-    expect(CHAT).toMatch(/if \(isActive\) \{\s*try \{\s*const goal = await prepareGoalForSend\(/);
+    // try 与调用之间允许注释（附件清单那段说明），但门控条件必须仍然是裸的 isActive
+    expect(CHAT).toMatch(/if \(isActive\) \{\s*try \{[\s\S]{0,600}?const goal = await prepareGoalForSend\(/);
     expect(CHAT).not.toMatch(/isActive && state\.goalMode[\s\S]{0,80}prepareGoalForSend/);
   });
 

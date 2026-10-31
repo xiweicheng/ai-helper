@@ -173,10 +173,11 @@ async function syncChipVisibility() {
  * 累加语义（会话内继续发消息 = 追加为约束、不替换目标）收在后台
  * applyGoalCommand('set')，面板永远不需要知道当前是什么状态。
  *
- * @param {{sessionId?: string|null, text?: string}} params
+ * @param {{sessionId?: string|null, text?: string, attachments?: Array}} params attachments 见
+ *   summarizeGoalAttachments（只记清单，不记内容），后台累加不替换
  * @returns {Promise<object|null>} 需要随 apiParams 下发的 goal；null = 本轮不走目标模式
  */
-export async function prepareGoalForSend({ sessionId = currentSessionId(), text = '' } = {}) {
+export async function prepareGoalForSend({ sessionId = currentSessionId(), text = '', attachments = [] } = {}) {
   if (!sessionId || !String(text || '').trim()) return null;
 
   const cfg = await getGoalConfig();
@@ -205,6 +206,8 @@ export async function prepareGoalForSend({ sessionId = currentSessionId(), text 
     sessionId,
     action: 'set',
     objective,
+    // 附件清单只随创建/追加下发：后台按「累加不替换」并入目标，供锚点与评估器使用
+    attachments: Array.isArray(attachments) ? attachments : [],
     createdBy: byToggle ? 'toggle' : 'intent',
     autoApprove: byToggle,
   });
@@ -217,6 +220,41 @@ export async function prepareGoalForSend({ sessionId = currentSessionId(), text 
   state.goalSnapshot = resp.goal || null;
   renderGoalBar();
   return resp.goal || null;
+}
+
+/**
+ * 把输入区挂载的上下文压成「附件清单」元信息，随目标一起下发。
+ * 只记「有哪些、叫什么、走的哪条通道」，绝不记内容：objective 必须保持用户原话
+ * （finalText 里拼的知识库/网页/文件正文不能进目标，否则目标描述被污染）。
+ *
+ * 为什么不记内容就够：锚点本来就每轮重申 objective，而这些内容只跟着首条消息走，
+ * 图片从第 2 次 API 调用起就被剥掉（react-loop 只保留最后一条消息的图）。
+ * 记下清单，锚点才能明确告诉模型「它们不在目标里、也回不来，先读成笔记」。
+ *
+ * @param {object} inputCtx 发送批次快照（readInputContextSnapshot / 队列 contextSnapshot）
+ * @returns {Array<{kind:string, name:string, detail?:string}>}
+ */
+export function summarizeGoalAttachments(inputCtx = {}) {
+  const items = [];
+  const images = Array.isArray(inputCtx.attachedImages) ? inputCtx.attachedImages.length : 0;
+  if (images > 0) items.push({ kind: 'image', name: t('goal.attachmentImage', { count: images }) });
+  for (const f of Array.isArray(inputCtx.attachedFiles) ? inputCtx.attachedFiles : []) {
+    // 只记已抽取完成的：失败文件既没内容也没路径，记进目标只会让模型去找不存在的东西
+    if (!f || f.status !== 'done' || !f.name) continue;
+    items.push({ kind: 'file', name: String(f.name), detail: f.agentPath ? 'workspace file' : 'inline text' });
+  }
+  const page = inputCtx.selectedPage;
+  if (page && (page.title || page.url)) {
+    items.push({
+      kind: 'page',
+      name: String(page.title || page.url),
+      detail: page.id != null ? `tab ${page.id}` : '',
+    });
+  }
+  for (const ref of Array.isArray(inputCtx.knowledgeRefs) ? inputCtx.knowledgeRefs : []) {
+    if (ref && ref.name) items.push({ kind: 'knowledge', name: String(ref.name) });
+  }
+  return items;
 }
 
 /**

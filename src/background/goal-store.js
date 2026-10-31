@@ -17,6 +17,7 @@ import {
   goalIsFinished,
   createGoal,
   appendGoalConstraint,
+  mergeGoalAttachments,
   pauseGoal,
   resumeGoal,
   clearGoal,
@@ -222,7 +223,11 @@ export async function applyGoalCommand(sessionId, cmd = {}) {
       const text = cmd.objective ?? cmd.goal?.objective ?? '';
       const current = await getGoal(sessionId);
       if (current && !goalIsFinished(current)) {
-        const next = appendGoalConstraint(current, text);
+        // 附件清单与约束同语义：会话内继续发消息只累加，不丢掉之前挂过的图片/文件/网页/知识库。
+        const next = mergeGoalAttachments(
+          appendGoalConstraint(current, text),
+          cmd.attachments ?? cmd.goal?.attachments
+        );
         // 面板重新点亮开关时需要把放行授权补上（之前可能被 pause 收回）
         const wantApprove = cmd.createdBy !== 'intent' && cmd.autoApprove === true;
         const withApproval = wantApprove && !next.autoApprove ? { ...next, autoApprove: true } : next;
@@ -236,6 +241,7 @@ export async function applyGoalCommand(sessionId, cmd = {}) {
         doneCriteria: cmd.doneCriteria ?? cmd.goal?.doneCriteria,
         createdBy: cmd.createdBy ?? cmd.goal?.createdBy,
         autoApprove: cmd.autoApprove ?? cmd.goal?.autoApprove,
+        attachments: cmd.attachments ?? cmd.goal?.attachments,
         limits: {
           turnBudget: cmd.turnBudget ?? cmd.goal?.turnBudget,
           timeBudgetMs: cmd.timeBudgetMs ?? cmd.goal?.timeBudgetMs,
@@ -248,6 +254,8 @@ export async function applyGoalCommand(sessionId, cmd = {}) {
     }
     // replace = 用户在目标条里显式编辑：无条件用新文本重建目标，重置轮次与停滞计数
     case 'replace': {
+      // 用户在目标条里改目标文本：只换文本，别把「这个目标依赖哪些附件」丢掉
+      const prev = await getGoal(sessionId);
       const goal = createGoal({
         sessionId,
         objective: cmd.objective ?? cmd.goal?.objective,
@@ -255,6 +263,7 @@ export async function applyGoalCommand(sessionId, cmd = {}) {
         doneCriteria: cmd.doneCriteria ?? cmd.goal?.doneCriteria,
         createdBy: cmd.createdBy ?? 'toggle',
         autoApprove: cmd.autoApprove ?? cmd.goal?.autoApprove,
+        attachments: cmd.attachments ?? cmd.goal?.attachments ?? prev?.attachments,
         limits: {
           turnBudget: cmd.turnBudget ?? cmd.goal?.turnBudget,
           timeBudgetMs: cmd.timeBudgetMs ?? cmd.goal?.timeBudgetMs,

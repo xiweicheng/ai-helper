@@ -61,6 +61,23 @@ export const MAX_OBJECTIVE_CHARS = 4000;
 export const MAX_CONSTRAINTS = 20;
 export const MAX_CONSTRAINT_CHARS = 500;
 
+// 附件清单（图片 / 文件 / 网页 / 知识库）的条数与名称上限。
+// 只记「有什么、叫什么、走的哪条通道」，绝不记内容：目标描述必须保持用户原话，
+// 正文/图片本来就随首条消息进了上下文，存第二份只会让锚点与评估 prompt 变胖。
+export const MAX_ATTACHMENTS = 12;
+export const MAX_ATTACHMENT_NAME_CHARS = 120;
+export const GOAL_ATTACHMENT_KINDS = Object.freeze(['image', 'file', 'page', 'knowledge']);
+
+// 每类附件的「会衰减」说明。目标模式的真实痛点：锚点每轮重申 objective，
+// 而图片从第 2 次 API 调用起就被剥掉（react-loop 只保留最后一条消息的图），
+// 文件 / 知识库正文会随上下文压缩变成摘要。锚点必须点名「它们不会再来」。
+const ATTACHMENT_CAVEATS = {
+  image: 'the actual image travels only with the first request and will not be re-sent',
+  file: 'its text was inlined once; re-read it with file tools once it is trimmed',
+  page: 'only title/URL/tab were injected; read the content with browser tools',
+  knowledge: 'a one-shot retrieval snapshot; query again with knowledge_search',
+};
+
 // 预算与停滞默认值。设置页只开放总开关与意图识别，这些数值固定取此处；
 // 这是唯一兜底来源，引擎与面板都读它。
 export const DEFAULT_GOAL_LIMITS = {
@@ -99,6 +116,43 @@ function normalizeConstraint(text) {
 }
 
 /**
+ * 单条附件归一。kind 不在白名单或名称为空一律返回 null（调用方丢弃）。
+ * detail 只放短指针（tabId / workspace / inline text），不放正文。
+ * @param {unknown} raw
+ * @returns {{kind:string, name:string, detail?:string}|null}
+ */
+export function normalizeGoalAttachment(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const kind = GOAL_ATTACHMENT_KINDS.includes(raw.kind) ? raw.kind : null;
+  if (!kind) return null;
+  const name = typeof raw.name === 'string' ? raw.name.trim().replace(/\s+/g, ' ') : '';
+  if (!name) return null;
+  const item = { kind, name: name.slice(0, MAX_ATTACHMENT_NAME_CHARS) };
+  const detail = typeof raw.detail === 'string' ? raw.detail.trim().replace(/\s+/g, ' ').slice(0, 80) : '';
+  if (detail) item.detail = detail;
+  return item;
+}
+
+/**
+ * 归一一份附件清单：逐条校验 + 按 kind|name 去重 + 只保留最后 MAX_ATTACHMENTS 条。
+ * @param {unknown} list
+ * @returns {Array<{kind:string,name:string,detail?:string}>}
+ */
+export function normalizeGoalAttachments(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const item = normalizeGoalAttachment(raw);
+    if (!item) continue;
+    const key = `${item.kind}|${item.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out.length > MAX_ATTACHMENTS ? out.slice(out.length - MAX_ATTACHMENTS) : out;
+}
+
+/**
  * 创建一个新目标。
  * @param {object} params
  * @param {string} params.objective 目标描述（用户原话）
@@ -131,6 +185,9 @@ export function createGoal(params = {}) {
     criteria,
     doneCriteria: normalizeDoneCriteria(params.doneCriteria),
     constraints: constraints.slice(0, MAX_CONSTRAINTS),
+    // 附件清单：只记标记，不记内容（见 MAX_ATTACHMENTS 注释）。
+    // 锚点与评估器靠它知道「这个目标依赖哪些看不见的东西」。
+    attachments: normalizeGoalAttachments(params.attachments),
     status: GOAL_STATUS.ACTIVE,
     turnBudget: clampInt(limits.turnBudget, limits.minTurnBudget, limits.maxTurnBudget, DEFAULT_GOAL_LIMITS.turnBudget),
     turnsUsed: 0,
@@ -179,6 +236,8 @@ export function normalizeGoal(raw, now = Date.now()) {
     constraints: Array.isArray(raw.constraints)
       ? raw.constraints.map(normalizeConstraint).filter(Boolean).slice(0, MAX_CONSTRAINTS)
       : [],
+    // 旧数据没有附件字段：归一为空数组，锚点据此不加段落（不给纯文本目标添噪）。
+    attachments: normalizeGoalAttachments(raw.attachments),
     status,
     turnBudget: clampInt(raw.turnBudget, limits.minTurnBudget, limits.maxTurnBudget, limits.turnBudget),
     turnsUsed: clampInt(raw.turnsUsed, 0, 1e6, 0),
@@ -229,6 +288,26 @@ export function appendGoalConstraint(goal, text, now = Date.now()) {
   // 超出上限时丢最早的一条：最近的指导优先级最高
   const kept = next.length > MAX_CONSTRAINTS ? next.slice(next.length - MAX_CONSTRAINTS) : next;
   return { ...goal, constraints: kept, updatedAt: now };
+}
+
+/**
+ * 把新一轮消息带来的附件并入目标清单（用户中途补图 / 补文件）。
+ * 去重后仍按「超出丢最早」：最新的附件才是当前正在看的。
+ * 终态判断交给调用方（本函数只管数据合并，不做状态语义）。
+ * @param {object} goal
+ * @param {unknown} items
+ * @param {number} [now]
+ * @returns {object} 无变化时返回原引用（调用方据此跳过落盘）
+ */
+export function mergeGoalAttachments(goal, items, now = Date.now()) {
+  if (!goal) return goal;
+  const incoming = normalizeGoalAttachments(items);
+  if (incoming.length === 0) return goal;
+  const existing = normalizeGoalAttachments(goal.attachments);
+  const merged = normalizeGoalAttachments([...existing, ...incoming]);
+  const unchanged = merged.length === existing.length
+    && merged.every((a, i) => a.kind === existing[i].kind && a.name === existing[i].name);
+  return unchanged ? goal : { ...goal, attachments: merged, updatedAt: now };
 }
 
 /**
@@ -508,6 +587,19 @@ export function buildGoalAnchorText(goal, opts = {}) {
   if (goal.constraints.length > 0) {
     lines.push('Additional user constraints (newer wins on conflict):');
     goal.constraints.slice(-maxCriteria).forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+  }
+  // 附件清单：目标文本只收用户原话，图片/文件/网页/知识库全在消息里。
+  // 而它们会衰减（图片从第 2 次请求起被剥离，正文会随压缩变摘要），
+  // 所以锚点必须点名「这些不在目标里、也回不来」，并要求先转成笔记。
+  const attachments = normalizeGoalAttachments(goal.attachments);
+  if (attachments.length > 0) {
+    lines.push('Attached material (it is NOT part of the objective text above, and it is NOT re-sent on later attempts):');
+    for (const a of attachments) {
+      lines.push(`  - ${a.kind}: ${a.name}${a.detail ? ` (${a.detail})` : ''} — ${ATTACHMENT_CAVEATS[a.kind]}`);
+    }
+    lines.push(
+      'Before your first tool call, write down what each of these tells you (working notes), then keep working from those notes: the attachments will not come back in later attempts. Never claim an attached item was inspected or verified unless you actually read it.'
+    );
   }
   lines.push(
     `Progress: attempt ${goal.turnsUsed + 1}/${goal.turnBudget}${goal.tokensUsed > 0 ? `, ~${goal.tokensUsed} tokens spent on evaluation` : ''}.`

@@ -34,6 +34,9 @@ import {
   buildGoalContinuationText,
   buildGoalMetaParts,
   GOAL_TURNS_LEFT_HINT,
+  MAX_ATTACHMENTS,
+  normalizeGoalAttachments,
+  mergeGoalAttachments,
 } from '../../src/shared/goal.js';
 
 const T0 = 1_700_000_000_000;
@@ -587,5 +590,95 @@ describe('目标条副行文案（把内部「轮」翻译成「次尝试」）'
     expect(buildGoalMetaParts({ turnsUsed: 2, turnBudget: 20, constraints: 'oops' }, t)).toEqual(['goal.turnsUsed:turns=2']);
     expect(buildGoalMetaParts({ turnsUsed: -5, turnBudget: 20 }, t)).toEqual([]);
     expect(buildGoalMetaParts({ turnsUsed: 2, turnBudget: 20 }, null)).toEqual([]);
+  });
+});
+
+describe('附件清单（目标只收用户原话，附件靠清单存活）', () => {
+  it('createGoal 只存清单不存内容，非法项一律丢弃', () => {
+    const goal = createGoal({
+      objective: '按这张图改按钮颜色',
+      now: T0,
+      attachments: [
+        { kind: 'image', name: '图片 1 张' },
+        { kind: 'file', name: 'spec.md', detail: 'inline text' },
+        { kind: 'unknown', name: 'x' },
+        { kind: 'page', name: '   ' },
+        null,
+      ],
+    });
+    expect(goal.attachments).toEqual([
+      { kind: 'image', name: '图片 1 张' },
+      { kind: 'file', name: 'spec.md', detail: 'inline text' },
+    ]);
+  });
+
+  it('超出上限丢最早的，名称与 detail 都要截断', () => {
+    const many = Array.from({ length: MAX_ATTACHMENTS + 3 }, (_, i) => ({ kind: 'file', name: `f${i}.md` }));
+    const out = normalizeGoalAttachments(many);
+    expect(out).toHaveLength(MAX_ATTACHMENTS);
+    expect(out[0].name).toBe('f3.md');
+    expect(out[out.length - 1].name).toBe(`f${MAX_ATTACHMENTS + 2}.md`);
+    const long = normalizeGoalAttachments([{ kind: 'file', name: 'x'.repeat(500), detail: 'd'.repeat(500) }])[0];
+    expect(long.name).toHaveLength(120);
+    expect(long.detail).toHaveLength(80);
+  });
+
+  it('去重按 kind|name：同名不同类各留一条', () => {
+    const out = normalizeGoalAttachments([
+      { kind: 'file', name: 'a.md' },
+      { kind: 'file', name: 'a.md' },
+      { kind: 'page', name: 'a.md' },
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('mergeGoalAttachments 累加不替换；无新增时返回原引用（不白写存储）', () => {
+    const goal = createGoal({ objective: 'x', now: T0, attachments: [{ kind: 'image', name: '图 1' }] });
+    const merged = mergeGoalAttachments(goal, [{ kind: 'file', name: 'b.md' }], T0);
+    expect(merged.attachments.map((a) => a.name)).toEqual(['图 1', 'b.md']);
+    expect(mergeGoalAttachments(merged, [{ kind: 'file', name: 'b.md' }], T0)).toBe(merged);
+    expect(mergeGoalAttachments(merged, [], T0)).toBe(merged);
+    expect(mergeGoalAttachments(null, [{ kind: 'file', name: 'b.md' }], T0)).toBeNull();
+  });
+
+  it('旧数据 / 脏数据归一成空数组，绝不崩', () => {
+    expect(normalizeGoal({ objective: 'x', status: 'active' }, T0).attachments).toEqual([]);
+    const dirty = normalizeGoal({ objective: 'x', status: 'active', attachments: 'oops' }, T0);
+    expect(dirty.attachments).toEqual([]);
+  });
+
+  it('锚点：纯文本目标不加附件段落（不给正常任务添噪）', () => {
+    const text = buildGoalAnchorText(createGoal({ objective: '把首页改成深色', now: T0 }));
+    expect(text).not.toContain('Attached material');
+  });
+
+  it('锚点：有附件才加段落，逐类点名衰减方式，并要求先转成笔记', () => {
+    const goal = createGoal({
+      objective: '按这张图改按钮颜色',
+      now: T0,
+      attachments: [
+        { kind: 'image', name: '图片 1 张' },
+        { kind: 'file', name: 'spec.md', detail: 'inline text' },
+        { kind: 'page', name: '产品页', detail: 'tab 12' },
+        { kind: 'knowledge', name: '产品手册' },
+      ],
+    });
+    const text = buildGoalAnchorText(goal);
+    expect(text).toContain('Attached material (it is NOT part of the objective text above');
+    expect(text).toContain('- image: 图片 1 张 — the actual image travels only with the first request');
+    expect(text).toContain('- file: spec.md (inline text)');
+    expect(text).toContain('- page: 产品页 (tab 12)');
+    expect(text).toContain('- knowledge: 产品手册');
+    expect(text).toContain('the attachments will not come back in later attempts');
+    // 目标正文必须还是用户原话，没被附件清单污染
+    expect(text).toContain('Objective: 按这张图改按钮颜色');
+  });
+
+  it('锚点：终态目标不产出（带附件也一样）', () => {
+    const goal = {
+      ...createGoal({ objective: 'x', now: T0, attachments: [{ kind: 'file', name: 'a.md' }] }),
+      status: GOAL_STATUS.ACHIEVED,
+    };
+    expect(buildGoalAnchorText(goal)).toBe('');
   });
 });

@@ -637,6 +637,7 @@ export default {
     turnsUsed: 'Attempted {turns} times',
     turnsLeft: '{turns} left',
     constraints: '+{count} more',
+    attachmentImage: '{count} image(s)',
     edit: 'Edit',
     pause: 'Pause',
     resume: 'Resume',

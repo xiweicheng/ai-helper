@@ -269,6 +269,44 @@ describe('applyGoalCommand：面板只表达意图，语义收在后台', () => 
     expect(again.constraints).toEqual(['顺便把字体调大']);
   });
 
+  it('set 给仍在推进的目标补附件：累加不替换，且不丢原有约束', async () => {
+    store.__resetGoalStoreForTests(fakeStorage());
+    await store.applyGoalCommand('s1', {
+      action: 'set',
+      objective: '按设计稿改登录页',
+      attachments: [{ kind: 'image', name: '图片 1 张' }],
+    });
+    const again = await store.applyGoalCommand('s1', {
+      action: 'set',
+      objective: '把按钮也改一下',
+      attachments: [{ kind: 'file', name: 'spec.md', detail: 'inline text' }],
+    });
+    expect(again.constraints).toEqual(['把按钮也改一下']);
+    expect(again.attachments).toEqual([
+      { kind: 'image', name: '图片 1 张' },
+      { kind: 'file', name: 'spec.md', detail: 'inline text' },
+    ]);
+    // 重复附件不重复落库
+    const third = await store.applyGoalCommand('s1', {
+      action: 'set',
+      objective: '再确认一遍',
+      attachments: [{ kind: 'image', name: '图片 1 张' }],
+    });
+    expect(third.attachments).toHaveLength(2);
+  });
+
+  it('replace 只换目标文本，不丢掉已记下的附件依赖', async () => {
+    store.__resetGoalStoreForTests(fakeStorage());
+    await store.applyGoalCommand('s1', {
+      action: 'set',
+      objective: '旧目标',
+      attachments: [{ kind: 'knowledge', name: '产品手册' }],
+    });
+    const replaced = await store.applyGoalCommand('s1', { action: 'replace', objective: '新目标' });
+    expect(replaced.objective).toBe('新目标');
+    expect(replaced.attachments).toEqual([{ kind: 'knowledge', name: '产品手册' }]);
+  });
+
   it('set 对已终态的目标以新文本重开（不往死目标里塞约束）', async () => {
     store.__resetGoalStoreForTests(fakeStorage());
     const first = await store.applyGoalCommand('s1', { action: 'set', objective: '旧任务' });

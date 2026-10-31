@@ -20,7 +20,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { enqueueFromInput } from './queue-runner.js';
-import { prepareGoalForSend } from './goal-panel.js';
+import { prepareGoalForSend, summarizeGoalAttachments } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
 // 从提取的子模块导入
@@ -1396,7 +1396,13 @@ export async function sendMessage(opts = {}) {
     // 不能在这里用 state.goalMode 做门控：那等于只支持开关入口，意图识别就白实现了。
     if (isActive) {
       try {
-        const goal = await prepareGoalForSend({ sessionId: mySessionId, text });
+        // 附件清单只传「有什么」：正文仍只走 finalText（objective 用原始 text），
+        // 但目标必须知道「这个任务依赖哪些看不见的东西」——图片从第 2 次 API 调用起就被剥掉。
+        const goal = await prepareGoalForSend({
+          sessionId: mySessionId,
+          text,
+          attachments: summarizeGoalAttachments(inputCtx),
+        });
         if (goal) apiParams.goal = goal;
       } catch (e) {
         logger.warn('[SidePanel] prepare goal for send failed:', e?.message);

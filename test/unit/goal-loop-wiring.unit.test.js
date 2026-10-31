@@ -289,3 +289,31 @@ describe('⑦ 无人值守：放行与澄清', () => {
     expect(body.indexOf('return new Promise(')).toBeGreaterThan(gate);
   });
 });
+
+describe('⑦ 附件清单接线（目标只收原话，附件靠清单存活）', () => {
+  const CHAT = readFileSync(join(process.cwd(), 'src/side_panel/chat-manager.js'), 'utf8');
+  const PANEL = readFileSync(join(process.cwd(), 'src/side_panel/goal-panel.js'), 'utf8');
+  const EVAL = readFileSync(join(process.cwd(), 'src/background/goal-evaluator.js'), 'utf8');
+
+  test('发送链路把附件清单随目标下发，objective 仍用原始 text', () => {
+    expect(CHAT).toMatch(/attachments:\s*summarizeGoalAttachments\(inputCtx\)/);
+    // 目标描述必须继续用原始 text：finalText 已拼上知识库/网页/文件正文，塞进去就污染了目标
+    expect(CHAT).toContain('sessionId: mySessionId,\n          text,');
+  });
+
+  test('面板只把附件压成清单（kind/name/detail），不搬运任何正文', () => {
+    expect(PANEL).toMatch(/export function summarizeGoalAttachments/);
+    for (const kind of ['image', 'file', 'page', 'knowledge']) {
+      expect(PANEL).toContain(`kind: '${kind}'`);
+    }
+    // detail 只允许短指针；把文件正文/知识库片段搬进目标会撑爆锚点
+    expect(PANEL).not.toMatch(/detail:[^\n]*\.text/);
+    expect(PANEL).not.toMatch(/detail:[^\n]*content/);
+  });
+
+  test('评估器知道目标依赖附件，且禁止靠收尾自述判达成', () => {
+    expect(EVAL).toMatch(/normalizeGoalAttachments\(goal\.attachments\)/);
+    expect(EVAL).toContain('you cannot inspect it');
+    expect(EVAL).toMatch(/missing evidence, never as proof of failure/);
+  });
+});

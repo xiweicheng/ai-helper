@@ -637,6 +637,7 @@ export default {
     turnsUsed: '已尝试 {turns} 次',
     turnsLeft: '还剩 {turns} 次',
     constraints: '+{count} 条补充',
+    attachmentImage: '图片 {count} 张',
     edit: '编辑',
     pause: '暂停',
     resume: '继续',

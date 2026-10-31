@@ -101,6 +101,43 @@ describe('prompt 里给了什么', () => {
   });
 });
 
+describe('附件依赖：评估器看不到，但不能假装见过', () => {
+  const withAttachments = {
+    ...{ objective: '按设计稿改按钮颜色', criteria: [], constraints: [], doneCriteria: [], turnBudget: 20, turnsUsed: 1, lastVerdict: null },
+    attachments: [
+      { kind: 'image', name: '图片 1 张' },
+      { kind: 'page', name: '产品页', detail: 'tab 12' },
+    ],
+  };
+
+  it('有附件时列出来，并声明「你一份都没拿到」', () => {
+    const prompt = buildGoalEvaluationPrompt(withAttachments, {});
+    expect(prompt).toContain('## Material this goal depends on (you cannot inspect it)');
+    expect(prompt).toContain('- image: 图片 1 张');
+    expect(prompt).toContain('- page: 产品页 (tab 12)');
+    expect(prompt).toContain('You were given none of this material');
+  });
+
+  it('要求把「没能核验的附件」写进 missing，而不是采信收尾自述', () => {
+    const prompt = buildGoalEvaluationPrompt(withAttachments, {});
+    expect(prompt).toContain('name the specific item in "missing"');
+    // 红线④：缺证据 ≠ 失败证据，不能被这段新文案推翻
+    expect(prompt).toContain('missing evidence, never as proof of failure');
+  });
+
+  it('没有附件时完全不出现这一段（不给纯文本目标添噪）', () => {
+    const plain = buildGoalEvaluationPrompt({ ...withAttachments, attachments: [] }, {});
+    expect(plain).not.toContain('Material this goal depends on');
+  });
+
+  it('脏 attachments（非数组 / 非法 kind）不炸，也不留半截段落', () => {
+    expect(buildGoalEvaluationPrompt({ ...withAttachments, attachments: 'oops' }, {}))
+      .not.toContain('Material this goal depends on');
+    expect(buildGoalEvaluationPrompt({ ...withAttachments, attachments: [{ kind: 'nope', name: 'x' }] }, {}))
+      .not.toContain('Material this goal depends on');
+  });
+});
+
 describe('客观取证的渲染红线', () => {
   it('available:false 渲染成 UNVERIFIED，绝不写成 FAIL', () => {
     const text = formatObjectiveEvidence([
