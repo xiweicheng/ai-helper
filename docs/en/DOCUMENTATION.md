@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 37 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 38 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -187,6 +187,9 @@ ai-helper/
 │   │   ├── index.js                     # Entry: message routing, session mgmt, agent health
 │   │   ├── react-loop.js               # ReAct inference loop (core, with 2-tier reflection + tool observation hint)
 │   │   ├── react-reflection.js         # Reflection system (post / sub-task) + tool observation hint rules
+│   │   ├── goal-evaluator.js           # Goal-mode evaluator (temperature-0 short call, JSON verdict only)
+│   │   ├── goal-store.js               # Goal registry (in-memory authority + sessionGoals mirror)
+│   │   ├── checkpoint-state.js         # Shared read/write of the resume scene (RESUME_STATE_KEYS / buildResumeState)
 │   │   ├── context-summarizer.js       # Incremental context summarization (long chats)
 │   │   ├── context-compactor.js        # Manual context compaction (history digest)
 │   │   ├── tool-executor.js            # Tool registration, execution dispatch, MCP injection
@@ -272,6 +275,8 @@ ai-helper/
 │   │   ├── todo-model.js               # Todo pure logic (grouping, date math, priority/link normalization, Markdown digest)
 │   │   ├── todo-manager.js             # Todo orchestration (optimistic update, serialized writes, rollback)
 │   │   ├── todo-panel.js               # Todo floating panel UI (two tabs, status menu, priority, links, drag sort)
+│   │   ├── goal-panel.js               # Goal panel (🎯 chip, goal bar, intent hint, GOAL_UPDATE listener)
+│   │   ├── session-dock.js             # Running-session dock (three-state chips, +N rollup, stale downgrade)
 │   │   ├── version-info.js             # Version info dialog (version/tag/commit)
 │   │   ├── context-indicator.js        # Context usage indicator + manual compaction entry
 │   │   ├── completion-feedback.js      # Completion feedback (sound/confetti/notification)
@@ -306,6 +311,8 @@ ai-helper/
 │   └── shared/                          # Shared modules
 │       ├── tools.js                     # Tool categories, temperature presets
 │       ├── utils.js                     # Shared utility functions (makeResult, etc.)
+│       ├── goal.js                      # Goal model + state machine (applyGoalVerdict as sole transition) + anchor text
+│       ├── goal-intent.js               # Goal intent detection (zero-token deterministic regex)
 │       ├── token-counter.js            # Token counting, budget mgmt, context compression, summaries
 │       ├── context-usage.js            # Context usage calc (same source as actual sending)
 │       ├── compaction-prompt.js        # Manual compaction summary prompt template
@@ -391,6 +398,7 @@ The project uses the ReAct (Reasoning + Acting) pattern as its core inference en
 14. **Cancel Control**: Users can cancel the inference loop at any time, isolated per session
 15. **SW Restart Recovery**: Keepalive ports monitor Service Worker silent restarts, auto-notifying Side Panel to recover. Background task state persisted to `chrome.storage.session`
 16. **Checkpoint**: A checkpoint is auto-saved after each inference round, supporting resume after interruption
+17. **Goal-mode continuation (optional)**: with 🎯 lit, each closing attempt first passes an independent evaluation (temperature-0 short call returning one JSON verdict); an unmet verdict appends a correction instruction and continues to the next round until met, judged impossible, or out of budget (see "38. Goal Mode")
 
 ### 4. Reflection System (Multi-Tier Quality Assurance)
 
@@ -732,7 +740,10 @@ With the Agent connected, files the AI produces via scripts are correctly surfac
 Speak instead of typing — and the **audio never leaves your machine**. Recognition runs an ONNX model inside the local Agent service, so no cloud ASR and no extra API key are needed:
 
 - **Three-part gating**: dependencies (`sherpa-onnx-node`) × models (`online` streaming / `offline` finalize) × the master switch. Only when all three are ready does 🎤 appear at the right of the input box; if any is missing the button is hidden outright rather than failing after a click.
-- **Two tempos**: a streaming draft appears as you speak (throttled to 150ms server-side, with VAD committing sentence ends as stable segments); once you stop, the offline model re-transcribes the whole clip to add punctuation and normalize numbers.
+- **Three pacing modes**: Options → Voice → Recognition pacing offers **Instant / Balanced (default) / Precise**. Instant only shows the streaming draft (the behavior before sentence refinement), Balanced refines sentence by sentence as you speak, and Precise drops the character-level draft so text appears when a sentence ends. A change applies to the next recording.
+- **Sentence-level live refinement**: the Agent splits sentences with `isEndpoint` plus RMS silence (pure JS, avoiding the silero VAD crash) and once a sentence passes 12s, looks back over the last 2s for the quietest frame as the cut point, then refines each sentence with the offline model and writes it back. The draft on the client is a **sentence table**: replacement is per sentence, and **manual edits lock only that sentence**, so the rest keep refining.
+- **Release still re-transcribes for authority**: finalization re-runs the whole clip to correct audio-boundary error, but sentence boundaries come from the per-sentence pass — measured, full re-transcription is marginally better on words (~0.5pp) yet produces noticeably fewer periods.
+- **Refinement never delays finalization**: when the queue is full, backpressure drops only sentences that have not started; releasing the key aborts remaining refinement jobs (`shouldSkip`) so the final frame never waits behind them.
 - **Never lose the tail**: `Alt+V` wraps up even when focus sits on the page, and `Esc` cancels. The microphone grant must happen in a tab (Chromium will not prompt from a side panel), so the Voice tab offers a "Grant" shortcut.
 - **Single-key triggers (opt-in)**: right Alt and right Ctrl can each be enabled under Options → Voice → Quick trigger (both off by default; with both ticked either one fires), while `Alt+V` always works and is unaffected. "Press, then release" counts as one action, and pressing another key while held voids it, so AltGr layouts never misfire. Active in both the side panel and the page, and effective immediately after ticking.
 - **Pickable microphone**: Options → Voice → Input device lists every recording device on the machine (Chrome's `default` / `communications` pseudo-devices are filtered out) and defaults to "Follow system default"; a concrete choice captures with `deviceId: { exact }`, and a newly plugged USB / Bluetooth microphone shows up after "Refresh list" or on its own via the `devicechange` listener. If the chosen device disappears, capture falls back to the system default and says so on the recorder strip instead of switching silently. When the list cannot be read it never sits on "Reading device list…": enumeration has a 2.5 s timeout, and the strip tells apart a timeout, an unsupported environment and a missing grant (the latter offers an inline "Grant microphone" action); if enumeration stalls although already granted, the audio service is woken up once and retried.
@@ -798,6 +809,22 @@ Too many open sessions create two kinds of noise, each with its own answer: sess
 - **User-bubble legibility**: the bubble body is white text on `--brand-fill` (the brand *solid fill* token, contracted to keep white text AA) rather than `--brand-500`, measuring **5.59:1 light / 4.77:1 dark** — both past WCAG AA. Its highlight pulse uses a ripple-only variant, because the generic pulse's `inset` glow would lighten the layer under the text below AA mid-animation. `scripts/theme-contrast-check.py` gates that invariant for both the light and dark blocks.
 
 ---
+
+### 38. Goal Mode: drive a task to completion unattended
+
+An ordinary task is ask-once / answer-once. Goal mode turns one task into a session-level **goal** that the engine keeps pushing forward on its own, so you do not have to confirm every step.
+
+- **Entry and states**: the 🎯 chip sits to the right of the Tools toggle in the input area (deliberately placed after capability selection — do not move it back). Once lit, the next message you send becomes the goal. The goal bar shows the state (active / paused / achieved / unmet / budget-limited / cleared), `Tried N times` (plus `N left` once five or fewer remain), the attachments the goal depends on and the number of added constraints, with Edit / Pause / Resume / Clear actions.
+- **Independent evaluation, no second model**: after the model declares completion, one **short standalone call** goes to the current session model (temperature 0, `maxTokens` 600, **no tools**) returning a single JSON verdict — `met` / `unmet` / `impossible`. On `unmet` the closing statement is committed to history, a correction instruction is appended, and the loop continues (**the checkpoint is never cleared**); on `met` the goal becomes "achieved"; on `impossible` it is reported honestly as "unmet" and never dressed up as success.
+- **Four gates**: turns (finalize attempts are fixed at 20; a "turn" is one closing attempt, not one API round trip — hitting the cap and pressing Resume grants another 20), time (follows the overall loop timeout instead of keeping a second clock), stall (three consecutive unmet verdicts with no successful tool call → pause), and loop detection (reuses `loop-detector`). An evaluator failure counts as unmet but **does not burn the turn budget**; two consecutive failures pause outright, so a broken evaluator can never keep re-running forever.
+- **Approval boundary for unattended runs**: starting a goal pre-grants task-level approval (equivalent to the user clicking "allow for this task"), shown as a "🔓 sensitive actions auto-approved" badge on the goal bar that can be revoked with one click. Agent-side denylisted commands are refused regardless of any switch, and the refusal tells the model that retrying, rewording, splitting or piping will not pass. `clarify_question` is **removed from the tool set**: a dialog would only sit until it times out, so the model must decide on ambiguity itself and record the decision in its working notes.
+- **Approval only comes from the panel switch**: goals created by intent detection (`createdBy='intent'`) always have `autoApprove: false` — otherwise a prompt injection on a page could dismantle the user's safety gate. Pausing, clearing or revoking approval withdraws the grant immediately, and a `finally` block sweeps it again. Pause stops the *next attempt*: while 🎯 is still lit, sending a message revives the goal; with the chip off you must press Resume.
+- **Attachments are remembered**: the goal keeps a dependency list (images / files / pages / knowledge bases, at most 12 entries, names only — never the content). The anchor names each kind and explains why it decays, and asks the model to write the list into notes before starting; the evaluator is likewise told to list unverified attachments under `missing` rather than trusting the closing statement. Images pasted straight into the chat stay re-readable from round 2 via `read_image(file="chat-images", image=N)`.
+- **Semantics and persistence**: further messages in the session **accumulate constraints** instead of replacing the goal (only an explicit Edit replaces it, and the attachment dependencies survive). Three layers: the checkpoint scene (authoritative for resume, peers with `taskState` / `notesState`) → the `chrome.storage.local.sessionGoals` mirror (300ms debounce, last 50 sessions only, best-effort flush in `onSuspend`, hydrated on cold start) → the panel snapshot. With the master switch off the background refuses to create goals and says why, so "the switch is off but a goal was still created" cannot happen.
+- **Objective evidence**: when the goal carries `doneCriteria` they are handed straight to the completion verifier (DOM assertions plus command exit codes) and the hard evidence goes into the evaluation prompt; missing evidence is **never** converted into "not achieved" and can only be reported as pending confirmation.
+- **Visible in the execution log**: every evaluation lands in that session's execution log as `nodeType:'reflection'` with a custom node name (🎯 goal evaluation 3/20) — no renderer changes needed.
+- **Only two switches**: the master switch (the single whole-pipeline rollback) and intent detection (a zero-token deterministic regex that recognizes "run in goal mode until done" and turns the goal on for that round, with a revocable toast; weak phrasings only hint and never turn it on for you). Turn budget, time budget, stall threshold, evaluator failure cap and objective verification are fixed internal defaults — users cannot predict the consequences of changing them and a wrong value fails silently.
+- **Deliberately not done**: tiered confirmation dialogs (a goal exists precisely because nobody is watching — a dialog would just time out into a refusal, and real danger is refused by the denylist), cross-session goal ownership and alarm-driven overnight resumption (highest risk, parked for P2), and a `/goal` slash command (`/` is already taken by the prompt picker).
 
 ## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
 
@@ -1156,6 +1183,15 @@ Note: user clarification time does not count toward the loop timeout (timer paus
 
 > The reflection and completion-verification sub-switches both live inside the same ReAct tab panel, toggled via `display`-based visibility; the tool-level reflection toggle has been removed — tool-result quality feedback is now handled automatically by the zero-cost inline "Tool Observation Hint" rule, with no configuration needed.
 
+### Goal Mode Settings (inside the ReAct tab, two switches)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| Goal mode | Off | Master switch; when on, 🎯 appears in the input area. With it off the engine neither evaluates nor re-runs and the background refuses to create goals; stored goal scenes are kept and resume once you turn it back on |
+| Intent detection | On | Deterministic pre-send regex (zero tokens): saying "run this in goal mode" turns the goal on for the round with a revocable toast; **goals detected this way never auto-approve sensitive actions** |
+
+Note: turn budget (20), time budget (follows the overall loop timeout), stall threshold (3), evaluator failure cap (2) and objective verification (always on) are fixed internal defaults with no UI — users cannot predict the consequences of changing them and a wrong value fails silently. Pressing Resume after hitting the cap grants another 20 attempts, so the runtime window already exists.
+
 ### Voice (Local STT) Settings (the "Voice" tab)
 
 Only expands when the Agent side is available. All three conditions (dependencies × models × switch) must hold before the side panel shows 🎤.
@@ -1166,6 +1202,8 @@ Only expands when the Agent side is available. All three conditions (dependencie
 | Recognition language | Auto | `auto` / Chinese / English / Japanese / Korean / Cantonese |
 | Streaming model | Auto-select | Produces the live draft while you speak (the `online` pack) |
 | Finalize model | Auto-select | Re-transcribes the whole clip after you stop (the `offline` pack; determines punctuation and number normalization quality) |
+| Recognition pacing | Balanced | Instant / Balanced / Precise: Instant shows only the streaming draft, Balanced refines sentence by sentence while you speak, Precise emits text when a sentence ends; applies to the next recording |
+| Input device | Follow system default | Any recording device on the machine can be picked; if the chosen device disappears, capture falls back to the system default and says so once on the recorder strip |
 | Idle unload | 10 min | How long an idle engine lives before memory is released; `0` disables unloading |
 | Dependency status | — | Shows the `sherpa-onnx-node` version and offers one-click install when missing |
 | Microphone grant | — | "Grant" opens a tab to approve once (no prompt is possible from a side panel) |
@@ -1228,6 +1266,7 @@ Proxy getter/setter delegates to top-level `let` bindings, ensuring all modules 
 | Extension Config | `chrome.storage.local` | API Key, ReAct params, models, image recognition, UI theme (`appTheme`), etc. |
 | Chat Sessions | IndexedDB (`ai-helper-db`) | Active sessions + archived sessions |
 | Sidebar Todos | IndexedDB (`todos`) | Title/status/note/due date/order/priority/link/previous status |
+| Session Goals | `chrome.storage.local.sessionGoals` + the checkpoint scene | Goal text/progress/budget/approval state; the checkpoint is authoritative for resume, the mirror hydrates cold starts (last 50 sessions) |
 | UI Prototypes | IndexedDB | Associated by session |
 | Toolbar Config | `chrome.storage.local` | Tool list, ordering, domain blocklist |
 | Input History | `chrome.storage.local` | Auto-dedup management |

@@ -16,6 +16,8 @@ background（asr-client.js）
    ▼
 代理端（agent/src/asr/）
    ├─ session.js  流式会话：acceptWaveform → partial 草稿（节流 150ms）
+   │              切句（endpoint + RMS 静音）→ 逐句送 offline 精修 → sentence 帧回填
+   ├─ sentence-splitter.js  切句判定：静音阈值 / 单句 12s 上限回溯 2s 找最低能量帧
    ├─ transcribe.js  松手定稿：WAV → VAD 切段 → SenseVoice 逐段解码 → 拼接
    └─ engine.js  sherpa-onnx-node 懒加载单例（online / offline / vad 三类）
 ```
@@ -354,8 +356,18 @@ cd ~/asr-build && unzip -q asr-models.zip
   - 麦克风未授权 → 条内提示「麦克风未授权」并给出「去授权」按钮（直达配置页麦克风小节）；
     条内不再讲「点地址栏图标」——扩展页面根本没有地址栏锁图标。
   - 代理断开 → 立即结束采集，**已识别出来的文字保留**，条内提示「连接中断」。
-- **草稿与手改**：草稿直接写进输入框（textarea 无法局部着色），靠录音条 + 输入框脉冲
-  描边表达「未定稿」。录音中你手动改了输入框 → 后续不再替换草稿，降级为「只追加」。
+- **识别节奏（三档）**：配置页「语音 → 识别节奏」可选 **即时 / 均衡（默认）/ 精确**，改完下一次录音生效。
+  | 档位 | 行为 |
+  |---|---|
+  | 即时 | 只出流式草稿，不做逐句精修（= 引入句级精修之前的行为） |
+  | 均衡 | 边说边出草稿，每句话说完送去离线模型精修并回填那一句 |
+  | 精确 | 不出逐字草稿，每句说完才出文本；宁可慢一点，要更准 |
+  无论哪一档，松手定稿仍会整段重转做权威校正（补标点、规整数字），断句沿用逐句结果。
+- **草稿与手改**：草稿写进输入框（textarea 无法局部着色），靠录音条 + 输入框脉冲
+  描边表达「未定稿」；服务端侧草稿是**句表**，精修按句 id 回填。录音中你手动改了输入框 →
+  那一句被锁定，后续精修不再覆盖它，其余句子照常精修。
+- **精修降级**：队列满时只丢尚未开始的排队句；连续 3 次精修过慢、或没有 offline 模型、RSS 超阈值时，
+  服务端下发一帧「本会话关闭精修」，整场退回流式草稿，不弹错、不中断录音。
 - **识别语言**：配置页下拉写的是「自动识别（中英混说）/ 中文 / 英文 / 日语 / 韩语 / 粤语」，
   协议侧仍传 `auto|zh|en|ja|ko|yue` —— 文案是给人看的，编码只用于接口，不需要用户理解。
 - **回收**：录音中切标签页 / 切会话 / 关面板 → 停止采集并取消；代理端会话 30s 无帧自动释放。
@@ -421,7 +433,8 @@ ws://127.0.0.1:<port>/ws/asr/<sessionId>?token=<token>
   "language": "auto",
   "streamingModelId": null,
   "offlineModelId": null,
-  "idleUnloadMs": 300000
+  "idleUnloadMs": 300000,
+  "asrPacing": "balanced"
 }
 ```
 
@@ -435,6 +448,8 @@ ws://127.0.0.1:<port>/ws/asr/<sessionId>?token=<token>
 | `AI_HELPER_ASR_HF_ENDPOINT` | `https://hf-mirror.com` | 模型下载端点（自建代理 / 官方站点，仅接受 http/https） |
 
 `language` 取值：`auto` / `zh` / `en` / `ja` / `ko` / `yue`（非法值回落 `auto`）。
+
+`asrPacing` 取值：`instant` / `balanced` / `precise`（非法值回落 `balanced`）；`instant` 不做逐句精修，`balanced` 边说边逐句精修，`precise` 不出逐字草稿、每句说完才出文本。
 
 ## 8. 验证
 

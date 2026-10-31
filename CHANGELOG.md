@@ -4,6 +4,19 @@
 
 ## 2026-10-31
 
+### 文档全量对账：v2.5.2 → v2.7.0 的能力同步（README / DOCUMENTATION / Wiki / 文档站 / 作品介绍）
+
+> 来源：用户要求「把最近做的一批功能（待办、目标模式、语音改造、推理循环配置调整）跟所有文档比对一遍，没同步的补上，改完提交并推送各远端」。
+
+- **补记的功能缺口**：语音句级即时精修与三档识别节奏此前从未进 CHANGELOG，本次一并补记。
+- **`docs/zh/DOCUMENTATION.md` / `docs/en/DOCUMENTATION.md`**：新增「38. 目标模式（Goal）」整节与「目标模式配置（并入推理 Tab，两项开关）」；ReAct 章节补目标模式续跑；语音章节由「两种节奏」改为三档节奏 + 句级精修 + 松手权威校正 + 精修不拖慢定稿；项目结构树补 `goal-evaluator.js` / `goal-store.js` / `checkpoint-state.js` / `goal-panel.js` / `session-dock.js` / `goal.js` / `goal-intent.js`；配置表补「识别节奏 / 输入设备」，持久化表补「会话目标（Goal）」；功能总数 37 → 38。
+- **`README.md` / `README.zh-CN.md`**：新增目标模式与侧边栏待办两条卖点，语音卖点改为逐句即时精修 + 三档节奏 + 麦克风可选。
+- **GitHub Wiki（`.wiki/`）**：Home 版本徽标 2.0.0 → 2.7.0、能力数改为 37；Core-Features 新增待办清单、会话归档与执行中停靠条、目标模式三节，语音改为三档节奏 + 句级精修；Configuration 新增目标模式两开关表、删掉已移除的「工具级反思」改为「工具观察提示」、语音补识别节奏与输入设备；Voice-Input-Local-STT 补三档节奏表；FAQ 新增「目标模式为什么会停下来」「识别节奏怎么选」两条。
+- **文档站（`docs/wiki`）**：RepoWiki 源页（语音输入 / 流式会话与定稿引擎 / ReAct 推理循环 / 用户界面系统 / 项目概览与快速开始）同步后重新构建，页面数与校验全过。
+- **附属文档**：`docs/AI-Helper-作品介绍文档.md` 新增 3.14 目标模式、3.15 待办清单，语音场景与创新点补句级精修，功能完成度表补三行并把版本口径改到 v2.7.0；`docs/Voice-Input-Local-STT.md` 补三档节奏、句表草稿与 `asrPacing` 配置项。
+
+**说明**：`.wiki/` 为独立仓库，需单独提交并推送；Gitee Wiki 由 `scripts/sync-wiki-to-gitee.sh` 从 GitHub Wiki 镜像。
+
 ### Goal 目标模式：黑名单拒绝要「拒绝得彻底」
 
 > 来源：讨论「目标模式中间要不要停下来让人确认」。结论是**不停、不干预**——目标模式的前提就是用户不在场，弹窗只会超时变拒绝，反而把任务卡死；真危险由黑名单硬拒。但「拒绝」本身有个真实缺口。
@@ -322,6 +335,19 @@
 - 文档：`.wiki/Configuration.md` / `Configuration-EN.md` 的 ReAct 配置表同步——原本还写着「最大循环次数 100 / 整体循环超时 30 分钟」，已整体校正并注明「整体循环超时是唯一可调的超时项」。
 
 ## 2026-10-30
+
+### 语音输入：句级即时精修 + 三档识别节奏（补记，功能落在本日）
+
+> 来源：用户反馈「一边说一边出字很好，但松手前的草稿没标点、数字也不规整，跟定稿差别太大；等松手才变好，中间那段像在骗人」。方向定为「边说边把每句话修好」，而不是加快整段重转。
+
+- **切句在前端之外做**：`agent/src/asr/sentence-splitter.js` 用 `isEndpoint` + RMS 静音阈值（`SILENCE_RMS=0.006`、`SILENCE_FRAMES=3`）切句，纯 JS 实现，绕开 silero VAD 在部分平台的崩溃；单句超过 `MAX_SENTENCE_MS=12000` 时回溯最近 `LOOKBACK_MS=2000` 找能量最低帧兜底切分。纯静音尾巴不切句——否则白占一个句 id 与一次串行队列位，还可能把用户正在改的开放句锁丢。
+- **帧协议新增两帧**：`{type:'sentence',id,draft,refined}` 先占位后回填（同 id 覆盖），`{type:'refine',enabled:false,reason}` 通知本会话关闭精修；`partial` 增加 `open` 字段，前端只改「尚未切句」那一段。
+- **草稿改句表，手改只锁那一句**：此前录音中手改输入框会让后续草稿降级成「只追加」；现在按句 id 替换，用户改过的那一句加锁，其余句子照常精修。
+- **三档识别节奏**：`SUPPORTED_PACING=['instant','balanced','precise']`，默认 `balanced`；`instant` 不做精修（等同引入前行为）、`balanced` 边说边精修、`precise` 不出逐字草稿、每句说完才出文本。配置落 `asr-config.json` 的 `asrPacing`，非法值回落默认档，改完下一次录音生效。
+- **不拖慢定稿**：队列上限 `MAX_PENDING_REFINE=3`，背压只丢尚未开始的排队句；松手时 `refineAborted` 中止剩余任务（`runOfflineTask` 支持 `shouldSkip`），final 帧不排队等精修。连续 `REFINE_SLOW_STREAK=3` 次精修过慢自动降回流式草稿，不弹错。
+- **松手仍是权威校正**：定稿仍用整段音频重转一遍，但断句沿用逐句结果——实测整段重转字词略好（约 0.5pp），句号却明显偏少。
+
+**验证**：句级精修契约守卫 + 真机探针（含变异验证）；定向语音测试全绿；`npm run build:silent` → `BUILD_SUCCESS`。
 
 ### 推理循环预算「软着陆」+ 保险丝放宽：撞线不再杀任务，交还「部分完成 + 缺项」等用户点续跑
 
