@@ -67,6 +67,24 @@ describe('语音输入区块的裁剪规则', () => {
     expect(host).toContain('position: relative');
     expect(host).toMatch(/z-index:\s*[1-9]/);
   });
+
+  // 上一条规则自己引入的回归（真浏览器探针 _asr-device-overlay.mjs 才发现）：它给三个承载浮层的
+  // 节点发了同一个 z-index:1，而 #asrDeviceSection 与 #asrShortcutSection 是同级兄弟 —— z-index 相同
+  // 时平局按 DOM 顺序判，后面的「快捷触发」压在前面的「输入设备」之上，设备浮层的 z-index:1000 又被
+  // 关在 #asrDeviceSection 自建的层叠上下文里出不去。实测展开设备下拉后 7 项里 6 项点不到，
+  // 等于只能「跟随系统默认」、选不了麦克风。
+  // 契约：抬层必须**条件化**（谁开着浮层谁抬），且抬的层要高于兄弟小节的 1。
+  test('展开中的浮层所在小节临时抬层，修同级兄弟平局反压', () => {
+    const lift = block('#asrSectionContent:has(.model-dropdown.show),\n#asrDeviceSection:has(.model-dropdown.show),\n#asrShortcutSection:has(.model-dropdown.show) {');
+    const z = Number((lift.match(/z-index:\s*(\d+)/) || [])[1]);
+    expect(z, '抬层值必须高于兄弟小节的 z-index:1').toBeGreaterThan(1);
+    // 必须挂在 .show 上：写成常驻高 z-index 会在收起后反向遮挡后续小节
+    expect(lift).toMatch(/:has\(\.model-dropdown\.show\)/);
+    // 三个承载浮层的节点都要覆盖到，漏一个就还是会复现
+    ['#asrSectionContent', '#asrDeviceSection', '#asrShortcutSection'].forEach((sel) => {
+      expect(lift, `抬层规则缺少 ${sel}`).toContain(sel);
+    });
+  });
 });
 
 describe('识别语言下拉与「界面语言」下拉同构', () => {

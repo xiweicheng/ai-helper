@@ -1080,7 +1080,6 @@ export default {
     asrCapabilityLabel: '能力：',
     asrCapDraft: '流式草稿',
     asrCapFinal: '高精度定稿',
-    asrCapVad: '智能断句',
     asrInstallBtn: '安装依赖',
     asrDepsInstalled: '依赖已安装',
     asrInstalling: '安装中…',

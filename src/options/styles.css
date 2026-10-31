@@ -4032,6 +4032,18 @@ textarea {
   position: relative;
   z-index: 1;
 }
+/* 上一条给三个承载浮层的节点发了同一个 z-index:1，于是引入新的遮挡：#asrDeviceSection 与
+   #asrShortcutSection 是同级兄弟，z-index 相同 → 平局按 DOM 顺序判，后面的「快捷触发」反而压在
+   前面的「输入设备」之上，而设备浮层的 z-index:1000 被关在 #asrDeviceSection 自建的层叠上下文里
+   出不去。真浏览器实测：展开设备下拉后 7 项里 6 项点不到（命中被 toolbox-section-title-row /
+   .asr-shortcut-item 抢走）—— 只剩「跟随系统默认」可选，等于选不了麦克风。
+   所以谁家里开着浮层，谁临时抬到 5；收起后 :has() 不再匹配、自动回落原层级，不会反向遮挡后续小节
+   （浮层互斥由 bindDropdownDismissOnce 保证：点开一个会收起其它）。 */
+#asrSectionContent:has(.model-dropdown.show),
+#asrDeviceSection:has(.model-dropdown.show),
+#asrShortcutSection:has(.model-dropdown.show) {
+  z-index: 5;
+}
 
 /* ---- 麦克风授权：与代理端状态无关的独立小节（跟随总开关显隐） ---- */
 .asr-mic-block {
