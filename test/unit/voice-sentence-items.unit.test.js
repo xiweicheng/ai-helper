@@ -125,6 +125,82 @@ describe('手改归位：只锁被改的那一句', () => {
   });
 });
 
+// 代码评审发现的四条交叉边界：手改（locked）与切句 / 定稿 / 光标 / 块外编辑撞在一起时，
+// 之前的用例都是「先切句、再手改」，反过来的顺序没有覆盖，而用户的实际操作两种都有。
+describe('手改与切句的交叉边界', () => {
+  it('用户改的正是「正在说」的那句：切句帧只认领 id，不得把字改回草稿', async () => {
+    await startRecording();
+
+    chromeCtx.port.emit({ type: 'partial', text: '它很好', open: '它很好' });
+    typeByUser('它非常好', 5);
+    expect(dom.input.value).toBe('它非常好');
+
+    // 这句说完了：draft 是模型在用户改字之前的旧结果，手改优先
+    chromeCtx.port.emit({ type: 'sentence', id: 1, draft: '它很好。', refined: null });
+    expect(dom.input.value).toBe('它非常好');
+
+    // 精修回来同样不能盖（locked 已随切句保留）
+    chromeCtx.port.emit({ type: 'sentence', id: 1, draft: '它很好。', refined: '他很好。' });
+    expect(dom.input.value).toBe('它非常好');
+
+    // 下一句照常另起一条
+    chromeCtx.port.emit({ type: 'partial', text: '它很好。第二句', open: '第二句' });
+    expect(dom.input.value).toBe('它非常好第二句');
+  });
+
+  it('整段接管不得抹掉用户手改的句子', async () => {
+    await startRecording();
+
+    chromeCtx.port.emit({ type: 'partial', text: '它很好', open: '它很好' });
+    chromeCtx.port.emit({ type: 'sentence', id: 1, draft: '它很好。', refined: null });
+    chromeCtx.port.emit({ type: 'partial', text: '它很好。第二', open: '第二' });
+    typeByUser('它非常好。第二', 6);
+    expect(dom.input.value).toBe('它非常好。第二');
+
+    // 整段把两句串成一句（去标点后长度不等 -> 走 takeAll）：手改句的字必须留住
+    chromeCtx.port.emit({
+      type: 'final',
+      text: '它很好第二。',
+      fallback: false,
+      texts: ['它很好。', '第二。'],
+    });
+    expect(dom.input.value).toBe('它非常好。第二');
+  });
+
+  it('草稿块之前删字：不得把块首的字截掉并误锁句', async () => {
+    // 输入框里已有内容，草稿块从光标处（第 2 个字之后）开始
+    dom.input.value = '开头';
+    dom.input.setSelectionRange(2, 2);
+    await startRecording();
+
+    chromeCtx.port.emit({ type: 'partial', text: '甲。', open: '甲。' });
+    expect(dom.input.value).toBe('开头甲。');
+
+    // 用户删掉块前一个字：块内容一个字都没动
+    typeByUser('开甲。', 1);
+    expect(dom.input.value).toBe('开甲。');
+
+    // 块内容没被误改：这句仍是「未手改」的草稿，切句与精修都必须照常生效
+    // （老实现会把块首截成「。」并误锁，后续整句都改不动了）
+    chromeCtx.port.emit({ type: 'sentence', id: 1, draft: '甲。', refined: null });
+    chromeCtx.port.emit({ type: 'sentence', id: 1, draft: '甲。', refined: '甲呀。' });
+    expect(dom.input.value).toBe('开甲呀。');
+  });
+
+  it('光标停在草稿块中间：partial 刷新不得把光标拽到块尾', async () => {
+    await startRecording();
+
+    chromeCtx.port.emit({ type: 'partial', text: '第一句', open: '第一句' });
+    expect(dom.input.value).toBe('第一句');
+
+    // 用户点进第 2 个字后面准备改字（还没敲键，所以还没锁定）
+    dom.input.setSelectionRange(1, 1);
+    chromeCtx.port.emit({ type: 'partial', text: '第一句第二', open: '第一句第二' });
+    expect(dom.input.value).toBe('第一句第二');
+    expect(dom.input.selectionStart).toBe(1);
+  });
+});
+
 describe('final：字词取整段、断句取逐句', () => {
   it('差异只有一个字：只缝那个字，句号位置不动', async () => {
     await startRecording();

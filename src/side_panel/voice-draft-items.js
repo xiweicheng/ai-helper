@@ -144,9 +144,15 @@ export function mergeRefined(items, finalText) {
   const b = stripPunct(final);
   if (a === b) return { items, changed: 0, takeAll: false };
 
-  // 差异超阈值：逐句结果漏句/串句，整段接管（lock 句也丢，否则会重复）
+  // 差异超阈值：逐句结果漏句/串句，整段接管。
+  // 但用户手改过的句子（locked）是他本人的最终意愿，整段结果无法逐字对齐它 ——
+  // 推倒重建会把用户写的字一并抹掉（实测：「它非常好。第二」被整段结果改成「它很好第二。」），
+  // 宁可这一次不做字词补正，也不能丢用户的字。
   const diff = Math.abs(a.length - b.length) + countMismatch(a, b);
   if (diff > 2 || a.length !== b.length) {
+    if (items.some((i) => i && i.state === 'locked')) {
+      return { items, changed: 0, takeAll: false };
+    }
     const firstId = items[0] && typeof items[0].id === 'number' ? items[0].id : null;
     return { items: [{ id: firstId, text: final, state: 'refined' }], changed: 1, takeAll: true };
   }

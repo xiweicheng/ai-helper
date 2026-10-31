@@ -296,10 +296,31 @@ function markDirty() {
   if (!st.draft || !st.input) return;
   const expected = buildDraftText(st.draft.items);
   const full = st.input.value;
-  // 用户净增量：纯插入>0、纯删除<0。只有单处编辑时块尾 = start + expected.length + delta
-  const delta = full.length - s(st.appliedValue).length;
-  const from = Math.min(Math.max(0, st.draft.start), full.length);
-  const actual = full.slice(from, from + expected.length + delta);
+  const prev = s(st.appliedValue);
+  const start = st.draft.start;
+  const end = start + expected.length;
+
+  // 不能用「整框净增量」当块内增量：用户在块外编辑时，块尾 = start + 长度 + delta 不成立，
+  // 块后删字会把块尾截短，块前删字会把块首切掉（实测「开头甲。」删掉「头」→ 句表变成「。」，
+  // 首句被误锁，后续精修再也改不回来）。先用公共前缀/后缀定位这次编辑，再看它落在哪一侧。
+  let p = 0;
+  while (p < prev.length && p < full.length && prev[p] === full[p]) p += 1;
+  let q = 0;
+  const maxQ = Math.min(prev.length - p, full.length - p);
+  while (q < maxQ && prev[prev.length - 1 - q] === full[full.length - 1 - q]) q += 1;
+  const editFrom = p;
+  const editTo = prev.length - q;
+
+  if (editTo <= start) {
+    // 改动全在块之前（含紧贴块首的插入）：块内容不变，只平移块起点
+    st.draft.start = Math.max(0, start + (full.length - prev.length));
+    return;
+  }
+  if (editFrom > end) return; // 改动全在块之后（块尾续写仍有交集，交给 locateEdit 锁末句）
+
+  // 块内（含跨越块边界）：块的新内容 = 块起点 → 块尾（块尾之后那段未变后缀之前）
+  const tail = Math.max(0, prev.length - end);
+  const actual = full.slice(start, Math.max(start, full.length - tail));
   const r = locateEdit(st.draft.items, expected, actual);
   if (r.shift) st.draft.start += r.shift; // 块前插了字：草稿起点跟着挪
   if (r.lockedIds.length === 0) return; // 改动不在块内（尾巴追加）：草稿长度不变
@@ -362,13 +383,21 @@ function rewriteDraftBlock(force = false) {
   const nextText = buildDraftText(st.draft.items);
   if (!force && nextText === s(st.appliedText)) return;
   const caret = typeof input.selectionStart === 'number' ? input.selectionStart : undefined;
+  const blockStart = st.draft.start;
+  const blockEnd = blockStart + st.draft.len;
   const next = computeDraftEdit({
     value: input.value,
-    draft: { start: st.draft.start, len: st.draft.len },
+    draft: { start: blockStart, len: st.draft.len },
     text: nextText,
     caret,
     canReplace: st.draftSupported,
   });
+  // 替换模式下 computeDraftEdit 把光标放在新文本末尾。但用户此刻可能正把光标停在草稿块
+  // 中间（点进去还没敲键，所以还没 locked），每个 partial 都把光标拽到块尾会直接打断他 ——
+  // 落块内就保持原偏移（老实现走 appendOnlyDelta 时是保光标的，这是句表化后的回归）。
+  if (typeof caret === 'number' && caret > blockStart && caret < blockEnd) {
+    next.caret = blockStart + Math.min(caret - blockStart, nextText.length);
+  }
   st.draft.len = nextText.length;
   st.appliedText = nextText;
   writeInput(next.value, next.caret);
@@ -918,8 +947,9 @@ function finalizeText(text, opts = {}) {
   const texts = Array.isArray(opts.texts)
     ? opts.texts.filter((x) => typeof x === 'string' && x.trim())
     : [];
-  // 没有逐句帧（流式缺席/旧代理）：整段结果已按 texts 分好句，直接拿来当句表
-  if (texts.length > 1 && !st.draft.items.some((i) => i.id !== null)) {
+  // 没有逐句帧（流式缺席/旧代理）：整段结果已按 texts 分好句，直接拿来当句表。
+  // 但句表里已有用户手改（locked）时不能推倒重建 —— 那会把用户写的字一起换掉。
+  if (texts.length > 1 && !st.draft.items.some((i) => i.id !== null || i.state === 'locked')) {
     st.draft.items = texts.map((tx, i) => ({ id: i + 1, text: tx, state: 'refined' }));
   }
   // 句表全空（流式草稿一次都没出过）：定稿文本整个作为唯一一句，不能丢结果
@@ -980,9 +1010,14 @@ function onAgentEvent(evt) {
     let nextItems = items;
 
     if (!refined && openIdx >= 0) {
-      // 切句：开放句就地转正（id 由服务端给）；下一个 partial 会另起一条开放句
+      // 切句：开放句就地转正（id 由服务端给）；下一个 partial 会另起一条开放句。
+      // 这一句若已被用户手改（locked），只认领 id —— draft 是用户改字之前的模型结果，
+      // 盖上等于把用户的字改回去，而且会让迟到的精修把我们刚写成 draft 的这句再盖一次。
+      const openItem = items[openIdx];
       nextItems = items.map((i, k) => (k === openIdx
-        ? { id: evt.id, text: s(evt.draft) || i.text, state: 'draft' }
+        ? (openItem.state === 'locked'
+          ? { ...i, id: evt.id }
+          : { id: evt.id, text: s(evt.draft) || i.text, state: 'draft' })
         : i));
       st.openText = '';
     }
