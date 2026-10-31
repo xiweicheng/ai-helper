@@ -121,6 +121,7 @@ registerTranslations('zh', {
     copiedToClipboard: '已复制到剪贴板',
     copyFailed: '复制失败',
     commandExecDenied: '命令执行被拒绝',
+    commandDeniedNoRetry: '这类命令被安全策略永久拒绝：重试、换成 doas 之类的写法、拆成多条或加管道都不会通过。请改用其他方式完成目标。',
     bookmarksCount: '浏览器中共有 {total} 个书签，显示前 {shown} 个：',
     historyResultsCount: '找到 {count} 个匹配的访问记录：',
     chatResultsCount: '找到 {count} 条相关对话记录：',
@@ -344,6 +345,7 @@ registerTranslations('en', {
     copiedToClipboard: 'Copied to clipboard',
     copyFailed: 'Copy failed',
     commandExecDenied: 'Command execution denied',
+    commandDeniedNoRetry: 'This command is permanently blocked by the security policy: retrying it, rewording it (e.g. doas), splitting it into several commands, or piping it will not pass. Use a different approach to reach the goal.',
     bookmarksCount: 'Total {total} bookmarks in browser, showing first {shown}:',
     historyResultsCount: 'Found {count} matching visit records:',
     chatResultsCount: 'Found {count} relevant chat records:',
@@ -4566,6 +4568,24 @@ function commandDeniedResult(command, cwd, toolCallId) {
   };
 }
 
+/**
+ * 黑名单（deny）命令的标准结果。
+ *
+ * agent 端 checkCommand 里黑名单先于 force 判定，扩展端和模型都绕不过；这里除了透传
+ * 拒绝原因，还必须明确告诉模型「换写法也不会过」——模型最常见的反应是把同一条命令
+ * 拆开、把 sudo 换成 doas、或者加个管道再试一遍，撞的仍是同一堵墙，白烧轮数预算
+ * （目标模式下直接吃掉 turnBudget，严重时把整个目标拖到 budget_limited）。
+ * 这是「拒绝要生效得彻底」，不是给用户加确认——目标模式的前提就是无人值守，
+ * 弹窗拦不住任何东西，只会超时变拒绝。
+ * @param {string} [reason] agent 端给出的拒绝原因（含命中规则的细节）
+ * @param {string} toolCallId
+ * @returns {{success: boolean, level: string, error: string, content: string, tool_call_id: string}}
+ */
+function commandBlockedResult(reason, toolCallId) {
+  const message = `${reason || t('toolExec.commandExecDenied')} ${t('toolExec.commandDeniedNoRetry')}`;
+  return { success: false, level: 'deny', error: message, content: message, tool_call_id: toolCallId };
+}
+
 // ===== 插件端超时保险参数（决策权威在 Agent 端，此处只做外层兜底） =====
 export const EXEC_MAX_EXTENSIONS = 5;           // 与 agent 端 MAX_TIMEOUT_EXTENSIONS 对齐
 export const EXEC_TOTAL_BUDGET_CAP_MS = 600000; // 与 agent 端 TOTAL_BUDGET_CAP_MS 对齐
@@ -4634,7 +4654,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
     let initResult = await AgentClient.execCommand(command, cwd, effectiveForce, effectiveTimeout, sessionId);
     
     if (initResult.level === 'deny') {
-      return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
+      return commandBlockedResult(initResult.error, toolCallId);
     }
     if (!initResult.success && !initResult.level) {
       return { success: false, error: initResult.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
@@ -4649,7 +4669,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       effectiveForce = true;
       initResult = await AgentClient.execCommand(command, cwd, true, effectiveTimeout, sessionId);
       if (initResult.level === 'deny') {
-        return { success: false, error: initResult.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
+        return commandBlockedResult(initResult.error, toolCallId);
       }
       if (!initResult.success && !initResult.level) {
         return { success: false, error: initResult.error || t('toolExec.commandExecFailed'), tool_call_id: toolCallId };
@@ -5060,7 +5080,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
 function formatAgentExecResult(result, command, cwd, toolCallId) {
   // 黑名单拦截
   if (result.level === 'deny') {
-    return { success: false, error: result.error || t('toolExec.commandExecDenied'), level: 'deny', tool_call_id: toolCallId };
+    return commandBlockedResult(result.error, toolCallId);
   }
 
   // 网络/认证错误

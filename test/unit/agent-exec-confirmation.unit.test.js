@@ -346,6 +346,44 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     expect(AgentClient.execCommandWait).toHaveBeenCalledTimes(1);
   });
 
+  test('黑名单 deny：拒绝原因必须带「换写法也不会过」，且只初始化一次不再试', async () => {
+    vi.mocked(AgentClient.execCommand).mockResolvedValue({
+      success: false, level: 'deny', error: '命令被阻止：rm -rf /',
+    });
+
+    const result = await toolExecutor.executeAgentExecCommand(
+      { command: 'rm -rf /', force: true }, 'tc-deny', 's1');
+
+    expect(result.success).toBe(false);
+    expect(result.level).toBe('deny');
+    // agent 端命中原因要保留（用户/模型能看到撞了哪条规则）
+    expect(result.error).toContain('命令被阻止');
+    // 关键：明确告诉模型这条路永久不通，别换写法重试
+    expect(result.error).toContain('永久拒绝');
+    expect(result.error).toContain('改用其他方式');
+    // 拒绝就是终点：不得以任何形式再初始化第二次
+    expect(AgentClient.execCommand).toHaveBeenCalledTimes(1);
+    expect(AgentClient.execCommandWait).not.toHaveBeenCalled();
+  });
+
+  test('非流式路径 deny：同样带永久拒绝引导与可见内容', async () => {
+    configModule.getStoredConfig.mockResolvedValue(baseConfig({
+      streamConfig: { streamEnabled: false },
+    }));
+    vi.mocked(AgentClient.execCommand).mockResolvedValue({ success: true, level: 'allow' });
+    vi.mocked(AgentClient.execCommandWait).mockResolvedValue({
+      success: false, level: 'deny', error: '命令被阻止：sudo rm',
+    });
+
+    const result = await toolExecutor.executeAgentExecCommand(
+      { command: 'sudo rm -rf /tmp/x' }, 'tc-deny2', 's1');
+
+    expect(result.level).toBe('deny');
+    expect(result.error).toContain('永久拒绝');
+    // content 与 error 同源：面板/模型两侧看到的都是同一句，不会一边空白
+    expect(result.content).toBe(result.error);
+  });
+
   test('兜底文案不再含模型自我批准指令（不得出现 force: true 重试指引）', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
