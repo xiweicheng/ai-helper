@@ -943,9 +943,8 @@ export function syncQueueAutoCarryFields() {
 }
 
 /**
- * 同步目标模式子项的显隐与三个开关的「已启用/已停用」文案。
- * 与 reflection / completionVerification 同一套模式：总开关只收起子项，不碰它们的值，
- * 用户关回来时看到的还是上次填的预算，而不是被重置成默认 20 轮。
+ * 同步目标模式子项的显隐与开关的「已启用/已停用」文案。
+ * 与 reflection / completionVerification 同一套模式：总开关收起子项。
  */
 export function syncGoalFields() {
   const master = document.getElementById('goalEnabled');
@@ -953,22 +952,21 @@ export function syncGoalFields() {
   document.querySelectorAll('.goal-sub').forEach((el) => { el.style.display = show ? 'block' : 'none'; });
   const masterLabel = document.getElementById('goalEnabledLabel');
   if (masterLabel) masterLabel.textContent = show ? t('common.enabled') : t('common.disabled');
-  [['goalObjectiveEvidence', 'goalObjectiveEvidenceLabel'], ['goalIntentDetection', 'goalIntentDetectionLabel']].forEach(([id, labelId]) => {
-    const el = document.getElementById(id);
-    const label = document.getElementById(labelId);
-    if (label) label.textContent = el && el.checked ? t('common.enabled') : t('common.disabled');
-  });
+  const intentEl = document.getElementById('goalIntentDetection');
+  const intentLabel = document.getElementById('goalIntentDetectionLabel');
+  if (intentLabel) intentLabel.textContent = intentEl && intentEl.checked ? t('common.enabled') : t('common.disabled');
 }
 
 /**
- * 目标模式的三个布尔开关：切换即落盘。
- * 为什么只在这三个键上即时写：「关掉目标模式」必须当场生效，否则用户以为已关，
+ * 目标模式的布尔开关：切换即落盘。
+ * 为什么只在这两个键上即时写：「关掉目标模式」必须当场生效，否则用户以为已关，
  * 下一条消息却仍在目标模式里跑（与 networkAccessEnabled / completionVerificationRerunEnabled 同口径）。
- * 数字预算（turnBudget / stagnationLimit / …）仍只由 saveConfig 写：半填状态下
- * parseInt 会得到 NaN，而范围校验只在 saveConfig 里。
  * 必须「读回整份只翻一个键」：goalConfig 是按整份对象浅合并消费的，
- * 直接写 { enabled } 会把预算与阈值顶成 undefined。
- * @param {'enabled'|'objectiveEvidence'|'intentDetection'} field
+ * 直接写 { enabled } 会把其余字段顶成 undefined。
+ *
+ * 预算与阈值（turnBudget / timeBudgetMs / stagnationLimit / evaluatorFailureLimit /
+ * objectiveEvidence）不再开放给用户：这几项用户无法预判后果，改由 DEFAULT_GOAL_CONFIG 固定。
+ * @param {'enabled'|'intentDetection'} field
  * @param {boolean} value
  */
 export function persistGoalSwitch(field, value) {
@@ -1095,21 +1093,6 @@ export function loadConfig() {
     const goalCfg = Object.assign({}, DEFAULT_GOAL_CONFIG, result.goalConfig || {});
     const goalEnabledEl = document.getElementById('goalEnabled');
     if (goalEnabledEl) goalEnabledEl.checked = goalCfg.enabled !== false;
-    const goalTurnEl = document.getElementById('goalTurnBudget');
-    if (goalTurnEl) goalTurnEl.value = Number.isFinite(goalCfg.turnBudget) ? goalCfg.turnBudget : DEFAULT_GOAL_CONFIG.turnBudget;
-    const goalTimeEl = document.getElementById('goalTimeBudgetMin');
-    if (goalTimeEl) {
-      // 落库是 ms，UI 用分钟；0 保留为 0（语义 = 跟随整体循环超时，不是「没填」）
-      goalTimeEl.value = Number.isFinite(goalCfg.timeBudgetMs) && goalCfg.timeBudgetMs > 0
-        ? Math.round(goalCfg.timeBudgetMs / 60000)
-        : 0;
-    }
-    const goalStagEl = document.getElementById('goalStagnationLimit');
-    if (goalStagEl) goalStagEl.value = Number.isFinite(goalCfg.stagnationLimit) ? goalCfg.stagnationLimit : DEFAULT_GOAL_CONFIG.stagnationLimit;
-    const goalFailEl = document.getElementById('goalEvaluatorFailureLimit');
-    if (goalFailEl) goalFailEl.value = Number.isFinite(goalCfg.evaluatorFailureLimit) ? goalCfg.evaluatorFailureLimit : DEFAULT_GOAL_CONFIG.evaluatorFailureLimit;
-    const goalEvidenceEl = document.getElementById('goalObjectiveEvidence');
-    if (goalEvidenceEl) goalEvidenceEl.checked = goalCfg.objectiveEvidence !== false;
     const goalIntentEl = document.getElementById('goalIntentDetection');
     if (goalIntentEl) goalIntentEl.checked = goalCfg.intentDetection !== false;
     syncGoalFields();
@@ -1311,34 +1294,14 @@ export function saveConfig() {
   };
 
   // 获取目标模式（Goal）配置。以 DEFAULT_GOAL_CONFIG 打底再覆写，保证落库的永远是
-  // 字段齐全的一份：后台只做浅合并，存进残缺对象会把预算阈值变成 undefined
+  // 字段齐全的一份：后台只做浅合并，存进残缺对象会把预算阈值变成 undefined。
+  // 只开放两个布尔开关；预算与阈值（turnBudget / timeBudgetMs / stagnationLimit /
+  // evaluatorFailureLimit / objectiveEvidence）已从设置页移除，固定取默认值。
   const goalConfig = {
     ...DEFAULT_GOAL_CONFIG,
     enabled: document.getElementById('goalEnabled')?.checked !== false,
-    turnBudget: parseInt(document.getElementById('goalTurnBudget')?.value, 10),
-    // UI 存分钟，引擎读 ms；0 = 不另设时间预算，跟随 loopTimeout
-    timeBudgetMs: (parseInt(document.getElementById('goalTimeBudgetMin')?.value, 10) || 0) * 60000,
-    stagnationLimit: parseInt(document.getElementById('goalStagnationLimit')?.value, 10),
-    evaluatorFailureLimit: parseInt(document.getElementById('goalEvaluatorFailureLimit')?.value, 10),
-    objectiveEvidence: document.getElementById('goalObjectiveEvidence')?.checked !== false,
     intentDetection: document.getElementById('goalIntentDetection')?.checked !== false,
   };
-
-  // 目标预算必须是有限正数： parseInt 失败会得到 NaN，而 NaN 在状态机里
-  // 既过不了 >= 比较也删不掉，会造成预算永远不撞线或立刻撞线
-  const goalRange = [
-    ['turnBudget', goalConfig.turnBudget, 5, 200, t('settings.goalTurnRangeError')],
-    ['stagnationLimit', goalConfig.stagnationLimit, 1, 10, t('settings.goalStagnationRangeError')],
-    ['evaluatorFailureLimit', goalConfig.evaluatorFailureLimit, 1, 5, t('settings.goalFailRangeError')],
-    ['timeBudgetMs', goalConfig.timeBudgetMs, 0, 86400000, t('settings.goalTimeRangeError')],
-  ];
-  for (const [, value, lo, hi, msg] of goalRange) {
-    if (!Number.isFinite(value) || value < lo || value > hi) {
-      showToast(`❌ ${msg}`, 'error');
-      return;
-    }
-  }
-  
   // 验证 ReAct 配置范围（只剩「整体循环超时」，下限与滑杆首档对齐；其余三项为内部固定值）
   if (reactLoopTimeout < LOOP_TIMEOUT_MIN_MINUTES * 60000 || reactLoopTimeout > 86400000) {
     showToast(`❌ ${t('settings.loopTimeoutRangeError')}`, 'error');

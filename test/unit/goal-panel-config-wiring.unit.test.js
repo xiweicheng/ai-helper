@@ -100,51 +100,70 @@ describe('② 放行授权只认开关入口', () => {
 });
 
 describe('③ 设置页 goalConfig 契约', () => {
-  // DEFAULT_GOAL_CONFIG 里凡是面板/引擎会消费的字段，都必须能在设置页落到控件
-  const UI_FIELDS = [
-    'enabled', 'turnBudget', 'timeBudgetMs', 'stagnationLimit',
-    'evaluatorFailureLimit', 'objectiveEvidence', 'intentDetection',
-  ];
+  // 只开放两个行为开关。预算与阈值固定取 DEFAULT_GOAL_CONFIG ——
+  // 用户无法预判「20 轮 vs 50 轮」的后果，调大只是多烧评估调用、调小是误停，
+  // 而撞线后的「继续」已经提供了运行时调节窗口（每次再给 20 轮）。
+  const UI_FIELDS = ['enabled', 'intentDetection'];
+  // 已收回的旋钮：字段必须还在（引擎/面板会消费），但设置页不得再出现控件
+  const HIDDEN_FIELDS = ['turnBudget', 'timeBudgetMs', 'stagnationLimit', 'evaluatorFailureLimit', 'objectiveEvidence'];
+  const ALL_FIELDS = [...UI_FIELDS, ...HIDDEN_FIELDS];
+  const HIDDEN_IDS = ['goalTurnBudget', 'goalTimeBudgetMin', 'goalStagnationLimit',
+    'goalEvaluatorFailureLimit', 'goalObjectiveEvidence'];
 
-  test('DEFAULT_GOAL_CONFIG 仍覆盖全部可配置字段', () => {
+  test('DEFAULT_GOAL_CONFIG 仍覆盖全部字段（隐藏不等于删除）', () => {
     const block = CONSTANTS.slice(
       CONSTANTS.indexOf('export const DEFAULT_GOAL_CONFIG = {'),
       CONSTANTS.indexOf('// 流式输出配置默认值'),
     );
-    for (const f of UI_FIELDS) {
+    for (const f of ALL_FIELDS) {
       expect(block, `DEFAULT_GOAL_CONFIG 缺少 ${f}`).toContain(`${f}:`);
     }
   });
 
-  test('每个字段都有对应控件，且控件 id 与 config-manager 读写一致', () => {
-    const ids = ['goalEnabled', 'goalTurnBudget', 'goalTimeBudgetMin', 'goalStagnationLimit',
-      'goalEvaluatorFailureLimit', 'goalObjectiveEvidence', 'goalIntentDetection'];
-    for (const id of ids) {
+  test('只有两个行为开关有控件，且 id 与 config-manager 读写一致', () => {
+    const ids = { enabled: 'goalEnabled', intentDetection: 'goalIntentDetection' };
+    for (const f of UI_FIELDS) {
+      const id = ids[f];
       expect(OPTIONS_HTML, `options.html 缺少 #${id}`).toContain(`id="${id}"`);
       expect(CONFIG_MANAGER, `config-manager 未读写 #${id}`).toContain(`getElementById('${id}')`);
     }
   });
 
-  test('storage.get 读取 goalConfig，saveConfig 写回整份', () => {
+  test('已收回的预算/阈值控件必须从设置页与读写代码里彻底消失', () => {
+    for (const id of HIDDEN_IDS) {
+      expect(OPTIONS_HTML, `options.html 不应再有 #${id}`).not.toContain(`id="${id}"`);
+      expect(CONFIG_MANAGER, `config-manager 不应再读写 #${id}`).not.toContain(`getElementById('${id}')`);
+    }
+  });
+
+  test('storage.get 读取 goalConfig，saveConfig 写回整份（只覆写两个开关）', () => {
     expect(CONFIG_MANAGER).toMatch(/'goalConfig',/);
     expect(CONFIG_MANAGER).toMatch(/const goalCfg = Object\.assign\(\{\}, DEFAULT_GOAL_CONFIG, result\.goalConfig \|\| \{\}\);/);
-    expect(CONFIG_MANAGER).toMatch(/const goalConfig = \{\s*\.\.\.DEFAULT_GOAL_CONFIG,/);
+    expect(CONFIG_MANAGER).toMatch(/const goalConfig = \{\s*\.\.\.DEFAULT_GOAL_CONFIG,\s*enabled:/);
     expect(CONFIG_MANAGER).toMatch(/goalConfig: goalConfig,/);
-  });
-
-  test('时间预算做分钟↔毫秒换算，且 0 保留为 0（= 跟随 loopTimeout）', () => {
-    expect(CONFIG_MANAGER).toMatch(/timeBudgetMs: \(parseInt\(document\.getElementById\('goalTimeBudgetMin'\)\?\.value, 10\) \|\| 0\) \* 60000,/);
-    expect(CONFIG_MANAGER).toMatch(/goalCfg\.timeBudgetMs > 0/);
-  });
-
-  test('预算数字必须校验为有限值：NaN 落库会让闸门失效', () => {
-    // parseInt('') = NaN；NaN 既不 < lo 也不 > hi，单独比大小会漏过
-    const guard = CONFIG_MANAGER.slice(
-      CONFIG_MANAGER.indexOf('const goalRange = ['),
-      CONFIG_MANAGER.indexOf('// 验证 ReAct 配置范围'),
+    // 落库不再从 DOM 取任何数字：预算一旦从界面消失就不能被空值/NaN 覆写
+    const block = CONFIG_MANAGER.slice(
+      CONFIG_MANAGER.indexOf('const goalConfig = {'),
+      CONFIG_MANAGER.indexOf('goalConfig: goalConfig,'),
     );
-    expect(guard).toMatch(/Number\.isFinite\(value\)/);
-    expect(guard).toMatch(/value < lo \|\| value > hi/);
+    expect(block).not.toMatch(/parseInt\(document\.getElementById/);
+    expect(block).not.toMatch(/turnBudget|timeBudgetMs|stagnationLimit|evaluatorFailureLimit|objectiveEvidence/);
+  });
+
+  test('收回的预算/阈值固定为可消费的确定性默认值', () => {
+    // 不再有输入框，也就没有 parseInt 得到 NaN 的风险；但默认值本身必须锁死且有限
+    // —— turnBudget 传 undefined 会在状态机里把预算弄成 NaN，闸门永不撞线。
+    const block = CONSTANTS.slice(
+      CONSTANTS.indexOf('export const DEFAULT_GOAL_CONFIG = {'),
+      CONSTANTS.indexOf('// 流式输出配置默认值'),
+    );
+    expect(block).toMatch(/^\s*turnBudget:\s*20,/m);
+    expect(block).toMatch(/^\s*timeBudgetMs:\s*0,/m);
+    expect(block).toMatch(/^\s*stagnationLimit:\s*3,/m);
+    expect(block).toMatch(/^\s*evaluatorFailureLimit:\s*2,/m);
+    expect(block).toMatch(/^\s*objectiveEvidence:\s*true,/m);
+    // 设置页不再有范围校验块：没有输入就没有非法输入
+    expect(CONFIG_MANAGER).not.toMatch(/const goalRange = \[/);
   });
 
   test('总开关只收起子项、不重置子项的值', () => {
@@ -156,16 +175,16 @@ describe('③ 设置页 goalConfig 契约', () => {
     expect(CONFIG_IO).toMatch(/'goalConfig',/);
   });
 
-  test('设置页新增文案中英成对', () => {
-    const keys = ['goalMode', 'goalTurnBudget', 'goalTimeBudget', 'goalStagnation',
-      'goalEvaluatorFail', 'goalObjectiveEvidence', 'goalIntent'];
+  test('设置页文案中英成对（只留两个开关的说明）', () => {
+    const keys = ['goalMode', 'goalModeDesc1', 'goalModeDesc2', 'goalModeDesc3', 'goalIntent'];
     for (const k of keys) {
       expect(ZH, `zh 缺少 react.${k}`).toMatch(new RegExp(`\\n    ${k}: '`));
       expect(EN, `en 缺少 react.${k}`).toMatch(new RegExp(`\\n    ${k}: '`));
     }
-    for (const k of ['goalTurnRangeError', 'goalStagnationRangeError', 'goalFailRangeError', 'goalTimeRangeError']) {
-      expect(ZH, `zh 缺少 settings.${k}`).toMatch(new RegExp(`\\n    ${k}: '`));
-      expect(EN, `en 缺少 settings.${k}`).toMatch(new RegExp(`\\n    ${k}: '`));
+    // 已收回旋钮的文案应一并清掉：留着就是“删了 UI 忘了删文案”的信号
+    for (const k of ['goalTurnBudget', 'goalTimeBudget', 'goalStagnation', 'goalEvaluatorFail', 'goalObjectiveEvidence']) {
+      expect(ZH, `zh 不应再残留 react.${k}`).not.toMatch(new RegExp(`\\n    ${k}: '`));
+      expect(EN, `en 不应再残留 react.${k}`).not.toMatch(new RegExp(`\\n    ${k}: '`));
     }
   });
 
@@ -173,7 +192,7 @@ describe('③ 设置页 goalConfig 契约', () => {
     // i18n 值最终是 HTML 文本节点内容，** 会被原样显示；
     // 英文串里混进中文则是复制粘贴漏改的信号
     const goalLines = EN.split('\n').filter((l) => /^\s+goal[A-Z]\w*: '/.test(l));
-    expect(goalLines.length).toBeGreaterThan(10);
+    expect(goalLines.length).toBeGreaterThan(6);
     for (const line of goalLines) {
       expect(line).not.toContain('**');
       expect(line).not.toMatch(/[\u4e00-\u9fff]/);
@@ -242,24 +261,23 @@ describe('⑦ 撤销放行必须同时熄灭 🎯（否则下一条消息把授�
 });
 
 describe('⑧ 设置页开关即时落盘（关闸不该等保存按钮）', () => {
-  test('三个布尔开关各自即时写回 goalConfig', () => {
+  test('两个布尔开关各自即时写回 goalConfig', () => {
     const start = CONFIG_MANAGER.indexOf('export function persistGoalSwitch');
     expect(start).toBeGreaterThan(-1);
     const body = CONFIG_MANAGER.slice(start, CONFIG_MANAGER.indexOf('// 加载配置'));
-    // 必须读回整份再翻一个键：直接写 { enabled } 会把预算字段顶成 undefined
+    // 必须读回整份再翻一个键：直接写 { enabled } 会把其余字段顶成 undefined
     expect(body).toMatch(/Object\.assign\(\{\}, DEFAULT_GOAL_CONFIG, result\.goalConfig \|\| \{\}, \{ \[field\]: value !== false \}\)/);
     expect(body).toContain("chrome.storage.local.get(['goalConfig']");
     expect(body).toContain('chrome.storage.local.set({ goalConfig: cfg });');
   });
 
-  test('options 入口把三个开关接到 persistGoalSwitch', () => {
+  test('options 入口只把两个开关接到 persistGoalSwitch', () => {
     const OPTIONS_INDEX = readFileSync(join(process.cwd(), 'src/options/index.js'), 'utf8');
     expect(OPTIONS_INDEX).toMatch(/import \{[^}]*persistGoalSwitch[^}]*\} from '\.\/config-manager\.js';/);
     expect(OPTIONS_INDEX).toMatch(/goalEnabled: 'enabled',/);
-    expect(OPTIONS_INDEX).toMatch(/goalObjectiveEvidence: 'objectiveEvidence',/);
     expect(OPTIONS_INDEX).toMatch(/goalIntentDetection: 'intentDetection',/);
     expect(OPTIONS_INDEX).toMatch(/persistGoalSwitch\(goalSwitchFields\[id\], goalEl\.checked\)/);
-    // 数字预算绝不能进即时写（半填状态会存 NaN）
-    expect(OPTIONS_INDEX).not.toMatch(/goalTurnBudget|goalTimeBudgetMin|goalStagnationLimit/);
+    // 已收回的开关与预算绝不能进即时写
+    expect(OPTIONS_INDEX).not.toMatch(/goalObjectiveEvidence|goalTurnBudget|goalTimeBudgetMin|goalStagnationLimit/);
   });
 });

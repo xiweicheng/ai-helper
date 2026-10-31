@@ -1300,12 +1300,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     completionVerificationRerunEnabledLabel.textContent = completionVerificationRerunEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
-  // 目标模式（Goal）：三个布尔开关切换即落盘，数字预算仍只在 saveConfig 里写。
+  // 目标模式（Goal）：布尔开关切换即落盘。
   // 关闸必须当场生效——用户点完「关闭目标模式」不去按保存，下一条消息不应当还在目标模式里跑。
-  // 预算输入框不即时写：半填状态下 parseInt 会得到 NaN，而范围校验只在 saveConfig 里。
+  // 预算与阈值已从设置页移除（固定取默认值），所以这里只剩行为开关。
   const goalSwitchFields = {
     goalEnabled: 'enabled',
-    goalObjectiveEvidence: 'objectiveEvidence',
     goalIntentDetection: 'intentDetection',
   };
   Object.keys(goalSwitchFields).forEach((id) => {
