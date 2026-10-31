@@ -67,6 +67,33 @@ describe('runOfflineTask：主线程不被阻塞', () => {
   });
 });
 
+describe('runOfflineTask：出队回调（句级精修的背压靠它区分「在跑」与「排队」）', () => {
+  test('开跑前回调 onStart；被 shouldSkip 丢掉的空转任务不回调', async () => {
+    let started = 0;
+    await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(32),
+      opts: {},
+      idleMs: 0,
+      onStart: () => { started += 1; },
+    });
+    assert.equal(started, 1, '真正开始 decode 必须回调 onStart');
+
+    // stop / 背压丢弃：出队即空转，既不跑模型也不该被当成「已开始」
+    let skippedStart = 0;
+    const result = await pool.runOfflineTask({
+      kind: 'samples',
+      samples: new Float32Array(32),
+      opts: {},
+      idleMs: 0,
+      shouldSkip: () => true,
+      onStart: () => { skippedStart += 1; },
+    });
+    assert.equal(result, null, '被跳过的任务返回 null');
+    assert.equal(skippedStart, 0, '没开跑就不该回调 onStart');
+  });
+});
+
 describe('runOfflineTask：串行与错误穿透', () => {
   test('同一 worker 串行执行：先提交的先完成', async () => {
     const done = [];

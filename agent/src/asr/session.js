@@ -24,7 +24,7 @@ import {
 import { tidyJoin, tidyChineseSpacing, stripSenseVoiceTags } from './transcribe.js';
 import { getOnlineRecognizer as defaultGetOnline } from './engine.js';
 import { runOfflineTask } from './offline-pool.js';
-import { chooseCutIndex, rmsOf } from './sentence-splitter.js';
+import { chooseCutIndex, rmsOf, SILENCE_RMS } from './sentence-splitter.js';
 
 // 草稿推送节流（150ms：肉眼连贯且不会把 WS 打满）
 const PARTIAL_THROTTLE_MS = 150;
@@ -39,6 +39,20 @@ const REFINE_SLOW_STREAK = 3;
 
 // 单帧最大字节数（10s @16k mono PCM16 = 320KB；超过视为异常客户端）
 const MAX_FRAME_BYTES = 320 * 1024;
+
+/**
+ * 一帧 PCM 实际对应的时长（ms）
+ *
+ * 不能假定每帧都是 100ms：worklet 正常时是 100ms，但 ScriptProcessor 兜底路径按 4096 样本切块，
+ * 16k 采样下就是 256ms。套用 100ms 会把「连续 3 帧静音」算成 300ms（实际 768ms）、
+ * 把 12s 上限拖成 30s、把 2s 回溯拖成 5s。
+ * @param {Float32Array} samples
+ * @returns {number}
+ */
+function frameMsOf(samples) {
+  const count = samples && samples.length ? samples.length : 0;
+  return count > 0 ? (count / 16000) * 1000 : 0;
+}
 
 /**
  * PCM16LE Buffer → Float32Array（-1..1）
@@ -61,11 +75,15 @@ export function pcm16ToFloat32(buf) {
  * 带函数过去直接 DataCloneError，结果是每一句精修都失败（而注入假 transcribe 的单测看不见）。
  * 所以函数只能留在主线程这一侧，作为 runOfflineTask 的顶层参数。
  * @param {object} opts
- * @returns {{ workerOpts: object, shouldSkip: Function|undefined }}
+ * @returns {{ workerOpts: object, shouldSkip: Function|undefined, onStart: Function|undefined }}
  */
 export function splitWorkerOpts(opts) {
-  const { shouldSkip, ...workerOpts } = opts || {};
-  return { workerOpts, shouldSkip: typeof shouldSkip === 'function' ? shouldSkip : undefined };
+  const { shouldSkip, onStart, ...workerOpts } = opts || {};
+  return {
+    workerOpts,
+    shouldSkip: typeof shouldSkip === 'function' ? shouldSkip : undefined,
+    onStart: typeof onStart === 'function' ? onStart : undefined,
+  };
 }
 
 /**
@@ -93,13 +111,15 @@ export function createAsrSessionManager(deps) {
   const getIdleUnloadMs = deps.getIdleUnloadMs || (() => 0);
   // 默认走 worker 线程（不阻塞事件循环）；单测注入同步/异步实现，返回 Promise 或值都可
   const transcribe = deps.transcribe || ((samples, opts) => {
-    const { workerOpts, shouldSkip } = splitWorkerOpts(opts);
+    const { workerOpts, shouldSkip, onStart } = splitWorkerOpts(opts);
     return runOfflineTask({
       kind: 'samples',
       samples,
       opts: workerOpts,
       // 出队瞬间再判一次（被取消/被背压丢弃就空转）——必须留在主线程，进不了 worker
       shouldSkip,
+      // 真正开始 decode 的那一刻回调：背压要能区分「在跑」与「排队」
+      onStart,
       idleMs: getIdleUnloadMs(),
       timeoutMs: deps.offlineTimeoutMs,
       modelId: workerOpts.offlineModel ? workerOpts.offlineModel.id : undefined,
@@ -251,9 +271,15 @@ export function createAsrSessionManager(deps) {
 
     // 当前 zipformer 草稿属于这一句；切完重置流，下一句从干净状态开始
     const draftText = session.currentText || '';
-    session.currentText = '';
-    session.lastSentText = '';
-    try { session.onlineRecognizer?.reset?.(session.onlineStream); } catch { /* 版本差异 */ }
+    // 纯静音尾巴（endpoint 在静音段触发）不是一句话：发出去只会得到一个空句帧、
+    // 白占一个 id 和一次串行离线队列位，还可能把用户正在手改的开放句锁丢。
+    // 但「有声音、流式却没解出字」不能丢 —— offline 精修能把这种句救回来。
+    if (!draftText && head.every((f) => f.rms < SILENCE_RMS)) {
+      resetSentenceStream(session);
+      return;
+    }
+
+    resetSentenceStream(session);
     if (draftText) session.committedText = tidyJoin([session.committedText, draftText]);
 
     const id = session.refineSeq + 1;
@@ -266,18 +292,30 @@ export function createAsrSessionManager(deps) {
   }
 
   /**
+   * 切完之后重置流式状态：草稿归零、下一句从干净状态开始
+   * @param {object} session
+   */
+  function resetSentenceStream(session) {
+    session.currentText = '';
+    session.lastSentText = '';
+    try { session.onlineRecognizer?.reset?.(session.onlineStream); } catch { /* 版本差异 */ }
+  }
+
+  /**
    * 发起该句的精修（异步；失败保持草稿，不影响邻句）
    */
   function scheduleRefine(session, id, draftText, samples) {
     if (!isRefineEnabled(session)) return;
     if (samples.length < REFINE_MIN_SAMPLES) return;
 
-    // 背压：超过上限就把最旧未开始的标成 skip（出队时空转，保住最新的那句）
-    const ticket = { skip: false };
+    // 背压：超过上限就把最旧「还没开始 decode」的那句标成 skip（出队时空转，保住最新的那句）。
+    // 不能把正在跑的那句标掉：池子串行且不能抢占，标了也停不下来，只会白跑一次 decode
+    // 加一条 asr_refine_dropped 日志，让人误以为背压生效了。
+    const ticket = { skip: false, started: false, startedAt: 0 };
     session.refineQueue.push(ticket);
     if (session.refineQueue.length > MAX_PENDING_REFINE) {
-      const oldest = session.refineQueue.find((t) => !t.skip);
-      if (oldest && oldest !== ticket) {
+      const oldest = session.refineQueue.find((t) => !t.skip && !t.started && t !== ticket);
+      if (oldest) {
         oldest.skip = true;
         deps.onLog?.('asr_refine_dropped', { reason: 'backpressure', pending: session.refineQueue.length });
       }
@@ -296,14 +334,21 @@ export function createAsrSessionManager(deps) {
         refine: true,
         // 排队中若已 stop / 被背压丢弃，出队瞬间空转，别让 final 等它
         shouldSkip: () => ticket.skip || session.refineAborted || session.released,
+        // 真正开始 decode：从这里开始计时/区分在跑与排队
+        onStart: () => { ticket.started = true; ticket.startedAt = now(); },
       }))
       .then((result) => {
         settle();
         if (!result || !result.text) return;
         if (session.refineAborted || session.released) return;
 
-        // 自适应降级：连续慢说明这台机器边说边跑 offline 跟不上
-        if (now() - startedAt > durationMs * REFINE_SLOW_RATIO) {
+        // 自适应降级：连续慢说明这台机器边说边跑 offline 跟不上。
+        // 口径是 decode 本身（engineMs），不含排队等待 —— 三句短句排长队不代表机器跟不上，
+        // 把排队算进去会让「只说了三句短话」的用户被永久关掉精修。
+        const engineMs = result && Number.isFinite(result.engineMs)
+          ? result.engineMs
+          : now() - (ticket.started ? ticket.startedAt : startedAt);
+        if (engineMs > durationMs * REFINE_SLOW_RATIO) {
           session.refineSlowStreak += 1;
           if (session.refineSlowStreak >= REFINE_SLOW_STREAK) disableRefine(session, 'too_slow');
         } else {
@@ -475,7 +520,7 @@ export function createAsrSessionManager(deps) {
       handleEndpoint(session);
       return;
     }
-    const cut = chooseCutIndex(session.segFrames);
+    const cut = chooseCutIndex(session.segFrames, { frameMs: frameMsOf(samples) });
     if (cut >= session.segFrames.length) {
       // 整段静音：帧丢掉，不产生空句（cut === length 是纯函数的「丢弃」约定）
       session.segFrames = [];

@@ -518,12 +518,41 @@ describe('资源上限', () => {
 
 /**
  * 每次精修都挂起，由用例手动 resolve：用来验证背压 / 中止 / 降级。
+ *
+ * 同时模拟 offline-pool 的串行出队语义（同一时刻只有一个任务在跑，出队时调 opts.onStart），
+ * 否则「正在跑的那句被背压丢掉」这类 bug 在单测里看不见 —— 因为真实池里它已经出队了。
  */
 function deferredTranscribe(finalText = '整段。') {
   const waiters = [];
+  let running = null;
+  const startNext = () => {
+    if (running) return;
+    const next = waiters.find((w) => !w.started && !w.settled);
+    if (!next) return;
+    next.started = true;
+    running = next;
+    if (next.opts && typeof next.opts.onStart === 'function') next.opts.onStart();
+  };
   const fn = (samples, opts) => {
     if (opts && opts.refine) {
-      return new Promise((resolve, reject) => waiters.push({ resolve, reject, opts, samples }));
+      return new Promise((resolve, reject) => {
+        const w = {
+          opts,
+          samples,
+          started: false,
+          settled: false,
+          resolve(value) {
+            if (w.settled) return;
+            w.settled = true;
+            if (running === w) running = null;
+            resolve(value);
+            startNext();
+          },
+          reject,
+        };
+        waiters.push(w);
+        queueMicrotask(startNext);
+      });
     }
     return { text: finalText, texts: [finalText] };
   };
@@ -599,6 +628,54 @@ describe('句级精修', () => {
     manager.release(manager._sessions.get('r3'));
   });
 
+  test('静音尾巴遇上 endpoint：不产生空句帧，也不占精修队列', async () => {
+    const fake = makeFakeRecognizer();
+    const { manager } = createManager({ fake });
+    const ws = makeWs();
+    manager.attach(ws, 'r8');
+    ws.control({ type: 'start' });
+
+    // 流式没解出任何字，且这一段全是静音：endpoint 不能把它当成「一句空话」推上去
+    fake.state.endpoint = true;
+    for (let i = 0; i < 6; i++) ws.audio();
+    await flush();
+    assert.equal(ws.sent.filter((m) => m.type === 'sentence').length, 0, '静音不得产生句子帧');
+
+    // 但真有语音、只是流式没解出字时，仍然要给前端一句（offline 精修能救回来）
+    fake.state.endpoint = false;
+    fake.state.text = '';
+    sendSentence(ws);
+    await flush();
+    const cuts = ws.sent.filter((m) => m.type === 'sentence' && m.refined === null);
+    assert.equal(cuts.length, 1, '有语音就必须给句子帧，不能连精修的机会都抹掉');
+    assert.equal(cuts[0].draft, '');
+
+    manager.release(manager._sessions.get('r8'));
+  });
+
+  test('切句帧长按实际块大小折算：4096 样本的兜底路径不会把 12s 拖成 30s', async () => {
+    const { manager } = createManager();
+    const ws = makeWs();
+    manager.attach(ws, 'r9');
+    ws.control({ type: 'start' });
+
+    // ScriptProcessor 兜底路径一帧 4096 样本 = 256ms；45 帧 = 11.5s，还不到 12s 上限
+    for (let i = 0; i < 45; i++) ws.speech(4096);
+    await flush();
+    assert.equal(ws.sent.filter((m) => m.type === 'sentence').length, 0, '11.5s 不该切');
+
+    // 再过 2 帧 = 12.03s（按 100ms 假设计算要等到 120 帧才切）
+    for (let i = 0; i < 3; i++) ws.speech(4096);
+    await flush();
+    assert.equal(
+      ws.sent.filter((m) => m.type === 'sentence' && m.refined === null).length,
+      1,
+      '超长兜底必须按真实帧长触发',
+    );
+
+    manager.release(manager._sessions.get('r9'));
+  });
+
   test('pacing=instant 不逐句精修', async () => {
     let refineCalls = 0;
     const { manager } = createManager({
@@ -648,24 +725,57 @@ describe('句级精修', () => {
     assert.equal(session.refineAborted, true);
   });
 
-  test('背压：待精修超过 3 个时丢弃最旧未开始的，保住最新的', async () => {
+  test('背压：丢的是最旧的「尚未开始」那句，已在跑的那句不能动', async () => {
     const { fn, waiters } = deferredTranscribe();
     const { manager } = createManager({ raw: { transcribe: fn } });
     const ws = makeWs();
     manager.attach(ws, 'r6');
     ws.control({ type: 'start' });
 
-    for (let s = 0; s < 4; s++) sendSentence(ws);
+    // 逐句推进，让「第 1 句已经在跑」这个真实时序成立
+    for (let s = 0; s < 3; s++) {
+      sendSentence(ws);
+      await flush();
+    }
+    assert.equal(waiters.length, 3);
+
+    sendSentence(ws); // 第 4 句：待精修 4 个，超过上限 3
     await flush();
 
     assert.equal(waiters.length, 4);
-    assert.equal(waiters[0].opts.shouldSkip(), true, '最旧的被标成跳过');
-    assert.equal(waiters[1].opts.shouldSkip(), false);
+    assert.equal(waiters[0].opts.shouldSkip(), false, '正在跑的那句不能丢：丢了也停不下 decode，只会白跑加日志');
+    assert.equal(waiters[1].opts.shouldSkip(), true, '丢最旧的排队任务');
+    assert.equal(waiters[2].opts.shouldSkip(), false);
     assert.equal(waiters[3].opts.shouldSkip(), false, '最新的必须保留');
 
     for (const w of waiters) w.resolve({ text: 'x', texts: ['x'] });
     await flush();
     manager.release(manager._sessions.get('r6'));
+  });
+
+  test('排队等待不算「精修慢」：decode 本身很快时不得降级', async () => {
+    let clock = 0;
+    const { fn, waiters } = deferredTranscribe();
+    const { manager } = createManager({ clock: () => clock, raw: { transcribe: fn } });
+    const ws = makeWs();
+    manager.attach(ws, 'r7');
+    ws.control({ type: 'start' });
+
+    for (let s = 0; s < 3; s++) {
+      sendSentence(ws);
+      await flush();
+    }
+    assert.equal(waiters.length, 3);
+
+    // 三句短句排了很长的队（用户感知延迟大），但每句 decode 只花 5ms
+    clock = 120_000;
+    for (const w of waiters) w.resolve({ text: 'x', texts: ['x'], engineMs: 5 });
+    await flush();
+
+    assert.equal(ws.sent.filter((m) => m.type === 'refine').length, 0, '排队时间不能算成机器跟不上');
+    assert.equal(ws.sent.filter((m) => m.type === 'sentence' && m.refined).length, 3);
+
+    manager.release(manager._sessions.get('r7'));
   });
 
   test('连续 3 次精修比句长还慢：发 refine 降级帧且只发一次', async () => {
@@ -680,8 +790,8 @@ describe('句级精修', () => {
     await flush();
     assert.equal(waiters.length, 3);
 
-    clock = 120_000; // 每句 0.8s，实际耗时远超 1.5 倍
-    for (const w of waiters) w.resolve({ text: 'x', texts: ['x'] });
+    clock = 120_000; // 每句 0.8s，单次 decode 就花了 5s，远超 1.5 倍
+    for (const w of waiters) w.resolve({ text: 'x', texts: ['x'], engineMs: 5000 });
     await flush();
 
     const refineFrames = ws.sent.filter((m) => m.type === 'refine');
@@ -699,21 +809,26 @@ describe('splitWorkerOpts：送进 worker 的 opts 必须可结构化克隆', ()
   // 所以这里用 structuredClone（与 postMessage 同一套克隆算法）把契约钉住。
   test('shouldSkip 被摘出去，剩下的 opts 能 structuredClone', () => {
     const skip = () => true;
-    const { workerOpts, shouldSkip } = sessionMod.splitWorkerOpts({
+    const onStart = () => {};
+    const { workerOpts, shouldSkip, onStart: started } = sessionMod.splitWorkerOpts({
       offlineModel: { id: 'sense-test' },
       language: 'zh',
       refine: true,
       shouldSkip: skip,
+      onStart,
     });
     assert.equal(shouldSkip, skip, '函数要留在主线程侧');
+    assert.equal(started, onStart, 'onStart 同样只能留在主线程侧');
     assert.equal('shouldSkip' in workerOpts, false, 'opts 里不得残留函数');
+    assert.equal('onStart' in workerOpts, false, 'opts 里不得残留函数');
     assert.doesNotThrow(() => structuredClone(workerOpts), 'opts 必须能过 worker 线程');
     assert.equal(workerOpts.offlineModel.id, 'sense-test');
     assert.equal(workerOpts.refine, true);
   });
 
   test('没传 opts / 传空对象都不炸（定稿路径不带 shouldSkip）', () => {
-    assert.deepEqual(sessionMod.splitWorkerOpts(undefined), { workerOpts: {}, shouldSkip: undefined });
-    assert.deepEqual(sessionMod.splitWorkerOpts({}), { workerOpts: {}, shouldSkip: undefined });
+    const empty = { workerOpts: {}, shouldSkip: undefined, onStart: undefined };
+    assert.deepEqual(sessionMod.splitWorkerOpts(undefined), empty);
+    assert.deepEqual(sessionMod.splitWorkerOpts({}), empty);
   });
 });
