@@ -259,9 +259,39 @@ describe('对话贴图快照（chat-images 伪文件）', () => {
     expect(store._docImageSnapshot.c2.files.map((f) => f.name)).toEqual(['a.docx', 'chat-images']);
   });
 
-  it('位置即序号：无图源的贴图项只跳过、不重排（序号必须与消息里第几个一致）', async () => {
+  it('先过滤后编号：无图源的占位项不占序号（否则线索区间与快照对不上）', async () => {
     const items = normalizeChatImageSnapshot([{}, { compressedUrl: 'data:image/jpeg;base64,C9' }]);
-    expect(items).toEqual([{ index: 2, dataUrl: 'data:image/jpeg;base64,C9' }]);
+    expect(items).toEqual([{ index: 1, dataUrl: 'data:image/jpeg;base64,C9' }]);
+  });
+
+  it('跨消息单调递增：第二条消息的贴图接在已有序号之后，旧图不被覆盖', async () => {
+    await saveDocImageSnapshot('c6', [], [{ compressedUrl: 'data:image/jpeg;base64,A' }]);
+    const range = await saveDocImageSnapshot('c6', [], [{ compressedUrl: 'data:image/jpeg;base64,B' }]);
+    expect(range).toEqual({ chatStart: 2, chatCount: 1 });
+    const images = store._docImageSnapshot.c6.files.find((f) => f.name === CHAT_IMAGE_FILE).images;
+    expect(images).toEqual([
+      { index: 1, dataUrl: 'data:image/jpeg;base64,A' },
+      { index: 2, dataUrl: 'data:image/jpeg;base64,B' },
+    ]);
+  });
+
+  it('本条消息没有贴图也留住旧贴图（否则历史线索指向空表）', async () => {
+    await saveDocImageSnapshot('c7', [], [{ compressedUrl: 'data:image/jpeg;base64,A' }]);
+    const range = await saveDocImageSnapshot('c7', [], []);
+    expect(range).toEqual({ chatStart: 0, chatCount: 0 });
+    expect(store._docImageSnapshot.c7.files[0].images).toHaveLength(1);
+  });
+
+  it('超上限丢最旧但不重排序号（重排等于篡改历史线索）', async () => {
+    const cap = VISION_CONSTANTS.MAX_CHAT_IMAGE_SNAPSHOT;
+    for (let i = 0; i < cap; i += 1) {
+      await saveDocImageSnapshot('c8', [], [{ compressedUrl: `data:image/jpeg;base64,${i}` }]);
+    }
+    await saveDocImageSnapshot('c8', [], [{ compressedUrl: 'data:image/jpeg;base64,NEW' }]);
+    const images = store._docImageSnapshot.c8.files[0].images;
+    expect(images).toHaveLength(cap);
+    expect(images[0].index).toBe(2);
+    expect(images[images.length - 1]).toEqual({ index: cap + 1, dataUrl: 'data:image/jpeg;base64,NEW' });
   });
 
   it('超过上限只保留前 N 张，序号连续且与消息顺序一致', async () => {
@@ -277,6 +307,34 @@ describe('对话贴图快照（chat-images 伪文件）', () => {
     await saveDocImageSnapshot('c5', [], []);
     expect(store._docImageSnapshot.c5).toBeUndefined();
   });
+
+  it('后续纯文本消息不会清掉上一轮的文档图（旧线索仍能重读）', async () => {
+    await saveDocImageSnapshot('d1', [{ status: 'done', name: 'r.pdf', imageSource: 'local', images: [{ index: 1, page: 1, dataUrl: 'data:image/png;base64,A' }] }]);
+    await saveDocImageSnapshot('d1', [], []);
+    const files = store._docImageSnapshot.d1.files;
+    expect(files.map((f) => f.name)).toEqual(['r.pdf']);
+    expect(files[0].images[0].dataUrl).toBe('data:image/png;base64,A');
+  });
+
+  it('同名重新上传以本轮为准，不产生重复条目', async () => {
+    await saveDocImageSnapshot('d2', [{ status: 'done', name: 'r.pdf', imageSource: 'local', images: [{ index: 1, page: 1, dataUrl: 'data:image/png;base64,OLD' }] }]);
+    await saveDocImageSnapshot('d2', [{ status: 'done', name: 'r.pdf', imageSource: 'local', images: [{ index: 1, page: 2, dataUrl: 'data:image/png;base64,NEW' }] }]);
+    const files = store._docImageSnapshot.d2.files;
+    expect(files.map((f) => f.name)).toEqual(['r.pdf']);
+    expect(files[0].images[0].dataUrl).toBe('data:image/png;base64,NEW');
+  });
+
+  it('会话内文档图条目有上限，超了丢最旧的', async () => {
+    const cap = VISION_CONSTANTS.MAX_SESSION_DOC_FILES;
+    for (let i = 1; i <= cap; i += 1) {
+      await saveDocImageSnapshot('d3', [{ status: 'done', name: `f${i}.pdf`, imageSource: 'agent', images: [{ index: 1, path: `/ws/${i}.png` }] }]);
+    }
+    await saveDocImageSnapshot('d3', [{ status: 'done', name: 'new.pdf', imageSource: 'agent', images: [{ index: 1, path: '/ws/new.png' }] }]);
+    const names = store._docImageSnapshot.d3.files.map((f) => f.name);
+    expect(names).toHaveLength(cap);
+    expect(names[0]).toBe('f2.pdf');
+    expect(names[names.length - 1]).toBe('new.pdf');
+  });
 });
 
 describe('buildChatImageHint / stripChatImageHint', () => {
@@ -290,6 +348,12 @@ describe('buildChatImageHint / stripChatImageHint', () => {
     expect(hint.startsWith('\n')).toBe(true);
     expect(hint).toContain('chat-images');
     expect(hint).toContain('1~3');
+  });
+
+  it('线索报真实区间：第二条消息的贴图从 3 开始就写 3~4', () => {
+    const hint = buildChatImageHint(3, 2);
+    expect(hint).toContain('3-4');
+    expect(hint).toContain('3~4');
   });
 
   it('中英线索都能剥干净，正文一字不动', () => {

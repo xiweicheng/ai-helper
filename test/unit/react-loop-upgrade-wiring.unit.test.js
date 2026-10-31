@@ -14,6 +14,10 @@ const TOOL_EXECUTOR_SRC = readFileSync(
   new URL('../../src/background/tool-executor.js', import.meta.url),
   'utf8'
 );
+const CHECKPOINT_STATE_SRC = readFileSync(
+  new URL('../../src/background/checkpoint-state.js', import.meta.url),
+  'utf8'
+);
 const AI_TOOLS_SRC = readFileSync(
   new URL('../../src/background/tools/ai-tools.js', import.meta.url),
   'utf8'
@@ -278,7 +282,9 @@ describe('P0-2/P0-3 锚点与预算接线守卫', () => {
   });
   test('checkpoint 保存与恢复链路携带 taskState', () => {
     expect(REACT_LOOP_SRC).toMatch(/taskState,\n/); // saveCheckpointNow payload
-    expect(REACT_LOOP_SRC).toMatch(/taskState: checkpoint\.taskState/); // resume 回灌
+    // 恢复侧字段集收在 checkpoint-state.js：读写两侧共用同一构造函数
+    expect(REACT_LOOP_SRC).toMatch(/buildResumeState\(checkpoint\)/);
+    expect(CHECKPOINT_STATE_SRC).toMatch(/taskState: c\.taskState/);
   });
   test('收敛预警已下沉 loop-budget-phase 并接线（轮数 80% 触发保留，新增时间维度）', () => {
     // 旧内联 convergeAt 已改为纯函数模块决策：主循环只负责接线，阈值由模块单测覆盖

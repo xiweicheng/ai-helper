@@ -110,12 +110,15 @@ describe('附件依赖：评估器看不到，但不能假装见过', () => {
     ],
   };
 
-  it('有附件时列出来，并声明「你一份都没拿到」', () => {
+  it('有附件时列出来，并说明「只有工具活动里的成功读取才算证据」', () => {
     const prompt = buildGoalEvaluationPrompt(withAttachments, {});
     expect(prompt).toContain('## Material this goal depends on (you cannot inspect it)');
-    expect(prompt).toContain('- image: 图片 1 张');
-    expect(prompt).toContain('- page: 产品页 (tab 12)');
-    expect(prompt).toContain('You were given none of this material');
+    expect(prompt).toContain('- image: "图片 1 张"');
+    expect(prompt).toContain('- page: "产品页" (tab 12)');
+    // 不能再说「你一份都没拿到」：同一条 prompt 里的工具摘要就列着成功读取，
+    // 自相矛盾会让评估器死守「附件没看」而永远判不达成
+    expect(prompt).toContain('You received none of this material directly');
+    expect(prompt).toContain('the only evidence that any of it was inspected is a successful read in "Tool activity"');
   });
 
   it('要求把「没能核验的附件」写进 missing，而不是采信收尾自述', () => {

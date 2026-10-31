@@ -28,7 +28,7 @@ import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExec
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, getFileIcon, formatFileSize, renderFilePreviews } from './file-extract.js';
-import { saveDocImageSnapshot, buildChatImageHint, stripChatImageHint, normalizeChatImageSnapshot } from './doc-images.js';
+import { saveDocImageSnapshot, buildChatImageHint, stripChatImageHint } from './doc-images.js';
 import { getSkillContextText, clearSkillSelection, getMcpContextText, clearMcpService, renderSkillIndicator, renderMcpIndicator, refreshSkillPickedState, refreshMcpPickedState } from './skill-selector.js';
 import { addBookmark, removeBookmark, isBookmarked } from './bookmark-manager.js';
 import { updateBookmarkBtnState } from './bookmark-panel.js';
@@ -1223,13 +1223,15 @@ export async function sendMessage(opts = {}) {
   // 贴图重取：图片只随本条消息发出，之后每轮请求前都会被 stripImagesFromContent 剥掉。
   // 快照（存图）+ 一行线索（告诉模型能重读第几张）缺一不可，否则第 2 轮起就彻底失忆。
   const attachedImagesSnapshot = (inputCtx.attachedImages || []).slice();
-  const chatImageHint = buildChatImageHint(normalizeChatImageSnapshot(attachedImagesSnapshot).length);
-  if (chatImageHint) finalText += chatImageHint;
-  // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）
+  // 图片快照中转：供 background 的 read_image 工具取图（失败不影响发送）。
+  // 必须先落快照再拼线索：序号由快照当前的累计位置决定（第二条消息里的图可能从 3 开始）。
+  let chatRange = null;
   if (attachedFilesSnapshot.length > 0 || attachedImagesSnapshot.length > 0) {
-    try { await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
+    try { chatRange = await saveDocImageSnapshot(mySessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
     catch (e) { logger.warn('[Chat] save doc image snapshot failed:', e.message); }
   }
+  const chatImageHint = buildChatImageHint(chatRange?.chatStart, chatRange?.chatCount);
+  if (chatImageHint) finalText += chatImageHint;
 
   // 用户消息：激活会话走 DOM + 内存历史；非激活只登记到目标会话的独立历史（由 finally 统一落盘）
   const userMsgId = 'msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);

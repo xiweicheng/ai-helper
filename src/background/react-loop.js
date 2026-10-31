@@ -39,13 +39,15 @@ import {
   normalizeGoal,
   checkGoalBudget,
   applyGoalVerdict,
-  settleGoalElapsed,
+  markGoalBudgetExhausted,
+  startGoalRunClock,
   goalIsFinished,
   goalIsRunning,
   goalHaltCheckpointReason,
 } from '../shared/goal.js';
 import { evaluateGoal } from './goal-evaluator.js';
-import { setGoal as persistGoalToStore, getGoal as readGoalMirror } from './goal-store.js';
+import { setGoal as persistGoalToStore, getGoal as readGoalMirror, updateGoal as updateGoalInStore } from './goal-store.js';
+import { buildResumeState } from './checkpoint-state.js';
 import { drainPendingInjections, dropPendingInjections, buildInjectionContent } from './injection.js';
 
 // 注册 reactLoop 命名空间翻译
@@ -1129,7 +1131,7 @@ export async function resumeReactLoopFromCheckpoint(sessionId, userGuidance = ''
     checkpoint.globalIteration || { value: checkpoint.iteration || 0 },
     checkpoint.executionLog || [],
     resumeCallId || checkpoint.callId || null,  // 优先使用新的 resumeCallId
-    { taskState: checkpoint.taskState || null, subtaskPlan: checkpoint.subtaskPlan || null, subtaskProgress: checkpoint.subtaskProgress || null, notesState: Array.isArray(checkpoint.notesState) ? checkpoint.notesState : [] }  // 回灌计划锚点、子任务完成进度与 scratchpad 便签，恢复后防重放/便签存活
+    buildResumeState(checkpoint)  // 计划锚点 / 子任务进度 / 便签 / 目标现场：读写两侧共用同一构造函数，杜绝「写得进、读不回」
   );
 
   // 恢复成功后清理 checkpoint —— 但「续跑又撞线」时必须保留现场：
@@ -1696,6 +1698,22 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       ? fromCheckpoint
       : normalizeGoal(apiParams?.goal);
     if (goalState && !goalState.sessionId && sessionId) goalState = { ...goalState, sessionId };
+    // 计时起点挪到本次 run 开始：时间预算衡量「引擎真正在跑多久」，
+    // 不能把 SW 被回收 / 面板关着的空窗累计进去（否则隔天点继续，第一轮就撞时间预算）。
+    if (goalState) {
+      goalState = startGoalRunClock(goalState);
+      // 时钟必须同步进 store：收尾裁决（handleGoalClosingAttempt）以 store 为权威回查并整份
+      // 覆盖闭包副本，只改副本会被旧起点盖回来，时间预算照旧把停机空窗算成执行时长。
+      // store 里没有这条目标（SW 被回收丢了防抖写入）时把现场补写回去，免得裁决把
+      // 「镜像为空」误判成「用户已清除」，把整段目标语义丢掉。
+      if (sessionId) {
+        const resynced = await updateGoalInStore(sessionId, (g) => {
+          if (!g) return goalState;
+          return g.status === GOAL_STATUS.ACTIVE ? startGoalRunClock(g) : g;
+        });
+        if (resynced) goalState = resynced;
+      }
+    }
     if (goalState) {
       logger.debug(`[Background] goal mode active: ${goalState.objective.slice(0, 60)} (${goalState.turnsUsed}/${goalState.turnBudget})`);
     }
@@ -1847,7 +1865,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       } catch (e) {
         logger.debug('[Background] read goal mirror failed:', e?.message);
       }
-      if (!mirror) {
+      // 清除落的是一个 status=cleared 的对象（clearGoal），不是 null：
+      // 只判 !mirror 会让这段「目标已消失、按普通任务正常收尾」永远进不去 ——
+      // 用户点「清除」想收工拿答案，实际却以 goal_paused 停住、还得再点一次继续。
+      if (!mirror || mirror.status === GOAL_STATUS.CLEARED) {
         // 目标在运行中被清除：目标语义已消失，按普通任务的正常收尾走
         logger.debug('[Background] goal cleared during run, finalize without goal semantics');
         goalState = null;
@@ -1864,7 +1885,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     // ① 预算闸先判：别为一个已经没预算的目标白烧一次评估调用
     const budget = checkGoalBudget(goalState, { fallbackTimeBudgetMs: loopTimeout });
     if (budget.exhausted) {
-      goalState = { ...settleGoalElapsed(goalState), status: GOAL_STATUS.BUDGET_LIMITED, updatedAt: Date.now() };
+      goalState = markGoalBudgetExhausted(goalState, budget.reason);
       await syncGoalState();
       emitGoalUpdate();
       return { kind: 'halt', result: await finalizeGoalHalt({ content, reasoningContent, stopReason: budget.reason }) };
@@ -2032,9 +2053,16 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    */
   async function finalizeBudgetEnded({ content, reasoningContent, report }) {
     // 目标模式：循环预算撞线与目标轮预算是两把尺，但落点一致——保留现场等用户决定是否继续。
-    // 只改 active 的目标；已经是 paused/budget_limited 的不重复结算（否则每多跑一轮就多计一段时长）。
-    if (goalState && goalState.status === GOAL_STATUS.ACTIVE) {
-      goalState = { ...settleGoalElapsed(goalState), status: GOAL_STATUS.BUDGET_LIMITED, updatedAt: Date.now() };
+    // 判定必须读 store 的当前值，而不是本次 run 启动时的闭包副本：用户这一跑里可能刚点过暂停，
+    // 用 active 副本整份覆写会把「已暂停」改回「预算用完」，顺带把 autoApprove 复活
+    // （下一次读 store 就重新授予放行）；反过来也只在 active 上结算，避免重复累计时长。
+    if (sessionId && goalState) {
+      const settledBudget = await updateGoalInStore(sessionId, (g) => (
+        g && g.status === GOAL_STATUS.ACTIVE ? markGoalBudgetExhausted(g, budgetExhaustedBy) : g
+      ));
+      if (settledBudget) goalState = settledBudget;
+    }
+    if (goalState && goalState.status === GOAL_STATUS.BUDGET_LIMITED) {
       await syncGoalState();
       emitGoalUpdate();
     }

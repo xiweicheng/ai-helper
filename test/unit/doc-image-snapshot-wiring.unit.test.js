@@ -61,8 +61,9 @@ describe('发送链路快照写入（双链路对齐守卫）', () => {
 
   it('两条链路都接上贴图重取（快照存图 + 可寻址线索）', () => {
     for (const src of [CHAT_SRC, PROMPT_SRC]) {
-      // 张数取自与写快照同源的归一函数，避免「线索说有 3 张、快照只存 2 张」
-      expect(src).toMatch(/buildChatImageHint\(normalizeChatImageSnapshot\(attachedImagesSnapshot\)\.length\)/);
+      // 序号区间只能由写快照的那一次调用给出：先落快照（拿到累计起点），再拼线索
+      expect(src).toMatch(/chatRange = await saveDocImageSnapshot\(/);
+      expect(src).toMatch(/buildChatImageHint\(chatRange\?\.chatStart, chatRange\?\.chatCount\)/);
       expect(src).toMatch(/(?:finalText|userMessage) \+= chatImageHint/);
       // 只有贴图、没有文件时同样要写快照
       expect(src).toMatch(/if \(attachedFilesSnapshot\.length > 0 \|\| attachedImagesSnapshot\.length > 0\)/);

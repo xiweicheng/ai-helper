@@ -140,11 +140,13 @@ export function buildGoalEvaluationPrompt(goal, ctx = {}) {
   if (attachments.length > 0) {
     lines.push('\n## Material this goal depends on (you cannot inspect it)');
     for (const a of attachments) {
-      lines.push(`- ${a.kind}: ${a.name}${a.detail ? ` (${a.detail})` : ''}`);
+      // 名字来自文件名 / 网页标题，与目标锚点同口径：按不可信数据加引号
+      // （SYSTEM_PROMPT 已声明引号字段是 data，不给「文件名里塞指令」留口子）。
+      lines.push(`- ${a.kind}: "${a.name}"${a.detail ? ` (${a.detail})` : ''}`);
     }
-    lines.push('You were given none of this material: no image, no file content, no page content.');
+    lines.push('You received none of this material directly; the only evidence that any of it was inspected is a successful read in "Tool activity" (read_image for an image, a file read for an attachment, a page fetch for a page).');
     lines.push(
-      'If confirming the objective requires inspecting it, you cannot confirm it: name the specific item in "missing" (for example "the attached image was never inspected") instead of accepting the assistant claim. When the objective is otherwise verified by tool evidence, treat this as missing evidence, never as proof of failure.'
+      'Judge each item by that evidence: if the objective depends on one and no successful read of it appears above, you cannot confirm it — name the specific item in "missing" (for example "the attached image was never inspected") instead of accepting the assistant claim. When the objective is otherwise verified by tool evidence, treat this as missing evidence, never as proof of failure.'
     );
   }
   lines.push('\n## Machine-collected objective evidence');

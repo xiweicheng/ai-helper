@@ -259,6 +259,21 @@ describe('⑦ 撤销放行必须同时熄灭 🎯（否则下一条消息把授�
     expect(block.indexOf('goalMode = false')).toBeLessThan(block.indexOf('renderGoalBar()'));
     expect(block).toContain("t('goal.approvalRevoked')");
   });
+
+  test('暂停/清除在后台当场收回放行授权（不等引擎 finally）', () => {
+    const start = BG_INDEX.indexOf("message.type === 'SET_GOAL'");
+    const handler = BG_INDEX.slice(start, BG_INDEX.indexOf("message.type === 'DROP_GOAL'", start));
+    // 一次 run 可能还要跑几十分钟：撤销只写在引擎 finally 里，用户点了暂停后灰名单命令仍会静默放行
+    expect(handler).toMatch(/if \(goal && !goalIsRunning\(goal\)\) revokeTaskLoopApproval\(sessionId\);/);
+  });
+
+  test('重新点亮 🎯 时 budget_limited 也能恢复（不只认 paused）', () => {
+    const start = PANEL.indexOf('重新点亮');
+    const block = PANEL.slice(start, PANEL.indexOf('els.edit.addEventListener', start));
+    expect(block).toContain("goal.status === 'paused' || goal.status === 'budget_limited'");
+    // 硬顶拒绝恢复时必须提示，不能假装成功
+    expect(block).toContain('warnIfResumeBlocked(resp.goal)');
+  });
 });
 
 describe('⑧ 设置页开关即时落盘（关闸不该等保存按钮）', () => {

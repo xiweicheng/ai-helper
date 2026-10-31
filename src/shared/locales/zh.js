@@ -649,6 +649,7 @@ export default {
     clearConfirm: '清除当前目标？任务现场（checkpoint）会一并丢弃。',
     updated: '目标已更新',
     approvalRevoked: '已撤销放行：目标已暂停，🎯 开关已熄灭。重新点亮 🎯 并点「继续」即可恢复。',
+    resumeBlocked: '已到轮次硬顶（{turns} 次），没法再补额度。点「编辑」改一下目标会重置轮次，或清除目标后重新开始。',
     autoApproveHint: '目标模式已自动放行敏感操作（agent 端黑名单命令仍会硬拦）。点击撤销。',
     intentDetected: '已从你的描述里识别出目标模式，本轮会自动推进（敏感操作仍会弹窗确认）。可点目标条上的「清除」撤销。',
     intentHint: '看起来你想让任务一直推进到达成？点亮输入区的 🎯 即可开启目标模式（不会自动替你开）。',

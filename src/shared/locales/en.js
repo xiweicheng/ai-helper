@@ -649,6 +649,7 @@ export default {
     clearConfirm: 'Clear the current goal? Its checkpoint (task state) will be discarded too.',
     updated: 'Goal updated',
     approvalRevoked: 'Approval revoked: the goal is paused and the 🎯 toggle is off. Re-arm 🎯 and press "Resume" to continue.',
+    resumeBlocked: 'The turn limit is already at its hard cap ({turns}). Edit the objective (which resets the counter) or clear the goal to start over.',
     autoApproveHint: 'Goal mode is auto-approving sensitive operations (agent-side blocklisted commands are still hard-blocked). Click to revoke.',
     intentDetected: 'Goal mode detected from your wording — this turn will keep advancing on its own (sensitive operations still ask for confirmation). Click Clear on the goal bar to undo.',
     intentHint: 'Looks like you want this task to keep pushing until it is met — arm the 🎯 toggle to enable goal mode (it will not be enabled for you).',

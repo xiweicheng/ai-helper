@@ -4,7 +4,8 @@ import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogA
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
-import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint } from './react-loop.js';
+import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint, revokeTaskLoopApproval } from './react-loop.js';
+import { goalIsRunning } from '../shared/goal.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
@@ -1190,6 +1191,10 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         cmd.timeBudgetMs = goalCfg.timeBudgetMs;
       }
       const goal = await applyGoalCommand(sessionId, cmd);
+      // 目标一旦不再自动推进，就当场收回本次运行的放行授权。
+      // 撤销若只写在引擎的 finally 里，一次 run 可能还要跑几十分钟——
+      // 用户点了「暂停 / 清除 / 撤销放行」之后，agent_exec 灰名单命令仍会静默 auto-pass。
+      if (goal && !goalIsRunning(goal)) revokeTaskLoopApproval(sessionId);
       return { goal };
     }).then((res) => {
       if (res?.disabled) {

@@ -307,6 +307,34 @@ describe('applyGoalCommand：面板只表达意图，语义收在后台', () => 
     expect(replaced.attachments).toEqual([{ kind: 'knowledge', name: '产品手册' }]);
   });
 
+  it('paused 下再发一条消息 = 恢复（面板提示「补充说明即可恢复」必须兑现）', async () => {
+    store.__resetGoalStoreForTests(fakeStorage());
+    const first = await store.applyGoalCommand('s1', { action: 'set', objective: '把首页改成深色' });
+    await store.applyGoalCommand('s1', { action: 'pause' });
+    expect((await store.getGoal('s1')).status).toBe(GOAL_STATUS.PAUSED);
+    const revived = await store.applyGoalCommand('s1', { action: 'set', objective: '顺便把字体调大' });
+    // 目标文本不变（累加约束），但状态必须回到 active，否则本轮进引擎就立即 halt
+    expect(revived.id).toBe(first.id);
+    expect(revived.objective).toBe('把首页改成深色');
+    expect(revived.constraints).toEqual(['顺便把字体调大']);
+    expect(revived.status).toBe(GOAL_STATUS.ACTIVE);
+  });
+
+  it('budget_limited 下再发一条消息 = 恢复，并补齐撞掉的那一档预算', async () => {
+    store.__resetGoalStoreForTests(fakeStorage());
+    await store.applyGoalCommand('s1', { action: 'set', objective: '把首页改成深色', turnBudget: 5 });
+    await store.updateGoal('s1', (g) => ({
+      ...g,
+      status: GOAL_STATUS.BUDGET_LIMITED,
+      turnsUsed: 5,
+      budgetStopReason: 'turns',
+    }));
+    const revived = await store.applyGoalCommand('s1', { action: 'set', objective: '继续，把字体也换掉' });
+    expect(revived.status).toBe(GOAL_STATUS.ACTIVE);
+    expect(revived.turnBudget).toBeGreaterThan(5);
+    expect(revived.budgetStopReason).toBeNull();
+  });
+
   it('set 对已终态的目标以新文本重开（不往死目标里塞约束）', async () => {
     store.__resetGoalStoreForTests(fakeStorage());
     const first = await store.applyGoalCommand('s1', { action: 'set', objective: '旧任务' });

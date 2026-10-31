@@ -13,6 +13,7 @@
 // 状态变更的推送由引擎直接发 GOAL_UPDATE（带 callId，且每次迁移都同步写这里），
 // 这层不再开第二条订阅通道——同一事件两条推送路径迟早会走样。
 import {
+  GOAL_STATUS,
   normalizeGoal,
   goalIsFinished,
   createGoal,
@@ -224,13 +225,20 @@ export async function applyGoalCommand(sessionId, cmd = {}) {
       const current = await getGoal(sessionId);
       if (current && !goalIsFinished(current)) {
         // 附件清单与约束同语义：会话内继续发消息只累加，不丢掉之前挂过的图片/文件/网页/知识库。
-        const next = mergeGoalAttachments(
+        const merged = mergeGoalAttachments(
           appendGoalConstraint(current, text),
           cmd.attachments ?? cmd.goal?.attachments
         );
+        // paused / budget_limited 下再发一条消息 = 恢复意图：面板两条提示
+        // （「补充说明或点『继续执行』即可恢复」）都承诺了这条路。
+        // 不恢复的话本轮会带着非 active 状态进引擎，收尾时立刻以「已暂停」halt ——
+        // 用户照着提示做了却一步没推进。resumeGoal 顺带补齐撞掉的那一档预算。
+        const revived = (current.status === GOAL_STATUS.PAUSED || current.status === GOAL_STATUS.BUDGET_LIMITED)
+          ? resumeGoal(merged)
+          : merged;
         // 面板重新点亮开关时需要把放行授权补上（之前可能被 pause 收回）
         const wantApprove = cmd.createdBy !== 'intent' && cmd.autoApprove === true;
-        const withApproval = wantApprove && !next.autoApprove ? { ...next, autoApprove: true } : next;
+        const withApproval = wantApprove && !revived.autoApprove ? { ...revived, autoApprove: true } : revived;
         return withApproval === current ? current : setGoal(sessionId, withApproval);
       }
       const goal = createGoal({

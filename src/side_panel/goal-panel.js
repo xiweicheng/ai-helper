@@ -320,6 +320,15 @@ function showObjectiveDialog(defaultValue = '') {
 
 // ==================== 初始化 ====================
 
+/**
+ * 恢复被拒时的如实提示：轮数顶到硬顶后 resumeGoal 拒绝复活，
+ * 按钮不能假装成功（用户点了「继续」却一步没动，比直接报错更难查）。
+ */
+function warnIfResumeBlocked(goal) {
+  if (!goal || goal.status === 'active') return;
+  showToast(t('goal.resumeBlocked', { turns: goal.turnBudget }), 'warning', 6000);
+}
+
 export function initGoalPanel() {
   if (els) return;
   const toggle = el('goalModeBtn');
@@ -364,11 +373,14 @@ export function initGoalPanel() {
       // 重新点亮：把放行授权补回去（后台 pause 时收回了）
       const sessionId = currentSessionId();
       const goal = state.goalSnapshot;
-      if (sessionId && goal && goal.status === 'paused') {
+      // budget_limited 同样要能靠重新点亮恢复：resumeGoal 会补上撞掉的那一档预算；
+      // 只认 paused 会让「预算用完」的目标在开关上无路可走。
+      if (sessionId && goal && (goal.status === 'paused' || goal.status === 'budget_limited')) {
         const resp = await sendGoalCommand({ sessionId, action: 'resume', autoApprove: true });
         if (resp?.goal && sessionId === currentSessionId()) {
           state.goalSnapshot = resp.goal;
           renderGoalBar();
+          warnIfResumeBlocked(resp.goal);
         }
       }
     }
@@ -409,6 +421,7 @@ export function initGoalPanel() {
     if (resp?.goal && sessionId === currentSessionId()) {
       state.goalSnapshot = resp.goal;
       renderGoalBar();
+      warnIfResumeBlocked(resp.goal);
     }
   });
 

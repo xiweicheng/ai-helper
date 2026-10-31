@@ -13,7 +13,7 @@ import { clearPageSelection } from './page-selector.js';
 import { refreshKnowledgePickedState, renderKnowledgeIndicator } from './agent-at-selector.js';
 import { buildFileContentText, renderFilePreviews } from './file-extract.js';
 import { renderImagePreviewsFromChat } from './image-preview.js';
-import { saveDocImageSnapshot, buildChatImageHint, normalizeChatImageSnapshot } from './doc-images.js';
+import { saveDocImageSnapshot, buildChatImageHint } from './doc-images.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
@@ -805,14 +805,15 @@ export async function sendPromptByCode(code) {
     });
   }
 
-  // 贴图重取：与主发送链路对齐——快照存图 + 一行线索，否则第 2 轮请求起图片被剥离后就失忆
-  const chatImageHint = buildChatImageHint(normalizeChatImageSnapshot(attachedImagesSnapshot).length);
-  if (chatImageHint) userMessage += chatImageHint;
-  // 图片快照中转：与主发送链路（chat-manager sendMessage）对齐，失败不影响发送
+  // 贴图重取：与主发送链路对齐——先落快照拿到真实序号，再拼线索；
+  // 否则第 2 轮请求起图片被剥离后既不能重读，也说不清该读第几张。
+  let chatRange = null;
   if (attachedFilesSnapshot.length > 0 || attachedImagesSnapshot.length > 0) {
-    try { await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
+    try { chatRange = await saveDocImageSnapshot(state.activeSessionId, attachedFilesSnapshot, attachedImagesSnapshot); }
     catch (e) { logger.warn('[Prompt] save doc image snapshot failed:', e.message); }
   }
+  const chatImageHint = buildChatImageHint(chatRange?.chatStart, chatRange?.chatCount);
+  if (chatImageHint) userMessage += chatImageHint;
 
   // 构建用户消息 content（支持图片附件；用入口处取的批次快照）
   const userContent = buildUserContent(userMessage, attachedImagesSnapshot);

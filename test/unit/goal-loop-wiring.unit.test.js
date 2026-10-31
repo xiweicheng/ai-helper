@@ -23,7 +23,9 @@ describe('① 依赖与状态来源', () => {
   test('引入目标内核、评估器与会话级注册表', () => {
     expect(LOOP).toMatch(/from '\.\.\/shared\/goal\.js'/);
     expect(LOOP).toMatch(/import \{ evaluateGoal \} from '\.\/goal-evaluator\.js'/);
-    expect(LOOP).toMatch(/import \{ setGoal as persistGoalToStore, getGoal as readGoalMirror \} from '\.\/goal-store\.js'/);
+    expect(LOOP).toMatch(/import \{ setGoal as persistGoalToStore, getGoal as readGoalMirror, updateGoal as updateGoalInStore \} from '\.\/goal-store\.js'/);
+    // 续跑入参统一由 checkpoint-state 构造（读写两侧共用，杜绝字段漂移）
+    expect(LOOP).toMatch(/import \{ buildResumeState \} from '\.\/checkpoint-state\.js'/);
   });
 
   test('复用 completion-verifier 的取证原语（verifySubtaskCompletion）', () => {
@@ -136,8 +138,9 @@ describe('④ 未达成续跑：绝不清 checkpoint', () => {
     // 回查必须早于预算闸：用户在面板点的暂停/清除不能先被旧副本过一道
     expect(mirror).toBeGreaterThan(start);
     expect(mirror).toBeLessThan(budgetGate);
-    // 镜像里没有目标 = 运行中被清除：按普通任务收尾，不能再带目标语义
-    expect(body).toContain('if (!mirror) {');
+    // 镜像里没有目标 / 已是 cleared = 运行中被清除：按普通任务收尾，不能再带目标语义
+    // （clearGoal 落的是一个 status=cleared 的对象，不是 null）
+    expect(body).toContain('if (!mirror || mirror.status === GOAL_STATUS.CLEARED) {');
     expect(body).toContain('goalState = null;');
     expect(body).toContain("return { kind: 'finalize', content, reasoningContent };");
     // 镜像非 active = 用户已暂停/预算撞线：立即收口，不得接着评估
@@ -147,8 +150,9 @@ describe('④ 未达成续跑：绝不清 checkpoint', () => {
 
 describe('⑤ 预算软着陆与目标状态', () => {
   test('只把 active 目标标成 budget_limited（不重复结算时长）', () => {
+    // 判定必须读 store 当前值，不能用本次 run 启动时的闭包副本
     expect(LOOP).toMatch(
-      /if \(goalState && goalState\.status === GOAL_STATUS\.ACTIVE\) \{\s*goalState = \{ \.\.\.settleGoalElapsed\(goalState\), status: GOAL_STATUS\.BUDGET_LIMITED, updatedAt: Date\.now\(\) \};/,
+      /updateGoalInStore\(sessionId, \(g\) => \(\s*g && g\.status === GOAL_STATUS\.ACTIVE \? markGoalBudgetExhausted\(g, budgetExhaustedBy\) : g/,
     );
   });
 
