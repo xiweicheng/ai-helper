@@ -149,7 +149,7 @@ describe('D 超时文案：实际耗时 + 预算 + 澄清与确认双豁免', ()
   });
 
   test('formatDurationMs：时长单位与设置页读数单位对齐（都是分钟）', () => {
-    // 设置页的「整体循环超时」已从 number 输入改成 12 档吸附滑杆：输入本身只存档位索引，
+    // 设置页的「整体循环超时」已从 number 输入改成 28 档吸附滑杆：输入本身只存档位索引，
     // 真分钟数在 data-minutes 上，读数由 options/loop-timeout-slider.js 格式化。
     // 这里把「对齐」从口头结论变成可执行守卫：滑杆末档分钟数必须读成「Nmin」，
     // 且末档索引必须与档位表长度一致（否则拖到底也不是 24 小时）。
@@ -169,7 +169,7 @@ describe('D 超时文案：实际耗时 + 预算 + 澄清与确认双豁免', ()
     );
     const ladderMatch = sliderSrc.match(/LOOP_TIMEOUT_LADDER = \[([^\]]+)\]/);
     expect(ladderMatch).not.toBeNull();
-    const ladder = ladderMatch[1].split(',').map(s => Number(s.trim()));
+    const ladder = ladderMatch[1].split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0);
     expect(ladder.length - 1).toBe(Number(maxIndexMatch[1]));
 
     const maxMinutes = ladder[ladder.length - 1];

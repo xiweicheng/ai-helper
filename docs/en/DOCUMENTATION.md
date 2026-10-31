@@ -1136,7 +1136,7 @@ The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Ba
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Loop Timeout | 4h | The **only** adjustable timeout in the ReAct tab: a 12-stop slider (10min–24h); drag to change, applies on release. The 10-minute floor aligns with the tool timeout. Hitting the limit no longer kills the task — it soft-lands into a "partially completed + what remains" report and keeps the checkpoint for resuming |
+| Loop Timeout | 4h | The **only** adjustable timeout in the ReAct tab: a 28-stop slider (10min–24h, hourly from 1h); drag to change, applies on release. The 10-minute floor aligns with the tool timeout. Hitting the limit no longer kills the task — it soft-lands into a "partially completed + what remains" report and keeps the checkpoint for resuming |
 | Sensitive Op Confirmation | On | Confirmation dialog for sensitive operations (tool calls, command execution); disabled = auto-allow |
 | Execution Log | On | Show the "Execution Log" button under messages for API/tool details |
 | Streaming Output | On | Token-by-token rendering + live Agent command output; disable as fallback for compatibility issues |

@@ -1011,7 +1011,7 @@ export function loadConfig() {
     const retiredReactKeys = ['reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout']
       .filter(k => result[k] !== undefined);
     if (retiredReactKeys.length) chrome.storage.local.remove(retiredReactKeys);
-    // 「整体循环超时」12 档滑杆：渲染存储值 + 绑定「松手即落盘」（attach 幂等，
+    // 「整体循环超时」28 档滑杆：渲染存储值 + 绑定「松手即落盘」（attach 幂等，
     // loadConfig 可能被重复调用，重复绑定会重复写 storage）
     renderLoopTimeoutSlider(Math.round((result.reactLoopTimeout || DEFAULT_REACT_CONFIG.loopTimeout) / 60000));
     attachLoopTimeoutSlider({

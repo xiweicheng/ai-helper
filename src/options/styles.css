@@ -1198,7 +1198,7 @@ textarea {
   margin-left: 4px;
 }
 
-/* 「整体循环超时」档位滑杆：12 档等距，轨道/thumb/刻度口径对齐 .ctx-popover-slider */
+/* 「整体循环超时」档位滑杆：28 档等距，轨道/thumb/刻度口径对齐 .ctx-popover-slider */
 /* 两列网格：左列滑杆 + 刻度 + 范围标签（三者同宽），右列读数。
    用网格而不是 flex + 右边距，范围标签才能跟随滑杆列宽度、不被读数宽度左右 */
 .loop-timeout-row {

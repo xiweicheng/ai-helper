@@ -729,7 +729,7 @@ export default {
     title: '⚙️ Reasoning Loop Settings',
     subtitle: 'Control behavior parameters of the AI reasoning loop (advanced)',
     // Max iterations / API timeout / tool timeout removed from settings (internal fixed values); related keys removed
-    // Overall loop timeout is a 12-stop slider now: the readout is assembled from the duration* keys
+    // Overall loop timeout is a 28-stop slider now (hourly from 1h): the readout is assembled from the duration* keys
     loopTimeout: 'Overall loop timeout',
     loopTimeoutHint: '(max execution time for the entire reasoning loop; drag the slider to adjust, applies on release)',
     loopTimeoutMinLabel: 'Min: 10 minutes',

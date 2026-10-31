@@ -52,6 +52,15 @@ describe('L1 档位表：跨度收窄到 10 分钟 – 24 小时', () => {
     expect(LOOP_TIMEOUT_LADDER).toContain(480);
     expect(LOOP_TIMEOUT_LADDER).toContain(720);
   });
+
+  it('1 小时起每档间隔恰为 1 小时（末端不再一格跨数小时）', () => {
+    const hourly = LOOP_TIMEOUT_LADDER.filter((m) => m >= 60);
+    expect(hourly[0]).toBe(60);
+    expect(hourly[hourly.length - 1]).toBe(1440);
+    for (let i = 1; i < hourly.length; i++) {
+      expect(hourly[i] - hourly[i - 1]).toBe(60); // 5h/7h/9h/13h…23h 都能精确落到
+    }
+  });
 });
 
 describe('L2 吸附与夹取', () => {
@@ -62,9 +71,9 @@ describe('L2 吸附与夹取', () => {
   });
 
   it('非档位历史值取最近档位（旧的任意分钟值仍能安全显示）', () => {
-    expect(nearestLadderIndex(200)).toBe(6); // 180 比 240 更近
-    expect(nearestLadderIndex(355)).toBe(8); // 360（差 5）
-    expect(nearestLadderIndex(1000)).toBe(10); // 720 vs 1440
+    expect(nearestLadderIndex(200)).toBe(6); // 180（idx6）比 240 更近
+    expect(nearestLadderIndex(355)).toBe(9); // 360（差 5）
+    expect(nearestLadderIndex(1000)).toBe(20); // 1020（差 20）vs 960（差 40）
   });
 
   it('越界与非法值夹取到首末档位', () => {
@@ -213,7 +222,7 @@ async function freshSliderModule() {
 
 function mountSlider() {
   document.body.innerHTML = `
-    <input type="range" id="reactLoopTimeout" min="0" max="11" step="1" value="7" data-minutes="240">
+    <input type="range" id="reactLoopTimeout" min="0" max="27" step="1" value="7" data-minutes="240">
     <div class="loop-timeout-scale" id="reactLoopTimeoutScale"></div>
     <output id="reactLoopTimeoutValue"></output>`;
   return {
@@ -241,7 +250,7 @@ describe('L7 DOM：渲染与「拖动预览 / 松手提交」', () => {
     expect(scale.children.length).toBe(LOOP_TIMEOUT_LADDER.length);
     expect(scale.children[7].classList.contains('is-active')).toBe(true);
     expect(scale.children[6].classList.contains('is-active')).toBe(false);
-    expect(slider.getAttribute('style')).toContain('63.6%'); // 7 / 11
+    expect(slider.getAttribute('style')).toContain('25.9%'); // 7 / 27
   });
 
   it('渲染：旧的任意分钟值（200）吸附显示为 3 小时，但不回写存储', async () => {
@@ -264,7 +273,7 @@ describe('L7 DOM：渲染与「拖动预览 / 松手提交」', () => {
     const onCommit = vi.fn();
     mod.attachLoopTimeoutSlider({ onCommit });
 
-    slider.value = '11';
+    slider.value = '27';
     slider.dispatchEvent(new Event('input', { bubbles: true }));
 
     expect(onCommit).not.toHaveBeenCalled();
@@ -283,7 +292,7 @@ describe('L7 DOM：渲染与「拖动预览 / 松手提交」', () => {
     slider.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit).toHaveBeenCalledWith(90);
+    expect(onCommit).toHaveBeenCalledWith(60);
   });
 
   it('attach 幂等：重复调用后一次 change 仍只提交一次', async () => {
@@ -344,7 +353,7 @@ describe('L9 语言热切换重绘 + index.js 接线', () => {
     const { slider, value } = mountSlider();
     const mod = await freshSliderModule();
     mod.renderLoopTimeoutSlider(240); // 索引 7
-    slider.value = '9'; // 模拟切换前滑杆已停在另一档位
+    slider.value = '11'; // 模拟切换前滑杆已停在另一档位（480 = 8h）
     const setSpy = vi.spyOn(chrome.storage.local, 'set');
     mod.repaintLoopTimeout();
     expect(slider.dataset.minutes).toBe('480');

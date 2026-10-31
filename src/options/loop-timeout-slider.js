@@ -1,7 +1,7 @@
 // options/loop-timeout-slider.js - 「整体循环超时」档位滑杆
 //
 // 为什么用档位吸附而不是线性滑杆：范围 10min–24h 跨两个数量级，线性拖动时
-// 每像素约 3 分钟，「拖到整 4 小时」得瞄准；档位把用户真正会选的 12 个值固定下来，
+// 每像素约 3 分钟，「拖到整 4 小时」得瞄准；档位把用户真正会选的 28 个值固定下来，
 // 拖动与键盘都只会落在可解释的值上（与 ctx-popover.js 的上下文窗口滑杆同一套交互）。
 //
 // 交互约定：input（拖动中）→ 只更新读数预览；change（松手 / 键盘步进）→ onCommit 落盘。
@@ -11,7 +11,14 @@ import { t } from '../shared/i18n.js';
 
 // 档位（分钟）。下限 10min 与工具执行超时上限对齐——低于它的配置连一次工具调用都跑不完
 // （工具超时 10min + API 超时 5min 才是完整的一轮）。上限 24h 与 background/constants.js 一致。
-export const LOOP_TIMEOUT_LADDER = [10, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1440];
+// 分钟段（10/15/30/45）保持稀疏；1 小时起改为每 1 小时一档直到 24h——旧表在小时段是
+// 4h→6h→8h→12h→24h，5/7/9/13…23 全都拖不到，末端一格跨 12 小时，与长滑杆的精度不匹配。
+// 因为 ≥1h 全是整点小时，读数只会是「N 分钟」或「N 小时」，不再出现「N 小时 M 分钟」。
+export const LOOP_TIMEOUT_LADDER = [
+  10, 15, 30, 45,
+  60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720,
+  780, 840, 900, 960, 1020, 1080, 1140, 1200, 1260, 1320, 1380, 1440,
+];
 
 export const LOOP_TIMEOUT_MIN_MINUTES = LOOP_TIMEOUT_LADDER[0];
 export const LOOP_TIMEOUT_MAX_MINUTES = LOOP_TIMEOUT_LADDER[LOOP_TIMEOUT_LADDER.length - 1];
