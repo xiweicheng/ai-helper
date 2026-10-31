@@ -121,7 +121,7 @@ ReAct（Reasoning + Acting）是项目的核心推理引擎，让 AI 具备自�
 | 上下文压力监测 | 三级监测（safe/warning/critical），自动触发摘要压缩；400 超限自动压缩重试，429 尊重 Retry-After |
 | 并行工具执行 | 同一轮中标记为可并行的工具按连续分组通过 Promise.all 并发执行，结果按声明顺序回写 |
 | Checkpoint 断点 | 每轮推理后自动保存断点到 IndexedDB，支持中断后一键恢复，7 天 TTL |
-| 多级超时控制 | API 超时 5min、工具超时 10min、整体循环超时 30min |
+| 多级超时控制 | API 超时 5min、工具超时 10min（内部固定）；整体循环超时默认 4 小时，可在设置页以 28 档滑杆调 10min–24h |
 | SW 重启恢复 | Keepalive 端口监测 SW 静默重启，自动恢复后台任务状态 |
 
 ### 2.4 反思系统
