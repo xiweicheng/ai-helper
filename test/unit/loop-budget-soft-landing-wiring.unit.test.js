@@ -128,7 +128,7 @@ describe('P1 参数：默认值单一来源，设置页/存储/后台三侧一�
 
   test('面板默认值取自 constants，不再各自硬编码（旧 7200000/30 已落后于新默认）', () => {
     expect(PANEL_UTILS_SRC).not.toMatch(/result\.reactLoopTimeout \|\| 7200000/);
-    expect(PANEL_UTILS_SRC).toMatch(/loopTimeout: result\.reactLoopTimeout \|\| DEFAULT_REACT_CONFIG\.loopTimeout/);
+    expect(PANEL_UTILS_SRC).toMatch(/loopTimeout: Math\.min\(Math\.max\(result\.reactLoopTimeout \|\| DEFAULT_REACT_CONFIG\.loopTimeout, 600000\), 86400000\)/);
     expect(PANEL_UTILS_SRC).not.toMatch(/maxIterations: result\.reactMaxIterations/);
   });
 

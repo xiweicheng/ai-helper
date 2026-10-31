@@ -2720,6 +2720,13 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
   
   // 确保 options 是数组，防止 LLM 返回非数组类型
   const options = Array.isArray(args.options) ? args.options : (args.options ? [String(args.options)] : []);
+
+  // recommendedOption 来自 LLM 生成的 JSON，可能是数字字符串（"2"）或越界值；先归一成合法索引，
+  // 让面板预选高亮与超时兜底取到同一个值——否则会出现「推荐徽标在第3项、超时却按第1项继续」的自相矛盾。
+  const parsedRecommended = Number.parseInt(recommendedOption, 10);
+  const recommendedIndex = Number.isInteger(parsedRecommended) && parsedRecommended >= 0 && parsedRecommended < options.length
+    ? parsedRecommended
+    : 0;
   
   console.log('[Background] exec clarificationtool:', args, 'toolCallId:', toolCallId, 'sessionId:', sessionId);
   
@@ -2731,7 +2738,7 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     const clarifyData = {
       question,
       options: options,
-      recommendedOption: recommendedOption !== undefined ? recommendedOption : 0,
+      recommendedOption: recommendedIndex,
       allowCustomInput,
       allowAdditionalInfo,
       toolCallId,
@@ -2748,12 +2755,9 @@ export async function executeClarifyQuestion(args, toolCallId, sessionId = null)
     let extendCount = 0;
 
     // 超时兜底值：弹窗里的「推荐」只是预选高亮，用户没看到 / 没点选时不能既不算答也不作数——
-    // 任务会白白等下去（澄清等待不计入循环预算，可无限期挂着）。口径与 UI 一致：
-    // 推荐索引合法则用推荐项，否则第一项；options 为空则无值可兜底，退回未澄清失败。
-    const fallbackOptionIndex = Number.isInteger(recommendedOption) && recommendedOption >= 0 && recommendedOption < options.length
-      ? recommendedOption
-      : 0;
-    const fallbackOption = options.length > 0 ? options[fallbackOptionIndex] : null;
+    // 任务会白白等下去（澄清等待不计入循环预算，可无限期挂着）。口径与面板预选一致：直接取上面
+    // 归一化好的 recommendedIndex；options 为空则无值可兜底，退回未澄清失败。
+    const fallbackOption = options.length > 0 ? options[recommendedIndex] : null;
     
     /**
      * 清理函数：确保监听器和计时器都被正确清理

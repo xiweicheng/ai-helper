@@ -309,3 +309,51 @@ describe('L7 DOM：渲染与「拖动预览 / 松手提交」', () => {
     expect(() => mod.attachLoopTimeoutSlider({ onCommit: () => {} })).not.toThrow();
   });
 });
+
+describe('L8 读取侧钳制：绕过设置页的旧备份/残留值也必须落在 10min–24h', () => {
+  const CONFIG_BG = readFileSync(resolve(process.cwd(), 'src/background/config.js'), 'utf8');
+  const PANEL_UTILS = readFileSync(resolve(process.cwd(), 'src/side_panel/utils.js'), 'utf8');
+
+  it('后台 getStoredConfig 对 reactLoopTimeout 做上下限夹取（不再裸取值）', () => {
+    expect(CONFIG_BG).toMatch(/const LOOP_TIMEOUT_MIN_MS = 600000;/);
+    expect(CONFIG_BG).toMatch(/const LOOP_TIMEOUT_MAX_MS = 86400000;/);
+    expect(CONFIG_BG).toMatch(
+      /loopTimeout: Math\.min\(Math\.max\(result\.reactLoopTimeout \|\| DEFAULT_REACT_CONFIG\.loopTimeout, LOOP_TIMEOUT_MIN_MS\), LOOP_TIMEOUT_MAX_MS\)/
+    );
+    // 不能退回旧的裸取值（那样旧备份的 1 分钟会直接生效）
+    expect(CONFIG_BG).not.toMatch(/loopTimeout: result\.reactLoopTimeout \|\|/);
+  });
+
+  it('面板 getReactConfig 同口径夹取（看门狗换算依赖它）', () => {
+    expect(PANEL_UTILS).toMatch(
+      /loopTimeout: Math\.min\(Math\.max\(result\.reactLoopTimeout \|\| DEFAULT_REACT_CONFIG\.loopTimeout, 600000\), 86400000\)/
+    );
+    expect(PANEL_UTILS).not.toMatch(/loopTimeout: result\.reactLoopTimeout \|\|/);
+  });
+});
+
+describe('L9 语言热切换重绘 + index.js 接线', () => {
+  const OPTIONS_INDEX = readFileSync(resolve(process.cwd(), 'src/options/index.js'), 'utf8');
+
+  it('index.js 引入 repaintLoopTimeout 并在语言订阅回调里调用', () => {
+    expect(OPTIONS_INDEX).toMatch(/import \{ repaintLoopTimeout \} from '\.\/loop-timeout-slider\.js';/);
+    expect(OPTIONS_INDEX).toMatch(/subscribe\(\(\) => \{[\s\S]*?applyI18n\(\);[\s\S]*?repaintLoopTimeout\(\);/);
+  });
+
+  it('repaintLoopTimeout 按滑杆当前档位重算读数（不读存储），缺元素时安全跳过', async () => {
+    const { slider, value } = mountSlider();
+    const mod = await freshSliderModule();
+    mod.renderLoopTimeoutSlider(240); // 索引 7
+    slider.value = '9'; // 模拟切换前滑杆已停在另一档位
+    const setSpy = vi.spyOn(chrome.storage.local, 'set');
+    mod.repaintLoopTimeout();
+    expect(slider.dataset.minutes).toBe('480');
+    expect(value.textContent).toBe('8 小时');
+    expect(setSpy).not.toHaveBeenCalled();
+    setSpy.mockRestore();
+
+    document.body.innerHTML = '<div></div>';
+    const mod2 = await freshSliderModule();
+    expect(() => mod2.repaintLoopTimeout()).not.toThrow();
+  });
+});

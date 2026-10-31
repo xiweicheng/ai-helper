@@ -387,7 +387,7 @@ The project uses the ReAct (Reasoning + Acting) pattern as its core inference en
 10. **Sub-task Dispatch**: `dispatch_task` delegates subtasks to other agents for parallel execution
 11. **Streaming Response**: OpenAI streaming (SSE) with DeepSeek thinking support; replies render token-by-token in real time. Agent command output streams live as well
 12. **Clarification Mechanism**: When info is incomplete, a clarification dialog pops up with auto-paused loop timer and suggested options
-13. **Multi-Level Timeout Control**: API timeout 5min, tool timeout 10min, overall loop timeout 30min
+13. **Multi-Level Timeout Control**: API timeout 5min and tool timeout 10min are internal fixed values; overall loop timeout defaults to 4h (adjustable 10min–24h)
 14. **Cancel Control**: Users can cancel the inference loop at any time, isolated per session
 15. **SW Restart Recovery**: Keepalive ports monitor Service Worker silent restarts, auto-notifying Side Panel to recover. Background task state persisted to `chrome.storage.session`
 16. **Checkpoint**: A checkpoint is auto-saved after each inference round, supporting resume after interruption
@@ -1136,16 +1136,13 @@ The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Ba
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| Max Iterations | 100 | Inference-action loop limit (10-1000) |
-| API Timeout | 5min | Single API call max wait (1-10min) |
-| Loop Timeout | 30min | Overall loop max execution time (1-120min) |
-| Tool Timeout | 10min | Single tool execution max wait (1-30min) |
+| Loop Timeout | 4h | The **only** adjustable timeout in the ReAct tab: a 12-stop slider (10min–24h); drag to change, applies on release. The 10-minute floor aligns with the tool timeout. Hitting the limit no longer kills the task — it soft-lands into a "partially completed + what remains" report and keeps the checkpoint for resuming |
 | Sensitive Op Confirmation | On | Confirmation dialog for sensitive operations (tool calls, command execution); disabled = auto-allow |
 | Execution Log | On | Show the "Execution Log" button under messages for API/tool details |
 | Streaming Output | On | Token-by-token rendering + live Agent command output; disable as fallback for compatibility issues |
 | Expand Tool Cards in Stream | Off | Tool cards expand by default when enabled |
 
-Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection are built-in strategies — no configuration needed.
+Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection are built-in strategies — no configuration needed. **Max iterations 2000, API timeout 5min, tool timeout 10min, and clarification timeout 5min are internal fixed values with no UI** (tool timeout aligns with the Agent-side total-budget cap; the round count is a deterministic fuse against "fast but spinning").
 
 ### Reflection & Completion Verification Settings (inside the ReAct tab)
 

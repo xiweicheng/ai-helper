@@ -626,6 +626,17 @@ export function cancelClarify() {
 }
 
 /**
+ * 后台判定超时/面板关闭后的本地收尾
+ * 只有后台明确以 reason==='timeout' 下发的代选项才告诉用户「替你选了 X」；
+ * 面板主动关闭（panel_closed）等情形即使带 defaultOption 也不能谎称代选。
+ * @param {Object} message - CLARIFY_TIMEOUT 下行消息
+ * @returns {string|null}
+ */
+function settledOptionFrom(message) {
+  return message?.reason === 'timeout' ? (message?.defaultOption || null) : null;
+}
+
+/**
  * 处理澄清超时/撤销通知（runtime 广播消息与 keepalive port 定向消息共用）
  *
  * 后台已自行结算这一条，面板不得再回发 CLARIFY_RESPONSE。
@@ -645,12 +656,12 @@ export function handleClarifyTimeout(message) {
       return;
     }
     if (!visibleClarify) return;
-    settleAfterTimeout(message?.defaultOption || null);
+    settleAfterTimeout(settledOptionFrom(message));
     return;
   }
 
   if (visibleClarify && visibleClarify.toolCallId === toolCallId) {
-    settleAfterTimeout(message?.defaultOption || null);
+    settleAfterTimeout(settledOptionFrom(message));
     return;
   }
 

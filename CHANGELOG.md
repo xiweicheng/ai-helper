@@ -4,6 +4,18 @@
 
 ## 2026-10-31
 
+### 代码评审修复：超时收敛 / 滑杆 / 澄清代选的四处隐患
+
+> 来源：对本日三处提交（`d314af6c` / `17643252` / `87fb7d57`）做代码评审后确认并修复。
+
+- **下限 10 分钟只挡在设置页保存路径**：后台 `getStoredConfig` 与面板 `getReactConfig` 都是 `result.reactLoopTimeout || DEFAULT` 裸取值，「旧备份导入」「历史残留」两条绕过 UI 的写入路径不受校验——存过 1 分钟时滑杆就近显示 10 分钟、后台却按 1 分钟跑，一次工具调用即撞线。改为两处读取都夹到 `[600000, 86400000]`（只钳上下界、不强吸附档位）。
+- **切语言不重绘滑杆读数**：`options/index.js` 的语言订阅只 `applyI18n()`（刷静态 `data-i18n` 标签），够不到 JS 拼的 `<output>` 与 `aria-valuetext`，英文界面下读数仍停在「4 小时」。新增 `repaintLoopTimeout()`（按当前档位重算文案、不读存储），在订阅回调里调用。
+- **`recommendedOption` 两侧口径不一致**：后台 `Number.isInteger` 严格、面板 `>= 0` 宽松——LLM 给出数字字符串 `"2"` 时，面板预选高亮在第 3 项，超时兜底却因严格判定退回第 1 项，toast 与用户所见矛盾。改为入口统一 `parseInt` 归一成合法索引，面板预选与超时兜底取同一值。
+- **面板代选口径隐式**：`handleClarifyTimeout` 只看 `defaultOption` 真值、忽略后端下发的 `reason`。改为显式 `reason === 'timeout'` 才播报「替你选了 X」，避免后端日后给 `panel_closed` 也带兜底值时误报。
+- 文档：`docs/zh|en/DOCUMENTATION.md` 的 ReAct 配置表此前仍写着「最大循环次数 100 (10-1000)、API/工具/循环超时可配 (…-…min)」——三项 UI 已撤、默认与上限已变，与 wiki 同口径校正为「唯一可调项为整体循环超时（12 档滑杆 10min–24h、默认 4h），其余为内部固定值」。
+
+**验证**：`loop-timeout-slider.unit.test.js` +4 例（读取侧钳制源守卫 / index.js 重绘接线 / repaint 行为）、`clarify-routing.unit.test.js` +1 例（字符串推荐项归一）。
+
 ### 澄清超时改为「按推荐项继续 + 明确告知」，不再返回空答案
 
 > 来源：用户确认「澄清超时后用户没看到、没点选」时的默认口径——原行为是两者都不是：既没代选，也没明确算失败。

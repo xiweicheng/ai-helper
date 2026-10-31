@@ -115,7 +115,20 @@ export function renderLoopTimeoutSlider(minutes) {
 }
 
 /**
+ * 语言热切换后重绘读数与 aria-valuetext：只按当前档位重算文案，不读存储、不改值。
+ * applyI18n 只刷带 data-i18n 的静态标签，够不到 JS 拼的读数节点（output / aria），
+ * 不重绘就会停在旧语言（标签变英文、读数仍写「4 小时」），须由 index.js 的语言订阅调用。
+ */
+export function repaintLoopTimeout() {
+  if (!sliderEl) return;
+  paintIndex(sliderEl.value);
+}
+
+/**
  * 绑定滑杆交互（幂等）。松手 / 键盘步进即提交，与上下文窗口滑杆一致。
+ * 注意：模块级 attached 只绑定一次，因此仅首个 onCommit 生效——本滑杆唯一调用方
+ * 是设置页 loadConfig，两处传的是同一逻辑；若将来新增第二个入口需带不同 onCommit，
+ * 必须改为可重绑或按元素实例存回调，否则后传入的回调会被静默忽略。
  * @param {{onCommit?: (minutes:number)=>void}} [options]
  */
 export function attachLoopTimeoutSlider({ onCommit } = {}) {

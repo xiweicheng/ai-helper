@@ -422,6 +422,19 @@ describe('超时兜底：按推荐项结算，而不是「没有答案」', () =
     expect(r2.content).toContain('丙');
   });
 
+  test('推荐项是数字字符串（LLM 常见跑偏）：归一后按该索引代选，与面板预选一致', async () => {
+    const p = executeClarifyQuestion(
+      { question: 'q?', options: ['npm', 'pnpm', 'yarn'], recommendedOption: '1' },
+      'tc-str', 's-str'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    // 下发给面板的预选索引也应是数字 1（不能把字符串 "1" 原样传下导致两侧口径不一致）
+    await drainToTimeout('tc-str');
+    const result = await p;
+    expect(result.success).toBe(true);
+    expect(result.content).toContain('pnpm'); // "1" 归一为索引 1，而不是退回第一项
+  });
+
   test('options 为空：无值可代选，仍按未澄清失败收口', async () => {
     const p = executeClarifyQuestion({ question: 'q?', options: [] }, 'tc-empty', 's-empty');
     await vi.advanceTimersByTimeAsync(0);
