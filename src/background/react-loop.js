@@ -108,10 +108,10 @@ registerTranslations('zh', {
     goalVerdictError: '评估失败',
     goalHaltNode: '🎯 目标 {status}',
     goalUnmetNote: '\n\n> 🎯 目标模式：独立评估判定此目标**无法达成**（理由：{reason}）。以上为当前实际进展，未声称已完成。',
-    goalBudgetNotice: '🎯 目标模式的轮次/时间预算已用完（已用 {turns}/{budget} 轮），现场已保留。点击「继续执行」可接着做；目标仍然有效。',
-    goalPausedNotice: '🎯 连续 {turns} 轮未取得实质进展，目标已暂停（现场已保留）。补充说明或点「继续执行」即可恢复。',
+    goalBudgetNotice: '🎯 目标的尝试次数/时间预算已用完（已尝试 {turns} 次，上限 {budget} 次），现场已保留。点击「继续执行」可接着做（会补充一批次数）；目标仍然有效。',
+    goalPausedNotice: '🎯 连续 {turns} 次未取得实质进展，目标已暂停（现场已保留）。补充说明或点「继续执行」即可恢复。',
     goalUserPausedNotice: '🎯 目标已按你的操作暂停，本轮到此为止（现场已保留）。补充说明、点「继续执行」或重新点亮 🎯 即可恢复。',
-    goalEvaluatorDownNotice: '🎯 评估器连续不可用（网络/解析异常），目标已暂停以免无限续跑（未消耗轮次预算）。点「继续执行」可重试。',
+    goalEvaluatorDownNotice: '🎯 评估器连续不可用（网络/解析异常），目标已暂停以免无限续跑（未消耗尝试次数）。点「继续执行」可重试。',
   },
 });
 
@@ -173,10 +173,10 @@ registerTranslations('en', {
     goalVerdictError: 'evaluator error',
     goalHaltNode: '🎯 Goal {status}',
     goalUnmetNote: '\n\n> 🎯 Goal mode: the independent evaluator judged this goal **not achievable** (reason: {reason}). The above is the actual progress; completion is not claimed.',
-    goalBudgetNotice: '🎯 The goal turn/time budget is used up ({turns}/{budget} turns). The scene is preserved — press "Continue" to keep going; the goal stays active.',
+    goalBudgetNotice: '🎯 The goal attempts/time budget is used up ({turns} attempts, cap {budget}). The scene is preserved — press "Continue" to keep going (extra attempts are granted); the goal stays active.',
     goalPausedNotice: '🎯 No substantive progress for {turns} consecutive attempts, so the goal is paused (scene preserved). Add guidance or press "Continue" to resume.',
     goalUserPausedNotice: '🎯 The goal was paused by your action, so this run stops here (scene preserved). Add guidance, press "Continue", or re-arm 🎯 to resume.',
-    goalEvaluatorDownNotice: '🎯 The evaluator has been unavailable repeatedly (network/parse errors), so the goal is paused to avoid endless retries (no turn budget was consumed). Press "Continue" to retry.',
+    goalEvaluatorDownNotice: '🎯 The evaluator has been unavailable repeatedly (network/parse errors), so the goal is paused to avoid endless retries (no attempts were consumed). Press "Continue" to retry.',
   },
 });
 import { summarizeRoundsBatch, extractAllRounds } from './context-summarizer.js';

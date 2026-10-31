@@ -61,15 +61,20 @@ export const MAX_OBJECTIVE_CHARS = 4000;
 export const MAX_CONSTRAINTS = 20;
 export const MAX_CONSTRAINT_CHARS = 500;
 
-// 预算与停滞默认值。设置页（goalConfig）可覆盖，这里是唯一兜底来源。
+// 预算与停滞默认值。设置页只开放总开关与意图识别，这些数值固定取此处；
+// 这是唯一兜底来源，引擎与面板都读它。
 export const DEFAULT_GOAL_LIMITS = {
   turnBudget: 20,          // 收尾尝试次数上限
-  maxTurnBudget: 200,      // 设置页允许的上限（防手误填 10000）
+  maxTurnBudget: 200,      // 「继续」可以累加的硬顶（防无限续跑）
   minTurnBudget: 5,
   timeBudgetMs: 0,         // 0 = 跟随 ReAct 循环的 loopTimeout
   stagnationLimit: 3,      // 连续无工具进展的未达成轮数 → 暂停
   evaluatorFailureLimit: 2 // 评估器连续失败次数 → 暂停（不烧轮次）
 };
+
+// 目标条剩余提示的阈值：只剩这么多次时才多说一句，平时不说。
+// 目的是不让用户拿一个无法决策的小数字天天盯着看得不到信息。
+export const GOAL_TURNS_LEFT_HINT = 5;
 
 function clampInt(value, min, max, fallback) {
   const n = Number(value);
@@ -242,6 +247,30 @@ export function checkGoalBudget(goal, opts = {}) {
     if (elapsed >= budget) return { exhausted: true, reason: 'time' };
   }
   return { exhausted: false, reason: null };
+}
+
+/**
+ * 目标条的副行文案（纯函数，便于单测）。把内部的「轮 / turn」翻译成用户能懂的「次尝试」：
+ * - 还没评估过（turnsUsed=0）就不显示——此刻的 0/20 不携带任何信息；
+ * - 接近上限（剩 ≤ GOAL_TURNS_LEFT_HINT）才补一句剩余，平时不盯数字；
+ * - 补充约束条数独立于轮次，始终展示。
+ * @param {object|null} goal
+ * @param {(key:string, vars?:object)=>string} t 注入 i18n，保持本文件零依赖
+ * @returns {string[]}
+ */
+export function buildGoalMetaParts(goal, t) {
+  if (!goal || typeof t !== 'function') return [];
+  const parts = [];
+  const used = Math.max(0, Math.floor(Number(goal.turnsUsed) || 0));
+  const budget = Math.max(0, Math.floor(Number(goal.turnBudget) || 0));
+  if (used > 0) {
+    parts.push(t('goal.turnsUsed', { turns: used }));
+    const left = budget - used;
+    if (left > 0 && left <= GOAL_TURNS_LEFT_HINT) parts.push(t('goal.turnsLeft', { turns: left }));
+  }
+  const extra = Array.isArray(goal.constraints) ? goal.constraints.length : 0;
+  if (extra > 0) parts.push(t('goal.constraints', { count: extra }));
+  return parts;
 }
 
 /** 记录一次轮消耗（评估器 token 单独累加，不计入 turnsUsed）。 */

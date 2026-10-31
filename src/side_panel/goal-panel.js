@@ -13,6 +13,7 @@ import { t } from '../shared/i18n.js';
 import { showToast, escapeHtml } from './utils.js';
 import logger from '../shared/logger.js';
 import { detectGoalIntent, stripGoalIntentPhrases } from '../shared/goal-intent.js';
+import { buildGoalMetaParts } from '../shared/goal.js';
 
 // 与 shared/goal.js 的 GOAL_STATUS 对齐（这里只做展示映射，不参与裁决）
 const STATUS_LABEL_KEYS = {
@@ -89,10 +90,9 @@ export function renderGoalBar() {
   if (goal) {
     els.objective.textContent = goal.objective || '';
     els.objective.title = goal.objective || '';
-    const parts = [t('goal.turns', { turns: goal.turnsUsed || 0, budget: goal.turnBudget || 0 })];
-    const extra = Array.isArray(goal.constraints) ? goal.constraints.length : 0;
-    if (extra > 0) parts.push(t('goal.constraints', { count: extra }));
-    els.meta.textContent = parts.join(' · ');
+    // 副行不再直接铺「3/20 轮」：这是内部计量单位，且 0 时完全无信息。
+    // 改由纯函数输出「已尝试 3 次 · 还剩 2 次」（接近上限才提示剩余）。
+    els.meta.textContent = buildGoalMetaParts(goal, t).join(' · ');
   } else {
     els.objective.textContent = t('goal.startHint');
     els.objective.title = '';

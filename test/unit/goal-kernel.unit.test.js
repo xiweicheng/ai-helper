@@ -32,6 +32,8 @@ import {
   parseGoalVerdictJson,
   buildGoalAnchorText,
   buildGoalContinuationText,
+  buildGoalMetaParts,
+  GOAL_TURNS_LEFT_HINT,
 } from '../../src/shared/goal.js';
 
 const T0 = 1_700_000_000_000;
@@ -536,5 +538,54 @@ describe('autoApprove：放行授权只认显式 UI', () => {
     // 非 intent 来源的授权字段可以恢复（面板重亮开关后继续跑的场景）
     const legit = { ...createGoal({ objective: 'x', now: T0 }), autoApprove: true };
     expect(normalizeGoal(legit, T0).autoApprove).toBe(true);
+  });
+});
+
+describe('目标条副行文案（把内部「轮」翻译成「次尝试」）', () => {
+  // 假的 t()：不回显变量名，而是把 key+参数拼成一个可断言的串
+  const t = (key, vars = {}) => `${key}:${Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(',')}`;
+
+  it('还没评估过时不显示次数：0/N 不携带任何信息', () => {
+    const goal = { ...createGoal({ objective: 'x', now: T0 }) };
+    expect(goal.turnsUsed).toBe(0);
+    expect(buildGoalMetaParts(goal, t)).toEqual([]);
+  });
+
+  it('有进展时只说「已尝试 N 次」，远离上限时不催剩余', () => {
+    const goal = { ...createGoal({ objective: 'x', now: T0 }), turnsUsed: 3 };
+    expect(buildGoalMetaParts(goal, t)).toEqual(['goal.turnsUsed:turns=3']);
+  });
+
+  it(`剩 ≤${GOAL_TURNS_LEFT_HINT} 次才补一句剩余`, () => {
+    const budget = DEFAULT_GOAL_LIMITS.turnBudget;
+    const near = { ...createGoal({ objective: 'x', now: T0 }), turnsUsed: budget - GOAL_TURNS_LEFT_HINT };
+    expect(buildGoalMetaParts(near, t)).toEqual([
+      `goal.turnsUsed:turns=${budget - GOAL_TURNS_LEFT_HINT}`,
+      `goal.turnsLeft:turns=${GOAL_TURNS_LEFT_HINT}`,
+    ]);
+    // 再往前一轮：还剩 4 次，仍然提示
+    const nearer = { ...near, turnsUsed: budget - 4 };
+    expect(buildGoalMetaParts(nearer, t)[1]).toBe('goal.turnsLeft:turns=4');
+    // 离上限还远：不提示
+    const far = { ...near, turnsUsed: budget - GOAL_TURNS_LEFT_HINT - 1 };
+    expect(buildGoalMetaParts(far, t)).toHaveLength(1);
+  });
+
+  it('撞线后只说已尝试次数，不再说「还剩 0 次」', () => {
+    const budget = DEFAULT_GOAL_LIMITS.turnBudget;
+    const spent = { ...createGoal({ objective: 'x', now: T0 }), turnsUsed: budget };
+    expect(buildGoalMetaParts(spent, t)).toEqual([`goal.turnsUsed:turns=${budget}`]);
+  });
+
+  it('补充约束条数独立于轮次，刚开跑也要显示', () => {
+    const goal = { ...createGoal({ objective: 'x', now: T0 }), constraints: ['a', 'b'] };
+    expect(buildGoalMetaParts(goal, t)).toEqual(['goal.constraints:count=2']);
+  });
+
+  it('脏数据不炸：缺字段 / 非数组 constraints / 无 t 都返回可渲染结果', () => {
+    expect(buildGoalMetaParts(null, t)).toEqual([]);
+    expect(buildGoalMetaParts({ turnsUsed: 2, turnBudget: 20, constraints: 'oops' }, t)).toEqual(['goal.turnsUsed:turns=2']);
+    expect(buildGoalMetaParts({ turnsUsed: -5, turnBudget: 20 }, t)).toEqual([]);
+    expect(buildGoalMetaParts({ turnsUsed: 2, turnBudget: 20 }, null)).toEqual([]);
   });
 });
