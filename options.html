@@ -460,6 +460,106 @@
 
       <div class="react-config-item">
         <label>
+          <span data-i18n="react.goalMode">目标模式（Goal）</span>
+          <span class="hint-text" data-i18n="react.goalModeHint">（模型宣布完成后独立评估是否真达成，未达成则自动续跑，直到达成 / 判为不可能 / 预算耗尽）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="goalEnabled" checked>
+          <span class="toggle-switch"></span>
+          <span id="goalEnabledLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalModeDesc1">启用后，侧边栏输入区出现 🎯 开关；点亮的那轮任务会作为会话目标持续自动推进。评估是往当前会话模型发一次独立短调用（温度 0，只输出一个 JSON 裁决），不会引入第二个模型。</span><br>
+          <span data-i18n="react.goalModeDesc2">关闭后：引擎不评估不续跑、后台拒绝设定目标，行为与未实现目标模式时一致；已落库的目标现场保留，重新开启可继续。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalTurnBudget">收尾轮数预算</span>
+          <span class="hint-text" data-i18n="react.goalTurnBudgetHint">（一个“轮”= 一次收尾尝试，不是一次 API 往返）</span>
+        </label>
+        <input type="number" id="goalTurnBudget" min="5" max="200" step="1" value="20" placeholder="20">
+        <span class="unit" data-i18n="react.unitTurn">轮</span>
+        <div class="range-labels">
+          <span data-i18n="react.goalTurnMin">最小: 5 轮</span>
+          <span data-i18n="react.goalTurnMax">最大: 200 轮</span>
+        </div>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalTurnBudgetDesc">撞线后目标标为「预算耗尽」并保留现场等你点「继续」，不会自动接走重跑。每次评估都会额外消耗一次模型调用。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalTimeBudget">目标时间预算</span>
+          <span class="hint-text" data-i18n="react.goalTimeBudgetHint">（0 = 直接跟随上方的「整体循环超时」，不另设一套时间语义）</span>
+        </label>
+        <input type="number" id="goalTimeBudgetMin" min="0" max="1440" step="1" value="0" placeholder="0">
+        <span class="unit" data-i18n="react.unitMinute">分钟 (min)</span>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalTimeBudgetDesc">只在比整体循环超时更短时收紧；两者取先到点。留 0 则完全由上方循环超时兜住。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalStagnation">停滞暂停阈值</span>
+          <span class="hint-text" data-i18n="react.goalStagnationHint">（连续多少轮 unmet 且没有任何工具执行成功）</span>
+        </label>
+        <input type="number" id="goalStagnationLimit" min="1" max="10" step="1" value="3" placeholder="3">
+        <span class="unit" data-i18n="react.unitRound">轮</span>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalStagnationDesc">撞到阈值就暂停目标，而不是接着烧完预算 —— 只说不动手的答案不值得再评估一轮。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalEvaluatorFail">评估器失败上限</span>
+          <span class="hint-text" data-i18n="react.goalEvaluatorFailHint">（连续多少次拿不到可解析裁决后暂停）</span>
+        </label>
+        <input type="number" id="goalEvaluatorFailureLimit" min="1" max="5" step="1" value="2" placeholder="2">
+        <span class="unit" data-i18n="react.unitTime">次</span>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalEvaluatorFailDesc">评估失败不烧轮次预算（否则网关抽风会把目标误判成“目标太难”），但连续失败到这个上限会把目标暂停下来。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalObjectiveEvidence">目标客观取证</span>
+          <span class="hint-text" data-i18n="react.goalObjectiveEvidenceHint">（复用完成度校验的取证通道，仅限已设定客观完成标准的目标）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="goalObjectiveEvidence" checked>
+          <span class="toggle-switch"></span>
+          <span id="goalObjectiveEvidenceLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalObjectiveEvidenceDesc1">开启后，目标带了客观完成标准（元素存在 / 命令退出码 / 文件内容等）时会先真实取证，把结果附进评估提示词，而不只听模型自述。取证失败只记为 UNVERIFIED，绝不折算成「未达成」。</span><br>
+          <span data-i18n="react.goalObjectiveEvidenceDesc2">关闭后：纯靠模型回答与执行日志摘要作判定。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item goal-sub" style="margin-left: 24px; display: none;">
+        <label>
+          <span data-i18n="react.goalIntent">意图识别</span>
+          <span class="hint-text" data-i18n="react.goalIntentHint">（从输入文本里识别“按目标模式执行”，零 token）</span>
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="goalIntentDetection" checked>
+          <span class="toggle-switch"></span>
+          <span id="goalIntentDetectionLabel" data-i18n="react.enabled">已启用</span>
+        </label>
+        <div class="info-text" style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">
+          <span data-i18n="react.goalIntentDesc1">开启后，即使没点亮 🎯 开关，你说“按目标模式一直跑下去”这类话时也会自动开启本轮目标，并给出可撤销提示。是发送前的确定性正则判定，不交给模型自己选。</span><br>
+          <span data-i18n="react.goalIntentDesc2">识别出的目标不会自动放行敏感操作：能越过确认弹窗的授权只能由你亲手点开关授予。</span>
+        </div>
+      </div>
+
+      <div class="react-config-item">
+        <label>
           <span data-i18n="react.enableExecutionLog">启用执行日志</span>
           <span class="hint-text" data-i18n="react.enableExecutionLogHint">（显示 API 调用和工具执行的详细日志，帮助调试和理解 AI 思考过程）</span>
         </label>

@@ -1,7 +1,7 @@
 // options/index.js - 选项页面入口
 
 import { initTheme, getTheme, setTheme, subscribeTheme } from '../shared/theme.js';
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast, syncQueueAutoCarryFields } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast, syncQueueAutoCarryFields, syncGoalFields } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection, commitImageModelContextWindow } from './config-manager.js';
@@ -1297,6 +1297,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     completionVerificationRerunEnabledLabel.textContent = completionVerificationRerunEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
+  // 目标模式（Goal）：总开关只收起子项、子开关只翻「已启用/已停用」文案，不在这里落盘。
+  // 必须如斯：子项是数字输入框，半填状态下即时写入会把 NaN 预算存进 storage
+  //（范围校验只在 saveConfig 里），而 goalConfig 靠整份对象浅合并，写残一份会连带弄坏其余字段。
+  ['goalEnabled', 'goalObjectiveEvidence', 'goalIntentDetection'].forEach((id) => {
+    const goalEl = document.getElementById(id);
+    if (goalEl) goalEl.addEventListener('change', syncGoalFields);
+  });
+  
   // 内网地址访问总闸：切换即写入 storage；关闸只改开关与白名单区块的显隐，绝不动 allowedNetworkHosts
   const networkAccessEnabledEl = document.getElementById('networkAccessEnabled');
   const networkAccessEnabledLabel = document.getElementById('networkAccessEnabledLabel');

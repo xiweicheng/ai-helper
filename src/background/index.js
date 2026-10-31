@@ -15,6 +15,7 @@ import { enqueueInjection } from './injection.js';
 import * as AgentClient from './local-agent-client.js';
 import { getAsrStatus, clearAsrStatusCache, transcribeWavBase64, openAsrSession, base64ToUint8 } from './asr-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
+import { getGoal, listGoals, applyGoalCommand, removeGoal } from './goal-store.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import { persistCompactionSummary } from './compaction-memory.js';
@@ -1146,6 +1147,75 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       activeSessionIds: Array.from(activeReactLoops),
     });
     return false;
+  }
+
+  // ===== 目标模式（Goal）：会话级状态通道 =====
+  // 面板只表达意图，状态迁移全部由后台执行（引擎是权威）——
+  // 否则多个面板实例各自维护一份，最终会和引擎里的 goalState 走样。
+  if (message.type === 'GET_GOAL') {
+    const { sessionId } = message;
+    if (!sessionId) {
+      sendResponse({ goal: null });
+      return false;
+    }
+    getGoal(sessionId).then(goal => {
+      sendResponse({ goal });
+    }).catch(err => {
+      logger.warn('[Background] GET_GOAL failed:', err?.message);
+      sendResponse({ goal: null });
+    });
+    return true;
+  }
+
+  // 面板启动时一次性拉全部会话的目标（避免逐会话问一遍）
+  if (message.type === 'LIST_GOALS') {
+    listGoals().then(goals => {
+      sendResponse({ goals });
+    }).catch(err => {
+      logger.warn('[Background] LIST_GOALS failed:', err?.message);
+      sendResponse({ goals: [] });
+    });
+    return true;
+  }
+
+  // 目标指令：set / constraint / pause / resume / clear
+  // goal 模式关闭时一律拒绝——避免「开关说关了但后台还能建目标」的谎话
+  if (message.type === 'SET_GOAL') {
+    const { sessionId, action } = message;
+    if (!sessionId) {
+      sendResponse({ success: false, goal: null });
+      return false;
+    }
+    getStoredConfig().then(cfg => {
+      if (cfg?.reactConfig?.goal?.enabled === false) {
+        sendResponse({ success: false, goal: null, disabled: true });
+        return null;
+      }
+      return applyGoalCommand(sessionId, message);
+    }).then(goal => {
+      sendResponse({ success: !!goal, goal: goal || null, action: action || 'set' });
+    }).catch(err => {
+      logger.warn('[Background] SET_GOAL failed:', err?.message);
+      sendResponse({ success: false, goal: null });
+    });
+    return true;
+  }
+
+  // 会话被删除：清掉它的目标镜像。面板只删 IndexedDB 里的会话，而 goal 的权威在这层——
+  // 不接这一手，sessionGoals 里会按已经查不到的 sessionId 永久留着孤儿条目。
+  if (message.type === 'DROP_GOAL') {
+    const { sessionId } = message;
+    if (!sessionId) {
+      sendResponse({ success: false });
+      return false;
+    }
+    removeGoal(sessionId).then(() => {
+      sendResponse({ success: true });
+    }).catch(err => {
+      logger.warn('[Background] DROP_GOAL failed:', err?.message);
+      sendResponse({ success: false });
+    });
+    return true;
   }
 
   // ==================== 语音输入（本地 STT） ====================

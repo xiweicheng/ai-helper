@@ -4,6 +4,56 @@
 
 ## 2026-10-31
 
+### Goal 目标模式：把「无人值守推到达成」做成引擎能力（独立评估 + 四道闸 + 累加语义）
+
+> 来源：用户需求「设一个目标让它自己跑完，不要每步问我」。三条决定骨架的拍板：**不引入第二个模型**（评估器就是对当前会话模型的一次独立短调用，沿用 `react-reflection` 的路子）、**不让模型自己开目标**（控制面只归用户与 runtime，给被考核方发预算开关等于没有闸门）、**会话内继续发消息是累加约束而不是替换目标**。
+
+**新增模块（5 个，1677 行）**
+- `src/shared/goal.js`（489 行，纯函数）：目标模型 + 状态机（`applyGoalVerdict` 是唯一边移入口）+ 归一化 + 锚点/续跑文案 + 评估 JSON 解析。objective 上限 4000 字符、约束最多 20 条每条 500 字符。
+- `src/shared/goal-intent.js`（140 行）：零 token 的确定性正则识别，强命中词（`按目标模式`/`goal mode`/`无人值守`…）直接开，弱句式只提示不自动开。
+- `src/background/goal-evaluator.js`（305 行）：独立短调用（`temperature 0`、`maxTokens 600`、**不挂 tools**）。
+- `src/background/goal-store.js`（315 行）：会话级注册表，内存权威 + `chrome.storage.local.sessionGoals` 镜像。语义表收在 `applyGoalCommand`（set/replace/constraint/pause/resume/clear），面板只表达意图。
+- `src/side_panel/goal-panel.js`（428 行）：🎯 chip、目标条、意图提示、`GOAL_UPDATE` 回推监听。
+
+**引擎接线（`react-loop.js`，唯一收尾接线点）**
+- 目标锚点每轮回注，注入位置与 plan/notes 锚点同段（**必须在上下文压力裁剪之后**，否则 critical 分支的 `filterApiMessages` 整段吞掉）。锚点带 `Progress: attempt N/B` 与上次独立结论。
+- 收尾（模型返回纯文本）分支改为三出口：`continue`（判 unmet → 先把模型这次的收尾陈述入历史，再追加纠正指令，**绝不清 checkpoint**）/ `halt`（暂停或预算，保留现场等用户点「继续执行」）/ `finalize`（达成或未达成才走原有收尾）。
+- 四道闸：轮数（默认 20 轮，「轮」= 一次收尾尝试，不是一次 API 往返）、时间（`timeBudgetMs=0` 即跟随 `loopTimeout`，不另设一套时钟）、停滞（连续 3 轮 unmet 且无任何工具成功 → 暂停）、循环（沿用 `loop-detector`）。阈值只传有限值——传 `undefined` 会盖掉 `DEFAULT_GOAL_LIMITS` 让闸门失效。
+- 评估器失败（网络/解析）算 unmet 但**不烧轮次预算**，连续 2 次异常直接暂停，不允许「评估挂了还无限续跑」。
+- `goalState` 进 checkpoint（与 `taskState`/`notesState` 同级）：现场 > 快照，续跑不丢目标与轮数。
+
+**无人值守的结构性改动（唯一一处工具集差异）**
+- 目标启动时预置任务级放行 `grantTaskLoopApproval`，等价于用户点了「当前任务放行」；`agent_exec` 灰名单确认零改动复用同一条授权。
+- **摘掉 `clarify_question`**：无人值守时弹框必然空等到澄清超时。另有第二道闸（非 ReAct 通道的工具集）与「遇歧义自行决策并记进 working notes」的锚点要求。
+- 授权只认面板开关：意图识别入口 `createdBy='intent'` 时 `autoApprove` 恒为 `false`——否则网页里一段注入文案就能替用户拆掉安全闸。暂停/清除立即收回授权，`finally` 撤销，agent 端黑名单命令与任何开关无关。
+- 目标条在放行生效时显示「🔓 敏感操作自动放行」徽标且可点撤销，不做静默放行。
+
+**评估取证与措辞红线**
+- `doneCriteria` 直接喂给 `completion-verifier`（DOM 断言 + 命令退出码双通道），取到的硬证据塞进评估 prompt；输入是「目标 + 锚点进度 + 最近工具调用摘要 + 取证结果」而不是整段对话。
+- 继承现有红线：`available:false`（取不到证）**绝不折算成「未达成」**，只能作为待确认交给评估模型。
+
+**持久化与 UI**
+- 三层：checkpoint 现场（恢复权威）→ `sessionGoals` 镜像（冷启动水合用，300ms 防抖合并 + 只保留最近 50 个会话 + `chrome.runtime.onSuspend` 尽力刷盘）→ 面板 `state.goalSnapshot`。`goalMode` 作为会话级字段在 `session-store.js` 三处对称登记。
+- 消息通道 `GET_GOAL` / `SET_GOAL` / `LIST_GOALS` / `DROP_GOAL` + 后台回推 `GOAL_UPDATE`。**总开关关闭时后台一律拒绝建目标**（否则「开关说关了但后台还能建」是谎话），面板给出原因 toast 而不是静默降级。
+- 执行日志复用 `nodeType:'reflection'` + 自定义 `nodeName`（🎯 目标评估 3/20）+ `goalNode` 标记，**渲染层零改动**。
+- 设置页「目标模式」分组 1 总开关 + 6 子项（轮预算/时间上限/停滞阈值/评估器失败阈值/客观取证/意图识别），四项区间校验；`goalConfig` 登记进导入导出白名单。
+- i18n：`goal` 组为主，中英各 52 键同批落地。
+
+**自审期修复（都是「接错就静默失效」的跨文件漏接）**
+- `initGoalPanel()` 全仓无人调用——整个面板层当时是死代码（单测全绿而 🎯 点下去什么都不发生）。补 `index.js` 入口注册并加**优先级高于函数逻辑的接线守卫**。
+- `renderGoalBar` 没同步 chip `checked`：`goalMode` 是会话级而非全局，切会话后开关态陈旧。
+- 防抖写入会被 MV3 SW 回收直接丢弃（表现为跑完几轮后重开面板又回到旧轮数）→ 补 `onSuspend` 刷盘。
+- 面板 `deleteSession` 只删 IndexedDB，而 goal 权威在后台：已删会话的目标按查不到的 sessionId 永久留着 → 补 `DROP_GOAL` 通知（失败不阻塞删除）。
+- 删除 `onGoalChange`/`emit`/`silent` 与 `goalShouldArchive`/`removeGoalIfFinished`：推送由引擎直发 `GOAL_UPDATE` 已覆盖，同一事件开第二条订阅通道迟早走样，其余无生产调用方。
+
+**验证**
+- 新增 6 个单测文件 196 例：kernel 43（状态机迁移/预算边界/锚点不破坏 `assistant(tool_calls)+tool` 配对）、intent 38、store 33（软着陆/水合/淘汰/物理清理）、loop-wiring 31（接线位置与顺序守卫）、evaluator 28（生产请求形状）、panel-config-wiring 23（入口接线/授权来源/设置页契约/导入导出/删除清理）。
+- 全量单测 233 文件 3790 例全绿；`npx eslint` 无输出；`npm run build:silent` BUILD_SUCCESS。
+- **真 Chrome MV3 环境双探针**（Playwright 加载 `dist/`，非 DOM 断言即读真 storage）：配置/状态探针 32/32（chip 显隐随设页总开关实时生效、越界值拒绝落盘且旧值不变、SW 冷启动后目标水合、`DROP_GOAL` 真的让镜像消失且不误伤别家）；真跑循环探针 19/19——本地 mock OpenAI 端点驱动真实 ReAct：agent 收尾 → 独立评估判 unmet → 自动续跑（第 2 次请求里带 `Progress: attempt 2/20` 与上次结论）→ 判 met → 目标转 achieved、目标条显示「已达成」、评估节点真的进了会话落库的执行日志。
+- 回归红线取到双向证据：目标模式请求 34 个工具且**不含** `clarify_question`，对照轮（未开目标）35 个且**含**，其余工具集逐项一致；对照轮不触发任何评估调用。
+
+**未做（明确留在 P2）**：跨会话目标所有权、alarms 定时续跑（真正的过夜无人值守，风险最高必须默认关 + 二次确认）；`/goal` 斜杠命令不做（`/` 已被提示词选择器占用）。
+
 ### 设置页超时项收敛：只留「整体循环超时」，API / 工具 / 澄清超时改为内部固定值
 
 > 来源：用户反馈「配置太多，用户也看不懂」——工具执行超时、API 请求超时都不该让用户配；并追问「命令执行好像会超过 10 分钟吧」。

@@ -1,6 +1,6 @@
 // options/config-manager.js - 配置管理与状态
 
-import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG } from './constants.js';
+import { PRESET_MODELS, PRESET_IMAGE_MODELS, PRESET_API_BASES, DEFAULT_SYSTEM_PROMPT, DEFAULT_REACT_CONFIG, DEFAULT_CHAT_CONFIG, DEFAULT_REFLECTION_CONFIG, DEFAULT_GOAL_CONFIG } from './constants.js';
 import logger from '../shared/logger.js';
 import { t } from '../shared/i18n.js';
 import { normalizeModels, syncActiveProfileModels, updateActiveProfile, compareByName } from '../shared/model-profiles.js';
@@ -941,6 +941,24 @@ export function syncQueueAutoCarryFields() {
   row.style.display = toggle.checked ? '' : 'none';
 }
 
+/**
+ * 同步目标模式子项的显隐与三个开关的「已启用/已停用」文案。
+ * 与 reflection / completionVerification 同一套模式：总开关只收起子项，不碰它们的值，
+ * 用户关回来时看到的还是上次填的预算，而不是被重置成默认 20 轮。
+ */
+export function syncGoalFields() {
+  const master = document.getElementById('goalEnabled');
+  const show = !!(master && master.checked);
+  document.querySelectorAll('.goal-sub').forEach((el) => { el.style.display = show ? 'block' : 'none'; });
+  const masterLabel = document.getElementById('goalEnabledLabel');
+  if (masterLabel) masterLabel.textContent = show ? t('common.enabled') : t('common.disabled');
+  [['goalObjectiveEvidence', 'goalObjectiveEvidenceLabel'], ['goalIntentDetection', 'goalIntentDetectionLabel']].forEach(([id, labelId]) => {
+    const el = document.getElementById(id);
+    const label = document.getElementById(labelId);
+    if (label) label.textContent = el && el.checked ? t('common.enabled') : t('common.disabled');
+  });
+}
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([
@@ -955,6 +973,7 @@ export function loadConfig() {
     'enableExecutionLog',
     'reflectionConfig',
     'completionVerificationConfig',
+    'goalConfig',
     'streamEnabled',
     'streamExpandTools',
     'completionSoundEnabled', 'completionConfettiEnabled',
@@ -1042,6 +1061,30 @@ export function loadConfig() {
       completionVerificationRerunEl.checked = !!(result.completionVerificationConfig && result.completionVerificationConfig.rerunEnabled === true);
       completionVerificationRerunEl.dispatchEvent(new Event('change'));
     }
+
+    // 加载目标模式（Goal）配置。缺字段一律回退 DEFAULT_GOAL_CONFIG（与后台 getStoredConfig 同一真源），
+    // 而不是留 undefined：goal.turnBudget 传 undefined 会在状态机里把默认预算弄成 NaN
+    const goalCfg = Object.assign({}, DEFAULT_GOAL_CONFIG, result.goalConfig || {});
+    const goalEnabledEl = document.getElementById('goalEnabled');
+    if (goalEnabledEl) goalEnabledEl.checked = goalCfg.enabled !== false;
+    const goalTurnEl = document.getElementById('goalTurnBudget');
+    if (goalTurnEl) goalTurnEl.value = Number.isFinite(goalCfg.turnBudget) ? goalCfg.turnBudget : DEFAULT_GOAL_CONFIG.turnBudget;
+    const goalTimeEl = document.getElementById('goalTimeBudgetMin');
+    if (goalTimeEl) {
+      // 落库是 ms，UI 用分钟；0 保留为 0（语义 = 跟随整体循环超时，不是「没填」）
+      goalTimeEl.value = Number.isFinite(goalCfg.timeBudgetMs) && goalCfg.timeBudgetMs > 0
+        ? Math.round(goalCfg.timeBudgetMs / 60000)
+        : 0;
+    }
+    const goalStagEl = document.getElementById('goalStagnationLimit');
+    if (goalStagEl) goalStagEl.value = Number.isFinite(goalCfg.stagnationLimit) ? goalCfg.stagnationLimit : DEFAULT_GOAL_CONFIG.stagnationLimit;
+    const goalFailEl = document.getElementById('goalEvaluatorFailureLimit');
+    if (goalFailEl) goalFailEl.value = Number.isFinite(goalCfg.evaluatorFailureLimit) ? goalCfg.evaluatorFailureLimit : DEFAULT_GOAL_CONFIG.evaluatorFailureLimit;
+    const goalEvidenceEl = document.getElementById('goalObjectiveEvidence');
+    if (goalEvidenceEl) goalEvidenceEl.checked = goalCfg.objectiveEvidence !== false;
+    const goalIntentEl = document.getElementById('goalIntentDetection');
+    if (goalIntentEl) goalIntentEl.checked = goalCfg.intentDetection !== false;
+    syncGoalFields();
 
     // 加载对话配置
 
@@ -1233,6 +1276,35 @@ export function saveConfig() {
       enabled: document.getElementById('subtaskReflectionEnabled').checked
     }
   };
+
+  // 获取目标模式（Goal）配置。以 DEFAULT_GOAL_CONFIG 打底再覆写，保证落库的永远是
+  // 字段齐全的一份：后台只做浅合并，存进残缺对象会把预算阈值变成 undefined
+  const goalConfig = {
+    ...DEFAULT_GOAL_CONFIG,
+    enabled: document.getElementById('goalEnabled')?.checked !== false,
+    turnBudget: parseInt(document.getElementById('goalTurnBudget')?.value, 10),
+    // UI 存分钟，引擎读 ms；0 = 不另设时间预算，跟随 loopTimeout
+    timeBudgetMs: (parseInt(document.getElementById('goalTimeBudgetMin')?.value, 10) || 0) * 60000,
+    stagnationLimit: parseInt(document.getElementById('goalStagnationLimit')?.value, 10),
+    evaluatorFailureLimit: parseInt(document.getElementById('goalEvaluatorFailureLimit')?.value, 10),
+    objectiveEvidence: document.getElementById('goalObjectiveEvidence')?.checked !== false,
+    intentDetection: document.getElementById('goalIntentDetection')?.checked !== false,
+  };
+
+  // 目标预算必须是有限正数： parseInt 失败会得到 NaN，而 NaN 在状态机里
+  // 既过不了 >= 比较也删不掉，会造成预算永远不撞线或立刻撞线
+  const goalRange = [
+    ['turnBudget', goalConfig.turnBudget, 5, 200, t('settings.goalTurnRangeError')],
+    ['stagnationLimit', goalConfig.stagnationLimit, 1, 10, t('settings.goalStagnationRangeError')],
+    ['evaluatorFailureLimit', goalConfig.evaluatorFailureLimit, 1, 5, t('settings.goalFailRangeError')],
+    ['timeBudgetMs', goalConfig.timeBudgetMs, 0, 86400000, t('settings.goalTimeRangeError')],
+  ];
+  for (const [, value, lo, hi, msg] of goalRange) {
+    if (!Number.isFinite(value) || value < lo || value > hi) {
+      showToast(`❌ ${msg}`, 'error');
+      return;
+    }
+  }
   
   // 验证 ReAct 配置范围（只剩「整体循环超时」需要校验，其余三项为内部固定值）
   if (reactLoopTimeout < 60000 || reactLoopTimeout > 86400000) {
@@ -1271,6 +1343,8 @@ export function saveConfig() {
     imageApiKey: encodeSecret(imageApiKey),
     // 反思配置
     reflectionConfig: reflectionConfig,
+    // 目标模式配置（整份一份，字段齐全）
+    goalConfig: goalConfig,
     // 注（#13）：completionVerificationConfig 不在此「保存」写——它由 options/index.js 开关 change 即时写整份对象，
     // 真源单一（避免点保存时用面板残值覆盖切换写入的其他字段）；此处的 storage key 列表仍含它仅供加载。
     // 流式输出配置

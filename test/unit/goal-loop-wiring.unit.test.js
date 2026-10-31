@@ -1,0 +1,250 @@
+// Goal 模式在 react-loop 的接线守卫（源码文本断言，防重构静默拆线）。
+//
+// 这套断言锁的是「顺序」和「副作用边界」，因为 goal 模式的正确性几乎全在时序上：
+//   ① 目标锚点必须在上下文压力裁剪之后注入（否则 critical 分支重建会吞掉它）；
+//   ② 未达成续跑时绝不能清 checkpoint（清了就等于中断即丢现场）；
+//   ③ 评估必须发生在 saveCheckpointNow('final_answer') / clearCheckpoint 之前；
+//   ④ 子任务不参与目标评估（目标属于整个任务，父循环统一裁定）；
+//   ⑤ 预算收尾只把 active 目标标成 budget_limited，不重复结算时长；
+//   ⑥ 停滞/失败阈值只传有限值，传 undefined 会盖掉默认值让闸门失效。
+import { describe, test, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const LOOP = readFileSync(join(process.cwd(), 'src/background/react-loop.js'), 'utf8');
+
+function idx(needle) {
+  const i = LOOP.indexOf(needle);
+  expect(i, `未找到锚点：${needle}`).toBeGreaterThan(-1);
+  return i;
+}
+
+describe('① 依赖与状态来源', () => {
+  test('引入目标内核、评估器与会话级注册表', () => {
+    expect(LOOP).toMatch(/from '\.\.\/shared\/goal\.js'/);
+    expect(LOOP).toMatch(/import \{ evaluateGoal \} from '\.\/goal-evaluator\.js'/);
+    expect(LOOP).toMatch(/import \{ setGoal as persistGoalToStore \} from '\.\/goal-store\.js'/);
+  });
+
+  test('复用 completion-verifier 的取证原语（verifySubtaskCompletion）', () => {
+    expect(LOOP).toMatch(
+      /import\s*\{[^}]*verifySubtaskCompletion[^}]*\}\s*from\s*'\.\/completion-verifier\.js'/,
+    );
+  });
+
+  test('目标状态优先取 checkpoint 现场，已终态则回落面板意图', () => {
+    expect(LOOP).toMatch(/const fromCheckpoint = normalizeGoal\(resumeState\?\.goalState\);/);
+    expect(LOOP).toMatch(/\(fromCheckpoint && !goalIsFinished\(fromCheckpoint\)\)/);
+    expect(LOOP).toMatch(/normalizeGoal\(apiParams\?\.goal\)/);
+  });
+
+  test('目标模式被 enabled 开关与 !isSubtask 双重守卫', () => {
+    expect(LOOP).toMatch(/const goalCfg = reactConfig\.goal \|\| \{\};/);
+    expect(LOOP).toMatch(/const goalEnabled = goalCfg\.enabled !== false && !isSubtask;/);
+  });
+});
+
+describe('② 锚点注入时序', () => {
+  test('目标锚点注入在上下文压力裁剪之后（否则 critical 分支会吞掉）', () => {
+    const pressure = idx('const pressure = assessContextPressure');
+    const goalAnchor = idx('const goalAnchor = buildGoalAnchorMessage();');
+    expect(goalAnchor).toBeGreaterThan(pressure);
+  });
+
+  test('目标锚点与计划/便签锚点同位置（便签之后，相邻块）', () => {
+    const notes = idx('const noteAnchor = buildNotesAnchorMessage();');
+    const goalAnchor = idx('const goalAnchor = buildGoalAnchorMessage();');
+    expect(goalAnchor).toBeGreaterThan(notes);
+  });
+
+  test('锚点只在 active 时产出（终态不再每轮占上下文）', () => {
+    expect(LOOP).toMatch(
+      /const buildGoalAnchorMessage = \(\) => \{\s*const text = buildGoalAnchorText\(goalState\);\s*return text \? \{ role: 'user', content: text \} : null;\s*\};/,
+    );
+  });
+});
+
+describe('③ 收尾裁决时序', () => {
+  test('评估发生在最终 checkpoint 落盘与清理之前', () => {
+    const call = idx('const goalStep = await handleGoalClosingAttempt');
+    const saveFinal = idx("await saveCheckpointNow('final_answer');");
+    // 清理调用在文件里出现多次，必须从「最终 checkpoint 落盘」之后的位置再找
+    const clear = LOOP.indexOf('await clearCheckpoint(sessionId);', saveFinal);
+    expect(call).toBeLessThan(saveFinal);
+    expect(clear).toBeGreaterThan(saveFinal);
+  });
+
+  test('收尾内容可被评估结果修正（let 而非 const）', () => {
+    expect(LOOP).toMatch(/let content = assistantMessage\?\.content \|\| '';/);
+    expect(LOOP).toMatch(/content = goalStep\.content;/);
+  });
+
+  test('三种裁决出口齐备：continue / halt / finalize', () => {
+    expect(LOOP).toMatch(/if \(goalStep\.kind === 'continue'\) continue;/);
+    expect(LOOP).toMatch(/if \(goalStep\.kind === 'halt'\) return goalStep\.result;/);
+  });
+});
+
+describe('④ 未达成续跑：绝不清 checkpoint', () => {
+  test('CONTINUE 分支落 goal_continue checkpoint 且不含 clearCheckpoint', () => {
+    const start = idx("if (applied.action === GOAL_ACTIONS.CONTINUE) {");
+    const end = idx("if (applied.action === GOAL_ACTIONS.STOP_ACHIEVED) {");
+    const block = LOOP.slice(start, end);
+    expect(block).toContain("await saveCheckpointNow('goal_continue');");
+    expect(block).not.toContain('clearCheckpoint');
+    expect(block).not.toContain('checkpointThrottle.cancel');
+  });
+
+  test('续跑前把模型这次的收尾陈述入历史（避免下一轮重做已完成步骤）', () => {
+    expect(LOOP).toMatch(
+      /if \(content\) currentMessages\.push\(\{ role: 'assistant', content \}\);\s*currentMessages\.push\(\{ role: 'user', content: buildGoalContinuationText\(goalState, verdict\) \}\);/,
+    );
+  });
+
+  test('裁决暂停/预算时强制落盘保存现场', () => {
+    expect(LOOP).toMatch(/await saveCheckpointNow\(`goal_\$\{goalState\.status\}`, true\);/);
+  });
+});
+
+describe('⑤ 预算软着陆与目标状态', () => {
+  test('只把 active 目标标成 budget_limited（不重复结算时长）', () => {
+    expect(LOOP).toMatch(
+      /if \(goalState && goalState\.status === GOAL_STATUS\.ACTIVE\) \{\s*goalState = \{ \.\.\.settleGoalElapsed\(goalState\), status: GOAL_STATUS\.BUDGET_LIMITED, updatedAt: Date\.now\(\) \};/,
+    );
+  });
+
+  test('预算冲突时先判目标预算，别白烧一次评估调用', () => {
+    const budgetGate = idx('const budget = checkGoalBudget(goalState, { fallbackTimeBudgetMs: loopTimeout });');
+    const evaluate = idx('const verdict = await evaluateGoal(goalState, {');
+    expect(budgetGate).toBeLessThan(evaluate);
+  });
+});
+
+describe('⑥ 状态机参数与持久化', () => {
+  test('停滞/失败阈值只传有限值（传 undefined 会盖掉默认值）', () => {
+    expect(LOOP).toMatch(/if \(Number\.isFinite\(goalCfg\.stagnationLimit\)\) goalLimits\.stagnationLimit = goalCfg\.stagnationLimit;/);
+    expect(LOOP).toMatch(/if \(Number\.isFinite\(goalCfg\.evaluatorFailureLimit\)\) goalLimits\.evaluatorFailureLimit = goalCfg\.evaluatorFailureLimit;/);
+  });
+
+  test('goalState 进入 checkpoint（续跑不丢目标与轮次）', () => {
+    expect(LOOP).toMatch(/notesState,\s*goalState,\s*subtaskProgress: Object\.fromEntries\(subtaskProgress\),/);
+  });
+
+  test('状态变更同时落镜像并回推面板', () => {
+    expect(LOOP).toMatch(/chrome\.runtime\.sendMessage\(\{ type: 'GOAL_UPDATE', sessionId, callId, goal: goalState \}\)/);
+    expect(LOOP).toMatch(/await persistGoalToStore\(sessionId, goalState\);/);
+    // 两者必须成对出现：只推不落 = SW 重启后面板回到旧轮数；只落不推 = 目标条实时不刷
+    expect(LOOP).toMatch(/await syncGoalState\(\);\s*emitGoalUpdate\(\);/);
+  });
+
+  test('判不可能时把评估理由补进最终回答（不谎报成功）', () => {
+    expect(LOOP).toMatch(/const note = t\('reactLoop\.goalUnmetNote', \{ reason: verdict\.reason \|\| '-' \}\);/);
+  });
+
+  test('评估节点复用 reflection 类型（零渲染改动）', () => {
+    expect(LOOP).toMatch(/nodeType: 'reflection',\s*nodeName,\s*status,/);
+    expect(LOOP).toMatch(/goalNode: true,/);
+  });
+
+  test('客观取证只在配置打开且确有 doneCriteria 时执行', () => {
+    expect(LOOP).toMatch(
+      /const evidence = \(goalCfg\.objectiveEvidence !== false && goalState\.doneCriteria\.length > 0\)\s*\?\s*await gatherGoalEvidence\(\)\s*:\s*\[\];/,
+    );
+  });
+
+  test('取证失败归「取不到证」，绝不折成未达成', () => {
+    const start = idx('async function gatherGoalEvidence() {');
+    const end = idx('async function finalizeGoalHalt(');
+    const block = LOOP.slice(start, end);
+    expect(block).toContain('commandReadOnlyGate: true');
+    expect(block).toContain('return [];');
+  });
+});
+
+// ⑦ 目标模式 = 无人值守：确认与澄清必须真的不打断（2026-10-31 拍板）
+describe('⑦ 无人值守：放行与澄清', () => {
+  test('目标激活且持有显式授权时才 grant 任务级放行', () => {
+    const start = idx('let goalTools = tools;');
+    const end = idx('function emitGoalUpdate()');
+    const block = LOOP.slice(start, end);
+    expect(block).toContain('grantTaskLoopApproval(sessionId);');
+    // 三个条件缺一不可：active + 面板授予 + 有 sessionId（按任务树记账的前提）
+    expect(block).toMatch(
+      /goalState\.status === GOAL_STATUS\.ACTIVE && goalState\.autoApprove === true && sessionId/,
+    );
+  });
+
+  test('授权开关在 grant 之前判定（不能先放行再检查）', () => {
+    // grantTaskLoopApproval 在确认通道里还有一处调用（用户点「当前任务放行」），
+    // 所以只能在 goal 块内定位，不能全局取第一个
+    const start = idx('let goalTools = tools;');
+    const end = idx('function emitGoalUpdate()');
+    const block = LOOP.slice(start, end);
+    const guard = block.indexOf('goalState.autoApprove === true && sessionId');
+    const grant = block.indexOf('grantTaskLoopApproval(sessionId);');
+    expect(guard).toBeGreaterThan(-1);
+    expect(grant).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(grant);
+  });
+
+  test('目标模式下摘掉 clarify_question，并把过滤后的表真正下发', () => {
+    expect(LOOP).toMatch(
+      /goalTools = tools\.filter\(t => t\.function\?\.name !== 'clarify_question'\);/,
+    );
+    // 请求体与 token 估算都必须用过滤后的表，否则只是「算了个寂寞」
+    expect(LOOP).toContain('const apiTools = inGrace ? [] : goalTools;');
+    expect(LOOP).toContain('JSON.stringify(goalTools.map(t => { const { id, ...clean } = t; return clean; }))');
+    expect(LOOP).not.toContain('const apiTools = inGrace ? [] : tools;');
+  });
+
+  test('没有目标/未授权时不下发过滤（基线网络行为不变）', () => {
+    const start = idx('let goalTools = tools;');
+    const end = idx('function emitGoalUpdate()');
+    const block = LOOP.slice(start, end);
+    // 过滤只发生在 hasGoalUnattended 闸门内，闸门本身以会话谓词为条件
+    expect(block).toMatch(/if \(hasGoalUnattended\(sessionId\)\) \{\s*goalTools = tools\.filter\(/);
+  });
+
+  test('无人值守与任务级放行同时授予（同一份授权）', () => {
+    const start = idx('let goalTools = tools;');
+    const end = idx('function emitGoalUpdate()');
+    const block = LOOP.slice(start, end);
+    expect(block).toContain('grantTaskLoopApproval(sessionId);');
+    expect(block).toContain('goalUnattendedSessions.add(unattendedRoot);');
+  });
+
+  test('无人值守随放行同生同灭（revoke 同一前缀清两个集合）', () => {
+    const start = idx('export function revokeTaskLoopApproval(sessionId) {');
+    const end = idx('export function hasGoalUnattended(sessionId) {');
+    const block = LOOP.slice(start, end);
+    expect(block).toContain('loopApprovedSessions.delete(id);');
+    expect(block).toContain('goalUnattendedSessions.delete(id);');
+  });
+
+  test('无人值守按 ancestor 链判定（子任务/子代理不需要逐层透传）', () => {
+    const start = idx('export function hasGoalUnattended(sessionId) {');
+    const block = LOOP.slice(start, start + 260);
+    expect(block).toContain('getSessionAncestry(sessionId)');
+    expect(block).toContain('goalUnattendedSessions.has(id)');
+  });
+
+  test('无人值守与「当前任务放行」分开记账（点放行不等于允许闭嘴问人）', () => {
+    // 两个 Set 必须彼此独立：合并成同一个会让用户在确认框上点「当前任务放行」
+    // 之后，非目标的普通任务也不再弹 clarify
+    expect(LOOP).toMatch(/const goalUnattendedSessions = new Set\(\);/);
+    expect(LOOP).toMatch(/const loopApprovedSessions = new Set\(\);/);
+  });
+
+  test('clarify_question 有第二道闸（非 ReAct 通道的工具集）', () => {
+    const TE = readFileSync(join(process.cwd(), 'src/background/tool-executor.js'), 'utf8');
+    const start = TE.indexOf('export async function executeClarifyQuestion(');
+    expect(start).toBeGreaterThan(-1);
+    const body = TE.slice(start, start + 1200);
+    expect(body).toContain('if (hasGoalUnattended(sessionId)) {');
+    expect(body).toContain("t('toolExec.clarifyUnattended'");
+    // 兜底必须早于配置读取与弹窗：晚一步就白等一个 clarifyTimeout
+    expect(body.indexOf('hasGoalUnattended(sessionId)')).toBeLessThan(
+      body.indexOf('const clarifyTimeout'),
+    );
+  });
+});

@@ -59,7 +59,8 @@ describe('主循环：轮数上限必须由轮首 evaluateBudgetStep 收口', ()
 describe('宽限轮：禁用工具 + 配对安全', () => {
   test('宽限轮请求体不带 tools 字段', () => {
     // 空数组会被部分网关当成非法请求拒绝，因此整段展开而不是 tools: []
-    expect(REACT_LOOP_SRC).toMatch(/const apiTools = inGrace \? \[\] : tools;/);
+    // 工具来源是 goalTools（目标模式下已摘掉 clarify_question），宽限轮一律置空
+    expect(REACT_LOOP_SRC).toMatch(/const apiTools = inGrace \? \[\] : goalTools;/);
     expect(REACT_LOOP_SRC).toMatch(/\.\.\.\(inGrace \? \{\} : \{\s*\n\s*tools: apiTools\.map/);
   });
 

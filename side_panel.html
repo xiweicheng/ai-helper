@@ -500,6 +500,21 @@
     </button>
   </div>
 
+  <!-- 目标条（Goal mode）：开关点亮后在输入框上方常驻；开关关闭时仅在有未结束目标时显示（提示可继续） -->
+  <div class="goal-bar" id="goalBar" style="display: none;">
+    <span class="goal-bar-icon" aria-hidden="true">🎯</span>
+    <span class="goal-bar-status" id="goalBarStatus"></span>
+    <span class="goal-bar-objective" id="goalBarObjective"></span>
+    <span class="goal-bar-meta" id="goalBarMeta"></span>
+    <span class="goal-bar-approve" id="goalBarApprove" style="display: none;" data-i18n-title="goal.autoApproveHint" title="目标模式已自动放行敏感操作（agent 端黑名单命令仍会硬拦）。点击撤销。">🔓</span>
+    <div class="goal-bar-actions">
+      <button class="goal-bar-btn" id="goalBarEditBtn" type="button" data-i18n="goal.edit">编辑</button>
+      <button class="goal-bar-btn" id="goalBarPauseBtn" type="button" data-i18n="goal.pause">暂停</button>
+      <button class="goal-bar-btn" id="goalBarResumeBtn" type="button" data-i18n="goal.resume">继续</button>
+      <button class="goal-bar-btn goal-bar-btn-danger" id="goalBarClearBtn" type="button" data-i18n="goal.clear">清除</button>
+    </div>
+  </div>
+
   <div class="input-container">
     <div class="input-bottom-row">
       <div class="input-bottom-left">
@@ -631,6 +646,14 @@
               </div>
             </div>
           </div>
+        </div>
+        <div class="toolbar-chip-group" id="goalGroup">
+          <label class="check-toggle core-feature" for="goalModeBtn" data-i18n-title="goal.toggleHint" title="开启后，本轮任务会作为会话目标持续自动推进，直到达成、被判为不可能或预算耗尽">
+            <input type="checkbox" id="goalModeBtn">
+            <span class="checkmark"></span>
+            <span class="tool-toggle-label" data-i18n="goal.label">目标</span>
+            <span class="toggle-icon" aria-hidden="true">🎯</span>
+          </label>
         </div>
         <div class="tool-toggle-wrapper">
           <label class="check-toggle core-feature" data-i18n-title="toggle.toolsHint" title="工具总开关：点击开启或关闭工具调用">

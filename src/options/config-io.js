@@ -18,6 +18,8 @@ const EXPORT_KEYS = [
   'gracefulConverge', 'enableToolPreselect', 'toolConfirmationEnabled',
   'reflectionConfig',
   'completionVerificationConfig',
+  // 目标模式（Goal）：整份对象导入，缺失字段由 background/config.js 深合并 DEFAULT_GOAL_CONFIG 兜底
+  'goalConfig',
   'enableExecutionLog',
   'toolbarTools', 'toolbarIconOnly',
   'enableSelectionToolbar', 'blockedDomains',

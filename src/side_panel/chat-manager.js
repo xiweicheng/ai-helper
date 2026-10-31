@@ -20,6 +20,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
 import { enqueueFromInput } from './queue-runner.js';
+import { prepareGoalForSend } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
 // 从提取的子模块导入
@@ -1387,6 +1388,21 @@ export async function sendMessage(opts = {}) {
     const apiParams = await getApiParams(isActive ? null : { temperature: sess.temperature, topP: sess.topP });
     if (isActive) apiParams._loadingId = loadingId;  // 用于 STREAM_START 时准确定位当前会话的 loading 消息
 
+    // 目标模式：把本轮用户输入交给后台换成权威 goal 快照随 CALL_API 下发。
+    // 语义与两条入口全部收在后台 / goal-panel：已有可推进目标 → 追加为约束（累加不替换），
+    // 否则以本轮文本新开一个目标；🎯 开关没亮时还会走一次确定性意图识别。
+    // 用原始 text 而不是 finalText —— 后者已经拼上了引用/选中/技能/MCP/知识库/网页/文件内容，
+    // 塞进 objective 会污染目标描述。
+    // 不能在这里用 state.goalMode 做门控：那等于只支持开关入口，意图识别就白实现了。
+    if (isActive) {
+      try {
+        const goal = await prepareGoalForSend({ sessionId: mySessionId, text });
+        if (goal) apiParams.goal = goal;
+      } catch (e) {
+        logger.warn('[SidePanel] prepare goal for send failed:', e?.message);
+      }
+    }
+
     // 上下文压力评估 + 主动裁剪：critical 压力时裁剪到安全范围内
     const configuredWindow = 0;
     const msgTokens = estimateMessagesTokens(messages);
@@ -1586,6 +1602,8 @@ export async function sendMessage(opts = {}) {
         // 目录绑定随写回保持目标会话自己的值（不因面板切走而被串改）
         workdir: sess.workdir,
         workdirAgentId: sess.workdirAgentId,
+        // 目标模式开关属于会话状态，后台派发写回时要保留目标会话自己的值
+        goalMode: sess.goalMode,
       });
       document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: mySessionId } }));
     }

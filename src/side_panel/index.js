@@ -21,6 +21,7 @@ import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWork
 import { loadBookmarks } from './bookmark-manager.js';
 import { loadTodos } from './todo-manager.js';
 import { initTodoPanel } from './todo-panel.js';
+import { initGoalPanel } from './goal-panel.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
 import { initVersionInfo } from './version-info.js';
@@ -4594,6 +4595,9 @@ document.addEventListener('DOMContentLoaded', initCurrentModelTag);
 document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
+// 目标模式：chip 绑定 + 目标条 + GOAL_UPDATE 回推监听，必须在入口挂上，
+// 否则 goal-panel.js 整个模块成了无人调用的死代码（chip 点了没反应、目标条永不出现）
+document.addEventListener('DOMContentLoaded', initGoalPanel);
 document.addEventListener('DOMContentLoaded', async () => {
   // 入口轨道需先于各面板初始化：六个入口容器挂入轨道槽位
   initSideRail();
