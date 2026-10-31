@@ -34,6 +34,7 @@ registerTranslations('zh', {
     recommended: '推荐',
     otherOption: '其他（自定义输入）',
     timedOut: '已超时',
+    timedOutDefaulted: '已超时，已按推荐项「{option}」继续',
     dropped: '澄清弹窗无法显示，已按未澄清继续',
     extend: '延长时间',
     extended: '已延长倒计时',
@@ -49,6 +50,7 @@ registerTranslations('en', {
     recommended: 'Recommended',
     otherOption: 'Other (custom input)',
     timedOut: 'Timed out',
+    timedOutDefaulted: 'Timed out — continued with the recommended option "{option}"',
     dropped: 'Clarification dialog could not be shown; continuing as unanswered',
     extend: 'Extend time',
     extended: 'Countdown extended',
@@ -643,12 +645,12 @@ export function handleClarifyTimeout(message) {
       return;
     }
     if (!visibleClarify) return;
-    settleAfterTimeout();
+    settleAfterTimeout(message?.defaultOption || null);
     return;
   }
 
   if (visibleClarify && visibleClarify.toolCallId === toolCallId) {
-    settleAfterTimeout();
+    settleAfterTimeout(message?.defaultOption || null);
     return;
   }
 
@@ -662,13 +664,21 @@ export function handleClarifyTimeout(message) {
   }
 }
 
-/** 后台判定超时/面板关闭后的本地收尾 */
-function settleAfterTimeout() {
+/** 后台判定超时/面板关闭后的本地收尾
+ * @param {string|null} defaultOption - 后台实际采用的口径选项（超时代选时有值，面板被关掉时为 null）
+ */
+function settleAfterTimeout(defaultOption = null) {
   const question = visibleClarify?.question;
   settleClarifyVisible();
   // 旧行为是把弹窗留在原地显示"已超时"，队列化后必须推进到下一条，
-  // 因此改用 toast 告知用户这一条为什么消失了
-  showToast(`${t('clarify.timedOut')}${question ? `：${question}` : ''}`, 'warning');
+  // 因此改用 toast 告知用户这一条为什么消失了；超时代选时必须说出「替你选了哪一项」，
+  // 否则用户回来只看到一个已经消失的提问，不知道模型据此做了什么。
+  showToast(
+    defaultOption
+      ? t('clarify.timedOutDefaulted', { option: defaultOption })
+      : `${t('clarify.timedOut')}${question ? `：${question}` : ''}`,
+    'warning'
+  );
   playNotificationSound('error');
 }
 

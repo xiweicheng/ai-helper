@@ -156,10 +156,12 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
     // 广播通道不应出现澄清消息（这正是串台的根因路径）
     expect(sentMessages.some((m) => m.type === 'SHOW_CLARIFY_DIALOG')).toBe(false);
 
-    // 超时通知同样走 port 定向（不打扰其他实例）
+    // 超时通知同样走 port 定向（不打扰其他实例），并带上「代选的推荐项」供面板说明
     await drainToTimeout('tc-port');
     const result = await p;
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    const timeoutMsg = port.postMessage.mock.calls.map((c) => c[0]).find((m) => m.type === 'CLARIFY_TIMEOUT');
+    expect(timeoutMsg).toMatchObject({ reason: 'timeout', defaultOption: '发布' });
     expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT')).toBe(true);
 
     bgState.unregisterKeepalivePort('sess-port');
@@ -263,7 +265,9 @@ describe('澄清消息定向路由（多 Tab 侧边栏防串台）', () => {
     markDisplayed('tc-defer');
     await vi.advanceTimersByTimeAsync(300000 + 1000);
     const result = await p;
-    expect(result.success).toBe(false);
+    // 超时不再返回「无答案」：按推荐项（未指定时为第一项）代选，任务继续
+    expect(result.success).toBe(true);
+    expect(result.content).toContain('a');
     // 超时后下行通知面板撤销这一条
     expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT' && c[0].toolCallId === 'tc-defer')).toBe(true);
 
@@ -315,7 +319,7 @@ describe('澄清倒计时手动延长（后台权威计时器重置）', () => {
     // 再走 150s（距延长 350s > 300s）→ 超时结算
     await vi.advanceTimersByTimeAsync(150000);
     const result = await p;
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
     expect(port.postMessage.mock.calls.some((c) => c[0].type === 'CLARIFY_TIMEOUT')).toBe(true);
 
     bgState.unregisterKeepalivePort('s-ext1');
@@ -376,5 +380,81 @@ describe('澄清倒计时手动延长（后台权威计时器重置）', () => {
     await drainToTimeout('tc-ext4');
     await p;
     bgState.unregisterKeepalivePort('s-ext4');
+  });
+});
+
+describe('超时兜底：按推荐项结算，而不是「没有答案」', () => {
+  test('推荐索引合法：按推荐项结算，并写明这是超时默认值、禁止重问', async () => {
+    const p = executeClarifyQuestion(
+      { question: '用哪个包管理器？', options: ['npm', 'pnpm', 'yarn'], recommendedOption: 1 },
+      'tc-def', 's-def'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    await drainToTimeout('tc-def');
+    const result = await p;
+
+    // 用户没看到 / 没点选时，任务不能白等：直接按推荐项给出答案
+    expect(result.success).toBe(true);
+    expect(result.content).toContain('pnpm');
+    expect(result.content).toMatch(/推荐项/);
+    // 明确禁止就同一问题反复追问（否则会反复弹框、用户仍然看不到）
+    expect(result.content).toMatch(/不要.*再次追问/);
+    expect(result.tool_call_id).toBe('tc-def');
+  });
+
+  test('推荐索引越界 / 缺失：回落到第一项（与弹窗预选口径一致）', async () => {
+    const p1 = executeClarifyQuestion(
+      { question: 'q1?', options: ['甲', '乙'], recommendedOption: 9 },
+      'tc-oob', 's-oob'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await drainToTimeout('tc-oob');
+    const r1 = await p1;
+    expect(r1.success).toBe(true);
+    expect(r1.content).toContain('甲');
+
+    const p2 = executeClarifyQuestion({ question: 'q2?', options: ['丙', '丁'] }, 'tc-norec', 's-norec');
+    await vi.advanceTimersByTimeAsync(0);
+    await drainToTimeout('tc-norec');
+    const r2 = await p2;
+    expect(r2.success).toBe(true);
+    expect(r2.content).toContain('丙');
+  });
+
+  test('options 为空：无值可代选，仍按未澄清失败收口', async () => {
+    const p = executeClarifyQuestion({ question: 'q?', options: [] }, 'tc-empty', 's-empty');
+    await vi.advanceTimersByTimeAsync(0);
+
+    await drainToTimeout('tc-empty');
+    const result = await p;
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/澄清/);
+  });
+
+  test('面板被主动关掉：不代选（与超时的口径必须区分开）', async () => {
+    const port = makePort();
+    bgState.registerKeepalivePort('s-closed', port);
+    const p = executeClarifyQuestion(
+      { question: 'q?', options: ['甲', '乙'], recommendedOption: 1 },
+      'tc-closed', 's-closed'
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 面板消失 → 后台轮询（5s 一次）发现 SIDE_PANEL 上下文为空，提前终止等待
+    const snapshot = globalThis.chrome.runtime.getContexts;
+    globalThis.chrome.runtime.getContexts = () => Promise.resolve([]);
+    try {
+      await vi.advanceTimersByTimeAsync(5100);
+      const result = await p;
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/Side Panel/);
+      const timeoutMsg = port.postMessage.mock.calls.map((c) => c[0]).find((m) => m.type === 'CLARIFY_TIMEOUT');
+      expect(timeoutMsg).toMatchObject({ reason: 'panel_closed', defaultOption: null });
+    } finally {
+      globalThis.chrome.runtime.getContexts = snapshot;
+      bgState.unregisterKeepalivePort('s-closed');
+    }
   });
 });
