@@ -29,9 +29,8 @@ const {
   formatObjectiveEvidence,
   buildGoalEvaluationPrompt,
   evaluateGoal,
-  isTerminalVerdict,
 } = await import('../../src/background/goal-evaluator.js');
-const { createGoal, GOAL_VERDICTS } = await import('../../src/shared/goal.js');
+const { createGoal, GOAL_VERDICTS, GOAL_ACTIONS, GOAL_STATUS, applyGoalVerdict } = await import('../../src/shared/goal.js');
 
 const T0 = 1_700_000_000_000;
 
@@ -201,8 +200,15 @@ describe('evaluateGoal 结论解析', () => {
     const request = fakeRequest({ content: '{"verdict":"impossible","reason":"依赖服务已下线"}' });
     const r = await evaluateGoal(makeGoal(), {}, { request });
     expect(r.verdict).toBe(GOAL_VERDICTS.IMPOSSIBLE);
-    expect(isTerminalVerdict(r.verdict)).toBe(true);
-    expect(isTerminalVerdict(GOAL_VERDICTS.UNMET)).toBe(false);
+    // 终态判定归 kernel 所有：impossible 必须把状态机推到「如实上报未达成」的终态，
+    // 而不是留在 active 继续跑（评估器自己不再提供「是否终态」的旁路谓词）
+    const decided = applyGoalVerdict(makeGoal(), r, { now: T0 });
+    expect(decided.action).toBe(GOAL_ACTIONS.STOP_UNMET);
+    expect(decided.goal.status).toBe(GOAL_STATUS.UNMET);
+    expect(decided.stopReason).toBe('impossible');
+    // 反证：unmet 不能走同一条终态路（否则一个缺项就把目标判死）
+    const unmet = applyGoalVerdict(makeGoal(), { ...r, verdict: GOAL_VERDICTS.UNMET, toolCallsSucceeded: 1 }, { now: T0 });
+    expect(unmet.action).toBe(GOAL_ACTIONS.CONTINUE);
   });
 
   it('模型带 ```json 围栏也能解析', async () => {

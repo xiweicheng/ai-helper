@@ -646,14 +646,14 @@ export default {
     clear: '清除',
     editTitle: '编辑目标',
     editPrompt: '用一句话描述要达成的目标，越具体越好：',
-    objectiveEmpty: '目标描述不能为空',
     disabledHint: '目标模式已在设置中关闭',
     startHint: '开启目标后，发送的第一条消息将成为目标',
     clearConfirm: '清除当前目标？任务现场（checkpoint）会一并丢弃。',
     updated: '目标已更新',
-    savedAsConstraint: '已追加为目标的补充要求',
+    approvalRevoked: '已撤销放行：目标已暂停，🎯 开关已熄灭。重新点亮 🎯 并点「继续」即可恢复。',
     autoApproveHint: '目标模式已自动放行敏感操作（agent 端黑名单命令仍会硬拦）。点击撤销。',
     intentDetected: '已从你的描述里识别出目标模式，本轮会自动推进（敏感操作仍会弹窗确认）。可点目标条上的「清除」撤销。',
+    intentHint: '看起来你想让任务一直推进到达成？点亮输入区的 🎯 即可开启目标模式（不会自动替你开）。',
   },
 
   // 开关项

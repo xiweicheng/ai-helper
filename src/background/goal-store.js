@@ -54,11 +54,6 @@ export function __resetGoalStoreForTests(nextStorage = null) {
   storage = nextStorage;
 }
 
-/** 生产/单测注入存储实现（省略则用 chrome.storage.local）。 */
-export function configureGoalStore({ storage: impl } = {}) {
-  storage = impl || null;
-}
-
 async function loadFromStorage() {
   const s = getStorage();
   if (!s) return {};
@@ -136,11 +131,6 @@ export async function flushGoalStore() {
   await persistNow();
 }
 
-/** 是否存在待落盘的脏数据（SW 挂起兜底用）。 */
-export function goalStoreHasPendingWrites() {
-  return savePending;
-}
-
 /**
  * 读取某会话的当前目标。
  * @param {string} sessionId
@@ -201,15 +191,6 @@ export async function removeGoal(sessionId) {
   if (!sessionId) return;
   await ensureGoalStoreReady();
   if (memory.delete(sessionId)) schedulePersist();
-}
-
-/**
- * 列出全部目标（面板启动时一次性拉取，避免逐会话问）。
- * @returns {Promise<Array<{sessionId:string, goal:object}>>}
- */
-export async function listGoals() {
-  await ensureGoalStoreReady();
-  return [...memory.entries()].map(([sessionId, goal]) => ({ sessionId, goal }));
 }
 
 /**

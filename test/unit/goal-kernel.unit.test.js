@@ -18,7 +18,8 @@ import {
   createGoal,
   normalizeGoal,
   goalIsRunning,
-  goalCanContinue,
+  goalHaltCheckpointReason,
+  GOAL_HALT_CHECKPOINT_REASONS,
   appendGoalConstraint,
   checkGoalBudget,
   recordGoalTurn,
@@ -114,12 +115,20 @@ describe('goal 数据模型', () => {
     expect(Array.isArray(goal.constraints)).toBe(true);
   });
 
-  it('goalIsRunning / goalCanContinue 只认 active', () => {
+  it('goalIsRunning 只认 active；停住现场的 checkpoint 原因与表一致', () => {
     const goal = createGoal({ objective: 'x', now: T0 });
     expect(goalIsRunning(goal)).toBe(true);
-    expect(goalCanContinue(goal)).toBe(true);
     expect(goalIsRunning({ ...goal, status: GOAL_STATUS.PAUSED })).toBe(false);
-    expect(goalCanContinue(null)).toBe(false);
+    expect(goalIsRunning(null)).toBe(false);
+    // 写侧（checkpoint 原因）与读侧（auto-resume 终态集）共用同一张表：
+    // 一边漏了某个状态，闹钟就会替用户按他没按的「继续」按钮
+    expect(GOAL_HALT_CHECKPOINT_REASONS).toEqual([
+      `goal_${GOAL_STATUS.PAUSED}`,
+      `goal_${GOAL_STATUS.BUDGET_LIMITED}`,
+    ]);
+    // 达成/已清除是真终态（现场不留 checkpoint），不该被当作「可续跑的停住」
+    expect(GOAL_HALT_CHECKPOINT_REASONS).not.toContain(goalHaltCheckpointReason(GOAL_STATUS.ACHIEVED));
+    expect(GOAL_HALT_CHECKPOINT_REASONS).not.toContain(goalHaltCheckpointReason(GOAL_STATUS.CLEARED));
   });
 });
 
@@ -266,16 +275,22 @@ describe('状态机 applyGoalVerdict', () => {
     expect(r.goal.evaluatorFailures).toBe(1);
   });
 
-  it('终态/非 active 忽略迟到的评估结论（取消之后不许复活）', () => {
+  it('终态/非 active 忽略迟到的评估结论，且出口必须是「停」', () => {
     const achieved = { ...base(), status: GOAL_STATUS.ACHIEVED };
     const r = applyGoalVerdict(achieved, { verdict: GOAL_VERDICTS.UNMET, toolCallsSucceeded: 1 }, { now: T0 });
     expect(r.goal).toBe(achieved);
-    expect(r.action).toBe(GOAL_ACTIONS.CONTINUE);
+    // 不能回 CONTINUE：这条路不计轮次也不落终态，接线一旦漏判 status 就是无上限烧钱
+    expect(r.action).toBe(GOAL_ACTIONS.STOP_PAUSED);
+    expect(r.stopReason).toBe('not_active');
 
     const cleared = { ...base(), status: GOAL_STATUS.CLEARED };
-    expect(applyGoalVerdict(cleared, { verdict: GOAL_VERDICTS.MET }, { now: T0 }).goal.status).toBe(GOAL_STATUS.CLEARED);
+    const rc = applyGoalVerdict(cleared, { verdict: GOAL_VERDICTS.MET }, { now: T0 });
+    expect(rc.goal.status).toBe(GOAL_STATUS.CLEARED);
+    expect(rc.action).toBe(GOAL_ACTIONS.STOP_PAUSED);
 
-    expect(applyGoalVerdict(null, { verdict: GOAL_VERDICTS.MET }).goal).toBeNull();
+    const rn = applyGoalVerdict(null, { verdict: GOAL_VERDICTS.MET });
+    expect(rn.goal).toBeNull();
+    expect(rn.action).toBe(GOAL_ACTIONS.STOP_PAUSED);
   });
 });
 
@@ -417,11 +432,20 @@ describe('提示词文本', () => {
     expect(buildGoalContinuationText(null, {})).toContain('[Goal Mode]');
   });
 
-  it('目标锚点明确要求无人值守：不得提问、不得绕过安全策略', () => {
-    const text = buildGoalAnchorText(createGoal({ objective: 'x', now: T0 }));
-    expect(text).toContain('running unattended');
-    expect(text).toContain('do NOT ask the user questions');
-    expect(text).toContain('do not look for a workaround');
+  it('目标锚点的无人值守文案只在真获放行时出现', () => {
+    const goal = createGoal({ objective: 'x', now: T0 });
+    // unattended=true：与工具表摘掉 clarify_question 同一个判据
+    const unattended = buildGoalAnchorText(goal, { unattended: true });
+    expect(unattended).toContain('running unattended');
+    expect(unattended).toContain('do NOT ask the user questions');
+    expect(unattended).toContain('do not look for a workaround');
+    // 未放行（意图识别出的目标 autoApprove 恒为 false）：不能剥提问权，
+    // 否则就是「prompt 叫模型别问、工具表里还挂着 clarify_question」的自相矛盾
+    const attended = buildGoalAnchorText(goal, { unattended: false });
+    expect(attended).not.toContain('running unattended');
+    expect(attended).toContain('ask with the clarification tool');
+    // 缺省也是保守侧：没明说放行就当用户在
+    expect(buildGoalAnchorText(goal)).not.toContain('running unattended');
   });
 });
 

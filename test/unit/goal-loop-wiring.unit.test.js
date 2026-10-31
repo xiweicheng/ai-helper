@@ -23,7 +23,7 @@ describe('① 依赖与状态来源', () => {
   test('引入目标内核、评估器与会话级注册表', () => {
     expect(LOOP).toMatch(/from '\.\.\/shared\/goal\.js'/);
     expect(LOOP).toMatch(/import \{ evaluateGoal \} from '\.\/goal-evaluator\.js'/);
-    expect(LOOP).toMatch(/import \{ setGoal as persistGoalToStore \} from '\.\/goal-store\.js'/);
+    expect(LOOP).toMatch(/import \{ setGoal as persistGoalToStore, getGoal as readGoalMirror \} from '\.\/goal-store\.js'/);
   });
 
   test('复用 completion-verifier 的取证原语（verifySubtaskCompletion）', () => {
@@ -59,8 +59,16 @@ describe('② 锚点注入时序', () => {
 
   test('锚点只在 active 时产出（终态不再每轮占上下文）', () => {
     expect(LOOP).toMatch(
-      /const buildGoalAnchorMessage = \(\) => \{\s*const text = buildGoalAnchorText\(goalState\);\s*return text \? \{ role: 'user', content: text \} : null;\s*\};/,
+      /const buildGoalAnchorMessage = \(\) => \{[\s\S]*?const text = buildGoalAnchorText\(goalState, \{\s*unattended: !!\(sessionId && hasGoalUnattended\(sessionId\)\),\s*\}\);\s*return text \? \{ role: 'user', content: text \} : null;/,
     );
+  });
+
+  test('无人值守文案与工具表摘除同判据（都由 hasGoalUnattended 决定）', () => {
+    // 锚点里写「别提问」的前提是 clarify_question 真的已从工具表摘掉；
+    // 两者一旦分叉，就是「prompt 叫模型别问、工具表里还挂着提问工具」或反过来
+    const anchorStart = idx('const buildGoalAnchorMessage = () => {');
+    expect(LOOP.slice(anchorStart, anchorStart + 500)).toContain('unattended: !!(sessionId && hasGoalUnattended(sessionId))');
+    expect(LOOP).toMatch(/if \(hasGoalUnattended\(sessionId\)\) \{\s*goalTools = tools\.filter\(t => t\.function\?\.name !== 'clarify_question'\);/);
   });
 });
 
@@ -83,6 +91,15 @@ describe('③ 收尾裁决时序', () => {
     expect(LOOP).toMatch(/if \(goalStep\.kind === 'continue'\) continue;/);
     expect(LOOP).toMatch(/if \(goalStep\.kind === 'halt'\) return goalStep\.result;/);
   });
+
+  test('停滞闸只看本轮新增的工具节点（历史成功不算本轮有进展）', () => {
+    // executionLog 是整次运行累计的，不切片的话成功过一次就永远算「有进展」，闸门变死闸
+    const evalStart = idx('const verdict = await evaluateGoal(goalState, {');
+    expect(LOOP.slice(evalStart, evalStart + 900)).toContain('executionLog: sliceLogSinceLastGoalNode(),');
+    // 边界取「上一个目标裁决节点」而不是下标：trimExecutionLogMemory 会从头部 splice，下标会漂
+    const sliceStart = idx('function sliceLogSinceLastGoalNode()');
+    expect(LOOP.slice(sliceStart, sliceStart + 500)).toContain('if (executionLog[i]?.goalNode) return executionLog.slice(i + 1);');
+  });
 });
 
 describe('④ 未达成续跑：绝不清 checkpoint', () => {
@@ -101,8 +118,30 @@ describe('④ 未达成续跑：绝不清 checkpoint', () => {
     );
   });
 
-  test('裁决暂停/预算时强制落盘保存现场', () => {
-    expect(LOOP).toMatch(/await saveCheckpointNow\(`goal_\$\{goalState\.status\}`, true\);/);
+  test('裁决暂停/预算时强制落盘保存现场，且原因走统一表', () => {
+    expect(LOOP).toMatch(/await saveCheckpointNow\(goalHaltCheckpointReason\(goalState\.status\), true\);/);
+  });
+
+  test('只对 active 目标下裁决（paused/budget_limited 不进评估）', () => {
+    // 接线一旦漏判 status，非 active 目标会白烧一次评估调用；而 kernel 对非 active
+    // 回的是 STOP_PAUSED（不计轮次），漏判就是一条无上限的续跑路
+    expect(LOOP).toMatch(/if \(goalEnabled && goalIsRunning\(goalState\)\) \{\s*const goalStep = await handleGoalClosingAttempt/);
+  });
+
+  test('收尾先回查 goal-store 镜像，闭包副本不作数', () => {
+    const start = idx('async function handleGoalClosingAttempt');
+    const body = LOOP.slice(start, idx('function pauseLoopTimer()'));
+    const mirror = idx('mirror = await readGoalMirror(sessionId);');
+    const budgetGate = idx('const budget = checkGoalBudget(goalState, { fallbackTimeBudgetMs: loopTimeout });');
+    // 回查必须早于预算闸：用户在面板点的暂停/清除不能先被旧副本过一道
+    expect(mirror).toBeGreaterThan(start);
+    expect(mirror).toBeLessThan(budgetGate);
+    // 镜像里没有目标 = 运行中被清除：按普通任务收尾，不能再带目标语义
+    expect(body).toContain('if (!mirror) {');
+    expect(body).toContain('goalState = null;');
+    expect(body).toContain("return { kind: 'finalize', content, reasoningContent };");
+    // 镜像非 active = 用户已暂停/预算撞线：立即收口，不得接着评估
+    expect(body).toContain('if (!goalIsRunning(goalState)) {');
   });
 });
 

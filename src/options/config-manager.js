@@ -960,6 +960,26 @@ export function syncGoalFields() {
   });
 }
 
+/**
+ * 目标模式的三个布尔开关：切换即落盘。
+ * 为什么只在这三个键上即时写：「关掉目标模式」必须当场生效，否则用户以为已关，
+ * 下一条消息却仍在目标模式里跑（与 networkAccessEnabled / completionVerificationRerunEnabled 同口径）。
+ * 数字预算（turnBudget / stagnationLimit / …）仍只由 saveConfig 写：半填状态下
+ * parseInt 会得到 NaN，而范围校验只在 saveConfig 里。
+ * 必须「读回整份只翻一个键」：goalConfig 是按整份对象浅合并消费的，
+ * 直接写 { enabled } 会把预算与阈值顶成 undefined。
+ * @param {'enabled'|'objectiveEvidence'|'intentDetection'} field
+ * @param {boolean} value
+ */
+export function persistGoalSwitch(field, value) {
+  chrome.storage.local.get(['goalConfig'], (result) => {
+    if (chrome.runtime.lastError) return;
+    const cfg = Object.assign({}, DEFAULT_GOAL_CONFIG, result.goalConfig || {}, { [field]: value !== false });
+    chrome.storage.local.set({ goalConfig: cfg });
+  });
+}
+
+
 // 加载配置
 export function loadConfig() {
   chrome.storage.local.get([

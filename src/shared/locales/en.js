@@ -646,14 +646,14 @@ export default {
     clear: 'Clear',
     editTitle: 'Edit goal',
     editPrompt: 'Describe the goal in one sentence, as specific as possible:',
-    objectiveEmpty: 'Goal description cannot be empty',
     disabledHint: 'Goal mode is disabled in settings',
     startHint: 'With goal mode on, the first message you send becomes the goal',
     clearConfirm: 'Clear the current goal? Its checkpoint (task state) will be discarded too.',
     updated: 'Goal updated',
-    savedAsConstraint: 'Added as an extra requirement of the goal',
+    approvalRevoked: 'Approval revoked: the goal is paused and the 🎯 toggle is off. Re-arm 🎯 and press "Resume" to continue.',
     autoApproveHint: 'Goal mode is auto-approving sensitive operations (agent-side blocklisted commands are still hard-blocked). Click to revoke.',
     intentDetected: 'Goal mode detected from your wording — this turn will keep advancing on its own (sensitive operations still ask for confirmation). Click Clear on the goal bar to undo.',
+    intentHint: 'Looks like you want this task to keep pushing until it is met — arm the 🎯 toggle to enable goal mode (it will not be enabled for you).',
   },
 
   // Toggle items

@@ -17,7 +17,7 @@
 import { callChatCompletion, resolveUseStream } from '../shared/chat-client.js';
 import { recordTokenUsage } from './token-recorder.js';
 import { fetchWithRetry } from './tool-executor.js';
-import { parseGoalVerdictJson, GOAL_VERDICTS } from '../shared/goal.js';
+import { parseGoalVerdictJson } from '../shared/goal.js';
 import logger from '../shared/logger.js';
 
 // 评估调用的默认档位。设置页（goalConfig）可覆盖 model/temperature/maxTokens；
@@ -293,13 +293,4 @@ function makeDefaultRequest(ctx, settings) {
     const content = data?.choices?.[0]?.message?.content || '';
     return { content, usage: data?.usage };
   };
-}
-
-/**
- * 判定结论是否构成「必须如实上报」的终态，供 react-loop 决定收尾文案。
- * @param {string|null} verdict
- * @returns {boolean}
- */
-export function isTerminalVerdict(verdict) {
-  return verdict === GOAL_VERDICTS.MET || verdict === GOAL_VERDICTS.IMPOSSIBLE;
 }

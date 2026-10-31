@@ -75,7 +75,7 @@ describe('不该命中的情况（误判防控）', () => {
 
   it('非字符串输入安全返回 none', () => {
     for (const v of [null, undefined, 0, {}, []]) {
-      expect(detectGoalIntent(v)).toEqual({ detected: false, strength: 'none', matches: [], truncatedText: '' });
+      expect(detectGoalIntent(v)).toEqual({ detected: false, strength: 'none', matches: [] });
     }
   });
 
@@ -100,9 +100,9 @@ describe('弱命中：只提示不自动开', () => {
     expect(['weak', 'strong']).toContain(r.strength);
   });
 
-  it('strongOnly 时弱命中直接丢弃（设置页可据此收紧）', () => {
-    const r = detectGoalIntent('帮我确保所有单测都能通过', { strongOnly: true });
-    expect(r.strength).toBe('none');
+  it('弱命中不给 detected，也不携带任何「已截断文本」（返回体没有多余字段）', () => {
+    const r = detectGoalIntent('帮我确保所有单测都能通过');
+    expect(Object.keys(r).sort()).toEqual(['detected', 'matches', 'strength']);
   });
 });
 

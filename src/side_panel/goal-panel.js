@@ -191,7 +191,12 @@ export async function prepareGoalForSend({ sessionId = currentSessionId(), text 
   if (!byToggle) {
     if (cfg.intentDetection === false) return null;
     const intent = detectGoalIntent(text);
-    if (!intent.detected) return null;
+    if (!intent.detected) {
+      // 弱命中（「直到全部通过」这类隐含句式）只提醒、不替你开目标：
+      // 误判代价不对称，只有强命中才自动点亮开关
+      if (intent.strength === 'weak') showToast(t('goal.intentHint'), 'info', 6000);
+      return null;
+    }
     // 剥完为空（整句就是一句「按目标模式」）则退回原文，不然 createGoal 得不到目标
     objective = String(stripGoalIntentPhrases(text) || '').trim() || text;
   }
@@ -384,15 +389,18 @@ export function initGoalPanel() {
   });
 
   // 放行徽标点击 = 撤销放行（转成暂停：目标不再自动推进，自然也不再放行）
+  // 必须同时熄灭 🎯：否则下一条消息 prepareGoalForSend 会带 autoApprove: byToggle=true
+  // 下发，goal-store 的 'set' 分支会把刚撤回的授权原样补回去（用户没有任何再授权动作）。
   els.approve.addEventListener('click', async () => {
     const sessionId = currentSessionId();
     if (!sessionId) return;
     const resp = await sendGoalCommand({ sessionId, action: 'pause' });
+    state.goalMode = false;
     if (resp?.goal && sessionId === currentSessionId()) {
       state.goalSnapshot = resp.goal;
-      renderGoalBar();
     }
-    showToast(t('goal.statusPaused'), 'info');
+    renderGoalBar();
+    showToast(t('goal.approvalRevoked'), 'info', 6000);
   });
 
   // 后台回推（引擎侧状态机裁决后）

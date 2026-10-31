@@ -15,7 +15,7 @@ import { enqueueInjection } from './injection.js';
 import * as AgentClient from './local-agent-client.js';
 import { getAsrStatus, clearAsrStatusCache, transcribeWavBase64, openAsrSession, base64ToUint8 } from './asr-client.js';
 import { getReactCheckpoint, deleteReactCheckpoint, cleanupExpiredReactCheckpoints, getAllReactCheckpoints, saveReactCheckpoint } from '../storage/db.js';
-import { getGoal, listGoals, applyGoalCommand, removeGoal } from './goal-store.js';
+import { getGoal, applyGoalCommand, removeGoal } from './goal-store.js';
 import { registerAutoResumeAlarmHandler, decideAutoResume, AUTO_RESUME_MAX_ATTEMPTS } from './auto-resume.js';
 import { generateCompactionSummary } from './context-compactor.js';
 import { persistCompactionSummary } from './compaction-memory.js';
@@ -1167,17 +1167,6 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     return true;
   }
 
-  // 面板启动时一次性拉全部会话的目标（避免逐会话问一遍）
-  if (message.type === 'LIST_GOALS') {
-    listGoals().then(goals => {
-      sendResponse({ goals });
-    }).catch(err => {
-      logger.warn('[Background] LIST_GOALS failed:', err?.message);
-      sendResponse({ goals: [] });
-    });
-    return true;
-  }
-
   // 目标指令：set / constraint / pause / resume / clear
   // goal 模式关闭时一律拒绝——避免「开关说关了但后台还能建目标」的谎话
   if (message.type === 'SET_GOAL') {
@@ -1186,14 +1175,28 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       sendResponse({ success: false, goal: null });
       return false;
     }
-    getStoredConfig().then(cfg => {
-      if (cfg?.reactConfig?.goal?.enabled === false) {
-        sendResponse({ success: false, goal: null, disabled: true });
-        return null;
+    // 只回包一次：早期的写法在 disabled 分支里先 sendResponse 再 return null，
+    // 链上下一个 then 会拿 null 再发一次（action 丢失 + 每次都刷 message port closed）。
+    getStoredConfig().then(async (cfg) => {
+      if (cfg?.reactConfig?.goal?.enabled === false) return { disabled: true };
+      // 设置页的预算只作为「新建目标时的快照」注入：面板不需要知道这两个键，
+      // 也不让一次改设置把正在跑的目标预算换掉（累加语义只增约束，不动预算）
+      const goalCfg = cfg?.reactConfig?.goal || {};
+      const cmd = { ...message };
+      if (cmd.turnBudget === undefined && Number.isFinite(goalCfg.turnBudget)) {
+        cmd.turnBudget = goalCfg.turnBudget;
       }
-      return applyGoalCommand(sessionId, message);
-    }).then(goal => {
-      sendResponse({ success: !!goal, goal: goal || null, action: action || 'set' });
+      if (cmd.timeBudgetMs === undefined && Number.isFinite(goalCfg.timeBudgetMs)) {
+        cmd.timeBudgetMs = goalCfg.timeBudgetMs;
+      }
+      const goal = await applyGoalCommand(sessionId, cmd);
+      return { goal };
+    }).then((res) => {
+      if (res?.disabled) {
+        sendResponse({ success: false, goal: null, disabled: true, action: action || 'set' });
+        return;
+      }
+      sendResponse({ success: !!res?.goal, goal: res?.goal || null, action: action || 'set' });
     }).catch(err => {
       logger.warn('[Background] SET_GOAL failed:', err?.message);
       sendResponse({ success: false, goal: null });

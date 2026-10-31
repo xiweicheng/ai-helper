@@ -4,6 +4,33 @@
 
 ## 2026-10-31
 
+### Goal 目标模式（合并 main 后的评审修复）：堵住无上限续跑，让预算与四道闸真正生效
+
+> 来源：`main` 并入 `feat/goal-mode` 后做了一轮独立代码评审（1 Blocker + 6 Major + 4 Minor），逐条对照代码复核后**全部确认成立**并修复；修复范围严格控在「能证明的缺陷」内，未顺手扩大改动面。
+
+**Blocker：目标非 active 时仍能无限续跑（真实烧钱路径）**
+- `shared/goal.js` 的 `applyGoalVerdict` 对 `!goal` 与非 active 目标原样返回 `CONTINUE`，而这条路**不计轮次、不落终态**；`react-loop` 的收尾接线又只看 `goalState && goalEnabled`，不看 status。两者叠加：用户点了暂停/暂停后恢复，引擎照样把收尾交给评估器再 `continue`，形成一条不撞任何预算的免费续跑路。
+- 修复分两层：kernel 对非 active 一律返回 `STOP_PAUSED / stopReason='not_active'`（出口是「停」而不是「继续」）；接线条件改为 `goalEnabled && goalIsRunning(goalState)`，非 active 目标连评估调用都不发起。
+
+**Major（6 项）**
+1. **闹钟不再替用户按「继续」**：`auto-resume` 终态集补入 `goal_paused` / `goal_budget_limited`。写侧（checkpoint 原因）与读侧（终态集）共用 `GOAL_HALT_CHECKPOINT_REASONS` 单一真源，避免两处各写一份后漂移。
+2. **设置页预算真正进引擎**：`SET_GOAL` 处理把 `goalConfig.turnBudget` / `timeBudgetMs` 作为**默认值**注入命令（面板显式下发优先，不被设置页盖掉）。此前这两个输入框只是存下来，引擎侧永远用默认 20 轮 / 0。
+3. **停滞闸按「本轮」判进展**：评估时 `executionLog` 改为 `sliceLogSinceLastGoalNode()` 切片。原实现传的是整次运行累计日志，历史里成功过一次就永远算「本轮有进展」，停滞闸变死闸。边界取「上一个目标裁决节点」而不是记下标——`trimExecutionLogMemory` 会从头部 splice，下标会漂。
+4. **撤销放行同时熄灭 🎯**：点 🔓 只发 `pause` 的话，`state.goalMode` 仍是 true，下一条消息 `prepareGoalForSend` 会带 `autoApprove: byToggle=true` 下发，`goal-store` 的 `set` 分支把刚撤回的授权原样补回去（用户没有任何再授权动作）。现在撤销即 `goalMode=false` + 专用文案 `goal.approvalRevoked`。
+5. **运行中回查镜像**：`handleGoalClosingAttempt` 先 `readGoalMirror(sessionId)`。`goalState` 是本次运行启动时的闭包副本，用户这一跑里点的暂停/清除只写进 `goal-store`——不回查就会「面板显示已暂停、引擎接着评估续跑」，裁决后还会拿旧副本把用户刚写的状态覆盖回去。镜像为空（运行中被清除）则按普通任务收尾；镜像非 active 立即收口。
+6. **锚点文案与工具闸同判据**：`buildGoalAnchorText` 新增 `opts.unattended`，由 `react-loop` 传入 `hasGoalUnattended(sessionId)`——正是摘掉 `clarify_question` 的同一个谓词。原实现无条件写「不得提问」，而意图识别出的目标 `autoApprove` 恒为 false、工具表里还挂着澄清工具，自相矛盾。
+
+**Minor（4 项）**
+- `SET_GOAL` 的 disabled 分支只回包一次（原写法先 `sendResponse` 再 `return null`，链上下一个 `then` 会拿 `null` 再发一次，`action` 丢失且每次都刷 message port closed）。
+- 死代码清理：`goal-store` 的 `configureGoalStore` / `goalStoreHasPendingWrites` / `listGoals`（连 `LIST_GOALS` 消息通道一起下线——没有调用方就不留第二条读取通道）、`goal-evaluator` 的 `isTerminalVerdict`（终态判定归 kernel）、`goal.js` 的 `goalCanContinue`（与 `goalIsRunning` 同义）、`goal-intent` 的 `strongOnly` / `truncatedText`，以及 i18n 死键 `goal.objectiveEmpty` / `goal.savedAsConstraint`。
+- 弱意图命中改为「只提示不接管」：弹 `goal.intentHint` 提醒用户自己点亮 🎯，不再静默开目标（误判代价不对称）。
+- 设置页三个布尔开关（总开关 / 客观取证 / 意图识别）切换即落盘，采用「读回整份 `goalConfig` 只翻一个键」——直接写 `{ enabled }` 会把预算与阈值顶成 `undefined`。数字输入仍只由保存按钮写（半填状态 `parseInt` 会得到 NaN，范围校验只在 `saveConfig` 里）。
+
+**验证**
+- 断言从「断言源码文本」升级为「断言可观测行为」：kernel 非 active 出口、auto-resume 对 `goal_*` 原因不续跑、镜像回查早于预算闸、停滞闸切片、`persistGoalSwitch` 的整份合并、撤销联动，均为行为级断言。
+- 全量单测 237 文件 3896 例全绿；`npm run lint` 无输出；`npm run build:silent` 成功。
+- 探针 A（真扩展 + 真 storage）38/38：新增「设置页预算注入新目标 / 面板显式预算优先 / 点 🔓 后目标暂停且徽标消失 / chip 同步熄灭 / 开关不点保存即落盘 / 即时写不破坏预算字段」。探针 B（mock 端点驱动真实 ReAct）19/19。
+
 ### Goal 目标模式：把「无人值守推到达成」做成引擎能力（独立评估 + 四道闸 + 累加语义）
 
 > 来源：用户需求「设一个目标让它自己跑完，不要每步问我」。三条决定骨架的拍板：**不引入第二个模型**（评估器就是对当前会话模型的一次独立短调用，沿用 `react-reflection` 的路子）、**不让模型自己开目标**（控制面只归用户与 runtime，给被考核方发预算开关等于没有闸门）、**会话内继续发消息是累加约束而不是替换目标**。

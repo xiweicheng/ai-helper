@@ -14,8 +14,7 @@
 //   strong —— 显式说法（按目标模式 / goal mode / 持续执行直到 / 无人值守…），自动点亮开关；
 //   weak   —— 隐含句式（直到…全部通过 / 确保…通过），只做提示，不自动开。
 // 误判代价不对称：strong 误判 = 用户点一下撤销；weak 误判 = 只多一条提示。
-import { MAX_OBJECTIVE_CHARS } from './goal.js';
-
+// 意图识别是纯正则层，不依赖 goal.js 的任何运行时函数（只是同属一个功能的两个模块）。
 // 强命中：用户明确要求「按目标模式跑」。每条都写成「动词/介词 + 目标模式」或行业惯用语，
 // 避免只提到「目标模式」四个字（例如「目标模式是怎么实现的」）就被误判。
 export const GOAL_INTENT_STRONG_PATTERNS = [
@@ -72,13 +71,12 @@ function collectMatches(text, patterns, negationAware) {
  * 判断一段用户输入是否在要求「按目标模式执行」。
  *
  * @param {string} text 用户原始输入
- * @param {{strongOnly?:boolean}} [opts] strongOnly=true 时 weak 命中一律返回 none
- * @returns {{detected:boolean, strength:'strong'|'weak'|'none', matches:string[], truncatedText:string}}
+ * @returns {{detected:boolean, strength:'strong'|'weak'|'none', matches:string[]}}
  *   detected 仅在 strong 命中时为 true —— 调用方据此自动点亮开关；
- *   strength='weak' 时只弹提示条。
+ *   strength='weak' 时只弹一条提示（不碰开关，也不剥任何字）。
  */
-export function detectGoalIntent(text, opts = {}) {
-  const none = { detected: false, strength: 'none', matches: [], truncatedText: '' };
+export function detectGoalIntent(text) {
+  const none = { detected: false, strength: 'none', matches: [] };
   if (typeof text !== 'string') return none;
   const body = text.trim();
   if (!body) return none;
@@ -90,10 +88,8 @@ export function detectGoalIntent(text, opts = {}) {
       detected: true,
       strength: 'strong',
       matches: dedupe(strong).slice(0, 3),
-      truncatedText: scoped.slice(0, MAX_OBJECTIVE_CHARS),
     };
   }
-  if (opts.strongOnly) return none;
 
   const weak = collectMatches(scoped, GOAL_INTENT_WEAK_PATTERNS, true);
   if (weak.length > 0) {
@@ -101,7 +97,6 @@ export function detectGoalIntent(text, opts = {}) {
       detected: false,
       strength: 'weak',
       matches: dedupe(weak).slice(0, 3),
-      truncatedText: scoped.slice(0, MAX_OBJECTIVE_CHARS),
     };
   }
   return none;

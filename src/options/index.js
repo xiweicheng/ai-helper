@@ -1,7 +1,7 @@
 // options/index.js - 选项页面入口
 
 import { initTheme, getTheme, setTheme, subscribeTheme } from '../shared/theme.js';
-import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast, syncQueueAutoCarryFields, syncGoalFields } from './config-manager.js';
+import { currentModel, setCurrentModel, PRESET_MODELS, loadConfig, saveConfig, addCustomModelToDropdown, removeCustomModel, saveCustomModels, loadCustomModels, updateModelSelection, updateSelectedCtxBadge, applyModelContextWindow, commitModelContextWindow, filterModelDropdown, showStatus, showToast, syncQueueAutoCarryFields, syncGoalFields, persistGoalSwitch } from './config-manager.js';
 import { openCtxPopover, closeCtxPopover, containsCtxPopoverEl } from './ctx-popover.js';
 import { encodeSecret, decodeSecret } from '../shared/secret.js';
 import { currentImageModel, setCurrentImageModel, addCustomImageModelToDropdown, removeImageModel, loadImageModels, updateImageModelSelection, commitImageModelContextWindow } from './config-manager.js';
@@ -1300,12 +1300,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     completionVerificationRerunEnabledLabel.textContent = completionVerificationRerunEnabledEl.checked ? t('common.enabled') : t('common.disabled');
   }
 
-  // 目标模式（Goal）：总开关只收起子项、子开关只翻「已启用/已停用」文案，不在这里落盘。
-  // 必须如斯：子项是数字输入框，半填状态下即时写入会把 NaN 预算存进 storage
-  //（范围校验只在 saveConfig 里），而 goalConfig 靠整份对象浅合并，写残一份会连带弄坏其余字段。
-  ['goalEnabled', 'goalObjectiveEvidence', 'goalIntentDetection'].forEach((id) => {
+  // 目标模式（Goal）：三个布尔开关切换即落盘，数字预算仍只在 saveConfig 里写。
+  // 关闸必须当场生效——用户点完「关闭目标模式」不去按保存，下一条消息不应当还在目标模式里跑。
+  // 预算输入框不即时写：半填状态下 parseInt 会得到 NaN，而范围校验只在 saveConfig 里。
+  const goalSwitchFields = {
+    goalEnabled: 'enabled',
+    goalObjectiveEvidence: 'objectiveEvidence',
+    goalIntentDetection: 'intentDetection',
+  };
+  Object.keys(goalSwitchFields).forEach((id) => {
     const goalEl = document.getElementById(id);
-    if (goalEl) goalEl.addEventListener('change', syncGoalFields);
+    if (!goalEl) return;
+    goalEl.addEventListener('change', () => persistGoalSwitch(goalSwitchFields[id], goalEl.checked));
+    goalEl.addEventListener('change', syncGoalFields);
   });
   
   // 内网地址访问总闸：切换即写入 storage；关闸只改开关与白名单区块的显隐，绝不动 allowedNetworkHosts

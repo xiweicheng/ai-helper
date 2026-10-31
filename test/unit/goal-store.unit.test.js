@@ -75,14 +75,6 @@ describe('基本读写', () => {
     expect(await store.getGoal('s1')).toBeNull();
   });
 
-  it('listGoals 返回全部会话的目标', async () => {
-    store.__resetGoalStoreForTests(fakeStorage());
-    await store.setGoal('s1', goalFor('A'));
-    await store.setGoal('s2', goalFor('B'));
-    const list = await store.listGoals();
-    expect(list).toHaveLength(2);
-    expect(list.map((x) => x.sessionId).sort()).toEqual(['s1', 's2']);
-  });
 });
 
 describe('冷启动水合', () => {
@@ -109,7 +101,7 @@ describe('冷启动水合', () => {
     const s = fakeStorage({ sessionGoals: { s1: goalFor('A') } });
     const getSpy = vi.spyOn(s, 'get');
     store.__resetGoalStoreForTests(s);
-    await Promise.all([store.getGoal('s1'), store.getGoal('s1'), store.listGoals()]);
+    await Promise.all([store.getGoal('s1'), store.getGoal('s1'), store.getGoal('s2')]);
     expect(getSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -142,17 +134,20 @@ describe('持久化：防抖合并 + 失败软着陆', () => {
     expect(s.state.sessionGoals.s1.objective).toBe('新');
   });
 
-  it('存储失败不上抛，并保留脏标等待下次重试', async () => {
+  // 断言的是「有没有真的写进存储」这种可观测结果，不是内部脏标 getter——
+  // 脏标是实现细节，暴露成导出就会变成第二条没有生产调用方的读取通道。
+  it('存储失败不上抛，且下次落盘会重试', async () => {
     const s = fakeStorage();
     s.failOnSet(true);
     store.__resetGoalStoreForTests(s);
     await store.setGoal('s1', goalFor('A'));
     await expect(store.flushGoalStore()).resolves.toBeUndefined();
-    expect(store.goalStoreHasPendingWrites()).toBe(true);
+    expect(s.puts).toHaveLength(0);
+    expect(s.state.sessionGoals).toBeUndefined();
 
     s.failOnSet(false);
     await store.flushGoalStore();
-    expect(store.goalStoreHasPendingWrites()).toBe(false);
+    expect(s.puts).toHaveLength(1);
     expect(s.state.sessionGoals.s1.objective).toBe('A');
   });
 

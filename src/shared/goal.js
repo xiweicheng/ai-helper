@@ -38,6 +38,22 @@ export const GOAL_ACTIONS = {
   STOP_BUDGET: 'stop_budget',
 };
 
+/**
+ * 目标「停住但保留现场」时写进 checkpoint 的 interruptedReason 前缀。
+ * auto-resume 必须把它们当终态：这两个原因恰恰意味「等用户点继续」，
+ * 闹钟把现场接走重跑等于替用户按了他没按的按钮（还会重烧 token）。
+ * 唯一器源在这里——checkpoint 写侧（react-loop）与终态集（auto-resume）都引它。
+ */
+export const GOAL_HALT_CHECKPOINT_REASONS = Object.freeze([
+  `goal_${GOAL_STATUS.PAUSED}`,
+  `goal_${GOAL_STATUS.BUDGET_LIMITED}`,
+]);
+
+/** 目标停住时的 checkpoint 原因（与被保留的 goal 状态码同源）。 */
+export function goalHaltCheckpointReason(status) {
+  return `goal_${status}`;
+}
+
 // 目标描述的字符上限：与 Claude Code /goal 条件上限（4000）对齐，
 // 同时防超长文本把每轮锚点注入撑爆上下文。
 export const MAX_OBJECTIVE_CHARS = 4000;
@@ -184,11 +200,6 @@ export function goalIsRunning(goal) {
   return !!goal && goal.status === GOAL_STATUS.ACTIVE;
 }
 
-/** 目标是否需要引擎侧继续推进（暂停/终态一律不续跑）。 */
-export function goalCanContinue(goal) {
-  return goalIsRunning(goal);
-}
-
 /**
  * 追加一条约束（会话内后续消息的语义）：不替换 objective，不改状态。
  * 与上一条完全相同的约束直接忽略（连续重复指导没有信息量，还会白吃锚点 token）。
@@ -262,10 +273,12 @@ export function settleGoalElapsed(goal, now = Date.now()) {
 export function applyGoalVerdict(goal, verdict = {}, opts = {}) {
   const now = Number.isFinite(opts.now) ? opts.now : Date.now();
   const limits = { ...DEFAULT_GOAL_LIMITS, ...(opts.limits || {}) };
-  if (!goal) return { goal, action: GOAL_ACTIONS.CONTINUE, stopReason: null };
-  // 终态或非 active：忽略任何迟到的评估结论（取消/暂停后不要再改状态机）
+  if (!goal) return { goal, action: GOAL_ACTIONS.STOP_PAUSED, stopReason: 'not_active' };
+  // 终态或非 active：忽略任何迟到的评估结论（取消/暂停后不要再改状态机）。
+  // 出口必须是「停」而不是「继续」——返回 CONTINUE 等于让调用方无限续跑，
+  // 而这里既不计轮次也不落终态，一旦接线漏判 status 就是无上限烧钱。
   if (goal.status !== GOAL_STATUS.ACTIVE) {
-    return { goal, action: GOAL_ACTIONS.CONTINUE, stopReason: null };
+    return { goal, action: GOAL_ACTIONS.STOP_PAUSED, stopReason: 'not_active' };
   }
 
   const tokens = Number.isFinite(verdict.tokensUsed) ? verdict.tokensUsed : 0;
@@ -427,7 +440,8 @@ export function parseGoalVerdictJson(text) {
  * 与 buildPlanAnchorMessage / buildNotesAnchorMessage 同构：英文 + [System Notice] 前缀，
  * 因为锚点会与既有英文系统提示词共存，混语言反而降低模型对格式的识别率。
  * @param {object} goal
- * @param {{maxCriteria?:number}} [opts]
+ * @param {{maxCriteria?:number, unattended?:boolean}} [opts] unattended 必须与工具表摘除的
+ *   同一个判据（用户亲手授予的放行），否则会出现「提示词说无人值守、弹窗闸却没开」的自相矛盾
  * @returns {string} goal 为空或已终止时返回 ''（调用方跳过注入）
  */
 export function buildGoalAnchorText(goal, opts = {}) {
@@ -454,11 +468,18 @@ export function buildGoalAnchorText(goal, opts = {}) {
   lines.push(
     'Work directly toward this objective. When you believe it is met, stop calling tools and state the outcome with concrete evidence; an independent evaluator will verify it. Do not declare success without evidence.'
   );
-  // 目标模式 = 无人值守。这条必须写进锚点，而不是只靠工具表里去掉 clarify_question：
-  // 模型仍会用普通文本向用户提问，然后停在那里空等。
-  lines.push(
-    'You are running unattended: do NOT ask the user questions and do NOT wait for approval. When something is ambiguous, pick the most reasonable interpretation yourself, record the decision in your working notes, and keep moving. If a safety policy blocks an action, do not look for a workaround — report the limitation honestly and pursue a different path to the objective.'
-  );
+  // 无人值守文案必须与工具闸同判据（opts.unattended = 用户亲手授予的放行）：
+  // 只有真正无人值守时才能剥夺提问权。未授权的目标（意图识别）照常允许提问，
+  // 否则就是「prompt 叫模型别问、工具表里却还挂着 clarify_question」。
+  if (opts.unattended === true) {
+    lines.push(
+      'You are running unattended: do NOT ask the user questions and do NOT wait for approval. When something is ambiguous, pick the most reasonable interpretation yourself, record the decision in your working notes, and keep moving. If a safety policy blocks an action, do not look for a workaround — report the limitation honestly and pursue a different path to the objective.'
+    );
+  } else {
+    lines.push(
+      'The user is present. If a decision is genuinely ambiguous or an action needs confirmation, ask with the clarification tool rather than guessing; otherwise keep working toward the objective without asking for permission at every step.'
+    );
+  }
   return lines.join('\n');
 }
 

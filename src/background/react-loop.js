@@ -41,9 +41,11 @@ import {
   applyGoalVerdict,
   settleGoalElapsed,
   goalIsFinished,
+  goalIsRunning,
+  goalHaltCheckpointReason,
 } from '../shared/goal.js';
 import { evaluateGoal } from './goal-evaluator.js';
-import { setGoal as persistGoalToStore } from './goal-store.js';
+import { setGoal as persistGoalToStore, getGoal as readGoalMirror } from './goal-store.js';
 import { drainPendingInjections, dropPendingInjections, buildInjectionContent } from './injection.js';
 
 // 注册 reactLoop 命名空间翻译
@@ -108,6 +110,7 @@ registerTranslations('zh', {
     goalUnmetNote: '\n\n> 🎯 目标模式：独立评估判定此目标**无法达成**（理由：{reason}）。以上为当前实际进展，未声称已完成。',
     goalBudgetNotice: '🎯 目标模式的轮次/时间预算已用完（已用 {turns}/{budget} 轮），现场已保留。点击「继续执行」可接着做；目标仍然有效。',
     goalPausedNotice: '🎯 连续 {turns} 轮未取得实质进展，目标已暂停（现场已保留）。补充说明或点「继续执行」即可恢复。',
+    goalUserPausedNotice: '🎯 目标已按你的操作暂停，本轮到此为止（现场已保留）。补充说明、点「继续执行」或重新点亮 🎯 即可恢复。',
     goalEvaluatorDownNotice: '🎯 评估器连续不可用（网络/解析异常），目标已暂停以免无限续跑（未消耗轮次预算）。点「继续执行」可重试。',
   },
 });
@@ -172,6 +175,7 @@ registerTranslations('en', {
     goalUnmetNote: '\n\n> 🎯 Goal mode: the independent evaluator judged this goal **not achievable** (reason: {reason}). The above is the actual progress; completion is not claimed.',
     goalBudgetNotice: '🎯 The goal turn/time budget is used up ({turns}/{budget} turns). The scene is preserved — press "Continue" to keep going; the goal stays active.',
     goalPausedNotice: '🎯 No substantive progress for {turns} consecutive attempts, so the goal is paused (scene preserved). Add guidance or press "Continue" to resume.',
+    goalUserPausedNotice: '🎯 The goal was paused by your action, so this run stops here (scene preserved). Add guidance, press "Continue", or re-arm 🎯 to resume.',
     goalEvaluatorDownNotice: '🎯 The evaluator has been unavailable repeatedly (network/parse errors), so the goal is paused to avoid endless retries (no turn budget was consumed). Press "Continue" to retry.',
   },
 });
@@ -1494,7 +1498,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    * filterApiMessages 重建会把它整段吞掉。只在目标处于 active 时产出。
    */
   const buildGoalAnchorMessage = () => {
-    const text = buildGoalAnchorText(goalState);
+    // 无人值守文案与工具表摘澄清同判据：只有用户亲手授予了放行（hasGoalUnattended）
+    // 才能剥夺模型提问权，否则就是「prompt 说别问、工具表里还挂着 clarify_question」
+    const text = buildGoalAnchorText(goalState, {
+      unattended: !!(sessionId && hasGoalUnattended(sessionId)),
+    });
     return text ? { role: 'user', content: text } : null;
   };
 
@@ -1734,6 +1742,20 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   }
 
   /**
+   * 本轮新增的日志（从上一个目标裁决节点之后算起）。
+   * 停滞闸问的是「本轮有没有工具真的成功」，而 executionLog 是整个运行累计的：
+   * 不切片，历史里成功过一次就永远算「有进展」，闸门变成死闸。
+   * 用「上一个 goalNode」做边界而不是记下标：trimExecutionLogMemory 会从头部
+   * splice，下标会漂，标记节点不会。
+   */
+  function sliceLogSinceLastGoalNode() {
+    for (let i = executionLog.length - 1; i >= 0; i -= 1) {
+      if (executionLog[i]?.goalNode) return executionLog.slice(i + 1);
+    }
+    return executionLog;
+  }
+
+  /**
    * 目标评估节点日志。复用 nodeType:'reflection' + 自定义 nodeName——
    * execution-log-render 有三处 nodeType 分支，新增类型要改三处，不值得。
    */
@@ -1785,8 +1807,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    */
   async function finalizeGoalHalt({ content, reasoningContent, stopReason }) {
     const noticeKey = stopReason === 'stagnation' ? 'reactLoop.goalPausedNotice'
-      : stopReason === 'evaluator_unavailable' ? 'reactLoop.goalEvaluatorDownNotice'
-        : 'reactLoop.goalBudgetNotice';
+      : stopReason === 'user_paused' ? 'reactLoop.goalUserPausedNotice'
+        : stopReason === 'evaluator_unavailable' ? 'reactLoop.goalEvaluatorDownNotice'
+          : 'reactLoop.goalBudgetNotice';
     const notice = t(noticeKey, { turns: goalState.turnsUsed, budget: goalState.turnBudget });
     const finalContent = content ? `${content}\n\n${notice}` : notice;
     currentMessages.push({ role: 'assistant', content: finalContent });
@@ -1796,7 +1819,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       observation: finalContent,
       extra: { goalStatus: goalState.status, stopReason: stopReason || null },
     });
-    await saveCheckpointNow(`goal_${goalState.status}`, true);
+    await saveCheckpointNow(goalHaltCheckpointReason(goalState.status), true);
     sendExecutionStatusUpdate(notice, 'success');
     taskCompleted = true;
     logger.warn(`[Background] goal halted: status=${goalState.status}, reason=${stopReason}, turns=${goalState.turnsUsed}/${goalState.turnBudget}`);
@@ -1814,6 +1837,30 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    * @returns {{kind:'continue'}|{kind:'finalize', content:string, reasoningContent:string|null}|{kind:'halt', result:object}}
    */
   async function handleGoalClosingAttempt({ content, reasoningContent }) {
+    // ⓪ 权威回查：goalState 是本次运行启动时的闭包副本，用户这一跑里点的暂停/继续/清除
+    //    只写进 goal-store。不回查就会出现「面板显示已暂停、引擎接着评估续跑」，
+    //    而且裁决后还会拿旧副本把用户刚写的状态盖回去。
+    if (sessionId) {
+      let mirror = null;
+      try {
+        mirror = await readGoalMirror(sessionId);
+      } catch (e) {
+        logger.debug('[Background] read goal mirror failed:', e?.message);
+      }
+      if (!mirror) {
+        // 目标在运行中被清除：目标语义已消失，按普通任务的正常收尾走
+        logger.debug('[Background] goal cleared during run, finalize without goal semantics');
+        goalState = null;
+        return { kind: 'finalize', content, reasoningContent };
+      }
+      // 以镜像为权威：它既可能比闭包新（用户点了暂停），也可能就是引擎自己刚同步的那份
+      goalState = mirror;
+      if (!goalIsRunning(goalState)) {
+        const stopReason = goalState.status === GOAL_STATUS.BUDGET_LIMITED ? 'budget' : 'user_paused';
+        return { kind: 'halt', result: await finalizeGoalHalt({ content, reasoningContent, stopReason }) };
+      }
+    }
+
     // ① 预算闸先判：别为一个已经没预算的目标白烧一次评估调用
     const budget = checkGoalBudget(goalState, { fallbackTimeBudgetMs: loopTimeout });
     if (budget.exhausted) {
@@ -1832,7 +1879,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       model,
       sessionId,
       signal: abortSignal,
-      executionLog,
+      // 停滞闸只看「本轮」新增的工具节点：历史里成功过不算本轮有进展
+      executionLog: sliceLogSinceLastGoalNode(),
       evidence,
       answer: content,
       goalConfig: goalCfg,
@@ -3234,7 +3282,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 目标模式（唯一接线点）：模型交回纯文本 = 一次「收尾尝试」。
       // 先把现场与 checkpoint 都保着，让独立评估器判——未达成则注入纠正指令并 continue，
       // 达成/判不可能才允许走到下面「清 checkpoint + 后置反思」的正常收尾。
-      if (goalState && goalEnabled) {
+      // 只对仍在 active 的目标做裁决：paused / budget_limited 是「等用户下指令」的状态，
+      // 放进来会走到 applyGoalVerdict 的非 active 早退，白烧一次评估调用还不计轮次
+      if (goalEnabled && goalIsRunning(goalState)) {
         const goalStep = await handleGoalClosingAttempt({ content, reasoningContent });
         if (goalStep.kind === 'continue') continue;
         if (goalStep.kind === 'halt') return goalStep.result;

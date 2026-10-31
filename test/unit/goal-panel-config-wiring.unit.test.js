@@ -52,7 +52,9 @@ describe('① 意图识别接线（否则 goal-intent.js 是孤儿模块）', ()
   test('开关未亮时走意图识别，未命中则本轮不带目标', () => {
     expect(PANEL).toMatch(/if \(cfg\.intentDetection === false\) return null;/);
     expect(PANEL).toMatch(/const intent = detectGoalIntent\(text\);/);
-    expect(PANEL).toMatch(/if \(!intent\.detected\) return null;/);
+    // 弱命中只弹提示、绝不替你开目标：detected 为 false 就必须 return null
+    const branch = PANEL.slice(PANEL.indexOf('const intent = detectGoalIntent(text);'), PANEL.indexOf('objective = String(stripGoalIntentPhrases'));
+    expect(branch).toMatch(/if \(!intent\.detected\) \{[\s\S]*intent\.strength === 'weak'[\s\S]*return null;\s*\}/);
   });
 
   test('objective 用剥离意图短语后的文本（否则元指令污染目标描述）', () => {
@@ -192,7 +194,7 @@ describe('⑤ 会话被删时目标镜像必须跟着清', () => {
   });
 
   test('后台接住 DROP_GOAL 并真的调 removeGoal', () => {
-    expect(BG_INDEX).toMatch(/import \{ getGoal, listGoals, applyGoalCommand, removeGoal \} from '\.\/goal-store\.js';/);
+    expect(BG_INDEX).toMatch(/import \{ getGoal, applyGoalCommand, removeGoal \} from '\.\/goal-store\.js';/);
     const start = BG_INDEX.indexOf("message.type === 'DROP_GOAL'");
     const handler = BG_INDEX.slice(start, BG_INDEX.indexOf("message.type === 'ASR_GET_STATUS'", start));
     expect(handler.length).toBeGreaterThan(0);
@@ -204,5 +206,60 @@ describe('⑤ 会话被删时目标镜像必须跟着清', () => {
   test('面板侧听 session-deleted / session-archived 重画目标条', () => {
     expect(PANEL).toMatch(/document\.addEventListener\('session-deleted', \(\) => \{ resetGoalPanel\(\); \}\)/);
     expect(PANEL).toMatch(/document\.addEventListener\('session-archived', \(\) => \{ resetGoalPanel\(\); \}\)/);
+  });
+});
+
+describe('⑥ 设置页预算真的进引擎（否则预算只是摆设）', () => {
+  test('SET_GOAL 把设置页的 turnBudget/timeBudgetMs 当默认值注入命令', () => {
+    const start = BG_INDEX.indexOf("message.type === 'SET_GOAL'");
+    const handler = BG_INDEX.slice(start, BG_INDEX.indexOf("message.type === 'DROP_GOAL'", start));
+    expect(handler).toContain('const goalCfg = cfg?.reactConfig?.goal || {};');
+    expect(handler).toMatch(/cmd\.turnBudget === undefined && Number\.isFinite\(goalCfg\.turnBudget\)/);
+    expect(handler).toMatch(/cmd\.timeBudgetMs === undefined && Number\.isFinite\(goalCfg\.timeBudgetMs\)/);
+    // 只作默认值：面板显式下发的预算不能被设置页盖掉
+    expect(handler).toMatch(/cmd\.turnBudget = goalCfg\.turnBudget;/);
+  });
+
+  test('禁用分支只回包一次（早期写法会发两遍 + action 丢失）', () => {
+    const start = BG_INDEX.indexOf("message.type === 'SET_GOAL'");
+    const handler = BG_INDEX.slice(start, BG_INDEX.indexOf("message.type === 'DROP_GOAL'", start));
+    // 唯一一次「成功」回包在最后一个 then 里；disabled 分支只返回标记对象
+    expect(handler.match(/sendResponse\(/g)).toHaveLength(4);
+    expect(handler).toMatch(/if \(cfg\?\.reactConfig\?\.goal\?\.enabled === false\) return \{ disabled: true \};/);
+  });
+});
+
+describe('⑦ 撤销放行必须同时熄灭 🎯（否则下一条消息把授权原样补回去）', () => {
+  test('撤销徽标点击：暂停 + goalMode=false + 专用文案', () => {
+    const start = PANEL.indexOf('els.approve.addEventListener');
+    const block = PANEL.slice(start, PANEL.indexOf('// 后台回推', start));
+    expect(block).toContain("action: 'pause'");
+    expect(block).toMatch(/state\.goalMode = false;/);
+    // goalMode 必须在发命令之后、重绘之前就熄：重绘读的就是它
+    expect(block.indexOf('goalMode = false')).toBeLessThan(block.indexOf('renderGoalBar()'));
+    expect(block).toContain("t('goal.approvalRevoked')");
+  });
+});
+
+describe('⑧ 设置页开关即时落盘（关闸不该等保存按钮）', () => {
+  test('三个布尔开关各自即时写回 goalConfig', () => {
+    const start = CONFIG_MANAGER.indexOf('export function persistGoalSwitch');
+    expect(start).toBeGreaterThan(-1);
+    const body = CONFIG_MANAGER.slice(start, CONFIG_MANAGER.indexOf('// 加载配置'));
+    // 必须读回整份再翻一个键：直接写 { enabled } 会把预算字段顶成 undefined
+    expect(body).toMatch(/Object\.assign\(\{\}, DEFAULT_GOAL_CONFIG, result\.goalConfig \|\| \{\}, \{ \[field\]: value !== false \}\)/);
+    expect(body).toContain("chrome.storage.local.get(['goalConfig']");
+    expect(body).toContain('chrome.storage.local.set({ goalConfig: cfg });');
+  });
+
+  test('options 入口把三个开关接到 persistGoalSwitch', () => {
+    const OPTIONS_INDEX = readFileSync(join(process.cwd(), 'src/options/index.js'), 'utf8');
+    expect(OPTIONS_INDEX).toMatch(/import \{[^}]*persistGoalSwitch[^}]*\} from '\.\/config-manager\.js';/);
+    expect(OPTIONS_INDEX).toMatch(/goalEnabled: 'enabled',/);
+    expect(OPTIONS_INDEX).toMatch(/goalObjectiveEvidence: 'objectiveEvidence',/);
+    expect(OPTIONS_INDEX).toMatch(/goalIntentDetection: 'intentDetection',/);
+    expect(OPTIONS_INDEX).toMatch(/persistGoalSwitch\(goalSwitchFields\[id\], goalEl\.checked\)/);
+    // 数字预算绝不能进即时写（半填状态会存 NaN）
+    expect(OPTIONS_INDEX).not.toMatch(/goalTurnBudget|goalTimeBudgetMin|goalStagnationLimit/);
   });
 });
