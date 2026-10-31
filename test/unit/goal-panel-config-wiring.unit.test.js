@@ -297,3 +297,38 @@ describe('⑧ 设置页开关即时落盘（关闸不该等保存按钮）', () 
     expect(OPTIONS_INDEX).not.toMatch(/goalObjectiveEvidence|goalTurnBudget|goalTimeBudgetMin|goalStagnationLimit/);
   });
 });
+
+describe('⑨ 暂停 ≠ 彻底停下：开关还亮着必须说清楚', () => {
+  test('目标条「暂停」后按开关状态给两种提示，且只在真落成 paused 时提示', () => {
+    const start = PANEL.indexOf('els.pause.addEventListener');
+    expect(start).toBeGreaterThan(-1);
+    const block = PANEL.slice(start, PANEL.indexOf('els.resume.addEventListener', start));
+    expect(block).toContain("action: 'pause'");
+    // 开关亮着→下条消息会复活；开关熄了→不会。两种话不能合成一句
+    expect(block).toContain("t(state.goalMode ? 'goal.pausedToast' : 'goal.pausedToastChipOff')");
+    // 后台没落成 paused（已终态 / 通道失败）时不能假报「已暂停」
+    expect(block).toMatch(/if \(resp\.goal\.status === 'paused'\) \{/);
+  });
+
+  test('chip 只在「亮着 + 目标停住」时标待续，熄灭时不标', () => {
+    expect(PANEL).toMatch(/const goalIdle = enabled && !!goal && \(goal\.status === 'paused' \|\| goal\.status === 'budget_limited'\);/);
+    expect(PANEL).toMatch(/els\.group\.dataset\.goalIdle = goalIdle \? '1' : '';/);
+    // 标记必须真的被样式消费，否则只是个没人读的 DOM 属性
+    const CSS = readFileSync(join(process.cwd(), 'src/side_panel/styles.css'), 'utf8');
+    expect(CSS).toContain('#goalGroup[data-goal-idle="1"]');
+    expect(CSS).toMatch(/#goalGroup\[data-goal-idle="1"\]:hover/);
+  });
+
+  test('暂停态副行写明「还会接着跑」，且只在开关亮着时补这句', () => {
+    // goalIdle 的定义里已经含「开关亮着」，所以这句天然只在「暂停 + 亮着」时出现；
+    // 开关熄灭时「继续」按钮就在旁边，再加一句是噪音。
+    expect(PANEL).toMatch(/if \(goalIdle && goal\.status === 'paused'\) metaParts\.push\(t\('goal\.pausedHintInline'\)\);/);
+  });
+
+  test('两条提示中英文都得有（缺一个就是英文界面弹中文）', () => {
+    for (const key of ['pausedToast:', 'pausedToastChipOff:', 'pausedHintInline:']) {
+      expect(ZH, `zh 缺 ${key}`).toContain(key);
+      expect(EN, `en 缺 ${key}`).toContain(key);
+    }
+  });
+});

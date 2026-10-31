@@ -79,6 +79,11 @@ export function renderGoalBar() {
   // chip 必须跟着重绘：goalMode 是会话级开关，switchToSession 只改了 state，
   // 不同步就会出现「切到未开目标的会话，🎯 还亮着」
   els.toggle.checked = enabled;
+  // 「目标」开关亮着、目标却已停住（暂停 / 预算耗尽）：下一条消息会把它复活
+  // （goal-store 的 set 分支），只留 chip 亮着就成了「已暂停 + 目标还亮着」的自相矛盾。
+  // 只在两者同时成立时标记；chip 熄灭时目标条自己会说明，不必再标。
+  const goalIdle = enabled && !!goal && (goal.status === 'paused' || goal.status === 'budget_limited');
+  if (els.group) els.group.dataset.goalIdle = goalIdle ? '1' : '';
   const shouldShow = enabled || (goal && !isFinished(goal));
   els.bar.style.display = shouldShow ? '' : 'none';
   if (!shouldShow) return;
@@ -92,7 +97,12 @@ export function renderGoalBar() {
     els.objective.title = goal.objective || '';
     // 副行不再直接铺「3/20 轮」：这是内部计量单位，且 0 时完全无信息。
     // 改由纯函数输出「已尝试 3 次 · 还剩 2 次」（接近上限才提示剩余）。
-    els.meta.textContent = buildGoalMetaParts(goal, t).join(' · ');
+    const metaParts = buildGoalMetaParts(goal, t);
+    // 暂停 + 开关还亮着：这不是终态，下一条消息会把目标复活（store 的 set 分支）。
+    // 不写出来，「已暂停」看起来就是「停了」，用户会以为必须手动点「继续」。
+    // 开关熄灭时不加——那时「继续」按钮就在旁边，再说一遍是噪音。
+    if (goalIdle && goal.status === 'paused') metaParts.push(t('goal.pausedHintInline'));
+    els.meta.textContent = metaParts.join(' · ');
   } else {
     els.objective.textContent = t('goal.startHint');
     els.objective.title = '';
@@ -340,6 +350,7 @@ export function initGoalPanel() {
 
   els = {
     toggle,
+    group: el('goalGroup'),
     bar,
     status: el('goalBarStatus'),
     objective: el('goalBarObjective'),
@@ -411,6 +422,11 @@ export function initGoalPanel() {
     if (resp?.goal && sessionId === currentSessionId()) {
       state.goalSnapshot = resp.goal;
       renderGoalBar();
+      // 暂停只是「不再开下一轮尝试」：只要「目标」开关还亮着，下一条消息就会把它
+      // 复活并重新授予放行。不说明白，用户会以为按了暂停就彻底停了。
+      if (resp.goal.status === 'paused') {
+        showToast(t(state.goalMode ? 'goal.pausedToast' : 'goal.pausedToastChipOff'), 'info', 6000);
+      }
     }
   });
 

@@ -143,7 +143,10 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
 
   test.skipIf(!distReady)('产物：主 chunk 体积守住收益（改前 1.38 MB，回退即红）', () => {
     const size = statSync(join(DIST_ASSETS, 'side_panel.js')).size;
-    expect(size).toBeLessThan(1_100_000);
+    // 阈值调整史：1.10 MB → 1.12 MB。目标模式评审后主 chunk 实测 1.1003 MB，
+    // 原阈值只剩 1KB 余量，一个小功能就会误报。docx 回退是一次性多 ~280KB，
+    // 本闸依然能红——它要阻止的是「懒加载被废」，不是不准长一个字节。
+    expect(size).toBeLessThan(1_120_000);
   });
 
   test.skipIf(!distReady)('产物：docx 落在按需 chunk 里（确实打出来了，只是不首屏加载）', () => {

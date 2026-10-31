@@ -2475,6 +2475,21 @@ body {
   border-color: rgba(var(--brand-rgb), 0.40);
 }
 
+/* 目标已停住（暂停 / 预算耗尽）但仍点着「目标」：下一条消息会把它复活（store 的 set 分支）。
+   选中底色从品牌紫换成警示橙，和上方目标条「已暂停 / 预算耗尽」的标签对上，
+   免得「已暂停」+「目标」亮着看起来像自相矛盾。chip 熄灭时不标——目标条自己会说明。 */
+#goalGroup[data-goal-idle="1"] {
+  background: rgba(var(--warning-rgb), 0.14);
+  border-color: rgba(var(--warning-rgb), 0.40);
+}
+#goalGroup[data-goal-idle="1"]:hover {
+  background: rgba(var(--warning-rgb), 0.20);
+  border-color: rgba(var(--warning-rgb), 0.52);
+}
+#goalGroup[data-goal-idle="1"] .check-toggle input:checked ~ .tool-toggle-label {
+  color: var(--warning-strong);
+}
+
 /* === 文字标签样式 === */
 .input-bottom-left .check-toggle {
   user-select: none;
