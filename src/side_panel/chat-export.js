@@ -5,6 +5,7 @@
 
 import { showToast } from './utils.js';
 import { formatMarkdown, splitTableCells } from './markdown-render.js';
+import { resolveExportFileName, normalizeExportMarkdown } from './export-filename.js';
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -1002,8 +1003,8 @@ export async function exportAssistantMessageToDocx(messageDiv, exportBtn, export
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const timestamp = new Date().getTime();
-    link.download = `word-${timestamp}.docx`;
+    // 文件名带上回答开头的小标题（取不到则保持 word-<ts>.docx）
+    link.download = resolveExportFileName(markdownContent, { kind: 'word', ext: 'docx' });
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1048,8 +1049,7 @@ export function exportAssistantMessageToPdf(messageDiv, exportBtn, exportDropdow
       }
     }
 
-    const timestamp = new Date().getTime();
-    const fileName = `pdf-${timestamp}.pdf`;
+    const fileName = resolveExportFileName(markdownContent, { kind: 'pdf', ext: 'pdf' });
 
     const PDF_WIDTH = 595;
     const PDF_HEIGHT = 842;
@@ -1174,10 +1174,9 @@ export function exportAssistantMessageToMarkdown(messageDiv, exportBtn, exportDr
       return;
     }
 
-    markdownContent = markdownContent.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+    markdownContent = normalizeExportMarkdown(markdownContent);
 
-    const timestamp = new Date().getTime();
-    const fileName = `md-${timestamp}.md`;
+    const fileName = resolveExportFileName(markdownContent, { kind: 'md', ext: 'md' });
 
     const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -1229,8 +1228,7 @@ export function exportAssistantMessageToImage(messageDiv, exportBtn, exportDropd
           }
         }
 
-        const timestamp = new Date().getTime();
-        const fileName = `image-${timestamp}.jpg`;
+        const fileName = resolveExportFileName(markdownContent, { kind: 'image', ext: 'jpg' });
 
         const MIN_EXPORT_WIDTH = 595;
         const actualWidth = Math.ceil(messageDiv.getBoundingClientRect().width);
