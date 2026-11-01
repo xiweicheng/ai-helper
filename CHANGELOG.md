@@ -2,6 +2,30 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-11-01
+
+### 全仓重扫对账：把文档口径拉回代码事实（工具数 46 / 预选默认关 / Agent 端点与限额）
+
+> 来源：用户要求「把整个仓库重新扫描一下，和文档库对比，看有没有哪里不一样，包括文档站」。与上一轮「补新功能」不同，本轮重点是**文档写了但代码已经不是那样**的反向差异。
+
+- **事实源**：`RAW_TOOLS` 实为 **46 项工具 / 12 个 category**（`content_extraction` 7、`ai_collaboration` 8、`local_agent` 6）；`DEFAULT_REACT_CONFIG.enableToolPreselect: false` 且 `PRESELECT_MIN_TOOL_COUNT = 10` 为固定常量；Agent 端 `MAX_BODY_SIZE` / `MAX_UPLOAD_SIZE` = **200MB**、`SAFE_ENV_KEYS` **57** 个、`MAX_LOG_FILES` **30 个文件**（不是 30 天）；`agent/src/asr/config.js` 的 `idleUnloadMs` = **600000**；最新 tag `v2.7.0`。
+- **数量口径收口**：README（中英）、`docs/zh|en/DOCUMENTATION.md`、`.wiki/Built-in-Tools` / `Core-Features` / `FAQ` / `Home`、作品介绍、作品演示、`docs/index.html`、RepoWiki 源「项目概览与快速开始」与两张海报里的「40+ 工具」统一改为 **46**；工具表补漏掉的 `read_image`（内容提取 6→7）与 `take_note`（AI 协作 7→8）；作品介绍/演示的「11 大类别」按代码改为 **12**。
+- **撤掉不成立的卖点**：工具预筛选此前在 README / DOCUMENTATION / 作品介绍 / 作品演示 / Wiki 里被当作默认生效的省钱手段宣传。实际已从设置页撤出、出厂为关，只能经配置导入写 `enableToolPreselect: true`，且工具数超过 10 才触发——各处文案同步改写。
+- **删掉代码里不存在的端点**：`.wiki/Agent-Service`（中英）移除 `/api/exec/running`、`/api/logs`、`/api/logs/dates`、`/api/mcp/status` 与 REST 风格的 `/api/skill/:name`，Skill API 表按真实路由重写为 12 行、MCP API 表重写为 7 行，并补上 8 组此前完全缺失的真实端点；日志查询统一改为 `POST /api/logs/query`（`limit` 默认 200、上限 500，日期由服务端回溯最近 7 天并在响应的 `dates` 带回）。RepoWiki 源 10 个页面（`系统管理 API` / `WebSocket API` / `运行问题诊断` / `故障排除与常见问题` / `工具生态系统` / `服务生命周期管理` / `开发者指南` 等）同步收敛。
+- **配置与安全事实**：`workdir` / `allowedPaths` 默认值修正，并补上文档从未列出的 `ragUrlIngest`、`memoryEmbedding`；`/api/shutdown` 改为「本机免认证、远程需 Bearer」；请求体上限、环境变量白名单数、日志保留策略按代码改写；CLI 命令表补 `asr` / `update` / `uninstall` / `autostart` 与 `--lang`。
+- **持久化表补齐**：`.wiki/Configuration`（中英）新增待办清单（IndexedDB `todos` + `todoStatsLog`）与会话目标（`chrome.storage.local.sessionGoals`）两行。
+- **语音文档**：`docs/Voice-Input-Local-STT.md` 的 `idleUnloadMs` 由 300000 改为 600000（10 分钟），与代码及 RepoWiki 一致。
+- **版本落后**：作品介绍「版本号 v2.5.1」、作品演示「当前版本 v2.2.0 / Edge（v2.5.1）」统一到 `v2.7.0`。
+- **文档站**：修正 `.qoder/repowiki/zh/content` 后重跑 `npm run build:docsite`，142 个 HTML、pagefind 索引 141 页，7 项校验全过 → `docs/wiki/`。
+
+- **PDF 是第二份硬编码事实源，且更旧**：`scripts/gen-competition-pdf.py` / `scripts/gen-portfolio-pdf.py` 里把同一批数字又抄了一遍，落后于 Markdown（`v2.2.0`、「40+」、「11 大类别」、请求体 10MB、4 位配对码、约 40 个环境变量、日志 30 天）。全部按代码改齐后重新生成 `docs/AI-Helper-作品介绍文档.pdf`、`.resources/` 同名副本与 `docs/AI-Helper-作品演示.pdf`；作品介绍里的工具分布饼图也改成与 `RAW_TOOLS` 的 12 个 category 一一对应（原先是 11 组、切片合计 48，两头都对不上）。
+- **修掉一个让 PDF 无法再生的仓库缺陷**：`gen-competition-pdf.py` 三处 `from setup_matplotlib import init_plot_env` 引用的模块在仓库里根本不存在，脚本一跑就 `ModuleNotFoundError`。补上 `scripts/setup_matplotlib.py`（强制 Agg 后端 + 按优先级探测中日韩字体 + 关掉负号替换），出图恢复正常。
+- **测试口径实测刷新**：`npx vitest run test/unit` 实跑 **239 文件 / 3973 例全绿**，替换掉作品介绍与 PDF 里沿用的「1340+ 用例 / 88 文件」旧数；Agent 端用例数无法在不拉起常驻服务的前提下确证，改为不带具体数字的定性描述。
+
+**验证**：本轮为纯文档改动，未触碰 `src/` 与 `agent/` 源码；改完以 `(?<!\d)40\+` 与失效端点清单全仓复扫为零（残留命中均为「此处不存在该端点」的纠错说明）。
+
+**刻意不改的部分**：`docs/articles/*` 是按日期发布的历史稿件（内部 40+/50+/62 口径混杂）、`docs/Chrome商店上架发布内容.md` 与 `docs/Edge商店上架审核填写内容.md` 是已提交的商店载荷（「40+」对 46 仍成立，且改动会让文中记录的字符数失效）、CHANGELOG 历史条目不回改——三者保留原样，仅在此登记。
+
 ## 2026-10-31
 
 ### 文档全量对账：v2.5.2 → v2.7.0 的能力同步（README / DOCUMENTATION / Wiki / 文档站 / 作品介绍）

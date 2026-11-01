@@ -26,7 +26,7 @@ Chromium users without a store account: see the developer-mode load step in the 
 
 ## Demo Videos
 
-**AI Helper product introduction** (~4 min · narrated): complete walkthrough of the ReAct reasoning loop, 40+ built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.
+**AI Helper product introduction** (~4 min · narrated): complete walkthrough of the ReAct reasoning loop, 46 built-in tools, multi-agent collaboration, workspace management, Skill system and MCP protocol — see how the browser assistant thinks and acts.
 
 - ▶️ English: [Watch on YouTube](https://www.youtube.com/watch?v=6UtuvmZ1Pm8)
 - ▶️ 中文版：[在线观看（Bilibili）](https://www.bilibili.com/video/BV1tZHZ6NEAr/)
@@ -64,16 +64,16 @@ Chromium users without a store account: see the developer-mode load step in the 
 | Built-in knowledge base (RAG) with citations | Partial | DIY | No | **Yes (optional Agent)** |
 | Local speech-to-text input (no cloud ASR) | No | DIY | No | **Yes (optional Agent)** |
 | Multi-agent collaboration / sub-task dispatch | No | DIY | No | **Yes** |
-| Tool preselection + token-budget savings | No | DIY | No | **Yes** |
+| Tool preselection + token-budget savings | No | DIY | No | **Yes** (opt-in) |
 | Reflection quality assurance | No | DIY | No | **Yes** |
 | Scheduled tasks + checkpoint resume | Few | DIY | No | **Yes** |
 | Data stays local / under your control | No | Yes | Partial | **Yes** |
 
 ## Why not just use another AI sidebar?
 
-- **Reflection quality assurance.** Preselection → zero-cost tool observation hint → sub-task reflection → post-reflection. Every final answer is scored on 7 dimensions; below-threshold runs get revised or re-executed automatically.
+- **Reflection quality assurance.** Zero-cost tool observation hint → sub-task reflection → post-reflection. Every final answer is scored on 7 dimensions; below-threshold runs get revised or re-executed automatically. (The old tool-level reflection has been folded into the observation hint and no longer makes its own LLM call.)
 - **Objective sub-task completion checks.** Sub-tasks from `plan_task` can declare `doneCriteria` acceptance checks verified with real DOM / command evidence (penetrating Shadow DOM and same-origin iframes) instead of trusting the model's self-report; an optional auto-rerun loop drives unmet sub-tasks back through four gates (fully byte-for-byte unchanged when left off).
-- **Tool preselection saves tokens.** 40+ tool definitions would blow up every call. A lightweight API pre-pass narrows them down to the 5–10 that actually matter before the main model runs.
+- **Tool preselection saves tokens (off by default).** 46 tool definitions would blow up every call. A lightweight API pre-pass can narrow them down to the 5–10 that actually matter before the main model runs. The switch left the options page and ships disabled (it only kicks in above 10 tools); turn it on by importing a config with `enableToolPreselect: true`.
 - **Token-budget management.** Truncation is by token count, not message count, so `tool_calls` / `tool` message pairs never get split apart.
 - **Long-quote auto-compression.** Big page selections are summarized instead of squatting in your context forever.
 - **Built-in knowledge base (RAG).** Import your own documents and get hybrid-retrieval answers with source citations — the index lives on your machine and the files never leave it.
@@ -107,8 +107,8 @@ Requires Chrome / Edge / Chromium 114+ (Side Panel API).
 
 Everything below the quickstart lives in the full technical reference:
 
-- **English** — architecture, all 38 features, 40+ tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
-- **中文** — 架构总览、38 项功能、40+ 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** — architecture, all 38 features, 46 tools, Agent service, configuration, state management, FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** — 架构总览、38 项功能、46 工具、代理服务、配置说明、状态管理、常见问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
 - **Wiki** — installation, features, tools, Agent, configuration → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **Website** — <https://xiweicheng.github.io/ai-helper/>
 - **Tech docs site** (Chinese only) — full RepoWiki technical documentation (offline full-text search + sidebar tree navigation) <https://xiweicheng.github.io/ai-helper/wiki/> · maintainers refresh it with `npm run build:docsite` (local preview `npm run preview:docsite`)

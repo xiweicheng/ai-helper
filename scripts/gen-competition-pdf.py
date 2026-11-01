@@ -395,17 +395,19 @@ def gen_tool_distribution_chart():
     init_plot_env()
     import matplotlib.pyplot as plt
 
-    categories = ['内容提取', '页面交互', '表单与输入', '标签页与浏览器',
-                  '存储与网络', '媒体与输出', '调试与开发', 'AI 协作', 'Agent 服务', '长期记忆', '知识库检索']
-    counts = [6, 5, 5, 3, 4, 7, 2, 6, 6, 1, 3]
+    # 与 src/background/constants.js 的 RAW_TOOLS category 一一对应（46 项 / 12 类）
+    categories = ['内容提取', '页面交互', '表单与输入', '标签页管理', '书签与历史',
+                  '存储管理', '网络请求', '媒体与输出', '调试与开发', 'AI 协作',
+                  'Agent 服务', '知识库 RAG']
+    counts = [7, 5, 4, 2, 1, 2, 1, 5, 2, 8, 6, 3]
     colors_list = ['#2b6cb0', '#3182ce', '#4299e1', '#63b3ed', '#90cdf4',
-                    '#bee3f8', '#4fd1c5', '#38a169', '#276749', '#718096', '#c3dafe']
+                    '#bee3f8', '#4fd1c5', '#38a169', '#276749', '#718096', '#c3dafe', '#a3bffa']
 
     fig, ax = plt.subplots(figsize=(CONTENT_WIDTH / 72, 4))
     wedges, texts, autotexts = ax.pie(counts, labels=categories, autopct='%1.0f%%',
                                       colors=colors_list, startangle=90,
                                       textprops={'fontsize': 8})
-    ax.set_title('内建工具分类分布 (40+ 项 / 11 大类)', fontsize=13, fontweight='bold')
+    ax.set_title('内建工具分类分布 (46 项 / 12 大类别)', fontsize=13, fontweight='bold')
     fig.tight_layout()
     output_path = os.path.join(OUTPUT_DIR, "tool_distribution.png")
     fig.savefig(output_path, dpi=150, bbox_inches='tight')
@@ -475,7 +477,7 @@ def build_pdf():
         ["项目负责人", "席维成"],
         ["所在单位", "平安"],
         ["开源协议", "MIT License"],
-        ["版本号", "v2.2.0（已上架 Chrome / Edge 双商店）"],
+        ["版本号", "v2.7.0（已上架 Chrome / Edge 双商店）"],
     ]
     cover_table = create_styled_table(info_data, col_widths=[1.5 * inch, 3.5 * inch])
     story.append(cover_table)
@@ -518,7 +520,7 @@ def build_pdf():
     ), styles['body']))
 
     story.append(Paragraph(normalize_text(
-        "项目核心目标是将浏览器转化为 AI 的操作系统——LLM 通过 40+ 项内建工具和 MCP 动态扩展工具，"
+        "项目核心目标是将浏览器转化为 AI 的操作系统——LLM 通过 46 项内建工具和 MCP 动态扩展工具，"
         "像人类一样操作网页：点击、填表、拖拽、滚动、截图、提取数据，同时通过本地代理服务获得文件读写、"
         "命令执行、Skill 技能系统、本地知识库（RAG）检索和跨会话长期记忆能力，实现真正的浏览器端 AI 办公助手。"
     ), styles['body']))
@@ -591,7 +593,8 @@ def build_pdf():
     react_features = [
         ["机制", "说明"],
         ["MCP 工具动态注入", "每次推理前自动从 Agent 拉取最新 MCP 工具列表，注入到工具池"],
-        ["工具预筛选", "正式调用主力模型前，用轻量 API 预判所需工具，将 40+ 工具缩减为 5-10 个，大幅节省 Token"],
+        ["工具预筛选（默认关闭）", "正式调用主力模型前用一次轻量 API 预判所需工具，把 46 个工具缩减为 5-10 个以节省 Token；"
+        "该开关已撤出设置页、出厂为关，需经配置导入写入 enableToolPreselect: true，且工具数超过 10 个才触发"],
         ["推理循环", "LLM 思考 -> 决定调用工具 -> 执行工具 -> 结果反馈 -> 继续推理，直至生成最终答案"],
         ["Token 预算管理", "按模型上下文窗口动态计算可用预算（80%），按 Token 数而非消息数智能截断"],
         ["任务状态锚点", "plan_task 拆解后维护 taskState，每次 API 调用前瞬态回灌计划进度，长任务被压缩/摘要后不丢失目标"],
@@ -626,10 +629,10 @@ def build_pdf():
         add_figure(story, ref_img_path, "图 3: 反思系统配置界面", styles)
 
     # ── 2.5 工具系统 ──
-    story.append(Paragraph(normalize_text("2.5 工具系统（40+ 内建 + MCP 动态扩展）"), styles['h2']))
+    story.append(Paragraph(normalize_text("2.5 工具系统（46 项内建 + MCP 动态扩展）"), styles['h2']))
     story.append(Paragraph(normalize_text(
-        "AI Helper 内建 40+ 项工具，覆盖内容提取、页面交互、表单操作、标签页与浏览器数据、存储与网络、"
-        "媒体输出、调试开发、AI 协作、Agent 服务、长期记忆和知识库检索等 11 大类别。"
+        "AI Helper 内建 46 项工具，覆盖内容提取、页面交互、表单与输入、标签页管理、书签与历史、存储管理、网络请求、"
+        "媒体与输出、调试与开发、AI 协作、Agent 服务（含长期记忆）、知识库 RAG 等 12 大类别。"
         "同时通过 MCP（Model Context Protocol）协议支持动态扩展第三方工具，实现无限能力延伸。"
     ), styles['body']))
 
@@ -862,7 +865,7 @@ def build_pdf():
         },
         {
             "title": "4.3 工具预筛选与 Token 成本优化",
-            "desc": "40+ 个工具定义会消耗大量 Token。AI Helper 在每次调用主力模型前，用一次轻量 API 预判所需工具，"
+            "desc": "46 个工具定义会消耗大量 Token。AI Helper 提供可选的工具预筛选：在每次调用主力模型前用一次轻量 API 预判所需工具，"
                     "将工具缩减为 5-10 个相关项，大幅节省成本。配合 Token 预算管理（按模型上下文窗口动态计算）、"
                     "上下文压力三级监测（safe/warning/critical）、增量摘要与阈值批量压缩，实现长对话质量不下滑。",
         },
@@ -919,14 +922,14 @@ def build_pdf():
     story.append(h1_divider())
 
     story.append(Paragraph(normalize_text(
-        "AI Helper 已完成 v2.2.0 版本的全部核心功能开发（已上架 Chrome / Edge 双商店），当前功能完成度如下："
+        "AI Helper 已完成 v2.7.0 版本的全部核心功能开发（已上架 Chrome / Edge 双商店），当前功能完成度如下："
     ), styles['body']))
 
     completion_data = [
         ["功能模块", "完成状态", "完成度", "备注"],
         ["ReAct 推理循环", "已完成", "100%", "含工具预筛选、任务锚点、部分并行、Checkpoint 断点"],
         ["二级反思系统", "已完成", "100%", "子任务/后置反思 + 零成本工具观察提示，7 维度评分"],
-        ["40+ 内建工具", "已完成", "100%", "11 大类别，含敏感操作确认"],
+        ["46 项内建工具", "已完成", "100%", "12 大类别，含敏感操作确认"],
         ["多 Agent 管理", "已完成", "100%", "5 种模板 + 自定义 + 子任务分派与计划视图"],
         ["MCP 协议扩展", "已完成", "100%", "多 Server + 动态注入 + 环境变量"],
         ["Skill 系统", "已完成", "100%", "Workflow + Agent 两种类型"],
@@ -942,7 +945,7 @@ def build_pdf():
         ["工作目录管理", "已完成", "100%", "目录树 + 上传/下载 + 文件预览 + 回收站"],
         ["多会话管理", "已完成", "100%", "标签页 + 归档 + 导出/导入（Word/PDF/图片/JSON）"],
         ["消息搜索与收藏", "已完成", "100%", "全文搜索 + AND/OR 语法 + 书签收藏"],
-        ["审计日志", "已完成", "100%", "JSON Lines + 30 天保留 + API 查询"],
+        ["审计日志", "已完成", "100%", "JSON Lines + 保留最近 30 个日志文件 + API 查询"],
     ]
     add_small_table(story, create_styled_table(completion_data, col_widths=[1.5 * inch, 0.8 * inch, 0.6 * inch, 3.6 * inch], is_large=True))
 
@@ -1007,13 +1010,13 @@ def build_pdf():
     story.append(Paragraph(normalize_text("7.3 其他安全措施"), styles['h2']))
     security_measures = [
         "<b>路径沙箱</b>：realpathSync 解析符号链接，前缀匹配白名单路径，防止路径穿越攻击",
-        "<b>配对认证</b>：4 位动态码 + extensionId 配对，生成 Bearer Token；集成测试不再硬编码真实 token，缺失时在发请求前失败",
+        "<b>配对认证</b>：6 位动态码 + extensionId 配对，生成 Bearer Token；集成测试不再硬编码真实 token，缺失时在发请求前失败",
         "<b>密钥混淆编码</b>：持久化存储的 API Key / Token 经混淆编码后落盘，降低本地配置被直接读取的风险",
         "<b>脚本保护</b>：写入 .sh/.py/.js 等自动去除执行权限",
-        "<b>大小限制</b>：请求体 10MB，单文件 50MB",
+        "<b>大小限制</b>：请求体 / 流式上传上限 200MB，单文件读写上限 50MB（fileMaxSize）",
         "<b>文件回收站</b>：删除文件默认软删除至 ~/.ai-helper-agent/.trash/，7 天自动清理，支持恢复",
-        "<b>审计日志</b>：双通道输出（终端格式化 + 文件 JSON Lines），按日命名，自动清理 30 天",
-        "<b>环境变量白名单</b>：仅约 40 个安全环境变量可传递给子进程，TERM=dumb 禁用交互",
+        "<b>审计日志</b>：双通道输出（终端格式化 + 文件 JSON Lines），按日命名，按文件数保留最近 30 个",
+        "<b>环境变量白名单</b>：仅 57 个安全环境变量可传递给子进程，TERM=dumb 禁用交互",
     ]
     for measure in security_measures:
         story.append(Paragraph(normalize_text(measure), styles['bullet']))
@@ -1060,7 +1063,7 @@ def build_pdf():
         "<b>模块化设计</b>：每个功能模块独立文件，职责单一，如 chat-manager.js、react-loop.js、tool-executor.js 等",
         "<b>双导出 Proxy 模式</b>：state.js 采用独特的双导出 Proxy 模式，80+ 状态字段无需框架即可共享",
         "<b>多连接 IndexedDB</b>：支持 SW + Side Panel 双连接安全关闭与重建",
-        "<b>自动化测试</b>：Vitest 单元测试（根套件 1340+ 用例 / 88 文件，Agent 端 430+ 用例含黄金评测集）+ Playwright E2E 测试 + 真实扩展端到端冒烟探针",
+        "<b>自动化测试</b>：Vitest 单元测试（根套件 239 文件 / 3973 例，Agent 端另有单测与 Skill 黄金评测集）+ Playwright E2E 测试 + 真实扩展端到端冒烟探针",
         "<b>CI/CD</b>：GitHub Actions 自动构建发布产物（Releases zip）与双商店分发",
         "<b>国际化支持</b>：_locales/ 目录下多语言资源，支持中英文切换",
     ]
@@ -1079,7 +1082,7 @@ def build_pdf():
     ), styles['body']))
 
     summary_points = [
-        "<b>浏览器即操作系统</b>：40+ 工具让 LLM 在浏览器中拥有完整的操作能力，从内容提取到表单填写，从截图到文件下载",
+        "<b>浏览器即操作系统</b>：46 项工具让 LLM 在浏览器中拥有完整的操作能力，从内容提取到表单填写，从截图到文件下载",
         "<b>质量优先</b>：二级反思（子任务 + 后置）与零成本工具观察提示确保输出质量，不是简单返回 LLM 原始结果，而是经过多维度评估和自动修订",
         "<b>成本可控</b>：工具预筛选和 Token 预算管理大幅降低 API 成本，长对话质量不下滑",
         "<b>无限扩展</b>：MCP 协议和 Skill 系统让工具能力无限延伸，从数据库到 API 调用，从代码执行到文件转换",

@@ -273,7 +273,7 @@ def build_pdf():
         ["作品类型", "开源浏览器扩展（Chrome / Edge，Manifest V3）+ 本地 Agent 服务"],
         ["个人角色", "独立全栈开发（架构设计 / 前后端 / Agent 服务 / 文档与测试）"],
         ["核心技术", "ReAct 推理循环 · 多智能体协作 · MCP 协议 · Content Script 页面操控 · 知识库 RAG · 长期记忆双通道"],
-        ["当前版本", "v2.2.0（已上架 Chrome / Edge 双商店）"],
+        ["当前版本", "v2.7.0（已上架 Chrome / Edge 双商店）"],
         ["开源协议", "MIT License"],
     ]
     add_small_table(story, create_styled_table(info_data, col_widths=[1.2 * inch, 5.3 * inch]))
@@ -288,7 +288,7 @@ def build_pdf():
         "数据要手动搬运、表单要逐页填写、长文要人工总结。"
     ), styles['body']))
     story.append(Paragraph(normalize_text(
-        "AI Helper 把浏览器变成 AI 的操作系统：LLM 通过 40+ 内建工具与 MCP 动态扩展工具，"
+        "AI Helper 把浏览器变成 AI 的操作系统：LLM 通过 46 项内建工具与 MCP 动态扩展工具，"
         "像人一样理解并操作网页，同时借助本地 Agent 获得文件读写、命令执行、本地知识库检索与跨会话长期记忆能力。"
     ), styles['body']))
 
@@ -305,7 +305,7 @@ def build_pdf():
          "（完整性、准确性、相关性、工具使用、清晰度、安全性、效率），不合格自动修订或重试，"
          "而非直接返回 LLM 原始输出。"),
         ("3. Token 成本与长对话质量优化",
-         "调用主力模型前用轻量 API 预筛选工具（40+ 缩减为 5-10 个）；按 Token 数做预算管理、"
+         "可选的工具预筛选把 46 个工具缩减为 5-10 个（出厂默认关闭，经配置导入 enableToolPreselect: true 开启）；按 Token 数做预算管理、"
          "三级上下文压力监测、阈值批量压缩与任务状态锚点，长对话质量不下滑、成本可控。"),
         ("4. 多智能体协作与任务拆解",
          "内置 5 种专业助手模板 + 自定义 Agent；复杂任务可拆解为子任务，"
@@ -398,7 +398,7 @@ def build_pdf():
     story.append(Paragraph(normalize_text("七、成果速览"), styles['h1']))
     story.append(h1_divider())
     stats_data = [
-        ["40+", "11", "50+", "7", "3", "MIT"],
+        ["46", "12", "50+", "7", "3", "MIT"],
         ["内建工具", "工具大类", "可解析文件格式", "维度答案质量评分", "记忆检索降级档位", "完全开源"],
     ]
     add_small_table(story, create_styled_table(
@@ -412,7 +412,7 @@ def build_pdf():
     links = [
         "<b>在线网站</b>：https://xiweicheng.github.io/ai-helper/",
         "<b>开源仓库</b>：https://github.com/xiweicheng/ai-helper",
-        "<b>商店上架</b>：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.2.0）",
+        "<b>商店上架</b>：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.7.0）",
         "<b>代理端安装</b>：curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash（Windows 用 install.ps1），或 npm install -g ai-helper-agent",
         "<b>演示视频</b>：产品介绍（约 4 分钟）/ 自动填表 Demo（67 秒），见仓库 docs/videos/",
     ]

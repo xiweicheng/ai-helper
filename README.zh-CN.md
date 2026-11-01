@@ -26,7 +26,7 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 ## 演示视频
 
-**AI Helper 产品介绍**（约 4 分钟 · 带旁白）：完整讲解 ReAct 推理循环、40+ 内置工具、多智能体协作、工作目录管理、Skill 系统与 MCP 协议扩展——一次看懂浏览器助手如何思考与执行。
+**AI Helper 产品介绍**（约 4 分钟 · 带旁白）：完整讲解 ReAct 推理循环、46 个内置工具、多智能体协作、工作目录管理、Skill 系统与 MCP 协议扩展——一次看懂浏览器助手如何思考与执行。
 
 - ▶️ 中文版：[在线观看（Bilibili）](https://www.bilibili.com/video/BV1tZHZ6NEAr/)
 - ▶️ English：[Watch on YouTube](https://www.youtube.com/watch?v=6UtuvmZ1Pm8)
@@ -71,9 +71,9 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 ## 为什么不只是"另一个 AI 侧边栏"
 
-- **反思质量保障**：预筛选 → 零成本工具观察提示 → 子任务反思 → 后置反思。每轮最终答案都会做 7 维度评分，未达标自动修订或重跑，不会把 LLM 原始输出直接甩给你。
+- **反思质量保障**：工具观察提示（零成本内联规则）→ 子任务反思 → 后置反思。每轮最终答案都会做 7 维度评分，未达标自动修订或重跑，不会把 LLM 原始输出直接甩给你。（原先的「工具级反思」已合并进零成本的工具观察提示，不再单独发起 LLM 调用。）
 - **子任务完成度客观取证**：`plan_task` 拆出的子任务可用 `doneCriteria` 声明验收标准，用真实 DOM / 命令证据（穿透 Shadow DOM / 同源 iframe）判断是否达成，而非依赖模型自述；可选开启自动重跑回路，四闸门驱动未达标子任务回炉（默认关闭时现有行为逐字节不变）。
-- **工具预选省钱**：40+ 个工具定义全塞给主力模型 Token 会爆炸，先用一次轻量 API 缩到 5–10 个真正相关的，再喂给主模型。
+- **工具预选省钱（默认关）**：46 个工具定义全塞给主力模型 Token 会爆炸，可以用一次轻量 API 先缩到 5–10 个真正相关的再喂主模型。该开关已从设置页撤出、出厂为关（工具数超过 10 个才会触发），需要时通过配置导入写入 `enableToolPreselect: true` 打开。
 - **Token 预算管理**：按 Token 数而非消息数截断，`tool_calls` / `tool` 消息配对永远不会被腰斩。
 - **长引用自动压缩**：选中一大段网页也不会永远霸占上下文，自动摘要压缩，把空间留给真正相关的信息。
 - **内置本地知识库（RAG）**：导入自有文档，向量 + 关键词混合检索，回答附引用来源；索引存在本机，文件不出本地。
@@ -106,8 +106,8 @@ Chromium 等无商店账号的用户请看下方 [30 秒上手](#30-秒上手) �
 
 上手之后的所有细节都放在完整技术参考里：
 
-- **中文** —— 架构总览、38 项功能、40+ 工具、代理服务、配置说明、状态管理、常见 问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
-- **English** —— architecture、38 features、40+ tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
+- **中文** —— 架构总览、38 项功能、46 个工具、代理服务、配置说明、状态管理、常见 问题 → [`docs/zh/DOCUMENTATION.md`](docs/zh/DOCUMENTATION.md)
+- **English** —— architecture、38 features、46 tools、Agent service、configuration、state management、FAQ → [`docs/en/DOCUMENTATION.md`](docs/en/DOCUMENTATION.md)
 - **Wiki** —— 安装、功能、工具、代理、配置全站 → [中文](https://github.com/xiweicheng/ai-helper/wiki) · [English](https://github.com/xiweicheng/ai-helper/wiki/Home-EN)
 - **文档站** —— <https://xiweicheng.github.io/ai-helper/>
 - **技术文档站** —— RepoWiki 全站技术文档（离线全文搜索 + 目录树导航）<https://xiweicheng.github.io/ai-helper/wiki/> · 维护者刷新：`npm run build:docsite`（本地预览 `npm run preview:docsite`）

@@ -22,7 +22,7 @@
 
 主流 AI 对话工具与浏览器是**割裂**的：它看不到你正在浏览的页面，更无法替你操作。数据要手动搬运、表单要逐页填写、长文要人工总结。
 
-AI Helper 把浏览器变成 AI 的**操作系统**：LLM 通过 40+ 内建工具与 MCP 动态扩展工具，像人一样理解并操作网页，同时借助本地 Agent 获得文件读写、命令执行、本地知识库检索与跨会话长期记忆能力。项目已上架 **Chrome / Edge 双商店**，当前版本 v2.2.0。
+AI Helper 把浏览器变成 AI 的**操作系统**：LLM 通过 46 内建工具与 MCP 动态扩展工具，像人一样理解并操作网页，同时借助本地 Agent 获得文件读写、命令执行、本地知识库检索与跨会话长期记忆能力。项目已上架 **Chrome / Edge 双商店**，当前版本 v2.7.0。
 
 ---
 
@@ -35,7 +35,7 @@ AI Helper 把浏览器变成 AI 的**操作系统**：LLM 通过 40+ 内建工�
 思考 → 调用工具 → 反馈 → 再推理的闭环；子任务 / 后置二级反思加零成本工具观察提示，对最终答案做 **7 维度评分**（完整性、准确性、相关性、工具使用、清晰度、安全性、效率），不合格自动修订或重试，而非直接返回 LLM 原始输出。
 
 **3. Token 成本与长对话质量优化**
-调用主力模型前用轻量 API **预筛选工具**（40+ 缩减为 5–10 个）；按 Token 数做预算管理、三级上下文压力监测、阈值批量压缩与任务状态锚点，长对话质量不下滑、成本可控。
+可选的**工具预筛选**用一次轻量 API 把 46 个工具缩减为 5–10 个（出厂默认关闭，经配置导入 `enableToolPreselect: true` 开启）；按 Token 数做预算管理、三级上下文压力监测、阈值批量压缩与任务状态锚点，长对话质量不下滑、成本可控。
 
 **4. 多智能体协作与任务拆解**
 内置 5 种专业助手模板 + 自定义 Agent；复杂任务可拆解为子任务，按顺序 / 并行 / 条件策略分派给不同 Agent 并行执行。
@@ -86,7 +86,7 @@ Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · Inde
 
 ## 六、成果速览
 
-| 40+ | 11 | 50+ | 7 | 3 | MIT |
+| 46 | 12 | 50+ | 7 | 3 | MIT |
 |:---:|:---:|:---:|:---:|:---:|:---:|
 | 内建工具 | 工具大类 | 可解析文件格式 | 维度答案质量评分 | 记忆检索降级档位 | 完全开源 |
 
@@ -96,6 +96,6 @@ Chrome MV3 · Service Worker · Side Panel API · Content Script · Vite · Inde
 
 - **在线网站**：<https://xiweicheng.github.io/ai-helper/>
 - **开源仓库**：<https://github.com/xiweicheng/ai-helper>
-- **商店上架**：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.5.1）
+- **商店上架**：已上架 Chrome 应用商店与 Microsoft Edge Add-ons（v2.7.0）
 - **代理端安装**：`curl -fsSL https://raw.githubusercontent.com/xiweicheng/ai-helper/main/install.sh | bash`（Windows 用 install.ps1），或 `npm install -g ai-helper-agent`
 - **演示视频**：产品介绍（约 4 分钟）/ 自动填表 Demo（67 秒），见仓库 `docs/videos/`
