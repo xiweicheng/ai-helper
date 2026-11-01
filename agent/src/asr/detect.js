@@ -10,7 +10,7 @@
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync } from 'fs';
+import { statSync } from 'fs';
 import { t as translate } from '../i18n.js';
 import { logSystem } from '../logger.js';
 
@@ -38,6 +38,9 @@ let _lastProbeError = null;
 // 最近一次探测到的依赖版本（供状态接口展示）
 let _probeVersion = null;
 
+// 最近一次探测时 sherpa-onnx-node/package.json 的 mtime（用于识别「装好后又重新安装」）
+let _probedPackageMtime = null;
+
 // 探测子进程脚本（与 detect.js 同目录）
 const PROBE_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'probe-child.mjs');
 
@@ -52,18 +55,28 @@ function getAgentRoot() {
 }
 
 /**
+ * 零成本读取 sherpa-onnx-node/package.json 的 mtime（不存在返回 null）
+ * 用 mtime 而不是仅 exists：升级/CLI 重装后文件会被重写，据此识别「包发生了变化」，
+ * 从而让失败的检测缓存自愈，无需用户手动点「重新检测」
+ * @returns {number|null}
+ */
+function getAsrPackageMtime() {
+  // 与 AI_HELPER_ASR_DEPS=0 保持一致：强制"不可用"时磁盘判定也应视为未安装，
+  // 否则状态里会出现「ready=false 但 packageOnDisk=true」的矛盾组合
+  if (process.env.AI_HELPER_ASR_DEPS === '0') return null;
+  try {
+    return statSync(join(getAgentRoot(), 'node_modules', 'sherpa-onnx-node', 'package.json')).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 零成本磁盘判定：包目录内是否真的存在 sherpa-onnx-node
  * @returns {boolean}
  */
 export function hasAsrPackageOnDisk() {
-  // 与 AI_HELPER_ASR_DEPS=0 保持一致：强制"不可用"时磁盘判定也应视为未安装，
-  // 否则状态里会出现「ready=false 但 packageOnDisk=true」的矛盾组合
-  if (process.env.AI_HELPER_ASR_DEPS === '0') return false;
-  try {
-    return existsSync(join(getAgentRoot(), 'node_modules', 'sherpa-onnx-node', 'package.json'));
-  } catch {
-    return false;
-  }
+  return getAsrPackageMtime() !== null;
 }
 
 /**
@@ -139,8 +152,9 @@ export function runAsrProbe(opts = {}) {
  *
  * 判定顺序（零成本优先）：
  *   1. AI_HELPER_ASR_DEPS=1|0 显式覆盖（单测环境隔离 / 现场诊断用）
- *   2. 已探测过 → 返回缓存
- *   3. node_modules 内无 sherpa-onnx-node → 直接不可用（不起子进程）
+ *   2. node_modules 内无 sherpa-onnx-node → 直接不可用（不起子进程，同时清掉缓存）
+ *   3. 已探测过 → 返回缓存；但缓存为「失败」且包 mtime 变了（CLI/升级后重新安装）
+ *      → 自动重探一次，避免用户必须手动点「重新检测」
  *   4. 子进程探测（真实反映磁盘状态）
  * @param {{ force?: boolean, probeScript?: string, timeoutMs?: number }} [opts]
  * @returns {Promise<boolean>}
@@ -157,20 +171,28 @@ export async function detectAsrAvailable(opts = {}) {
     return forced;
   }
 
-  if (!opts.force && _asrAvailable !== null) return _asrAvailable;
-
-  if (!hasAsrPackageOnDisk()) {
+  // 磁盘判定必须放在缓存之前：包被升级清掉后，旧的 true 缓存不能继续生效
+  const packageMtime = getAsrPackageMtime();
+  if (packageMtime === null) {
     _asrAvailable = false;
     _lastProbeError = null;
     _probeVersion = null;
+    _probedPackageMtime = null;
     console.log(`[ASR] ${tr('asr.depsMissing')}`);
     return _asrAvailable;
+  }
+
+  if (!opts.force && _asrAvailable !== null) {
+    // 缓存失败但包发生变化（CLI/升级后重新安装）→ 自动重探；其余情况直接返回缓存，
+    // 避免「包在但加载失败」时每次状态请求都白起一个子进程
+    if (_asrAvailable === true || packageMtime === _probedPackageMtime) return _asrAvailable;
   }
 
   const probe = await runAsrProbe(opts);
   _asrAvailable = probe.ok;
   _lastProbeError = probe.errorSummary;
   _probeVersion = probe.version;
+  _probedPackageMtime = packageMtime;
 
   if (!_asrAvailable) {
     console.log(`[ASR] ${tr('asr.depsMissing')}${_lastProbeError ? ` - ${_lastProbeError}` : ''}`);
@@ -212,4 +234,5 @@ export function resetAsrDetection() {
   _asrAvailable = null;
   _lastProbeError = null;
   _probeVersion = null;
+  _probedPackageMtime = null;
 }
