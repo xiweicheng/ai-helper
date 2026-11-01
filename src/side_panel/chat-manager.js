@@ -408,6 +408,12 @@ export async function loadChatHistory() {
   } finally {
     // 无论成功或失败都 resolve，避免等待方（发送链路）永久阻塞
     resolveChatHistoryReady();
+    // 会话区历史已渲染完 —— reattach 靠这一刻把接管气泡移回末尾：启动期气泡往往
+    // 早于历史挂进当时还空的容器，历史消息随后 append 就把气泡挤到用户提问上面去了。
+    // 不复用 session-hydrated：那条只表示 activeSessionId 就绪，早于本函数渲染完成。
+    document.dispatchEvent(new CustomEvent('chat-history-rendered', {
+      detail: { sessionId: state.activeSessionId || null },
+    }));
   }
 }
 
