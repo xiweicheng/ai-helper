@@ -40,12 +40,14 @@ describe('publish.sh 发布顺序契约', () => {
     expect(idxBuild).toBeLessThan(idxPublish);
   });
 
-  it('所有回滚 package.json 的退出路径都同时回滚 version.json（取消/构建失败/发布失败）', () => {
-    // 不得存在不带 version.json 的回滚（重试循环中取消时，前一轮已写入的 JSON 也需回滚）
+  it('所有回滚 package.json 的退出路径都同时回滚 version.json（构建失败/发布失败后放弃）', () => {
+    // 不得存在不带 version.json 的回滚（重试循环中放弃时，前一轮已写入的 JSON 也需回滚）
+    // 当前脚本为自动确认发布，已无「确认时取消」分支，回滚路径共 2 条：
+    // 构建失败、发布失败后选不重试（重试循环里前一轮写入的 JSON 同样要回滚）
     const plainRollbacks = script.match(/git checkout package\.json package-lock\.json(?! "\$VERSION_JSON_PATH")/g) || [];
     expect(plainRollbacks).toHaveLength(0);
     const jsonRollbacks = script.match(/git checkout package\.json package-lock\.json "\$VERSION_JSON_PATH"/g) || [];
-    expect(jsonRollbacks.length).toBeGreaterThanOrEqual(3);
+    expect(jsonRollbacks.length).toBeGreaterThanOrEqual(2);
   });
 
   it('根目录版本同步（package.json / package-lock.json / manifest.json）发生在重新构建之前', () => {
@@ -60,7 +62,7 @@ describe('publish.sh 发布顺序契约', () => {
     const rollbacks = script.match(
       /git checkout package\.json package-lock\.json "\$VERSION_JSON_PATH"(?: \\\n\s+\.\.\/package\.json \.\.\/package-lock\.json \.\.\/manifest\.json)?/g,
     ) || [];
-    expect(rollbacks.length).toBeGreaterThanOrEqual(3);
+    expect(rollbacks.length).toBeGreaterThanOrEqual(2);
     for (const rollback of rollbacks) {
       expect(rollback).toContain('../package.json');
       expect(rollback).toContain('../package-lock.json');
