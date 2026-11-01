@@ -63,7 +63,7 @@ import {
   addStreamingMessage,
   reconnectStreamingElement,
   updateStreamingMessage,
-  updateStreamingStatus,
+  markStreamingRetrying,
   appendToolCallItems,
   createCodeBlockHtml,
   appendToolResult,
@@ -132,7 +132,6 @@ registerTranslations('zh', {
     preparing: '准备中...',
     emptyModelReply: '模型未返回任何内容。若你发送了图片，请确认所选模型支持视觉识别（图片识别需选择支持多模态视觉的模型），或更换模型后重试。',
     stopping: '停止中...',
-    retrying: '连接异常，正在重试 ({attempt}/{max})...',
     copyCode: '复制代码',
     aborting: '正在终止...',
     terminateCommandTitle: '终止命令执行',
@@ -210,7 +209,6 @@ registerTranslations('en', {
     preparing: 'Preparing...',
     emptyModelReply: 'The model returned no content. If you sent an image, make sure the selected model supports vision (image recognition requires a multimodal vision model), or switch model and retry.',
     stopping: 'Stopping...',
-    retrying: 'Connection unstable, retrying ({attempt}/{max})...',
     copyCode: 'Copy code',
     aborting: 'Aborting...',
     terminateCommandTitle: 'Terminate Command Execution',
@@ -4052,17 +4050,15 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       if (message.type === 'API_RETRYING') {
         // 请求重试提示：就地更新"思考中"状态行（流式阶段）或 loading 文本（等待阶段），
         // 首个数据块到达后由 updateStreamingMessage 自动恢复为"输出中..."（dataset.retrying 标记）
-        const retryText = t('chatMsg.retrying', { attempt: message.attempt, max: message.maxRetries });
+        // 文案与接管路径共用 chatStream.retrying + markStreamingRetrying，避免两套口径各自演化
         const se = _se();
         if (se) {
-          const label = se.querySelector('.thinking-indicator:not(.hidden) .thinking-label');
-          if (label) {
-            label.textContent = retryText;
-            label.dataset.retrying = '1';
-          }
+          markStreamingRetrying(se, message.attempt, message.maxRetries);
         } else {
           const loadingText = document.querySelector('.loading-message .loading-text');
-          if (loadingText) loadingText.textContent = retryText;
+          if (loadingText) {
+            loadingText.textContent = t('chatStream.retrying', { attempt: message.attempt, max: message.maxRetries });
+          }
         }
         return false;
       }
@@ -4133,6 +4129,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           }
         }
         
+        // 气泡带上本轮 callId：流式期间的快照靠它判定「读回来的还是不是同一轮」
+        _se().dataset.callId = myCallId;
         _streamedContent = '';
         setStreamedContent(mySessionId, '');
         setThinkingStartTime(Date.now());

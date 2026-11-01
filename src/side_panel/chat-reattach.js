@@ -19,16 +19,26 @@ import { notifyGenerationEnded } from './generation-lifecycle.js';
 import {
   addStreamingMessage,
   updateStreamingMessage,
-  updateStreamingStatus,
+  appendThinkingIndicator,
+  markStreamingRetrying,
   appendToolCallItems,
+  appendToolResult,
+  createAgentStreamOutput,
+  createPreSelectCard,
   finalizeStreamingMessage,
   createStreamingElementAccessor,
   setStreamedContent,
+  setReasoningContent,
   deleteStreamingState,
   setThinkingStartTime,
   setProcessStartTime,
-  reconnectStreamingElement,
+  mountStreamingElement,
+  scrollStreamingToBottom,
+  applyStreamSnapshot,
 } from './chat-streaming.js';
+import { addCodeCopyButtons } from './markdown-render.js';
+import { readStreamSnapshot } from './stream-snapshot.js';
+import { openPanelObserverPort, closePanelObserverPort } from './panel-observer-port.js';
 // 注意：会话落库（session-manager → 存储层）依赖较重的浏览器侧模块链，改为使用时
 // 动态导入：既避免面板初始化时的无意义加载，也让本模块的纯逻辑可独立单测。
 
@@ -37,10 +47,12 @@ import {
  * @param {Object} opts
  * @param {string} opts.sessionId
  * @param {string} opts.callId 本轮活跃 callId（后台注册表下发的同一个值）
- * @param {{start:Function,chunk:Function,toolCalls:Function,status:Function,final:Function,error:Function}} opts.renderer
+ * @param {Object} opts.renderer 生产渲染回调（与 callApi 监听同口径，缺项自动跳过）
  * @param {(payload:Object)=>Promise<any>} opts.persist 终态落库
  * @param {()=>void} [opts.onFinished] 终态收尾（清理挂账、移除监听）
  * @param {string} [opts.emptyFallback] 空内容兜底文案
+ * @param {boolean} [opts.awaitSnapshot] 先等一次气泡快照读盘：窗口内到达的消息按
+ *   到达顺序积压，还原完再回放（先渲染再被覆盖等于白渲染，见 preQueue 注释）
  */
 export function createSessionStreamMirror({
   sessionId,
@@ -49,12 +61,41 @@ export function createSessionStreamMirror({
   persist,
   onFinished = () => {},
   emptyFallback = '',
+  awaitSnapshot = false,
 }) {
   let buffered = '';
   let finished = false;
+  let awaiting = awaitSnapshot;
+  // 等待窗口内到达的消息按到达顺序积压，收窗时再回放。
+  // 只挡增量不够用：工具卡片先渲染出去，随后 restore() 的 innerHTML 一盖就抹掉了；
+  // 命令输出更惨 —— 渲染器按 execId 缓存的 entry.element 成了脱离文档的孤儿节点，
+  // 之后每条增量都写进那个看不见的节点，这个 execId 的显示永久冻结。
+  let preQueue = [];
 
   const matches = (message) =>
     !!message && message.sessionId === sessionId && message.callId === callId;
+
+  /** 连续 chunk 合成一条：窗口里攒了几十条增量时回放只落一次 DOM，与不攒时的量级一致 */
+  const coalesceChunks = (list) => {
+    const out = [];
+    for (const m of list) {
+      const prev = out[out.length - 1];
+      if (m.type === 'STREAM_CHUNK' && prev && prev.type === 'STREAM_CHUNK') {
+        out[out.length - 1] = { ...m, delta: (prev.delta || '') + (m.delta || '') };
+      } else {
+        out.push(m);
+      }
+    }
+    return out;
+  };
+
+  /** 收掉等待窗口并放弃还原（快照已落后于这一轮的真实状态），只把积压按序补渲染 */
+  const closeWindowWithoutRestore = () => {
+    awaiting = false;
+    const queued = coalesceChunks(preQueue);
+    preQueue = [];
+    for (const m of queued) dispatch(m);
+  };
 
   const finish = (payload) => {
     finished = true;
@@ -74,53 +115,113 @@ export function createSessionStreamMirror({
       finished = true;
     },
     /**
+     * 结束等待窗口：先用快照把「脱落期间已经输出的内容」补进气泡，
+     * 再把窗口内积压的消息按到达顺序回放。
+     * @param {{callId:string,html:string,accumulated:string}|null} snapshot
+     *   读不到 / callId 不是本轮 → 什么都不还原，只回放积压
+     */
+    restore(snapshot) {
+      if (!awaiting) return;
+      awaiting = false;
+      const sameRound = !!snapshot && snapshot.callId === callId;
+      const accumulated = sameRound && typeof snapshot.accumulated === 'string' ? snapshot.accumulated : '';
+      const painted = sameRound && !!snapshot.html;
+      if (painted) renderer.restore?.({ html: snapshot.html });
+      buffered = accumulated;
+      // html 还原成功时那段正文已经在 DOM 里，再 chunk 一遍就是把同一段文字写两份；
+      // 只有「超限降级成只存正文」的快照才靠 chunk 把文字补出来。
+      if (accumulated && !painted) renderer.chunk?.(accumulated);
+      const queued = coalesceChunks(preQueue);
+      preQueue = [];
+      for (const m of queued) dispatch(m);
+    },
+    /**
      * @param {Object} message 后台广播消息
      * @returns {boolean} 是否被本镜像消费
      */
     handleMessage(message) {
       if (finished || !matches(message)) return false;
 
-      switch (message.type) {
-        case 'STREAM_START':
-          buffered = '';
-          renderer.start?.();
-          return true;
-        case 'STREAM_CHUNK':
-          // 字段是 delta（stream-controller 的增量协议），不是 content：
-          // 读错字段会让接管后的正文永远是空的，只剩一个转圈的「思考中」气泡
-          buffered += message.delta || '';
-          renderer.chunk?.(buffered);
-          return true;
-        case 'STREAM_TOOL_CALL':
-          renderer.toolCalls?.(message.toolCalls || []);
-          return true;
-        case 'EXECUTION_STATUS_UPDATE':
-          if (message.nodeName) renderer.status?.(message.nodeName);
-          return true;
-        case 'API_COMPLETE': {
-          const finalContent = (message.content && String(message.content).trim())
-            ? message.content
-            : (emptyFallback || buffered);
-          const executionLog = message.executionLog || [];
-          const extras = {
-            reflectionScore: message.reflectionScore,
-            reasoningContent: message.reasoningContent || null,
-            wasRevised: message.wasRevised || false,
-            budgetEnded: message.budgetEnded === true,
-          };
-          renderer.final?.(finalContent, executionLog, extras);
-          finish({ sessionId, callId, content: finalContent, executionLog, ...extras });
+      if (awaiting) {
+        if (message.type === 'STREAM_CHUNK') {
+          preQueue.push(message);
           return true;
         }
-        case 'API_ERROR':
-          renderer.error?.(message.error || '', message.executionLog || []);
-          finish({ sessionId, callId, error: message.error || '', executionLog: message.executionLog || [] });
-          return true;
-        default:
-          return false;
+        // 终态收口等不得（不能让收尾被一次读盘拖住）：立即收窗、放弃还原，
+        // 先把积压按序补渲染出去再处理这一条。其余消息（含新一轮 STREAM_START：
+        // 同一个 callId 里每轮 ReAct 都是一次 start）一律积压，还原后按真实顺序回放。
+        if (message.type === 'API_COMPLETE' || message.type === 'API_ERROR') {
+          closeWindowWithoutRestore();
+          return dispatch(message);
+        }
+        preQueue.push(message);
+        return true;
       }
+      return dispatch(message);
     },
   };
+
+  function dispatch(message) {
+    switch (message.type) {
+      case 'STREAM_START':
+        buffered = '';
+        renderer.start?.();
+        return true;
+      case 'STREAM_CHUNK':
+        // 字段是 delta（stream-controller 的增量协议），不是 content：
+        // 读错字段会让接管后的正文永远是空的，只剩一个转圈的「思考中」气泡
+        buffered += message.delta || '';
+        renderer.chunk?.(buffered);
+        return true;
+      case 'STREAM_TOOL_CALL':
+        renderer.toolCalls?.(message.toolCalls || []);
+        return true;
+      case 'STREAM_TOOL_RESULT':
+        // 工具执行结果：不接就只剩「工具卡片永远转圈」
+        if (message.result) renderer.toolResult?.(message.result);
+        return true;
+      case 'AGENT_STREAM':
+        // 命令的实时 stdout/stderr：只带增量 data，由渲染器按 execId 攒整段
+        if (message.execId) renderer.agentStream?.(message);
+        return true;
+      case 'AGENT_STREAM_DONE':
+        if (message.execId) renderer.agentStreamDone?.(message);
+        return true;
+      case 'API_RETRYING':
+        renderer.retrying?.(message.attempt, message.maxRetries);
+        return true;
+      case 'STREAM_PRESELECT':
+        renderer.preselect?.(message.preselectLog || []);
+        return true;
+      case 'EXECUTION_STATUS_UPDATE':
+        // 只消费、不渲染进气泡：正常流程把 nodeName 交给 loading 消息里的执行状态区
+        // （updateExecutionStatus），气泡内的 .stream-status 只在 STREAM_DONE 清空、
+        // finalize 时移除。接管侧照抄进 .stream-status 就会出现「输出中」下面
+        // 常驻一行「🔧 API调用 (第2次)」—— 一条永远不清的假状态。
+        return true;
+      case 'API_COMPLETE': {
+        const finalContent = (message.content && String(message.content).trim())
+          ? message.content
+          : (emptyFallback || buffered);
+        const executionLog = message.executionLog || [];
+        const extras = {
+          reflectionScore: message.reflectionScore,
+          reasoningContent: message.reasoningContent || null,
+          wasRevised: message.wasRevised || false,
+          budgetEnded: message.budgetEnded === true,
+        };
+        renderer.final?.(finalContent, executionLog, extras);
+        finish({ sessionId, callId, content: finalContent, executionLog, ...extras });
+        return true;
+      }
+      case 'API_ERROR':
+        renderer.error?.(message.error || '', message.executionLog || []);
+        finish({ sessionId, callId, error: message.error || '', executionLog: message.executionLog || [] });
+        return true;
+      default:
+        return false;
+    }
+  }
 }
 
 /**
@@ -173,6 +274,11 @@ const STREAMING_MESSAGE_TYPES = new Set([
   'STREAM_START',
   'STREAM_CHUNK',
   'STREAM_TOOL_CALL',
+  'STREAM_TOOL_RESULT',
+  'AGENT_STREAM',
+  'AGENT_STREAM_DONE',
+  'API_RETRYING',
+  'STREAM_PRESELECT',
   'EXECUTION_STATUS_UPDATE',
   'API_COMPLETE',
   'API_ERROR',
@@ -203,19 +309,71 @@ function _queryRunning(timeoutMs = 0) {
 
 /** 生产渲染器：复用 chat-streaming 的既有函数，不另造一套 DOM */
 function _buildRenderer(sessionId, el) {
+  // 命令流式输出按 execId 保活（对应 callApi 闭包里的 _agentStreams）：
+  // AGENT_STREAM 每条只带一段增量，必须自己攒完整段再整块写进 <code>。
+  // 挂在渲染器上随镜像一起生灭，不留全局脏映射。
+  const agentStreams = new Map();
   return {
     start() {
       setStreamedContent(sessionId, '');
+      setReasoningContent('');
+      setThinkingStartTime(Date.now());
+      // 后续轮次：上一轮指示器已被 appendToolCallItems 移除，不补就是
+      // 「工具跑完到下一段输出之间界面是死的」
+      appendThinkingIndicator(el);
+      scrollStreamingToBottom(el);
     },
     chunk(full) {
       setStreamedContent(sessionId, full);
       updateStreamingMessage(el, full);
     },
+    restore({ html }) {
+      // 整段换回脱落期的 DOM：innerHTML 一盖，事件重挂（停止按钮/卡片折叠）
+      applyStreamSnapshot(el, html);
+    },
     toolCalls(tcs) {
       appendToolCallItems(el, tcs);
     },
-    status(text) {
-      updateStreamingStatus(el, text);
+    toolResult(result) {
+      appendToolResult(result, el);
+    },
+    agentStream(message) {
+      let entry = agentStreams.get(message.execId);
+      if (!entry) {
+        // 挂载位置由查找结果决定，不能用 outputDiv.isConnected：
+        // 用户切换会话期间整个流式元素都脱离文档，判定会误把输出搬出卡片
+        const card = message.toolCallId
+          ? el.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
+          : null;
+        const outputDiv = createAgentStreamOutput(card, el.querySelector('.stream-content'));
+        entry = { element: outputDiv, stdout: '', stderr: '' };
+        agentStreams.set(message.execId, entry);
+        addCodeCopyButtons();
+      }
+      const codeEl = entry.element.querySelector('code');
+      if (!codeEl) return;
+      if (message.streamType === 'stderr') {
+        entry.stderr += message.data || '';
+      } else {
+        entry.stdout += message.data || '';
+      }
+      codeEl.textContent = entry.stdout + (entry.stderr ? '\n' + entry.stderr : '');
+      codeEl.parentElement.scrollTop = codeEl.parentElement.scrollHeight;
+    },
+    agentStreamDone(message) {
+      const entry = agentStreams.get(message.execId);
+      if (entry && message.exitCode !== 0) {
+        entry.element.classList.add('agent-stream-error');
+      }
+    },
+    retrying(attempt, maxRetries) {
+      markStreamingRetrying(el, attempt, maxRetries);
+    },
+    preselect(entries) {
+      const mc = el.querySelector('.message-content');
+      if (!mc || !entries.length) return;
+      // 与正常路径同样插在 message-content 最前面（视觉上先于「思考中」）
+      entries.forEach((entry) => mc.insertBefore(createPreSelectCard(entry), mc.firstChild));
     },
     final(content, executionLog, extras = {}) {
       // 与 callApi 的 API_COMPLETE 分支保持同参：反思徽标/推理过程/已修订标记都要还原
@@ -272,18 +430,30 @@ function _syncPendingStorage() {
     .catch((err) => logger.debug('[ChatReattach] 同步生成态失败（忽略）:', err?.message || err));
 }
 
+/** 快照读盘上限：超时按「没有快照」放行攒下来的增量，不阻塞接管 */
+const SNAPSHOT_READ_TIMEOUT_MS = 1000;
+
+function _readSnapshotWithTimeout(sessionId) {
+  return Promise.race([
+    readStreamSnapshot(sessionId),
+    new Promise((resolve) => setTimeout(() => resolve(null), SNAPSHOT_READ_TIMEOUT_MS)),
+  ]);
+}
+
 function _attach(sessionId, callId) {
   const accessor = createStreamingElementAccessor(sessionId);
   // 已有流式元素（原发起实例 / 本实例此前已接管）：绝不抢它的流
   if (accessor()) return false;
 
   const el = addStreamingMessage(sessionId);
+  // 气泡自己带上本轮 callId：流式期间的快照抓拍靠它判定「还是不是同一轮」
+  el.dataset.callId = callId;
   accessor(el);
   setStreamedContent(sessionId, '');
   setThinkingStartTime(Date.now());
   setProcessStartTime(Date.now());
 
-  // 复用既有「生成中」记账：切回会话走 reconnectStreamingElement 即可看到实时内容。
+  // 复用既有「生成中」记账：切回会话走 mountStreamingElement 即可看到实时内容。
   // generatingSessionIds 必须一起登记：停止按钮、sendMessage 的并发早退、队列接力
   // 全部只看它（state.isGenerating）。只记 pending 等于告诉界面「我闲着」——
   // 用户一点发送就会在后台起第二个顶层 reactLoop（checkpoint 互相覆盖、双流式气泡）。
@@ -297,6 +467,7 @@ function _attach(sessionId, callId) {
   const mirror = createSessionStreamMirror({
     sessionId,
     callId,
+    awaitSnapshot: true,
     renderer: _buildRenderer(sessionId, el),
     persist: (payload) => _persistFinal(payload, sessionId, el),
     emptyFallback: t('chatMsg.emptyModelReply'),
@@ -306,6 +477,7 @@ function _attach(sessionId, callId) {
       // 新镜像就成孤儿（广播查不到它）→ 气泡永久停在生成中。
       if (_mirrors.get(sessionId) !== mirror) return;
       _mirrors.delete(sessionId);
+      closePanelObserverPort(sessionId);
       state.pendingCallApiSessionIds.delete(sessionId);
       _syncPendingStorage();
       deleteStreamingState(sessionId);
@@ -319,10 +491,20 @@ function _attach(sessionId, callId) {
   });
 
   _mirrors.set(sessionId, mirror);
+  // 让 SW 知道「是这个面板在看这个任务」：端口断开才会走关闭提醒的复核链路
+  openPanelObserverPort(sessionId);
+  // 还原脱落期间已输出的内容：读盘是异步的，窗口内的新消息由镜像先攒着（见 awaitSnapshot）。
+  // 带超时兜底 —— 宁可这一次不还原，也不能把这条流的渲染永久卡在一次 IO 上。
+  _readSnapshotWithTimeout(sessionId)
+    .then((snap) => {
+      if (mirror.finished || _mirrors.get(sessionId) !== mirror) return;
+      mirror.restore(snap);
+    })
+    .catch(() => mirror.restore(null));
   // 目标会话当前可见才挂载：addStreamingMessage 对非活动会话返回游离元素（已登记在
   // _streamingElements 里），不挂进当前会话的 DOM，避免把别人的气泡塞进正在看的会话。
   // 等用户切回来时由 syncReattachForSession 补挂。
-  if (state.activeSessionId === sessionId) reconnectStreamingElement(sessionId);
+  if (state.activeSessionId === sessionId) mountStreamingElement(sessionId);
   logger.info(`[ChatReattach] 已接管运行中的任务: sessionId=${sessionId}, callId=${callId}`);
   return true;
 }
@@ -335,6 +517,7 @@ function _disposeMirror(sessionId) {
   const prev = _mirrors.get(sessionId);
   if (!prev) return;
   _mirrors.delete(sessionId);
+  closePanelObserverPort(sessionId);
   try { prev.dispose?.(); } catch { /* 已结束的镜像 */ }
 
   const accessor = createStreamingElementAccessor(sessionId);
@@ -482,6 +665,9 @@ function _bindListener() {
     }
     // handleMessage 的返回值只表示「是否被本镜像消费」，不能当作 listener 的应答标志：
     // 返回 true 会让后台的 sendMessage 一直等一个永远不会到来的异步 sendResponse。
+    // 后台还能递消息过来 = SW 已经活着，顺手把观察端口补上（幂等，端口在就是空操作）：
+    // 面板一直开着、既不切会话也不重开时，这是唯一的自愈时机。
+    openPanelObserverPort(message.sessionId);
     mirror.handleMessage(message);
     return false;
   });
@@ -493,7 +679,7 @@ function _bindListener() {
   // 启动时后台还没开始跑的情况，这里也要再对齐一次。
   _hydratedHandler = (e) => {
     const sessionId = e?.detail?.sessionId;
-    if (sessionId && _mirrors.has(sessionId)) reconnectStreamingElement(sessionId);
+    if (sessionId && _mirrors.has(sessionId)) mountStreamingElement(sessionId);
     _scheduleSync();
   };
   document.addEventListener('session-hydrated', _hydratedHandler);
@@ -501,10 +687,12 @@ function _bindListener() {
   // 会话历史渲染完成后把接管气泡移回末尾。
   // 启动期接管往往早于历史渲染：气泡先 appendChild 进当时还空的容器，历史消息
   // 随后才 append —— 结果气泡停在用户提问上面（真机与探针均复现）。reconnect 内部
-  // 就是 appendChild，等于重新排到末尾，并顺带补回脱落期间累积的正文。
+  // 就是 appendChild，等于重新排到末尾。正文不需要在这里补：接管镜像每条增量都在
+  // 原地更新气泡，挂载只挪位置，不能把可见指示器收成「思考结果」（那会吃掉「输出中」
+  // 和停止按钮）。
   _historyRenderedHandler = (e) => {
     const sessionId = e?.detail?.sessionId;
-    if (sessionId && _mirrors.has(sessionId)) reconnectStreamingElement(sessionId);
+    if (sessionId && _mirrors.has(sessionId)) mountStreamingElement(sessionId);
   };
   document.addEventListener('chat-history-rendered', _historyRenderedHandler);
 }
@@ -525,7 +713,14 @@ export function initChatReattach() {
     // 从 storage.session 灌回来（上个实例遗留），面板刚重开就会误判为本实例持有 →
     // 永不接管，修复失效。pendingCancelApiMap 只在 callApi 存活期存在且不落盘。
     hasLocalListener: (sessionId) => state.pendingCancelApiMap.has(sessionId),
-    isAttached: (sessionId, callId) => _mirrors.get(sessionId)?.callId === callId,
+    isAttached: (sessionId, callId) => {
+      if (_mirrors.get(sessionId)?.callId !== callId) return false;
+      // 已经接管着就不必重建镜像，但观察端口得顺手补一下：SW 被回收会把端口从两头
+      // 拆掉，而面板侧只会自摘、不会自己重连。不补的话下一次关面板就没有断开事件
+      // 可报，「第二次关闭不弹桌面提醒」在那个路径上又回来了。幂等：端口还在就是空操作。
+      openPanelObserverPort(sessionId);
+      return true;
+    },
     attach: (sessionId, callId) => { _attach(sessionId, callId); },
   });
 
@@ -540,10 +735,11 @@ export function initChatReattach() {
  */
 export function syncReattachForSession(sessionId) {
   if (!_inited || !_manager) return;
-  // 切回该会话：上次接管时它不可见（气泡是游离的），现在必须挂回来并回填已累积内容。
+  // 切回该会话：上次接管时它不可见（气泡是游离的），现在必须把它挂回末尾。
+  // 内容不用回填 —— 游离期间镜像一直在原地更新这份气泡。
   // 不能指望 index.js 的 hasPendingTask 分支：它要求本实例持有 pendingCancelApi，
   // 而 reattach 没有活着的 callApi 闭包，那条分支不会走。
-  if (sessionId && state.activeSessionId === sessionId) reconnectStreamingElement(sessionId);
+  if (sessionId && state.activeSessionId === sessionId) mountStreamingElement(sessionId);
   _manager.syncFromBackground();
 }
 

@@ -17,11 +17,13 @@ import { handleDuplicateSession } from './session-manager-ui.js';
 import { buildArtifactsForMessage, parseDeclaredArtifactsFromText, showArtifactsModal, preFilterDeletedArtifacts, validateArtifactsAsync } from './artifacts-manager.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { createFullscreenButton } from './message-fullscreen.js';
+import { scheduleStreamSnapshot, cancelPendingStreamSnapshot, clearStreamSnapshot } from './stream-snapshot.js';
 
 registerTranslations('zh', {
   chatStream: {
     thinking: '思考中...',
     outputting: '输出中...',
+    retrying: '连接异常，正在重试 ({attempt}/{max})...',
     stopGenerating: '停止生成',
     thinkingResult: '思考结果',
     toolActionOperate: '操作',
@@ -90,6 +92,7 @@ registerTranslations('en', {
   chatStream: {
     thinking: 'Thinking...',
     outputting: 'Outputting...',
+    retrying: 'Connection unstable, retrying ({attempt}/{max})...',
     stopGenerating: 'Stop generating',
     thinkingResult: 'Thinking result',
     toolActionOperate: 'Operate',
@@ -609,10 +612,16 @@ export function createStreamingElementAccessor(sessionId) {
   };
 }
 
-/** 删除指定会话的所有流式状态（callApi 清理时调用） */
+/**
+ * 删除指定会话的所有流式状态（callApi 清理时调用）
+ * 气泡快照也属于「这一轮流式记账」：正常错误路径只删气泡、不走 finalize，
+ * 不一起清就得留到 TTL 才过期 —— 白占 storage.session，还把作废的一轮
+ * 留在能被下一次接管读回的位置上。
+ */
 export function deleteStreamingState(sessionId) {
   _streamingElements.delete(sessionId);
   _streamedContentMap.delete(sessionId);
+  clearStreamSnapshot(sessionId);
 }
 
 /** 获取指定会话的累积流式内容（reconnectStreamingElement 内部使用，外部一般通过局部变量） */
@@ -620,9 +629,20 @@ export function getStreamedContent(sessionId) {
   return _streamedContentMap.get(sessionId) || '';
 }
 
-/** 设置指定会话的累积流式内容 */
+/**
+ * 设置指定会话的累积流式内容。
+ * 顺带排一次气泡快照：抓拍要跟着正文走，不能只跟着 DOM 更新走 —— 用户切到别的
+ * 会话时气泡脱离文档，chat-manager 会跳过 updateStreamingMessage（只往 Map 里攒正文），
+ * 只挂在 DOM 更新上的话「切走 → 再关掉面板」这一整条路径一个快照都没有，重开时无从还原。
+ * 清零时反过来：把节流窗口里攒着的抓拍撤掉，别让它带着空正文落盘顶掉上一轮的有效快照。
+ */
 export function setStreamedContent(sessionId, content) {
   _streamedContentMap.set(sessionId, content);
+  if (!content) {
+    cancelPendingStreamSnapshot(sessionId);
+    return;
+  }
+  snapshotStreamingBubble(_streamingElements.get(sessionId));
 }
 
 /** 获取缓存的预筛选日志 */
@@ -670,6 +690,45 @@ export function setReasoningContent(content) {
 // ============================================================
 
 /**
+ * 思考指示器内部标记（初始那份与后续轮次共用，避免两处标记各自演化）
+ * @returns {string}
+ */
+function thinkingIndicatorHtml() {
+  return `
+    <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
+      <circle cx="8" cy="12" r="1.5"/>
+      <circle cx="16" cy="12" r="1.5"/>
+    </svg>
+    <div class="thinking-dots">
+      <span></span><span></span><span></span>
+    </div>
+    <span class="thinking-label">${t('chatStream.thinking')}</span>
+    <button class="streaming-stop-btn" title="${t('chatStream.stopGenerating')}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+      </svg>
+    </button>
+  `;
+}
+
+/**
+ * 给指示器上的停止按钮接线（初始与后续轮次同一口径）。
+ * 必须全量绑：多轮 ReAct 的气泡里上一轮只是被加了 .hidden（节点还在），
+ * 于是同时存在多颗停止按钮，DOM 顺序第一颗往往是看不见的那轮 ——
+ * 只 querySelector 单颗就会把监听挂在用户点不到的按钮上。
+ */
+function bindStreamingStopButton(scope) {
+  if (!scope) return;
+  scope.querySelectorAll('.streaming-stop-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      cancelStreamingTask(btn);
+    });
+  });
+}
+
+/**
  * 创建流式消息容器（包含思考指示器、停止按钮）
  * @param {string} [targetSessionId] - 目标会话 ID，仅当与当前活跃会话匹配时才挂载到 DOM
  *   不传则始终挂载到 DOM（兼容旧调用）
@@ -685,22 +744,7 @@ export function addStreamingMessage(targetSessionId) {
   wrapper.innerHTML = `
     <div class="message-content">
       <div class="stream-content"></div>
-      <div class="thinking-indicator">
-        <svg class="thinking-icon pulse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/>
-          <circle cx="8" cy="12" r="1.5"/>
-          <circle cx="16" cy="12" r="1.5"/>
-        </svg>
-        <div class="thinking-dots">
-          <span></span><span></span><span></span>
-        </div>
-        <span class="thinking-label">${t('chatStream.thinking')}</span>
-        <button class="streaming-stop-btn" title="${t('chatStream.stopGenerating')}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          </svg>
-        </button>
-      </div>
+      <div class="thinking-indicator">${thinkingIndicatorHtml()}</div>
       <div class="stream-status hidden"></div>
     </div>
   `;
@@ -715,15 +759,156 @@ export function addStreamingMessage(targetSessionId) {
     });
   }
 
-  const streamingStopBtn = wrapper.querySelector('.streaming-stop-btn');
-  if (streamingStopBtn) {
-    streamingStopBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      cancelStreamingTask(streamingStopBtn);
-    });
-  }
+  bindStreamingStopButton(wrapper);
 
   return wrapper;
+}
+
+/**
+ * 气泡内容变了就排一次快照（节流在 stream-snapshot 里）。
+ * sessionId / callId 都取自身 dataset：正常路径与接管路径都在建气泡时写好，
+ * 两处共用同一个抓拍点，不必各自再传一遍。
+ * @param {HTMLElement} element 流式消息 wrapper
+ */
+function snapshotStreamingBubble(element) {
+  const sessionId = element?.dataset?.sessionId;
+  const callId = element?.dataset?.callId;
+  if (!sessionId || !callId) return;
+  scheduleStreamSnapshot(sessionId, callId, () => ({
+    html: element.innerHTML,
+    accumulated: getStreamedContent(sessionId),
+  }));
+}
+
+/**
+ * 还原面板脱落期间的气泡快照（接管新实例用）。
+ * innerHTML 一换，绑在旧节点上的事件全丢，这里只补回「活气泡」必需的那几件：
+ * 停止按钮、工具卡片折叠、长结果展开。代码块复制走 document 委托，无需逐个绑。
+ * @param {HTMLElement} element 流式消息 wrapper
+ * @param {string} html 快照里的气泡 innerHTML
+ * @returns {boolean} 是否还原成功（空 HTML / 非法元素返回 false）
+ */
+export function applyStreamSnapshot(element, html) {
+  if (!element || !html) return false;
+  element.innerHTML = html;
+
+  bindStreamingStopButton(element);
+
+  element.querySelectorAll('.tool-call-header').forEach((header) => {
+    header.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) return;
+      header.closest('.tool-call-item')?.classList.toggle('expanded');
+    });
+  });
+
+  element.querySelectorAll('.tool-call-result').forEach((resultDiv) => {
+    const codeBlock = resultDiv.querySelector('code');
+    const fullContent = codeBlock?.dataset.fullContent;
+    if (!fullContent || fullContent.length <= 500) return;
+    const preview = codeBlock.textContent || '';
+    let isExpanded = false;
+    resultDiv.style.cursor = 'pointer';
+    resultDiv.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey) return;
+      e.stopPropagation();
+      isExpanded = !isExpanded;
+      codeBlock.textContent = isExpanded ? fullContent : preview;
+    });
+  });
+
+  addCodeCopyButtons();
+  return true;
+}
+
+/**
+ * 重试提示：就地把可见的「思考中」文案改成「正在重试 (n/m)」。
+ * 正常流式路径与接管路径共用这一处，避免两套文案各自演化。
+ * dataset.retrying 是标记位：首个数据块到达时由 updateStreamingMessage 恢复为「输出中」。
+ * @param {HTMLElement} element 流式消息 wrapper
+ * @param {number} attempt 当前重试次数
+ * @param {number} maxRetries 最大重试次数
+ * @returns {boolean} 是否写到了可见指示器上
+ */
+export function markStreamingRetrying(element, attempt, maxRetries) {
+  const label = element?.querySelector('.thinking-indicator:not(.hidden) .thinking-label');
+  if (!label) return false;
+  label.textContent = t('chatStream.retrying', { attempt, max: maxRetries });
+  label.dataset.retrying = '1';
+  return true;
+}
+
+/**
+ * 新一轮思考开始：在 stream-content 末尾补一个可见的思考指示器。
+ * 上一轮的指示器已由 appendToolCallItems 隐藏并移除，不补就会出现
+ * 「工具执行完到下一段输出之间界面是死的」。
+ * @param {HTMLElement} element 流式消息 wrapper
+ * @returns {HTMLElement|null} 已有可见指示器时返回 null（与正常路径一致，不重复挂）
+ */
+export function appendThinkingIndicator(element) {
+  const contentDiv = element?.querySelector('.stream-content');
+  if (!contentDiv) return null;
+  if (element.querySelector('.thinking-indicator:not(.hidden)')) return null;
+  const node = document.createElement('div');
+  node.className = 'thinking-indicator';
+  node.innerHTML = thinkingIndicatorHtml();
+  contentDiv.appendChild(node);
+  bindStreamingStopButton(node);
+  return node;
+}
+
+/**
+ * 一轮思考收口：把「思考结果」badge 插进 .stream-content 里的正确位置。
+ * 落位口径必须和 updateStreamingMessage 的查找一致（它认「可见指示器」或
+ * 「stream-content 里最后一个 badge 的下一个兄弟」）——badge 掉到 .stream-content
+ * 外面就两条全落空，之后每条增量都另 append 一整份全量正文，界面上同一段话重复好几遍。
+ * @param {HTMLElement} contentDiv .stream-content
+ * @param {HTMLElement} badge 待插入的思考结果 badge
+ * @param {HTMLElement} visibleThinking 本轮被收口的思考指示器（第一轮时它在 contentDiv 外）
+ */
+function insertThinkingBadge(contentDiv, badge, visibleThinking) {
+  if (contentDiv.contains(visibleThinking)) {
+    // 指示器在 stream-content 内：badge 插在当前轮正文与指示器之间
+    const prevSibling = visibleThinking.previousElementSibling;
+    if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+      contentDiv.insertBefore(badge, prevSibling);
+    } else {
+      contentDiv.insertBefore(badge, visibleThinking);
+    }
+    return;
+  }
+
+  // 指示器在 message-content 里（第一轮）：badge 要跟着本轮正文落在 stream-content 内
+  const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+  const lastContent = thinkingContents[thinkingContents.length - 1];
+  const nextSibling = lastContent ? lastContent.nextElementSibling : null;
+  if (lastContent && (!nextSibling || !nextSibling.classList.contains('thinking-badge'))) {
+    contentDiv.insertBefore(badge, lastContent);
+  } else {
+    contentDiv.appendChild(badge);
+  }
+}
+
+/**
+ * 把已登记的流式气泡挂回会话区末尾（接管路径专用，只挪位置不动内容）。
+ * 与 reconnectStreamingElement 的区别：接管气泡一直是活的（镜像每条增量都在原地
+ * 更新），既不需要回填正文，也不能把可见指示器收成「思考结果」——那颗指示器上
+ * 挂着「输出中」文案和停止按钮，收掉就是「还在输出但界面看着像已结束、也停不下来」。
+ * @param {string} sessionId - 会话 ID
+ * @returns {boolean} 是否完成挂载
+ */
+export function mountStreamingElement(sessionId) {
+  const el = _streamingElements.get(sessionId);
+  if (!el) return false;
+  if (el.dataset.sessionId && el.dataset.sessionId !== sessionId) return false;
+
+  const chatContainer = document.getElementById('chatContainer');
+  if (!chatContainer) return false;
+
+  chatContainer.appendChild(el);
+  requestAnimationFrame(() => {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+  });
+  return true;
 }
 
 /**
@@ -757,20 +942,16 @@ export function reconnectStreamingElement(sessionId) {
     // 主动隐藏残留指示器，确保后续迭代能正常创建新的思考指示器。
     // 注意：仅在 accumulated 非空时才执行，避免在内容被 STREAM_START 重置后
     // 创建出"有 badge 但无对应思考内容"的空洞。
+    const contentDiv = oldEl.querySelector('.stream-content');
     const visibleIndicators = oldEl.querySelectorAll('.thinking-indicator:not(.hidden)');
     visibleIndicators.forEach(indicator => {
-      const parent = indicator.parentElement;
-      const prevSibling = indicator.previousElementSibling;
+      indicator.classList.add('hidden');
+      if (!contentDiv) return;
       const badge = document.createElement('span');
       badge.className = 'thinking-badge';
       badge.dataset.status = 'success';
       badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>' + t('chatStream.thinkingResult');
-      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
-        parent.insertBefore(badge, prevSibling);
-      } else {
-        parent.insertBefore(badge, indicator);
-      }
-      indicator.classList.add('hidden');
+      insertThinkingBadge(contentDiv, badge, indicator);
     });
   }
 
@@ -864,6 +1045,8 @@ export function updateStreamingMessage(element, fullContent) {
     }
   }
   
+  snapshotStreamingBubble(element);
+
   // 自动滚动（等浏览器完成布局后再滚动，确保 scrollHeight 已更新）
   // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
   if (element.isConnected) {
@@ -871,17 +1054,6 @@ export function updateStreamingMessage(element, fullContent) {
       const chatContainer = document.getElementById('chatContainer');
       if (chatContainer) autoScrollToBottom(chatContainer);
     });
-  }
-}
-
-/**
- * 更新流式消息状态文本（工具调用时）
- */
-export function updateStreamingStatus(element, statusText) {
-  const statusDiv = element.querySelector('.stream-status');
-  if (statusDiv) {
-    statusDiv.classList.remove('hidden');
-    statusDiv.innerHTML = `<svg class="tool-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> ${statusText}`;
   }
 }
 
@@ -905,32 +1077,10 @@ export function appendToolCallItems(element, toolCalls) {
     badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
     badge.dataset.status = 'success';
 
-    if (contentDiv.contains(visibleThinking)) {
-      // 思考指示器在 stream-content 内：找到当前轮的 thinking-content，在它前面插入 badge
-      const prevSibling = visibleThinking.previousElementSibling;
-      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
-        contentDiv.insertBefore(badge, prevSibling);
-      } else {
-        contentDiv.insertBefore(badge, visibleThinking);
-      }
-      visibleThinking.classList.add('hidden');
-    } else {
-      // 思考指示器在 message-content 中：找到最后一个 thinking-content，在它前面插入 badge
-      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
-      if (thinkingContents.length > 0) {
-        const lastContent = thinkingContents[thinkingContents.length - 1];
-        const nextSibling = lastContent.nextElementSibling;
-        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
-          contentDiv.insertBefore(badge, lastContent);
-        } else {
-          contentDiv.appendChild(badge);
-        }
-      } else {
-        contentDiv.appendChild(badge);
-      }
-      visibleThinking.classList.add('hidden');
-      visibleThinking.remove();
-    }
+    insertThinkingBadge(contentDiv, badge, visibleThinking);
+    visibleThinking.classList.add('hidden');
+    // 第一轮的指示器挂在 message-content 上，留着就是一颗不会再被收口的空转圈
+    if (!contentDiv.contains(visibleThinking)) visibleThinking.remove();
   }
 
   // 工具分类配置：{ toolName: { icon, label, summaryFn } }
@@ -1105,7 +1255,9 @@ export function appendToolCallItems(element, toolCalls) {
     
     contentDiv.appendChild(item);
   });
-  
+
+  snapshotStreamingBubble(element);
+
   // 滚动到底部（等浏览器完成布局后）
   // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
   if (element.isConnected) {
@@ -1271,6 +1423,7 @@ export function appendToolResult(result, streamingElement) {
     
     // 绑定代码块复制按钮
     addCodeCopyButtons();
+    snapshotStreamingBubble(streamingElement);
     
     // 滚动到底部（等浏览器完成布局后）
     // 仅当该流式消息属于当前会话时才滚动，防止后台会话串台滚动
@@ -1367,6 +1520,9 @@ export function createPreSelectCard(entry) {
  */
 export function finalizeStreamingMessage(element, content, executionLog = [], reflectionScore = null, reasoningContent = null, wasRevised = false) {
   if (!element) return;
+
+  // 本轮已经收口：快照必须一起清掉，否则下一次接管会把上一轮的半截流接进来
+  if (element.dataset.sessionId) clearStreamSnapshot(element.dataset.sessionId);
   
   const messageContent = element.querySelector('.message-content');
   const streamContent = element.querySelector('.stream-content');

@@ -9,7 +9,7 @@
 // - 面板在场（keepalive 端口还在，正常流程 100% 命中）→ 一律不写，行为零变化；
 // - 面板不在场 → SW 写回，并给消息打 callId 标记；写前按 callId 查重，
 //   与面板 reattach 的写入方向互斥（谁先写谁生效）。
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const INDEX_SRC = readFileSync(
@@ -122,6 +122,77 @@ describe('persistCompletionWithoutPanel 面板不在场时后台落库', () => {
     await expect(persistCompletionWithoutPanel(
       { sessionId: 's1', callId: 'auto_6', content: 'x' }, io
     )).resolves.toMatchObject({ written: false });
+  });
+});
+
+// ==================== 默认面板门控（用真实 state 注册表跑） ====================
+//
+// 真机回归现场：把门控改成「keepalive 或观察端口任一在场就不写」后，
+// verify 探针里「重开面板接管 → 任务结束 → 刷新」这一串变成 0 次：
+// 接管实例确实会自己落库，但那一次写入是异步的，刷新/关面板随时能把它打断；
+// 而后台这一笔在广播终态之前就写完了。兜底的价值正在这里：
+// 它要保的不是「有人写」，而是「一定写得住」。重复由 callId 幂等吃掉。
+
+describe('默认面板门控：只认发起实例的 keepalive 端口', () => {
+  let persistCompletionWithoutPanel;
+  let bgState;
+
+  beforeEach(async () => {
+    vi.stubGlobal('chrome', {
+      storage: {
+        session: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}), remove: vi.fn(async () => {}) },
+        local: { get: vi.fn(async () => ({})), set: vi.fn(async () => {}) },
+      },
+      runtime: { lastError: null, sendMessage: vi.fn(), getURL: (p) => p },
+    });
+    vi.resetModules();
+    bgState = await import('../../src/background/state.js');
+    ({ persistCompletionWithoutPanel } = await import('../../src/background/panel-absent-persist.js'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** 只注入读写替身，hasPanel 走生产默认（对着真实 state 注册表判定） */
+  const ioWith = () => ({
+    getSession: vi.fn(async () => ({ messageHistory: [] })),
+    appendMessageToSession: vi.fn(async () => true),
+  });
+
+  test('只注入部分 io 时其余选项走生产默认（不然测门控只能整份抄写默认实现）', async () => {
+    // 两类端口都没登记过 → 生产 hasPanel 判定为「面板不在场」，这一笔必须写。
+    // 注入不了局部替身时，单测只能把 DEFAULT_IO 自己抄一份再传进去，那等于自测自己。
+    const io = ioWith();
+    const res = await persistCompletionWithoutPanel(
+      { sessionId: 's-none', callId: 'auto_8', content: '完成' }, io
+    );
+    expect(res).toEqual({ written: true });
+    expect(io.appendMessageToSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('接管实例在场（只有观察端口）→ 后台仍然先落库', async () => {
+    bgState.registerPanelObserverPort('s-obs', { name: 'panel-observer-s-obs' });
+    const io = ioWith();
+
+    const res = await persistCompletionWithoutPanel(
+      { sessionId: 's-obs', callId: 'auto_9', content: '完成' }, io
+    );
+
+    expect(res).toEqual({ written: true });
+    expect(io.appendMessageToSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('发起实例的 keepalive 端口在 → 默认门控判定面板在场，不写（正常流程行为零变化）', async () => {
+    bgState.registerKeepalivePort('s-ka', { name: 'keepalive-s-ka' });
+    const io = ioWith();
+
+    const res = await persistCompletionWithoutPanel(
+      { sessionId: 's-ka', callId: 'call_9', content: '完成' }, io
+    );
+
+    expect(res).toEqual({ written: false, reason: 'panel_present' });
+    expect(io.appendMessageToSession).not.toHaveBeenCalled();
   });
 });
 

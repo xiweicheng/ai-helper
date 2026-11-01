@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity } from './state.js';
+import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity, registerPanelObserverPort, unregisterPanelObserverPort, hasLivePanel } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -141,6 +141,32 @@ const MAX_LOG_ENTRIES_FOR_MSG = 1000;
 // 避免把正在 teardown 的任务误判为仍在后台执行（真·关闭只是晚几秒知情）
 const PANEL_DETACH_NOTIFY_DELAY_MS = 2000;
 
+/**
+ * 面板端口断开后的统一复核：延迟一会儿再决定要不要弹桌面提醒。
+ *
+ * keepalive（发起实例的 callApi 端口）与 panel-observer（接管实例的观察端口）
+ * 都走这一处，判定逻辑不许有第二份：两个事件源各写一遍必然演化成「第一次关有提醒、
+ * 第二次关没提醒」这类只覆盖一条通道的 bug。
+ * @param {string} sessionId 会话
+ */
+function checkPanelDetached(sessionId) {
+  // 【面板关闭提醒】不在这一刻直接弹，延迟复核后再决定：
+  // 面板点「停止」会在同一 tick 内 disconnect 端口，而 reactLoop 的 finally
+  // （activeReactLoops.delete）要等取消信号逐层冒泡才执行，此刻读到「仍在执行」是假阳性；
+  // CANCEL_REACT 与端口断开是两条不保证顺序的通道，此刻 isCancelled 也可能尚未置位。
+  // 真·面板关闭只是晚几秒知情，而作废 / 刚好完成 / 关了又立刻打开都在窗口内被挡掉。
+  setTimeout(() => {
+    if (shouldNotifyPanelDetached({
+      active: activeReactLoops.has(sessionId),
+      cancelled: isCancelled(sessionId),
+      // 任一端口还在，就说明仍然有面板看着这个任务：发起实例与接管实例都要算
+      panelReconnected: hasLivePanel(sessionId),
+    })) {
+      notifyPanelDetached({ sessionId });
+    }
+  }, PANEL_DETACH_NOTIFY_DELAY_MS);
+}
+
 // 最终消息日志截断：超过上限时保留尾部 N 条，但 subtask_plan 条目必须留下——
 // 它是"计划了哪些子任务"的唯一载体且位于日志最前端，纯尾部切片会必然丢弃，
 // 导致历史视图无法展示从未执行的子任务。
@@ -178,6 +204,21 @@ restoreDetachWindowId().then((windowId) => {
 // SW 启动（表现为 "No SW"、Unchecked runtime.lastError 等报错）。因此顶层 API
 // 访问统一用可选链保护：进程将死时跳过注册/读取是可接受的降级。
 chrome.runtime?.onConnect?.addListener?.(async (port) => {
+  // 接管实例（reattach，无 callApi 闭包）为会话挂的观察端口：
+  // 存在的唯一意义是让「面板第二次关闭」也能被这里感知到。
+  // 刻意不 registerKeepalivePort —— 那张表还承担澄清/工具确认的定向消息投递与
+  // 实例身份上报，接管实例并非发起实例，抢过来只会把消息投给答不了的一侧。
+  if (port.name?.startsWith('panel-observer-')) {
+    const sessionId = port.name.replace('panel-observer-', '');
+    registerPanelObserverPort(sessionId, port);
+    logger.debug('[Background] panel observer port connected, sessionId:', sessionId);
+    port.onDisconnect.addListener(() => {
+      unregisterPanelObserverPort(sessionId, port);
+      logger.debug('[Background] panel observer port disconnected, sessionId:', sessionId);
+      checkPanelDetached(sessionId);
+    });
+    return;
+  }
   if (port.name?.startsWith('keepalive-')) {
     const sessionId = port.name.replace('keepalive-', '');
     // 判断是否为重连（SW 重启后的重连），而非首次连接
@@ -239,20 +280,7 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     port.onDisconnect.addListener(() => {
       unregisterKeepalivePort(sessionId, port);
       logger.debug('[Background] keepalive port disconnected, sessionId:', sessionId);
-      // 【面板关闭提醒】不在这一刻直接弹，延迟复核后再决定：
-      // 面板点「停止」会在同一 tick 内 disconnect 端口，而 reactLoop 的 finally
-      // （activeReactLoops.delete）要等取消信号逐层冒泡才执行，此刻读到「仍在执行」是假阳性；
-      // CANCEL_REACT 与端口断开是两条不保证顺序的通道，此刻 isCancelled 也可能尚未置位。
-      // 真·面板关闭只是晚几秒知情，而作废 / 刚好完成 / 关了又立刻打开都在窗口内被挡掉。
-      setTimeout(() => {
-        if (shouldNotifyPanelDetached({
-          active: activeReactLoops.has(sessionId),
-          cancelled: isCancelled(sessionId),
-          panelReconnected: hasKeepalivePort(sessionId),
-        })) {
-          notifyPanelDetached({ sessionId });
-        }
-      }, PANEL_DETACH_NOTIFY_DELAY_MS);
+      checkPanelDetached(sessionId);
     });
   }
 });
