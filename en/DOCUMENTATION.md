@@ -1039,7 +1039,7 @@ The extension can optionally pair with a Node.js agent service, providing file s
 - **File Trash Bin**: Deleted files default to soft delete to `~/.ai-helper-agent/.trash/`, 7-day auto-cleanup, supports restore
 - **Online Update**: Supports online restart and auto-update Agent via API (`/api/agent/restart`, `/api/agent/update`)
 - **Multi-format Preview**: Server-side supports xlsx parsing preview, browser-side supports PDF/Word/image preview
-- **Audit Logging**: Dual-channel output (terminal formatted + file JSON Lines), named by date, auto-cleanup 30 days
+- **Audit Logging**: Dual-channel output (terminal formatted + file JSON Lines), named by date, retained by file count (the most recent `MAX_LOG_FILES = 30` files; any file over `MAX_LOG_SIZE = 10MB` is also pruned)
 - **Multi-level Robustness Protection**: Request-level exception capture, URL parsing protection, global fallback, file I/O protection, process management protection
 - **Fast Search**: fd (filename) + ripgrep (content) native acceleration, auto-falls back to Node.js implementation when unavailable
 - **Local RAG Knowledge Base**: Dependency auto-check/install & startup auto-recovery; vector + keyword hybrid search (mixed Chinese/English keywords supported); disabled collections are excluded from autonomous search but remain available for @ manual reference
