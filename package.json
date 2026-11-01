@@ -1,6 +1,6 @@
 {
   "name": "ai-helper",
-  "version": "2.7.0",
+  "version": "2.7.1",
   "description": "AI Helper Chrome Extension",
   "type": "module",
   "scripts": {
