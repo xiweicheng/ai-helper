@@ -18346,3 +18346,121 @@ body.has-session-dock .chat-container {
   outline: 2px solid var(--brand-violet-500);
   outline-offset: 1px;
 }
+
+/* ========== 输入框上方「使用技巧」轮播条（参考 Trae IDE 样式） ========== */
+/* 无底色无边框，仅一行浅灰提示文字；悬停暂停轮播，并在上方浮出深色气泡展示全文 */
+.usage-tips-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 6px;
+  padding: 2px 4px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.usage-tips-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.usage-tips-icon svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.usage-tips-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.usage-tips-bar:hover .usage-tips-text {
+  color: var(--text-primary);
+}
+
+.usage-tips-text.fade-in {
+  animation: usage-tips-fade 0.35s ease;
+}
+
+@keyframes usage-tips-fade {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+.usage-tips-dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  /* 始终占位，避免悬停出现时挤压文案导致截断位置跳动 */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0s linear;
+}
+
+.usage-tips-bar:hover .usage-tips-dismiss {
+  opacity: 1;
+  visibility: visible;
+  /* 短暂停留后才出现，快速掠过时不闪 */
+  transition-delay: 0.4s;
+}
+
+.usage-tips-dismiss:hover {
+  color: var(--text-primary);
+}
+
+/* 悬停浮层：深色气泡展示完整文案，不改变页面高度（与 Trae IDE 一致） */
+.usage-tips-tooltip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: block;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--tooltip-bg);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.55;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  /* 默认隐藏；悬停需停留 0.4s 才浮现，移出立即消失 */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(2px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear;
+}
+
+/* 只有文案被省略号截断时，悬停才弹出完整内容 */
+.usage-tips-bar.is-truncated:hover .usage-tips-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0.4s;
+}
+
+@media (max-width: 380px) {
+  .usage-tips-bar {
+    font-size: 12px;
+  }
+}

@@ -998,7 +998,8 @@ export function loadConfig() {
     'completionSoundEnabled', 'completionConfettiEnabled',
     'completionNotificationEnabled', 'scheduledNotificationEnabled', 'interactionNotificationEnabled',
     'showMessageTimestamp', 'sidePanelScope', 'autoGroupTabs',
-    'queueAutoCarry', 'queueAutoCarryEveryNIterations'
+    'queueAutoCarry', 'queueAutoCarryEveryNIterations',
+    'usageTipsEnabled'
   ], function(result) {
     if (result.apiBase) {
       document.getElementById('apiBase').value = result.apiBase;
@@ -1013,6 +1014,10 @@ export function loadConfig() {
     if (result.systemPrompt) {
       document.getElementById('systemPrompt').value = result.systemPrompt;
     }
+
+    // 输入框上方使用技巧轮播条：默认开启，仅在明确关闭时回显为未勾选
+    const usageTipsEl = document.getElementById('usageTipsEnabled');
+    if (usageTipsEl) usageTipsEl.checked = result.usageTipsEnabled !== false;
 
     // 加载图片识别配置
     const enableImageInputEl = document.getElementById('enableImageInput');

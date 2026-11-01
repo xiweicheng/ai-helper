@@ -35,6 +35,7 @@ import { initProviderSelector } from './provider-selector.js';
 import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
+import { initUsageTips } from './usage-tips.js';
 import { resolveHistoryNav } from './input-history-nav.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 import { decodeSecret } from '../shared/secret.js';
@@ -1137,6 +1138,9 @@ async function handleSelectionPromptClick(prompt, selectedText) {
 
 // ==================== 主初始化 ====================
 
+// 上次广播给使用技巧条等监听者的代理连接状态（只在变化时广播，避免高频刷新重复重绘）
+let _lastAgentConnectedBroadcast = null;
+
 /**
  * 更新 Side Panel 头部的 Agent 连接指示器
  */
@@ -1156,6 +1160,14 @@ async function updateAgentIndicator(platformInfo, skipPing = false) {
   } catch { /* ignore */ }
 
   const connected = platformInfo?.connected === true;
+
+  // 连接态变化时广播：使用技巧条据此过滤/补充依赖代理端的文案
+  if (connected !== _lastAgentConnectedBroadcast) {
+    _lastAgentConnectedBroadcast = connected;
+    try {
+      document.dispatchEvent(new CustomEvent('agent-connection-changed', { detail: { connected } }));
+    } catch { /* 非 DOM 环境忽略 */ }
+  }
 
   if (!connected || !activeAgent) {
     dot.className = 'header-agent-dot disconnected';
@@ -4621,6 +4633,8 @@ document.addEventListener('DOMContentLoaded', initCurrentModelTag);
 document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
+// 输入框上方使用技巧轮播条（依赖代理连接状态：未连接时过滤掉 agent 类文案）
+document.addEventListener('DOMContentLoaded', initUsageTips);
 // 目标模式：chip 绑定 + 目标条 + GOAL_UPDATE 回推监听，必须在入口挂上，
 // 否则 goal-panel.js 整个模块成了无人调用的死代码（chip 点了没反应、目标条永不出现）
 document.addEventListener('DOMContentLoaded', initGoalPanel);

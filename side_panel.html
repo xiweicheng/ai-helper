@@ -515,6 +515,20 @@
     </div>
   </div>
 
+  <!-- 使用技巧轮播条（参考 Trae IDE）：无底色单行提示；悬停暂停轮播，上方浮出深色气泡显示全文 -->
+  <div class="usage-tips-bar" id="usageTipsBar" style="display: none;">
+    <span class="usage-tips-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18h6"></path>
+        <path d="M10 21h4"></path>
+        <path d="M12 3a6 6 0 0 0-3.5 10.9c.6.4.9 1 .9 1.7V16h5.2v-.4c0-.7.3-1.3.9-1.7A6 6 0 0 0 12 3Z"></path>
+      </svg>
+    </span>
+    <span class="usage-tips-text" id="usageTipsText" aria-live="polite"></span>
+    <button class="usage-tips-dismiss" id="usageTipsDismiss" type="button" data-i18n="usageTips.dismiss">不再显示</button>
+    <div class="usage-tips-tooltip" id="usageTipsTooltip" role="tooltip"></div>
+  </div>
+
   <div class="input-container">
     <div class="input-bottom-row">
       <div class="input-bottom-left">

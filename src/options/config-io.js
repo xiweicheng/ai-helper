@@ -37,6 +37,8 @@ const EXPORT_KEYS = [
   'sidePanelScope',
   // 自动分组开关
   'autoGroupTabs',
+  // 输入框上方使用技巧轮播条开关
+  'usageTipsEnabled',
   // 新增：助手、工具、LLM参数、UI开关等配置
   'customAgents', 'activeAgentId', 'activeAssistantId',
   'temperature', 'topP', 'selectedTempIndex',

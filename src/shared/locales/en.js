@@ -64,6 +64,8 @@ export default {
     languageChanged: 'Language changed. Some pages will update after refresh.',
     appearance: 'Appearance',
     themeHint: 'Theme applies instantly and syncs across all pages',
+    usageTips: 'Rotate usage tips above the input box',
+    usageTipsHint: 'Cycles plugin and AI usage tips; hover to pause and read the full text, click "Don\'t show again" to turn it off',
     themeSystem: 'Follow system',
     themeLight: 'Light',
     themeDark: 'Dark',

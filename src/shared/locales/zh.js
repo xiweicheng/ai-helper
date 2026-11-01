@@ -64,6 +64,8 @@ export default {
     languageChanged: '语言已切换，部分页面刷新后生效',
     appearance: '外观',
     themeHint: '主题即时生效并在所有页面同步',
+    usageTips: '在输入框上方轮播使用技巧',
+    usageTipsHint: '轮换展示插件与 AI 的使用技巧；悬停可暂停查看全文，点「不再显示」即可关闭',
     themeSystem: '跟随系统',
     themeLight: '亮色',
     themeDark: '暗色',

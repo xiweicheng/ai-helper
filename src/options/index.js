@@ -199,6 +199,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   subscribeTheme(syncThemeSegmentUI);
 
+  // 使用技巧轮播条开关：变化即时落盘，侧边栏通过 storage.onChanged 立即响应
+  const usageTipsEl = document.getElementById('usageTipsEnabled');
+  if (usageTipsEl) {
+    usageTipsEl.addEventListener('change', () => {
+      chrome.storage.local.set({ usageTipsEnabled: usageTipsEl.checked });
+    });
+  }
+
   // Tab 切换事件
   document.querySelectorAll('.tab-nav-btn').forEach(btn => {
     btn.addEventListener('click', function() {
