@@ -1043,6 +1043,7 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | DETACH_SIDEPANEL              | side_panel  | 脱离为独立窗口              | 是   |
 // | ATTACH_SIDEPANEL              | side_panel  | 回归侧边栏                  | 是   |
 // | SELECTION_TOOLBAR_ACTION      | content     | 划词工具栏操作（ai-search/explain/translate/summary）| 否 |
+// | SIDEPANEL_POPUP_ASK           | side_panel  | 划词浮层解答（单次轻量调用，不进会话）        | 否 |
 // | FILL_SIDEPANEL_INPUT          | content     | 追问：填充输入框             | 否   |
 // | DIRECT_SEND                   | content     | 追问：直接发送文本           | 否   |
 // | GENERATE_PDF                  | content     | CDP 生成 PDF               | 是   |
@@ -2083,6 +2084,62 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     return false;
   }
   
+  // 侧边栏划词浮层解答：单次轻量调用，不写入会话历史、不占对话流状态。
+  // 流式消息经 StreamController 以 SIDEPANEL_POPUP_ 前缀广播回侧边栏浮层监听。
+  if (message.type === 'SIDEPANEL_POPUP_ASK') {
+    const { sessionId, messages: popupMessages } = message;
+    if (!sessionId || !Array.isArray(popupMessages) || popupMessages.length === 0) {
+      return false;
+    }
+
+    resetDialogApiCallCount();
+
+    getStoredConfig().then(async (config) => {
+      try {
+        const useStream = config.streamConfig?.streamEnabled !== false;
+        const result = await callApiNonStream(
+          popupMessages,
+          config.modelName,
+          {},
+          sessionId,
+          useStream ? { typePrefix: 'SIDEPANEL_POPUP_' } : {}
+        );
+        const content = result.content !== undefined ? result.content : result;
+
+        if (result.usage) {
+          recordTokenUsage({
+            sessionId: 'selection_popup',
+            model: config.modelName,
+            usage: result.usage,
+            callType: useStream ? 'stream' : 'non_stream'
+          }).catch(() => {});
+        }
+
+        // 非流式模式：StreamController 不会发 DONE，一次性补发（携带 sessionId 供浮层匹配）
+        if (!useStream) {
+          chrome.runtime.sendMessage({
+            type: 'SIDEPANEL_POPUP_STREAM_DONE',
+            sessionId,
+            finalContent: content
+          }).catch(() => {});
+        }
+
+        logger.debug('[Background] sidepanel popup API complete, content length:', String(content).length);
+      } catch (error) {
+        // 用户关闭浮层/重新生成的主动取消不需要报错
+        if (error?.name === 'AbortError') return;
+        logger.error('[Background] sidepanel popup API failed:', error);
+        chrome.runtime.sendMessage({
+          type: 'SIDEPANEL_POPUP_STREAM_ERROR',
+          sessionId,
+          error: error.message || t('bg.apiCallFailed')
+        }).catch(() => {});
+      }
+    });
+
+    return false;
+  }
+
   // 选中文本工具栏追问：填充侧边栏输入框
   if (message.type === 'FILL_SIDEPANEL_INPUT') {
     const tabId = sender.tab?.id;

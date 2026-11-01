@@ -47,6 +47,7 @@ import { resolveWorkdirForSession, formatWorkdirLabel } from '../shared/workdir-
 import { reconcileSessionWorkdir } from './workdir-reconcile.js';
 import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { subscribe as subscribeQueueStore } from './queue-store.js';
+import { initSelectionAnswerPopup, openSelectionAnswerPopup } from './selection-answer-popup.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -901,11 +902,31 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
     item.className = 'menu-item';
     item.innerHTML = `
       <span>${displayContent}</span>
-      <span class="menu-item-code">/${prompt.code}</span>
+      <span class="menu-item-actions">
+        <span class="menu-item-code">/${prompt.code}</span>
+        <button class="menu-item-popup-btn" title="${t('sidePanel.popupTooltip')}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="14" rx="2"/>
+            <line x1="7" y1="8" x2="17" y2="8"/>
+            <line x1="7" y1="12" x2="13" y2="12"/>
+          </svg>
+        </button>
+      </span>
     `;
     item.addEventListener('click', (e) => {
       e.stopPropagation();
       handleSelectionPromptClick(prompt, text);
+    });
+    // 浮层图标：单独走浮层解答，不进入对话流（stopPropagation 避免触发菜单项的对话流点击）
+    item.querySelector('.menu-item-popup-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      // 先把选区快照 clone 出来：后续清除选区 + hideFloatingMenu 会置空 currentSelectionRange，
+      // 而浮层需要它提取选中片段所在的整条消息作为上下文
+      const rangeSnapshot = state.currentSelectionRange ? state.currentSelectionRange.cloneRange() : null;
+      // 清除文本选区：否则 chatContainer 的 mouseup 定时器（+50ms）检测到选区仍在，会把菜单重新弹出
+      window.getSelection()?.removeAllRanges();
+      window.hideFloatingMenu();
+      openSelectionAnswerPopup(prompt, text, mouseX, mouseY, rangeSnapshot);
     });
     selectionMenuItems.appendChild(item);
   });
@@ -4613,6 +4634,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadTodos();
   initTodoPanel();
   initSearchPanel();
+  // 划词浮层解答：注册流式消息监听（浮层 UI 按需惰性创建）
+  initSelectionAnswerPopup();
   initSchedulePanel();
   initAgentDropdown();
   initWorkspacePanel();
