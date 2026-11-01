@@ -15,10 +15,13 @@
 //   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
 //   GET    /api/rag/collections/{id}/ingest/status 导入进度快照（供导入弹窗轮询）
 //   GET    /api/rag/collections/{id}/documents   文档列表
+//   GET    /api/rag/collections/{id}/documents/{docId}  文档详情（查看原文，超长截断）
+//   GET    /api/rag/collections/{id}/documents/{docId}/download?kind=original|text  下载原件/文本
 //   DELETE /api/rag/collections/{id}/documents/{docId}  删除文档
 //   POST   /api/rag/collections/{id}/search      检索
 //   POST   /api/rag/search                       跨知识库检索
 
+import { createReadStream } from 'fs';
 import { isRagAvailable } from './detect.js';
 import { getRagInstallStatus } from './install.js';
 import { RagManager, resolveEmbeddingConfig, validateEmbeddingConfig } from './manager.js';
@@ -60,6 +63,63 @@ function jsonResponse(res, status, data) {
   }
   res.writeHead(status, headers);
   res.end(JSON.stringify(data));
+}
+
+/**
+ * 跨域响应头（与 jsonResponse 同源）：仅放行扩展页面来源
+ */
+function corsHeaders(res) {
+  const headers = {
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  };
+  const allowedOrigin = getAllowedOrigin(res.req);
+  if (allowedOrigin) {
+    headers['Access-Control-Allow-Origin'] = allowedOrigin;
+    headers['Vary'] = 'Origin';
+  }
+  return headers;
+}
+
+/**
+ * RFC 5987 编码（中文文件名在 Content-Disposition 中不乱码；encodeURIComponent 不转义 '()*）
+ */
+function encodeRFC5987(value) {
+  return encodeURIComponent(value).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
+ * 下载响应：同时给 ASCII 回退名与 UTF-8 编码名，保留原文件名
+ */
+function attachmentHeaders(mime, fileName, size) {
+  const ascii = String(fileName || 'download')
+    .replace(/[^\x20-\x7e]/g, '_')
+    .replace(/["\\]/g, '_');
+  const headers = {
+    'Content-Type': mime || 'application/octet-stream',
+    'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeRFC5987(String(fileName || 'download'))}`,
+  };
+  if (typeof size === 'number' && size >= 0) headers['Content-Length'] = String(size);
+  return headers;
+}
+
+/**
+ * 输出下载体：文本直接写缓冲，原件走流（大文件不整块进内存）
+ */
+function sendDownload(res, target) {
+  if (target.kind === 'text') {
+    const body = Buffer.from(String(target.text || ''), 'utf-8');
+    res.writeHead(200, { ...corsHeaders(res), ...attachmentHeaders(target.mime, target.fileName, body.length) });
+    res.end(body);
+    return;
+  }
+  res.writeHead(200, { ...corsHeaders(res), ...attachmentHeaders(target.mime, target.fileName, target.size) });
+  const stream = createReadStream(target.path);
+  stream.on('error', (err) => {
+    console.error('[RAG] original stream failed:', err);
+    res.destroy(); // 头部已发出，无法改状态码
+  });
+  stream.pipe(res);
 }
 
 /**
@@ -186,9 +246,9 @@ export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {})
     });
   }
 
-  // /api/rag/collections/{id}[/{sub}[/{docId}]]
+  // /api/rag/collections/{id}[/{sub}[/{docId}[/download]]]
   const collectionMatch = pathname.match(
-    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search|toggle)(?:\/([^/]+))?)?$/
+    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search|toggle)(?:\/([^/]+)(?:\/(download))?)?)?$/
   );
 
   if (collectionMatch) {
@@ -202,6 +262,7 @@ export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {})
     }
     const sub = collectionMatch[2];
     const docId = collectionMatch[3] ? safeDecodePathSegment(collectionMatch[3]) : undefined;
+    const action = collectionMatch[4];
     if (docId === null) {
       return jsonResponse(res, 400, {
         success: false,
@@ -263,6 +324,26 @@ export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {})
     // GET /api/rag/collections/{id}/documents - 文档列表
     if (method === 'GET' && sub === 'documents' && !docId) {
       return handle(res, async () => ({ documents: await manager.listDocuments(collectionId) }));
+    }
+
+    // GET /api/rag/collections/{id}/documents/{docId} - 文档详情（查看原文；超长截断）
+    if (method === 'GET' && sub === 'documents' && docId && !action) {
+      return handle(res, async () => ({ document: await manager.getDocument(collectionId, docId) }));
+    }
+
+    // GET /api/rag/collections/{id}/documents/{docId}/download?kind=original|text
+    // 下载失败仍返回 JSON 错误体（便于前端 toast），成功才发附件头
+    if (method === 'GET' && sub === 'documents' && docId && action === 'download') {
+      const kind = String(url.searchParams.get('kind') || 'text');
+      let target;
+      try {
+        target = await manager.resolveDocumentDownload(collectionId, docId, kind);
+      } catch (err) {
+        if (!(err instanceof RagError)) console.error('[RAG] download error:', err);
+        const { error, code } = translateRagError(err, t);
+        return jsonResponse(res, 400, { success: false, error, code });
+      }
+      return sendDownload(res, target);
     }
 
     // DELETE /api/rag/collections/{id}/documents/{docId} - 删除文档

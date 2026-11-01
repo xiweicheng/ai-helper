@@ -24,6 +24,9 @@ const DEFAULTS = {
   // allowPrivateNetwork 开启 **且** allowedPrivateHosts 命中才放行内网；关闸时白名单不生效，
   // 开闸但白名单为空仍拒绝；缺省均关闭（默认拒绝内网），公网访问不受影响
   ragUrlIngest: { allowPrivateNetwork: false, allowedPrivateHosts: [] },
+  // RAG 导入原件留存（原始字节归档到 ~/.ai-helper-agent/rag/originals/）：
+  // enabled 关闭则只存抽取文本；超出 maxBytesPerCollection 时跳过原件留存但不阻断导入
+  ragOriginals: { enabled: true, maxBytesPerCollection: 2 * 1024 * 1024 * 1024 },
   // 长期记忆语义召回（hybrid recall）的 embedding 配置：缺省关闭 → recall 只走关键词通道（Tier A），
   // 不引入任何新的默认网络调用。mode: 'openai-compat'（远端，零依赖）| 'local'（本地模型，需 RAG 依赖）。
   // apiKey 只落本地 config.json，任何对外响应均经 mask 脱敏（hasApiKey 供前端提示“已配置”）。

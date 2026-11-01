@@ -4,7 +4,7 @@
 //   - 知识库列表（卡片）：新建 / 删除 / 导入文档 / 文档管理 / 检索测试
 // 数据来源：Agent /api/rag/* 接口（agentApi）；门控状态复用 toolbox-rag.js 的 loadRagStatus()
 
-import { agentApi, escapeHtml, showToast, showCustomConfirm } from './toolbox-shared.js';
+import { agentApi, escapeHtml, showToast, showCustomConfirm, state } from './toolbox-shared.js';
 import { loadRagStatus, refreshRagSection, initRagEvents, setRagAvailabilityChangeHandler } from './toolbox-rag.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
@@ -932,6 +932,7 @@ function showIngestDialog(c) {
 
         const total = selectedFiles.length;
         const resultNames = [];
+        let skippedOriginal = 0;
         let summary;
         try {
           summary = await runBatchIngest(
@@ -941,6 +942,7 @@ function showIngestDialog(c) {
               const res = await agentApi('POST', ingestPath, { type: 'file', fileName: file.name, contentBase64, chunkConfig });
               if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
               resultNames.push(res.name || file.name);
+              if (res.originalSkipped) skippedOriginal += 1;
               return res;
             },
             ({ index, file }) => {
@@ -971,6 +973,8 @@ function showIngestDialog(c) {
           setBusy(false, t('knowledge.ingestConfirm'));
           showToast(t('knowledge.batchAllFailed', { error: summary.failures[0].error }), 'error');
         }
+        // 原件超配额只跳归档，导入仍然算成功 → 单独用 warning 提醒
+        if (skippedOriginal > 0) showToast(t('knowledge.docOriginalSkippedToast'), 'warning');
         return;
       }
 
@@ -1015,6 +1019,7 @@ function showIngestDialog(c) {
         if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
         close();
         showToast(t('knowledge.ingestSuccess', { name: res.name, chunks: res.chunkCount }), 'success');
+        if (res.originalSkipped) showToast(t('knowledge.docOriginalSkippedToast'), 'warning');
         await loadAndRenderList();
       } catch (err) {
         if (statusEl) statusEl.style.display = 'none';
@@ -1135,15 +1140,26 @@ function showDocsDialog(c) {
 
   const body = modal.overlay.querySelector('#kbDocsBody');
 
-  // 文档删除（事件委托，重渲染后仍有效）
+  // 行内动作（事件委托，重渲染后仍有效）：查看文本 / 下载原件 / 删除
   body.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-doc-delete]');
-    if (!btn) return;
-    const row = btn.closest('[data-doc-id]');
+    const row = e.target.closest('[data-doc-id]');
     const docId = row?.dataset.docId;
-    const docName = row?.querySelector('.kb-doc-name')?.textContent || docId;
     if (!docId) return;
+    const docName = row.querySelector('.kb-doc-name')?.textContent || docId;
 
+    const viewBtn = e.target.closest('[data-doc-view]');
+    if (viewBtn) {
+      await showDocTextDialog(c, docId);
+      return;
+    }
+
+    const downloadBtn = e.target.closest('[data-doc-download]');
+    if (downloadBtn) {
+      await handleDocDownload(downloadBtn, c, docId, downloadBtn.dataset.docDownload);
+      return;
+    }
+
+    if (!e.target.closest('[data-doc-delete]')) return;
     const confirmed = await showCustomConfirm(
       t('knowledge.docDeleteConfirm', { name: docName }),
       t('knowledge.docDeleteConfirmTitle')
@@ -1167,6 +1183,27 @@ function showDocsDialog(c) {
   refreshDocsList(body, c);
 }
 
+/** 来源徽标：file / url / text（旧备份可能为 unknown，不展示徽标） */
+function docSourceBadge(source) {
+  if (source === 'file') return { key: 'docSourceFile', cls: 'kb-doc-badge-file' };
+  if (source === 'url') return { key: 'docSourceUrl', cls: 'kb-doc-badge-url' };
+  if (source === 'text') return { key: 'docSourceText', cls: 'kb-doc-badge-text' };
+  return null;
+}
+
+/** 元信息片段：分块数 · 原件大小 · 导入时间（外加原件缺失原因） */
+function buildDocMeta(doc) {
+  const parts = [t('knowledge.docChunkCount', { count: doc.chunkCount || 0 })];
+  if (doc.original?.size) parts.push(t('knowledge.docOriginalSize', { size: formatBytes(doc.original.size) }));
+  parts.push(formatTime(doc.createdAt));
+  if (!doc.original && doc.source !== 'text') {
+    parts.push(doc.originalSkipped === 'quotaExceeded'
+      ? t('knowledge.docOriginalQuotaSkipped')
+      : t('knowledge.docNoOriginal'));
+  }
+  return parts.join(' · ');
+}
+
 async function refreshDocsList(body, c) {
   body.innerHTML = renderLoading();
   try {
@@ -1179,16 +1216,148 @@ async function refreshDocsList(body, c) {
       return;
     }
 
-    body.innerHTML = `<div class="kb-doc-list">${docs.map(d => `
+    body.innerHTML = `<div class="kb-doc-list">${docs.map(d => {
+      const badge = docSourceBadge(d.source);
+      const hasOriginal = Boolean(d.original);
+      // 无原件时禁用下载并说明原因（text 文档本就没有原件，提示改为“仅文本”语义）
+      const downloadHint = hasOriginal
+        ? t('knowledge.docDownloadOriginal')
+        : (d.source === 'text' ? t('knowledge.docNoOriginalText') : t('knowledge.docOriginalMissing'));
+      return `
       <div class="kb-doc-row" data-doc-id="${escapeHtml(d.id)}">
         <div class="kb-doc-info">
-          <div class="kb-doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</div>
-          <div class="kb-doc-meta">${escapeHtml(t('knowledge.docChunkCount', { count: d.chunkCount }))} · ${escapeHtml(formatTime(d.createdAt))}</div>
+          <div class="kb-doc-title">
+            <span class="kb-doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+            ${badge ? `<span class="kb-doc-badge ${badge.cls}">${escapeHtml(t(`knowledge.${badge.key}`))}</span>` : ''}
+          </div>
+          <div class="kb-doc-meta">${escapeHtml(buildDocMeta(d))}${d.original && d.original.name && d.original.name !== d.name ? ` · ${escapeHtml(t('knowledge.docOriginalName', { name: d.original.name }))}` : ''}</div>
         </div>
-        <button class="kb-doc-del" type="button" data-doc-delete title="${escapeHtml(t('knowledge.actionDelete'))}">✕</button>
-      </div>`).join('')}</div>`;
+        <div class="kb-doc-actions">
+          <button class="kb-doc-act" type="button" data-doc-view title="${escapeHtml(t('knowledge.docViewTitle'))}">${escapeHtml(t('knowledge.docView'))}</button>
+          <button class="kb-doc-act" type="button" data-doc-download="original" title="${escapeHtml(downloadHint)}"
+            ${hasOriginal ? '' : 'disabled'}>${escapeHtml(t('knowledge.docDownloadOriginal'))}</button>
+          <button class="kb-doc-del" type="button" data-doc-delete title="${escapeHtml(t('knowledge.actionDelete'))}">✕</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
   } catch (err) {
     body.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
+  }
+}
+
+/**
+ * 查看原文文本（只读弹窗；超长文本由 agent 截断，可下载全文）
+ */
+async function showDocTextDialog(c, docId) {
+  const modal = createModal({
+    title: t('knowledge.docViewTitle'),
+    bodyHtml: `<div id="kbDocTextView">${renderLoading()}</div>`,
+    confirmText: null,
+    cancelText: t('common.close'),
+    wide: true,
+  });
+  const body = modal.overlay.querySelector('#kbDocTextView');
+
+  try {
+    const res = await agentApi(
+      'GET',
+      `/api/rag/collections/${encodeURIComponent(c.id)}/documents/${encodeURIComponent(docId)}`
+    );
+    if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+    renderDocText(body, c, res.document || {});
+  } catch (err) {
+    body.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
+  }
+}
+
+function renderDocText(body, c, doc) {
+  const badge = docSourceBadge(doc.source);
+  const text = doc.text || '';
+  const metaParts = [
+    t('knowledge.docChunkCount', { count: doc.chunkCount || 0 }),
+    t('knowledge.docCharCount', { count: doc.totalChars ?? text.length }),
+  ];
+  if (doc.original?.size) metaParts.push(t('knowledge.docOriginalSize', { size: formatBytes(doc.original.size) }));
+
+  body.innerHTML = `
+    <div class="kb-doc-viewhead">
+      <div class="kb-doc-viewtitle">
+        <span class="kb-doc-viewname" title="${escapeHtml(doc.name || '')}">${escapeHtml(doc.name || '')}</span>
+        ${badge ? `<span class="kb-doc-badge ${badge.cls}">${escapeHtml(t(`knowledge.${badge.key}`))}</span>` : ''}
+      </div>
+      <div class="kb-doc-viewactions">
+        <button class="kb-doc-act" type="button" data-doc-copy>${escapeHtml(t('knowledge.docViewCopy'))}</button>
+        <button class="kb-doc-act" type="button" data-doc-download="text">${escapeHtml(t('knowledge.docDownloadText'))}</button>
+      </div>
+    </div>
+    <div class="kb-doc-viewmeta">${escapeHtml(metaParts.join(' · '))}${doc.originUrl ? ` · <span class="kb-doc-origin">${escapeHtml(doc.originUrl)}</span>` : ''}</div>
+    ${doc.truncated ? `<div class="kb-doc-textnote">${escapeHtml(t('knowledge.docViewTruncated', { limit: doc.viewLimit || text.length, total: doc.totalChars ?? text.length }))}</div>` : ''}
+    <pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
+
+  body.querySelector('[data-doc-copy]')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(t('knowledge.docViewCopied'), 'success');
+    } catch (err) {
+      showToast(t('knowledge.opFailed', { error: err.message }), 'error');
+    }
+  });
+
+  body.querySelector('[data-doc-download]')?.addEventListener('click', async (e) => {
+    await handleDocDownload(e.currentTarget, c, doc.id, 'text');
+  });
+}
+
+/**
+ * 下载文档附件（kind: original | text）
+ * 走原生 fetch 而非 agentApi：后者固定按 JSON 解析，这里需要二进制与响应头
+ */
+async function downloadDocument(c, docId, kind) {
+  const url = `${state.agentBaseUrl}/api/rag/collections/${encodeURIComponent(c.id)}/documents/${encodeURIComponent(docId)}/download?kind=${encodeURIComponent(kind)}`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${state.agentToken}` },
+  });
+
+  if (!resp.ok) {
+    let code = '';
+    try {
+      const data = await resp.json();
+      code = data?.code || '';
+    } catch {
+      // 非 JSON 错误体：按通用失败处理
+    }
+    throw new Error(code === 'originalMissing'
+      ? t('knowledge.docOriginalMissing')
+      : t('knowledge.docDownloadFailed'));
+  }
+
+  const blob = await resp.blob();
+  const fileName = parseDownloadName(resp.headers.get('Content-Disposition'), kind === 'text'
+    ? `${docId}.txt`
+    : docId);
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // 延后释放，避免部分浏览器取消下载
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+}
+
+async function handleDocDownload(btn, c, docId, kind) {
+  if (!kind || btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('knowledge.docDownloading');
+  try {
+    await downloadDocument(c, docId, kind);
+  } catch (err) {
+    showToast(err.message || t('knowledge.docDownloadFailed'), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
   }
 }
 
@@ -1360,6 +1529,30 @@ function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide
 }
 
 // ==================== 工具函数 ====================
+
+function formatBytes(size) {
+  const n = Number(size);
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** 从 Content-Disposition 取文件名（优先 RFC 5987 的 filename*，保住中文名） */
+function parseDownloadName(header, fallback) {
+  if (!header) return fallback;
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // 编码异常时退回 ascii 回退名
+    }
+  }
+  const plain = /filename="([^"]+)"/i.exec(header);
+  return plain ? plain[1] : fallback;
+}
 
 function formatTime(iso) {
   if (!iso) return '';

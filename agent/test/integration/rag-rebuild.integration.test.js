@@ -7,7 +7,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import http from 'node:http';
@@ -17,6 +17,7 @@ const ragRoot = await mkdtemp(join(tmpdir(), 'rag-rebuild-test-'));
 process.env.AI_HELPER_RAG_ROOT = ragRoot;
 
 const { RagManager } = await import('../../src/rag/manager.js');
+const { ORIGINALS_ROOT } = await import('../../src/rag/config.js');
 
 // ---- mock embeddings 服务器 ----
 const MOCK_DELAY_MS = 50; // 每次请求延迟，保证并发窗口稳定
@@ -133,6 +134,34 @@ test('远端创建/导入 → 修改模型触发重建（配置切换、计数�
   // 检索走新 provider（16 维）与新索引，不再报维度错误
   const searchAfter = await manager.search(created.id, '水果');
   assert.ok(searchAfter.results.length > 0);
+});
+
+test('重建后原件仍在：originals 目录不参与索引整目录换入', async () => {
+  const manager = new RagManager();
+  const created = await manager.createCollection({
+    name: 'rebuild-originals',
+    embeddingConfig: remoteConfig('model-a', 8),
+  });
+  const payload = '重建后仍需保留的原件内容。';
+  const ingested = await manager.ingestFile(created.id, {
+    fileName: '原件.txt',
+    contentBase64: Buffer.from(payload, 'utf-8').toString('base64'),
+  });
+  assert.ok(ingested.original, '导入时应归档原件');
+
+  // 改模型触发重建（临时目录构建 → 整目录 rename 换入）
+  const updated = await manager.updateCollection(created.id, {
+    embeddingConfig: remoteConfig('model-b-16', 16),
+  });
+  assert.equal(updated.rebuilding, true);
+  const progress = await waitForDone(manager, created.id);
+  assert.equal(progress.phase, 'done');
+
+  // 原件目录独立于 kb_xxx，换入后字节仍在且可下载
+  const originalPath = join(ORIGINALS_ROOT, created.id, `${ingested.documentId}.txt`);
+  assert.equal(await readFile(originalPath, 'utf-8'), payload);
+  const target = await manager.resolveDocumentDownload(created.id, ingested.documentId, 'original');
+  assert.equal(target.size, Buffer.byteLength(payload, 'utf-8'));
 });
 
 test('重建失败：旧索引与旧配置保持可用', async () => {

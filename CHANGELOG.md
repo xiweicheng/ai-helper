@@ -4,6 +4,17 @@
 
 ## 2026-11-01
 
+### RAG 知识库原件留存与溯源（导入不再只留纯文本）
+
+> 来源：用户指出「导入之后原文件、原始文本完全关联不起来」，要求有原始文件就保留原件，网页/文本导入也要生成对应文件，并在知识库文档列表里能看原文、能下载原件（不做在线预览）。
+
+- **存储**：新增 `~/.ai-helper-agent/rag/originals/<collectionId>/<docId>.<ext>`，刻意与 `kb_xxx/` 分离——索引重建是整目录 `rename` 换入，原件放在库目录内会被连带替换。每库默认 2GB 配额（`ragOriginals.maxBytesPerCollection`），超限只跳归档不阻断导入。
+- **导入链路**：file（base64 上传 / agent 本地路径）与 url 统一改为「读字节 → 归档原件 → 解析同一份字节 → 入库」，归档字节与被索引字节严格同一份；url 存 HTML 快照（响应体是 PDF 时存 `.pdf`）。文本导入不额外落 `.txt`，避免两份文本。解析/向量化失败时回滚已归档原件与备份。
+- **接口**：新增 `GET /api/rag/collections/{id}/documents/{docId}`（原文，超 20 万字符截断并给 `truncated/totalChars`）与 `GET .../documents/{docId}/download?kind=original|text`（流式原件 / 现场生成文本，`Content-Disposition` 走 RFC 5987 保住中文名）。
+- **前端（选项页 → 知识库 → 文档列表）**：每行新增来源徽标（文件/网页/文本）、原件大小与原件名，动作改为「查看原文 / 下载原件（无原件禁用并说明原因）/ 删除」；查看原文弹窗只读可滚动 + 复制 + 截断提示 + 下载全文。旧文档无 `original` 字段按「原件未保留」降级展示，无迁移。
+
+**验证**：`npm run build:silent` → `BUILD_SUCCESS`；`npx vitest run` → **248 文件 / 4067 例全绿**（新增 `test/unit/knowledge-docs-original.unit.test.js` 5 例）；agent `node --test agent/test/unit/*.test.js` → **875 例全绿**（新增 `agent/test/unit/rag-originals.unit.test.js` 13 例）；`node --test agent/test/integration/rag-*.test.js` → **25 例全绿**（新增「重建后原件仍在」一例）。
+
 ### 全仓重扫对账：把文档口径拉回代码事实（工具数 46 / 预选默认关 / Agent 端点与限额）
 
 > 来源：用户要求「把整个仓库重新扫描一下，和文档库对比，看有没有哪里不一样，包括文档站」。与上一轮「补新功能」不同，本轮重点是**文档写了但代码已经不是那样**的反向差异。

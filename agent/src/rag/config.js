@@ -3,7 +3,11 @@
 //   ~/.ai-helper-agent/rag/
 //   ├── collections.json      # 知识库元数据注册表
 //   ├── kb_xxx/               # 每个知识库一个目录（Vectra 索引 + documents/ 原始文档备份）
+//   ├── originals/kb_xxx/     # 导入原件（见设计文档「原件留存」）
 //   └── models/               # transformers.js 模型缓存（独立于 node_modules，重装不丢失）
+//
+// 原件目录刻意与 kb_xxx/ 分离：索引重建是整目录原子换入（rename），
+// 原件若放在 kb_xxx/ 内会被换入动作连带替换，且重建时必须拷贝大文件
 
 import { join } from 'path';
 import { homedir } from 'os';
@@ -16,6 +20,21 @@ export const COLLECTIONS_REGISTRY = join(RAG_ROOT, 'collections.json');
 
 // transformers.js 模型缓存目录
 export const MODELS_DIR = join(RAG_ROOT, 'models');
+
+// 原件根目录：RAG_ROOT/originals/<collectionId>/<documentId>.<ext>
+export const ORIGINALS_ROOT = join(RAG_ROOT, 'originals');
+
+// 原件留存默认策略（ragOriginals 配置缺省值，agent/src/config.js 同源）
+// 超配额不阻断导入：只跳过原件留存并记 originalSkipped
+const DEFAULT_ORIGINALS_CONFIG = {
+  enabled: true,
+  maxBytesPerCollection: 2 * 1024 * 1024 * 1024,
+};
+export { DEFAULT_ORIGINALS_CONFIG };
+
+// 原文查看接口单次返回的字符上限：全文可能数 MB（URL 抓取 10MB 正文），
+// 一次性塞进 JSON 会卡住设置页弹窗；超出截断并提示下载全文
+export const DOC_TEXT_VIEW_MAX_CHARS = 200000;
 
 // 知识库目录前缀（避免与 models 等保留目录冲突）
 export const COLLECTION_ID_PREFIX = 'kb_';

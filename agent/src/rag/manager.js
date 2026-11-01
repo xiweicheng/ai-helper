@@ -7,12 +7,13 @@
 //   - 检索（以知识库注册表中的 embedding 配置为准，保证链路一致性）
 // 存储布局见 config.js / 设计文档 5.2
 
-import { join, extname } from 'path';
+import { join, extname, basename } from 'path';
 import { tmpdir } from 'os';
 import { mkdir, readFile, writeFile, rm, unlink, readdir, rename, stat, chmod } from 'fs/promises';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import {
-  RAG_ROOT, COLLECTIONS_REGISTRY, COLLECTION_ID_PREFIX,
+  RAG_ROOT, COLLECTIONS_REGISTRY, COLLECTION_ID_PREFIX, ORIGINALS_ROOT, PARSER_ROUTES,
+  DEFAULT_ORIGINALS_CONFIG, DOC_TEXT_VIEW_MAX_CHARS,
   DEFAULT_EMBEDDING_CONFIG, DEFAULT_CHUNK_CONFIG, EMBED_BATCH_SIZE,
 } from './config.js';
 import { createEmbeddingProvider } from './embedding/index.js';
@@ -53,6 +54,54 @@ function formatBytes(bytes) {
   return bytes >= 1024 * 1024
     ? `${Math.round(bytes / (1024 * 1024))}MB`
     : `${Math.round(bytes / 1024)}KB`;
+}
+
+// 原件扩展名白名单形态：只接受 .pdf 这类安全后缀（防拼出越界路径），其余落 .bin
+const ORIGINAL_EXT_RE = /^\.[a-z0-9]{1,8}$/;
+const ORIGINAL_FALLBACK_EXT = '.bin';
+
+// 原件下载响应用的 MIME 映射（只覆盖解析器支持的格式；未命中的按二进制流下载）
+const MIME_BY_EXT = {
+  '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.rtf': 'application/rtf',
+  '.odt': 'application/vnd.oasis.opendocument.text',
+};
+
+/**
+ * 规范化原件扩展名（不合白名单形态的一律落 .bin）
+ * @param {string} ext
+ * @returns {string}
+ */
+function safeOriginalExt(ext) {
+  const value = String(ext || '').toLowerCase();
+  return ORIGINAL_EXT_RE.test(value) ? value : ORIGINAL_FALLBACK_EXT;
+}
+
+/**
+ * 按扩展名推断原件 MIME（下载响应头用）
+ * @param {string} ext
+ * @returns {string}
+ */
+function guessMime(ext) {
+  return MIME_BY_EXT[String(ext || '').toLowerCase()] || 'application/octet-stream';
+}
+
+/**
+ * 生成文档 ID（doc_ 前缀 + 时间 36 进制 + 随机后缀）
+ * @returns {string}
+ */
+function newDocumentId() {
+  return `doc_${Date.now().toString(36)}${randomBytes(4).toString('hex')}`;
 }
 
 // 远端（OpenAI 兼容）模式的字段默认值（与 embedding/index.js 的运行时兜底保持一致）
@@ -181,6 +230,8 @@ export class RagManager {
     this._activeOps = new Set();
     // URL 导入内网放行策略覆盖（仅测试注入；缺省 null 时读取 config.ragUrlIngest）
     this._urlIngestPolicyOverride = options.urlIngestPolicy || null;
+    // 原件留存策略覆盖（仅测试注入；缺省 null 时读取 config.ragOriginals）
+    this._originalsPolicyOverride = options.originalsPolicy || null;
   }
 
   // ==================== 注册表 ====================
@@ -308,6 +359,8 @@ export class RagManager {
     this._assertIdle(collectionId); // 导入/重建进行中时禁止删除（防索引写坏）
     // 防路径穿越：ID 已通过正则校验，目录路径安全
     await rm(join(RAG_ROOT, collectionId), { recursive: true, force: true });
+    // 原件在独立目录：删库时一并清理（失败仅残留，不影响库可用性）
+    await rm(this._originalsDir(collectionId), { recursive: true, force: true }).catch(() => {});
     this._providers.delete(collectionId);
     await this._updateRegistry(reg => {
       reg.collections = reg.collections.filter(c => c.id !== collectionId);
@@ -679,6 +732,122 @@ export class RagManager {
     return this._providers.get(collection.id);
   }
 
+  // ==================== 原件留存 ====================
+
+  /**
+   * 原件留存策略（config.ragOriginals；字段缺失/非法时回退默认值）
+   */
+  _originalsPolicy() {
+    if (this._originalsPolicyOverride) return this._originalsPolicyOverride;
+    const cfg = loadConfig().ragOriginals || {};
+    const max = Number(cfg.maxBytesPerCollection);
+    return {
+      enabled: cfg.enabled !== false,
+      maxBytesPerCollection: Number.isFinite(max) && max > 0
+        ? max
+        : DEFAULT_ORIGINALS_CONFIG.maxBytesPerCollection,
+    };
+  }
+
+  /**
+   * 知识库原件目录（与索引目录分离，避免重建换入时连带替换）
+   */
+  _originalsDir(collectionId) {
+    return join(ORIGINALS_ROOT, collectionId);
+  }
+
+  /**
+   * 该库原件已占用字节数（配额判定用；统计失败按 0 处理，不阻断导入）
+   */
+  async _originalsUsage(collectionId) {
+    const dir = this._originalsDir(collectionId);
+    let names = [];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return 0;
+    }
+    let total = 0;
+    for (const name of names) {
+      try {
+        total += (await stat(join(dir, name))).size;
+      } catch {
+        // 单个文件统计失败不影响配额汇总
+      }
+    }
+    return total;
+  }
+
+  /**
+   * 归档原件（开关关闭/空内容/超配额/写盘失败时仅跳过，绝不阻断导入）
+   * @param {string} collectionId
+   * @param {string} documentId
+   * @param {Buffer} bytes - 原始字节（与交给解析器的字节同一份）
+   * @param {{name?: string, ext?: string, mime?: string}} meta
+   * @returns {Promise<{original?: object, skipped?: string}>}
+   */
+  async _persistOriginal(collectionId, documentId, bytes, meta = {}) {
+    const policy = this._originalsPolicy();
+    if (!policy.enabled) return { skipped: 'disabled' };
+    if (!bytes || !bytes.length) return { skipped: 'empty' };
+
+    const ext = safeOriginalExt(meta.ext);
+    const usage = await this._originalsUsage(collectionId);
+    if (usage + bytes.length > policy.maxBytesPerCollection) {
+      console.warn(`[RAG] original skipped (quota): ${collectionId}/${documentId} ${bytes.length}B (used ${usage}B)`);
+      return { skipped: 'quotaExceeded' };
+    }
+
+    try {
+      const dir = this._originalsDir(collectionId);
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, `${documentId}${ext}`), bytes);
+      return {
+        original: {
+          name: meta.name || `${documentId}${ext}`,
+          ext,
+          size: bytes.length,
+          mime: meta.mime || guessMime(ext),
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          storedAt: new Date().toISOString(),
+        },
+      };
+    } catch (err) {
+      // 归档失败不影响知识库可用性（文本与向量仍会写入）
+      console.warn(`[RAG] original write failed: ${collectionId}/${documentId}: ${err.message}`);
+      return { skipped: 'writeFailed' };
+    }
+  }
+
+  /**
+   * 删除文档对应的原件（不存在时静默）
+   */
+  async _removeOriginal(collectionId, documentId, ext) {
+    const safeExt = safeOriginalExt(ext);
+    await unlink(join(this._originalsDir(collectionId), `${documentId}${safeExt}`)).catch(() => {});
+  }
+
+  /**
+   * 解析内存字节：解析器按扩展名路由、需要真实文件 → 落临时文件解析后立即删除
+   * （归档与原解析共用同一份内存字节，因此「归档字节 == 被索引字节」）
+   * @param {Buffer} bytes
+   * @param {string} fileName - 决定解析器路由与错误文本的原始文件名
+   * @returns {Promise<string>} 抽取出的纯文本
+   */
+  async _parseBytes(bytes, fileName) {
+    const ext = extname(String(fileName || '')).toLowerCase();
+    if (!PARSER_ROUTES[ext]) throw new RagError('unsupportedFormat', { ext: ext || String(fileName || '') });
+    const tmpFile = join(tmpdir(), `rag-parse-${randomBytes(6).toString('hex')}${ext}`);
+    try {
+      await writeFile(tmpFile, bytes);
+      const { text } = await loadDocument(tmpFile);
+      return text;
+    } finally {
+      // 临时文件清理（Windows 上文件句柄未释放时忽略错误）
+      await unlink(tmpFile).catch(() => {});
+    }
+  }
+
   // ==================== 文档导入 ====================
 
   /**
@@ -741,16 +910,20 @@ export class RagManager {
   /**
    * 导入文件
    * 支持两种来源：
-   *   - path：agent 本地文件路径（沙箱校验后解析，受 allowedPaths 白名单与硬阻止清单约束）
-   *   - contentBase64 + fileName：前端上传内容（落临时文件解析后清理）
+   *   - path：agent 本地文件路径（沙箱校验后归档并解析，受 allowedPaths 白名单与硬阻止清单约束）
+   *   - contentBase64 + fileName：前端上传内容（直接落原件目录并解析，不经中转临时文件）
+   * 原始字节归档到 originals/<collectionId>/<documentId>.<ext>（超配额只跳过原件）
    * @param {string} collectionId
    * @param {{path?: string, fileName?: string, contentBase64?: string, metadata?: object, chunkConfig?: object}} input
    * @param {{ sessionId?: string, workdir?: string }} [ctx] - 请求级会话上下文（会话级工作目录）
    */
   async ingestFile(collectionId, input = {}, ctx = {}) {
     return this._runIngest(collectionId, async () => {
-      // 来源 1：agent 本地文件
+      let bytes;
+      let fileName;
+
       if (input.path) {
+        // 来源 1：agent 本地文件
         // 文件沙箱：与 /api/fs/read 同一套规则（allowedPaths 白名单 + 硬阻止清单），
         // 防止经 RAG 导入绕过沙箱读取宿主任意文件（如代理自身敏感文件）
         // ctx = 请求级会话上下文：会话绑定不写 allowedPaths，
@@ -759,36 +932,41 @@ export class RagManager {
         if (!check.allowed) {
           throw new RagError('pathNotAllowed', { reason: check.reason });
         }
-        this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
-        const { text, fileName } = await loadDocument(check.resolved || input.path);
-        return this._ingestText(collectionId, {
-          text, name: fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
-        });
-      }
-
-      // 来源 2：上传内容（base64）
-      if (input.contentBase64) {
+        const resolved = check.resolved || input.path;
+        // 体积校验：path 分支此前缺这道关，超大文件会整块读入内存
+        const info = await stat(resolved).catch(() => null);
+        if (!info || !info.isFile()) throw new RagError('pathNotAllowed', { reason: 'notFile' });
+        if (info.size > INGEST_MAX_FILE_BYTES) {
+          throw new RagError('fileTooLarge', { limit: formatBytes(INGEST_MAX_FILE_BYTES) });
+        }
+        bytes = await readFile(resolved);
+        fileName = basename(input.path);
+      } else if (input.contentBase64) {
+        // 来源 2：上传内容（base64）
         if (!input.fileName) throw new RagError('missingFileName');
         // 体积预检（P3）：按 base64 长度换算近似解码尺寸，避免先分配超大 Buffer 再拒绝
         if (Math.floor(input.contentBase64.length * 3 / 4) > INGEST_MAX_FILE_BYTES) {
           throw new RagError('fileTooLarge', { limit: formatBytes(INGEST_MAX_FILE_BYTES) });
         }
-        const ext = extname(input.fileName).toLowerCase();
-        const tmpFile = join(tmpdir(), `rag-upload-${randomBytes(6).toString('hex')}${ext}`);
-        this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
-        try {
-          await writeFile(tmpFile, Buffer.from(input.contentBase64, 'base64'));
-          const { text, fileName } = await loadDocument(tmpFile);
-          return await this._ingestText(collectionId, {
-            text, name: input.fileName || fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
-          });
-        } finally {
-          // 临时文件清理（Windows 上文件句柄未释放时忽略错误）
-          await unlink(tmpFile).catch(() => {});
-        }
+        bytes = Buffer.from(input.contentBase64, 'base64');
+        fileName = basename(input.fileName);
+      } else {
+        throw new RagError('missingFileSource');
       }
 
-      throw new RagError('missingFileSource');
+      this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
+      // 先解析（不支持的格式在这里快速失败，不会留下孤儿原件），再归档
+      const text = await this._parseBytes(bytes, fileName);
+      const documentId = newDocumentId();
+      const ext = extname(fileName).toLowerCase();
+      const persisted = await this._persistOriginal(collectionId, documentId, bytes, {
+        name: fileName, ext, mime: guessMime(ext),
+      });
+
+      return this._ingestText(collectionId, {
+        text, name: fileName, source: 'file', metadata: input.metadata, chunkConfig: input.chunkConfig,
+        documentId, original: persisted.original, originalSkipped: persisted.skipped,
+      });
     });
   }
 
@@ -814,17 +992,12 @@ export class RagManager {
       this._reportProgress(collectionId, { phase: 'parsing', current: 0, total: 0, done: false, error: null });
       const { bytes, contentType } = await fetchUrlGuarded(url, this._urlIngestPolicy());
 
+      const isPdf = contentType.includes('application/pdf');
       let text;
       if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
         text = await htmlToText(decodeBytes(bytes, contentType));
-      } else if (contentType.includes('application/pdf')) {
-        const tmpFile = join(tmpdir(), `rag-url-${randomBytes(6).toString('hex')}.pdf`);
-        try {
-          await writeFile(tmpFile, bytes);
-          ({ text } = await loadDocument(tmpFile));
-        } finally {
-          await unlink(tmpFile).catch(() => {});
-        }
+      } else if (isPdf) {
+        text = await this._parseBytes(bytes, 'page.pdf');
       } else {
         // text/*、application/json 等按文本处理（按 charset 解码，兼容 GBK 站点）
         text = decodeBytes(bytes, contentType);
@@ -839,8 +1012,19 @@ export class RagManager {
       const tail = u.pathname.split('/').filter(Boolean).pop() || '';
       const name = `${u.hostname}${tail ? '/' + tail : ''}`.slice(0, 100);
 
+      // 原件：把抓到的响应体原样归档（HTML 快照 / PDF 原文件），mime 保留远端 Content-Type
+      const ext = isPdf ? '.pdf' : '.html';
+      const documentId = newDocumentId();
+      const originalName = `${u.hostname}${tail ? '-' + tail : ''}${ext}`
+        .replace(/[/\\:*?"<>|]/g, '_')
+        .slice(-120);
+      const persisted = await this._persistOriginal(collectionId, documentId, bytes, {
+        name: originalName, ext, mime: contentType,
+      });
+
       return this._ingestText(collectionId, {
         text, name, source: 'url', metadata: { ...(input.metadata || {}), url }, chunkConfig: input.chunkConfig,
+        documentId, original: persisted.original, originalSkipped: persisted.skipped, originUrl: url,
       });
     });
   }
@@ -848,8 +1032,14 @@ export class RagManager {
   /**
    * 内部统一导入流程：分块 → 批量向量化 → 事务写入 → 原文备份 → 更新计数
    * 全程上报进度快照（parsing/chunking/embedding/storing/done/error），供前端轮询展示
+   * @param {object} params
+   * @param {string} [params.documentId] - 调用方已归档原件时会预先分配（保证原件与文档同名）
+   * @param {object} [params.original] - 已归档原件的元数据（name/ext/size/mime/sha256/storedAt）
+   * @param {string} [params.originalSkipped] - 原件未留存原因（quotaExceeded/disabled/empty/writeFailed）
+   * @param {string} [params.originUrl] - URL 导入的来源地址
    */
-  async _ingestText(collectionId, { text, name, source, metadata, chunkConfig }) {
+  async _ingestText(collectionId, { text, name, source, metadata, chunkConfig, documentId, original, originalSkipped, originUrl }) {
+    const docId = documentId || newDocumentId();
     try {
       const collection = await this.getCollection(collectionId);
       this._reportProgress(collectionId, { phase: 'chunking', current: 0, total: 0, done: false, error: null });
@@ -863,13 +1053,12 @@ export class RagManager {
         console.log(`[RAG] embed ${name}: ${embedded}/${chunks.length}`);
       });
 
-      const documentId = `doc_${Date.now().toString(36)}${randomBytes(4).toString('hex')}`;
       const createdAt = new Date().toISOString();
 
       this._reportProgress(collectionId, { phase: 'storing', current: chunks.length, total: chunks.length });
       const store = new VectraStore(collectionId);
       // 用户 metadata 先展开、系统业务键最后（S4b）：documentName/source/createdAt 不可被覆盖
-      await store.upsertChunks(documentId, chunks, embeddings, {
+      await store.upsertChunks(docId, chunks, embeddings, {
         ...(metadata || {}),
         documentName: name,
         source,
@@ -878,7 +1067,10 @@ export class RagManager {
 
       // 原文备份（BM25 docReader 依赖，见设计文档 5.8）
       await this._saveDocumentBackup(collectionId, {
-        id: documentId, name, text, source, metadata: metadata || {}, chunkCount: chunks.length, createdAt,
+        id: docId, name, text, source, metadata: metadata || {}, chunkCount: chunks.length, createdAt,
+        ...(original ? { original } : {}),
+        ...(originalSkipped ? { originalSkipped } : {}),
+        ...(originUrl ? { originUrl } : {}),
       });
 
       // 更新注册表计数
@@ -892,8 +1084,14 @@ export class RagManager {
       });
 
       this._reportProgress(collectionId, { phase: 'done', current: chunks.length, total: chunks.length, done: true });
-      return { documentId, name, chunkCount: chunks.length };
+      return {
+        documentId: docId, name, chunkCount: chunks.length,
+        ...(original ? { original } : {}),
+        ...(originalSkipped ? { originalSkipped } : {}),
+      };
     } catch (err) {
+      // 原件在解析之后、备份之前归档：失败时备份未写入，只需回滚原件，避免孤儿文件
+      if (original) await this._removeOriginal(collectionId, docId, original.ext);
       this._reportProgress(collectionId, { phase: 'error', done: true, error: err.message });
       throw err;
     }
@@ -937,10 +1135,43 @@ export class RagManager {
   // ==================== 文档管理 ====================
 
   /**
-   * 列出知识库中的所有文档（从分块元数据聚合）
+   * 列出知识库中的所有文档（以 documents/*.json 备份为准：带来原件信息，且不必扫全量分块）
+   * 备份目录缺失/为空时回退到分块元数据聚合（兼容无备份的老数据）
    */
   async listDocuments(collectionId) {
     await this.getCollection(collectionId); // 校验存在性
+
+    const docsDir = join(RAG_ROOT, collectionId, 'documents');
+    let backups = [];
+    try {
+      const files = await readdir(docsDir);
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+        try {
+          backups.push(JSON.parse(await readFile(join(docsDir, file), 'utf-8')));
+        } catch {
+          console.warn(`[RAG] listDocuments: skip corrupted backup ${file}`);
+        }
+      }
+    } catch {
+      backups = [];
+    }
+
+    if (backups.length > 0) {
+      return backups
+        .map((b) => ({
+          id: b.id,
+          name: b.name || b.id,
+          source: b.source || 'unknown',
+          createdAt: b.createdAt || null,
+          chunkCount: b.chunkCount || 0,
+          original: b.original || null,
+          originalSkipped: b.originalSkipped || null,
+          originUrl: b.originUrl || b.metadata?.url || null,
+        }))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    }
+
     const store = new VectraStore(collectionId);
     const items = await store.listAllItems();
 
@@ -956,10 +1187,84 @@ export class RagManager {
           source: m.source || 'unknown',
           createdAt: m.createdAt || null,
           chunkCount: m.totalChunks || 0,
+          original: null,
+          originalSkipped: null,
+          originUrl: null,
         });
       }
     }
     return [...docs.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+
+  /**
+   * 读取文档备份（文本真源）
+   * @returns {Promise<object>}
+   */
+  async _readBackup(collectionId, documentId) {
+    if (!DOCUMENT_ID_RE.test(documentId)) throw new RagError('invalidDocumentId', { id: documentId });
+    try {
+      return JSON.parse(await readFile(join(RAG_ROOT, collectionId, 'documents', `${documentId}.json`), 'utf-8'));
+    } catch {
+      throw new RagError('documentNotFound', { id: documentId });
+    }
+  }
+
+  /**
+   * 文档详情（供设置页查看原文）：超长文本截断，避免数 MB JSON 卡住弹窗
+   */
+  async getDocument(collectionId, documentId) {
+    await this.getCollection(collectionId);
+    const backup = await this._readBackup(collectionId, documentId);
+    const full = String(backup.text || '');
+    const truncated = full.length > DOC_TEXT_VIEW_MAX_CHARS;
+    return {
+      id: backup.id || documentId,
+      name: backup.name || documentId,
+      source: backup.source || 'unknown',
+      createdAt: backup.createdAt || null,
+      chunkCount: backup.chunkCount || 0,
+      original: backup.original || null,
+      originalSkipped: backup.originalSkipped || null,
+      originUrl: backup.originUrl || backup.metadata?.url || null,
+      text: truncated ? full.slice(0, DOC_TEXT_VIEW_MAX_CHARS) : full,
+      totalChars: full.length,
+      viewLimit: DOC_TEXT_VIEW_MAX_CHARS,
+      truncated,
+    };
+  }
+
+  /**
+   * 解析下载目标
+   *   - kind=original：原件存档必须实际存在，否则 originalMissing
+   *   - kind=text：现场从备份生成纯文本（不落盘，避免第二份文本）
+   * @param {string} collectionId
+   * @param {string} documentId
+   * @param {string} kind - 'original' | 'text'
+   * @returns {Promise<{kind: string, fileName: string, mime: string, path?: string, text?: string}>}
+   */
+  async resolveDocumentDownload(collectionId, documentId, kind) {
+    await this.getCollection(collectionId);
+    const backup = await this._readBackup(collectionId, documentId);
+    const name = backup.name || documentId;
+
+    if (kind === 'text') {
+      return { kind, fileName: `${name}.txt`, mime: 'text/plain; charset=utf-8', text: String(backup.text || '') };
+    }
+    if (kind !== 'original') throw new RagError('unsupportedDownloadKind', { kind: String(kind) });
+    if (!backup.original) throw new RagError('originalMissing', { name });
+
+    // 扩展名只取存量记录（不信客户端参数），拼路径前再收一道白名单
+    const ext = safeOriginalExt(backup.original.ext);
+    const path = join(this._originalsDir(collectionId), `${documentId}${ext}`);
+    const info = await stat(path).catch(() => null);
+    if (!info || !info.isFile()) throw new RagError('originalMissing', { name });
+    return {
+      kind,
+      fileName: backup.original.name || `${name}${ext}`,
+      mime: backup.original.mime || guessMime(ext),
+      size: info.size,
+      path,
+    };
   }
 
   /**
@@ -972,9 +1277,12 @@ export class RagManager {
     // 删除同样是索引写操作：占位防与导入/重建并发交错写坏索引
     this._activeOps.add(collectionId);
     try {
+      // 先读备份拿到原件扩展名（备份缺失时按无原件处理，不阻断删除）
+      const backup = await this._readBackup(collectionId, documentId).catch(() => null);
       const store = new VectraStore(collectionId);
       const removed = await store.removeDocument(documentId);
 
+      if (backup?.original) await this._removeOriginal(collectionId, documentId, backup.original.ext);
       await unlink(join(RAG_ROOT, collectionId, 'documents', `${documentId}.json`)).catch(() => {});
 
       await this._updateRegistry(reg => {
