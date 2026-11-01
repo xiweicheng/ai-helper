@@ -212,6 +212,10 @@ export function serializeMessageHistory(list) {
     timestamp: msg.timestamp || undefined,
     contextBubbles: msg.contextBubbles || undefined,
     resumable: msg.resumable || false,
+    // 去重键：终态消息靠 callId 做幂等 upsert（SW 兜底写入 vs 面板/镜像写入）。
+    // 白名单漏了它，任何一次常规保存都会把键抹掉，之后的重试/重放会真的写出两条同源消息。
+    callId: msg.callId || undefined,
+    resumed: msg.resumed || undefined,
   }));
 }
 
@@ -385,7 +389,7 @@ export async function appendMessageToSession(sessionId, message) {
   if (!session) return false;
 
   session.messageHistory = session.messageHistory || [];
-  session.messageHistory.push({
+  const entry = {
     role: message.role,
     content: message.content || '',
     executionLog: message.executionLog || [],
@@ -395,7 +399,41 @@ export async function appendMessageToSession(sessionId, message) {
     messageId: message.messageId || undefined,
     timestamp: message.timestamp || undefined,
     contextBubbles: message.contextBubbles || undefined,
-  });
+    // 终态兜底写入的幂等键：同一 callId 只落一条（面板侧与 SW 落库兜底两侧互斥）
+    callId: message.callId || undefined,
+    resumed: message.resumed || undefined,
+    resumable: message.resumable !== undefined ? message.resumable : undefined,
+  };
+
+  // 同一 callId 已有记录 → 原地合并，不新增重复消息。
+  // 为什么会有两次写入：SW 兜底写入（发起面板不在了才写）与面板自己的落库之间存在
+  // 毫秒级交叉窗口（如面板刚打开、reattach 尚未接管）。合并规则：后写优先，但后写
+  // 缺失的字段不抹掉前写已有值（htmlContent / messageId 只有面板侧才有）。
+  const callId = message.callId || '';
+  const idx = callId
+    ? session.messageHistory.findIndex((m) => m && m.callId === callId)
+    : -1;
+
+  if (idx >= 0) {
+    const prev = session.messageHistory[idx] || {};
+    session.messageHistory[idx] = {
+      ...prev,
+      role: entry.role || prev.role,
+      content: entry.content || prev.content || '',
+      executionLog: entry.executionLog.length > 0 ? entry.executionLog : (prev.executionLog || []),
+      reflectionScore: entry.reflectionScore != null ? entry.reflectionScore : prev.reflectionScore,
+      wasRevised: Boolean(prev.wasRevised || entry.wasRevised),
+      htmlContent: entry.htmlContent || prev.htmlContent,
+      messageId: entry.messageId || prev.messageId,
+      timestamp: entry.timestamp || prev.timestamp,
+      contextBubbles: entry.contextBubbles || prev.contextBubbles,
+      callId,
+      resumed: entry.resumed || prev.resumed,
+      resumable: entry.resumable !== undefined ? entry.resumable : prev.resumable,
+    };
+  } else {
+    session.messageHistory.push(entry);
+  }
 
   session.updatedAt = new Date().toISOString();
   session.isGenerating = false;

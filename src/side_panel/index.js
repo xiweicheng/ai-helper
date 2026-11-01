@@ -11,6 +11,8 @@ import { initMessageToc } from './message-toc.js';
 import { initContextIndicator, runCompaction, computeCurrentUsage, updateContextIndicator } from './context-indicator.js';
 import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { initSideRail } from './side-rail.js';
+// 面板重启后重新接入「后台仍在跑」的任务（SW 被回收后点通知回来时唯一能看到实时输出的途径）
+import { initChatReattach, syncReattachForSession } from './chat-reattach.js';
 import { initSessionDock } from './session-dock.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initMessageJumpNav } from './message-jump-nav.js';
@@ -2638,6 +2640,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       logger.debug('[SidePanel] switch back tobackground task session,rebuildstreamingoutput element');
       reconnectStreamingElement(sessionId);
     }
+    // 面板重启后的新实例没有旧流式元素：向后台对齐一次，把运行中的任务 reattach 进来
+    // （后台可能刚换了新 callId —— 自动续跑每次都新建，旧监听对不上）
+    syncReattachForSession(sessionId);
 
     // 恢复该会话的滚动位置（收藏定位时跳过，由 navigateToBookmark 自行处理）
     if (!e.detail?.skipScrollRestore) {
@@ -4601,6 +4606,8 @@ document.addEventListener('DOMContentLoaded', initGoalPanel);
 document.addEventListener('DOMContentLoaded', async () => {
   // 入口轨道需先于各面板初始化：六个入口容器挂入轨道槽位
   initSideRail();
+  // 面板重启后把「后台仍在跑」的任务重新接进会话区（无任务时零开销，纯一次查询）
+  initChatReattach();
   await loadBookmarks();
   initBookmarkPanel();
   await loadTodos();

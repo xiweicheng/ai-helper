@@ -26,6 +26,9 @@ import { beginSessionRun, endSessionRun, getEffectiveWorkdir } from '../shared/w
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
+// 会话级活跃 callId 登记：SW 重启/面板重开后，新面板实例靠它找回正确的 callId
+// 重新接入实时流（否则 STREAM_* 会被前端 myCallId 过滤全部丢弃）
+import { setActiveCall, clearActiveCall } from './active-call-registry.js';
 import { weightTrimFallback } from './trim-fallback.js';
 import { createRoutingEvidenceCollector, annotateOneSubtaskCompletion, verifySubtaskCompletion } from './completion-verifier.js';
 // 目标模式（Goal）：纯内核（状态机/提示词）+ 独立评估器 + 会话级注册表。
@@ -1204,13 +1207,18 @@ function notifyInjectionsAbsorbed(sessionId, injections, iteration, callId) {
  * ReAct 推理循环实现体
  * 注意：澄清工具执行时会暂停整体循环超时计时
  */
-async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null) {
+async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sessionId = null, taskContext = null, onLogUpdate = null, globalIteration = { value: 0 }, initialLog = [], callId = null, resumeState = null, options = {}) {
   // 标记该 session 的 ReAct 循环正在运行，用于 SW 重启检测
   if (sessionId) {
     activeReactLoops.add(sessionId);
     // 任务级放行只在授予它的那次运行内生效：新一轮任务开始时先丢掉上一轮可能残留的授权，
     // 否则后续任务会继承“当前任务放行”，敏感命令再不弹框
     revokeTaskLoopApproval(sessionId);
+    // 登记本轮的活跃 callId（含自动续跑的新 callId）供面板 reattach 查询。
+    // 只登记顶层任务：子任务与父任务共用 sessionId + callId，子任务退出时
+    // 的 finally 不能把父任务仍在使用的登记清掉。
+    // options.reattachable=false 供「没有面板消费者」的入口（定时任务）关掉登记。
+    if (!taskContext) setActiveCall(sessionId, callId, options);
   }
 
   let iteration = 0;
@@ -3380,6 +3388,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 清除"当前任务放行"状态：连同本会话派生出的子任务树一并清，
       // 避免任务结束后同一会话的下一轮任务静默放行敏感命令
       revokeTaskLoopApproval(sessionId);
+      // 带 callId 期望值清理：同会话连续调用时，旧循环迟到的 finally 不会误删新循环的登记。
+      // 必须同时要求 callId 存在：clearActiveCall(sessionId, null) 是无条件删除，
+      // 某轮 callId 为 null 时收尾会把别的调用（面板 call_ / 续跑 auto_）的登记一起抹掉。
+      if (callId && !taskContext) clearActiveCall(sessionId, callId);
       // 插话缓冲里没来得及注入的，必须当场退回队列。只清顶层循环：
       // 子任务退出时父任务还在跑，那些条目后面仍有迭代边界可用。
       if (!isSubtask) {
@@ -4415,7 +4427,17 @@ export async function executeToolWithTimeout(toolCall, tabId, timeoutMs, loopTim
 /**
  * 调用 OpenAI 兼容 API（支持流式/非流式）
  */
-export function callApiNonStream(messages, model, apiParams = {}, sessionId = null, streamOptions = {}, callId = null) {
+export function callApiNonStream(messages, model, apiParams = {}, sessionId = null, streamOptions = {}, callId = null, options = {}) {
+  // 简单路径（工具关闭 / 无可用工具）也要登记活跃 callId：面板中途关掉再打开时
+  // QUERY_SESSION_RUNNING 才能报出「该听哪个 callId」，reattach 才接得上实时流。
+  // 与 ReAct 主循环同构；clear 带期望值，避免同会话下一次调用被本轮迟到的 finally 误删。
+  // options.reattachable=false 供「没有面板消费者」的入口（定时任务）关掉登记。
+  const trackActiveCall = !!(sessionId && callId) && options?.reattachable !== false;
+  if (trackActiveCall) setActiveCall(sessionId, callId);
+  const releaseActiveCall = () => {
+    if (trackActiveCall) clearActiveCall(sessionId, callId);
+  };
+
   return getStoredConfig().then(config => {
     // 如果传入了图片识别独立配置，则覆盖默认配置
     if (apiParams.imageApiBase) {
@@ -4526,7 +4548,7 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
       }
       throw error;
     });
-  });
+  }).finally(releaseActiveCall);
 }
 
 // ============================================================

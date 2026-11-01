@@ -3688,7 +3688,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       }
       reject(errorResult);
     };
-    state.pendingCancelApi = cancelApi;
+    // 按 mySessionId 记账，不能用 state.pendingCancelApi setter：setter 以当前激活会话为 key，
+    // 而排队接力的 callApi 常常跑在非激活会话上 —— key 写错会让 reattach 的
+    // hasLocalListener(sessionId) 误判（重复接管 / 同一终态落两遍），
+    // 也与清理侧 delete(mySessionId) 的口径不一致（Map 残留）。
+    state.pendingCancelApiMap.set(mySessionId, cancelApi);
     state.pendingCallApiSessionIds.add(mySessionId);
     syncPendingSessionsToStorage();
     logger.debug('[SidePanel] callApi: add pendingCallApiSessionIds, mySessionId =', mySessionId, ', set:', [...state.pendingCallApiSessionIds]);
