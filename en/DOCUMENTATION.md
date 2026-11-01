@@ -2,7 +2,7 @@
 
 # AI Helper — Full Documentation
 
-Complete technical reference for AI Helper: architecture, all 38 feature areas, the 40+ built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
+Complete technical reference for AI Helper: architecture, all 38 feature areas, the 46 built-in tools, the optional Agent service, configuration options, state management design, and the FAQ.
 
 For a quick overview of what AI Helper can do and how to install it, head back to the [README](../../README.md).
 
@@ -208,7 +208,7 @@ ai-helper/
 │   │   ├── stream-controller.js        # Stream response controller
 │   │   ├── token-recorder.js           # Token usage stats recorder
 │   │   ├── config.js                    # Config R/W
-│   │   ├── constants.js                # Defaults, 40+ built-in tools, category mapping
+│   │   ├── constants.js                # Defaults, 46 built-in tools, category mapping
 │   │   ├── state.js                    # Multi-session cancel control, API counter
 │   │   └── tools/                       # Tool definitions by category
 │   │       ├── browser-tools.js        │ Page interaction + Form + Content (15)
@@ -383,7 +383,7 @@ Create and manage multiple custom AI agents, each with independent system prompt
 The project uses the ReAct (Reasoning + Acting) pattern as its core inference engine:
 
 1. **MCP Tool Dynamic Injection**: Before each inference cycle, automatically pulls the latest MCP tool list from Agent and injects it into RAW_TOOLS
-2. **Tool Preselection**: Before the main model call, a lightweight API pre-check determines which tools are needed, reducing 40+ built-in tools to 5-10 relevant ones, significantly cutting token usage. Simple questions can be answered directly, skipping the inference loop
+2. **Tool Preselection** (off by default): before the main model call, a lightweight API pre-check determines which tools are needed, narrowing 46 built-in tools down to 5-10 relevant ones to cut token usage. Simple questions can be answered directly, skipping the inference loop. The switch has been removed from the options page and ships disabled; enable it by importing a config with `enableToolPreselect: true`, and it only kicks in once more than 10 tools are in play (fixed threshold constant)
 3. **Inference Loop**: LLM thinks → decides to call tools → executes tools → results fed back → continues reasoning
 4. **Token Budget Management**: Dynamically calculates available token budget per model context window (80%), truncates by token count, retains tool_calls/tool message pairing integrity
 5. **Context Pressure Monitoring**: Three-level monitoring (safe/warning/critical), auto-triggers summary compression
@@ -826,9 +826,9 @@ An ordinary task is ask-once / answer-once. Goal mode turns one task into a sess
 - **Only two switches**: the master switch (the single whole-pipeline rollback) and intent detection (a zero-token deterministic regex that recognizes "run in goal mode until done" and turns the goal on for that round, with a revocable toast; weak phrasings only hint and never turn it on for you). Turn budget, time budget, stall threshold, evaluator failure cap and objective verification are fixed internal defaults — users cannot predict the consequences of changing them and a wrong value fails silently.
 - **Deliberately not done**: tiered confirmation dialogs (a goal exists precisely because nobody is watching — a dialog would just time out into a refusal, and real danger is refused by the denylist), cross-session goal ownership and alarm-driven overnight resumption (highest risk, parked for P2), and a `/goal` slash command (`/` is already taken by the prompt picker).
 
-## Built-in Tools (40+ Configurable + MCP Dynamic Extensions)
+## Built-in Tools (46 Configurable + MCP Dynamic Extensions)
 
-### Content Extraction (6)
+### Content Extraction (7)
 | Tool | Description |
 |------|-------------|
 | `page_content` | Get page content in multiple formats (text/html, supports cross-tab extraction) |
@@ -837,6 +837,7 @@ An ordinary task is ask-once / answer-once. Goal mode turns one task into a sess
 | `search_in_page` | Regex search page text (with highlight support) |
 | `iframe_content` | Get iframe content (same-origin, nested support) |
 | `scroll_collect` | Scroll and collect long content (dedup aggregation) |
+| `read_image` | Deep-read a single image and return the vision model's analysis (one of three sources: an image extracted from a document attachment, an image file in the Agent working directory, or an image pasted into the chat; pasted images ship only once, so re-read them here) |
 
 ### Page Interaction (5)
 | Tool | Description |
@@ -892,7 +893,7 @@ An ordinary task is ask-once / answer-once. Goal mode turns one task into a sess
 | `inject_css` | Modify page appearance (inject stylesheet / inline style / highlight text) |
 | `debug_page` | Advanced page debugging over Chrome DevTools Protocol (attach → operate → detach): native input events, XHR/fetch interception, page-context evaluation, full-page screenshots, device emulation |
 
-### AI Collaboration (7)
+### AI Collaboration (8)
 | Tool | Description |
 |------|-------------|
 | `clarify_question` | Show clarification dialog (suggestions, countdown, audio alert; concurrent requests queue and show one at a time) |
@@ -902,6 +903,7 @@ An ordinary task is ask-once / answer-once. Goal mode turns one task into a sess
 | `dispatch_task` | Dispatch subtasks to sub-agents (supports parallel dispatch) |
 | `manage_agent` | Manage paired agents (query status, switch agent) |
 | `exec_log` | Extract historical execution logs, analyze success paths and failure lessons |
+| `take_note` | Keep a short working note (decision / finding / constraint / blocker) that survives compaction via an anchor message |
 
 ### Agent (5) — Requires Agent Service
 | Tool | Description |
@@ -1000,11 +1002,13 @@ The extension can optionally pair with a Node.js agent service, providing file s
 │   │   ├── /api/exec (Cmd Exec)    │
 │   │   ├── /api/status (Health)    │
 │   │   ├── /api/pair (Pair Auth)   │
-│   │   ├── /api/logs (Log Query)   │
+│   │   ├── /api/logs/query (Logs)    │
 │   │   ├── /api/shutdown (Graceful)│
 │   │   ├── /api/skill/* (Skills)   │
 │   │   ├── /api/mcp/* (MCP Mgmt)   │
-│   │   └── /api/rag/* (Knowledge)  │
+│   │   ├── /api/rag/* (Knowledge)  │
+│   │   ├── /api/asr/* (Speech)     │
+│   │   └── /api/memory/* (Memory)   │
 │   ├── WebSocket (Cmd Output Stream)│
 │   ├── Skill System                  │
 │   │   ├── Workflow Skill Executor   │
@@ -1169,7 +1173,7 @@ The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Ba
 | Streaming Output | On | Token-by-token rendering + live Agent command output; disable as fallback for compatibility issues |
 | Expand Tool Cards in Stream | Off | Tool cards expand by default when enabled |
 
-Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection are built-in strategies — no configuration needed. **Max iterations 2000, API timeout 5min, tool timeout 10min, and clarification timeout 5min are internal fixed values with no UI** (tool timeout aligns with the Agent-side total-budget cap; the round count is a deterministic fuse against "fast but spinning").
+Note: user clarification time does not count toward the loop timeout (timer pauses); API retry (3 attempts, exponential backoff) and tool preselection (off by default, only above 10 tools) is a built-in strategy — no configuration needed. **Max iterations 2000, API timeout 5min, tool timeout 10min, and clarification timeout 5min are internal fixed values with no UI** (tool timeout aligns with the Agent-side total-budget cap; the round count is a deterministic fuse against "fast but spinning").
 
 ### Reflection & Completion Verification Settings (inside the ReAct tab)
 
@@ -1336,4 +1340,4 @@ Ensure the agent service is running (`npm start`), and check that `~/.ai-helper-
 Use `ai-helper-agent start -b` or `aha start -b` background startup mode. Use `ai-helper-agent stop` to stop, `ai-helper-agent status` to check status.
 
 **Q: Are Agent operations logged?**
-Yes. All file reads/writes, command executions, and security events are recorded in audit logs located at `~/.ai-helper-agent/logs/`, in JSON Lines format, retained for 30 days. Queryable via `/api/logs`.
+Yes. All file reads/writes, command executions, and security events are recorded in audit logs located at `~/.ai-helper-agent/logs/`, in JSON Lines format, rotated daily and capped at 30 files (anything over 10MB is cleaned up automatically). Queryable via `/api/logs/query` (`limit` / `category` / `offset`, covering the last 7 days by default).

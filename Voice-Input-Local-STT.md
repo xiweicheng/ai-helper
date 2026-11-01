@@ -433,7 +433,7 @@ ws://127.0.0.1:<port>/ws/asr/<sessionId>?token=<token>
   "language": "auto",
   "streamingModelId": null,
   "offlineModelId": null,
-  "idleUnloadMs": 300000,
+  "idleUnloadMs": 600000,
   "asrPacing": "balanced"
 }
 ```
