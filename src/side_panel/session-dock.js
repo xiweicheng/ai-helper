@@ -32,6 +32,7 @@
 import state from './state.js';
 import * as queueStore from './queue-store.js';
 import { getSession } from '../storage/db.js';
+import { getBaseSessionId } from '../shared/workdir-scope.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import { handleSessionSwitch } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
@@ -148,6 +149,26 @@ function toArray(value) {
   if (Array.isArray(value)) return value;
   if (value instanceof Set) return Array.from(value);
   return [];
+}
+
+/**
+ * 把后台运行集合收敛到「真实会话」（纯函数）。
+ *
+ * 后台 activeReactLoops 除了主会话，还会登记子任务 / 子代理的派生 id
+ * （`${parent}_subtask_${i}` / `${parent}_sub_${agentId}`）——这是信令隔离的需要，
+ * 但它们不是会话：直接建芯片会凭空多出一个「未知会话」的旋转状态（点开也切不到
+ * 任何会话），一个任务看起来像两个在执行。这里统一剥回根会话并按 Set 去重。
+ *
+ * @param {Array<string>|Set<string>} ids
+ * @returns {Set<string>}
+ */
+export function normalizeRunningIds(ids) {
+  const out = new Set();
+  for (const id of toArray(ids)) {
+    if (!id) continue;
+    out.add(getBaseSessionId(String(id)) || String(id));
+  }
+  return out;
 }
 
 /**
@@ -935,7 +956,7 @@ function refreshRunningFromBackground() {
     try {
       chrome.runtime.sendMessage({ type: 'QUERY_SESSION_RUNNING' }, (res) => {
         if (chrome.runtime.lastError || !res) { resolve(); return; }
-        if (Array.isArray(res.activeSessionIds)) runningIds = new Set(res.activeSessionIds);
+        if (Array.isArray(res.activeSessionIds)) runningIds = normalizeRunningIds(res.activeSessionIds);
         resolve();
       });
     } catch {

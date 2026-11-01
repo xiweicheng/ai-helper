@@ -21,6 +21,7 @@ vi.mock('../../src/storage/db.js', () => ({
 }));
 
 const { buildDockEntries, isEntryStale, normalizeLabel, isSameLabel, pickEntryLabel,
+  normalizeRunningIds,
   renderDock, initSessionDock, __resetSessionDockForTest } =
   await import('../../src/side_panel/session-dock.js');
 const { default: state } = await import('../../src/side_panel/state.js');
@@ -135,6 +136,36 @@ describe('buildDockEntries', () => {
       scheduledIds: new Set(['s1']),
     });
     expect(entries.map((e) => e.sessionId)).toEqual(['s1', 's2']);
+  });
+});
+
+describe('normalizeRunningIds（子任务/子代理不该各占一个执行状态）', () => {
+  it('plan 子任务派生 id 剥回主会话', () => {
+    expect([...normalizeRunningIds(['s1_subtask_9'])].sort()).toEqual(['s1']);
+  });
+
+  it('dispatch 子代理派生 id 也剥回主会话', () => {
+    expect([...normalizeRunningIds(['s1_sub_writer'])].sort()).toEqual(['s1']);
+  });
+
+  it('主会话与子任务同时上报时去重成一个', () => {
+    expect(normalizeRunningIds(['s1', 's1_subtask_0', 's1_subtask_1']).size).toBe(1);
+  });
+
+  it('普通会话 id 原样保留（不误剥含下划线的正常 id）', () => {
+    expect([...normalizeRunningIds(['session_2026_abc', 's2'])].sort())
+      .toEqual(['s2', 'session_2026_abc']);
+  });
+
+  it('接受 Set 入参、忽略空值', () => {
+    expect([...normalizeRunningIds(new Set(['', null, 's3']))]).toEqual(['s3']);
+  });
+
+  it('后台回执必须经 normalize 后才成为运行集合', () => {
+    const src = read('src/side_panel/session-dock.js');
+    expect(src).toContain('runningIds = normalizeRunningIds(res.activeSessionIds);');
+    // 裸用后台集合等于把子任务画成第二个会话
+    expect(src).not.toContain('runningIds = new Set(res.activeSessionIds)');
   });
 });
 
