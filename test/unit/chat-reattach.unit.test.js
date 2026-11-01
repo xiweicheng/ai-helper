@@ -37,8 +37,13 @@ function makeRenderer() {
   return {
     start: vi.fn(),
     chunk: vi.fn(),
+    restore: vi.fn(),
     toolCalls: vi.fn(),
-    status: vi.fn(),
+    toolResult: vi.fn(),
+    agentStream: vi.fn(),
+    agentStreamDone: vi.fn(),
+    retrying: vi.fn(),
+    preselect: vi.fn(),
     final: vi.fn(),
     error: vi.fn(),
   };
@@ -86,13 +91,40 @@ describe('createSessionStreamMirror 单会话流式镜像', () => {
     expect(renderer.chunk).toHaveBeenLastCalledWith('新');
   });
 
-  test('STREAM_TOOL_CALL → 渲染工具卡片；EXECUTION_STATUS_UPDATE → 更新状态行', () => {
+  test('STREAM_TOOL_CALL → 工具卡片；STREAM_TOOL_RESULT → 结果；AGENT_STREAM(_DONE) → 命令输出', () => {
     const { mirror, renderer } = make();
     const toolCalls = [{ id: 't1', function: { name: 'agent_exec', arguments: '{"command":"ls"}' } }];
     mirror.handleMessage({ type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1', toolCalls });
     expect(renderer.toolCalls).toHaveBeenCalledWith(toolCalls);
-    mirror.handleMessage({ type: 'EXECUTION_STATUS_UPDATE', sessionId: 's1', callId: 'auto_1', nodeName: '执行命令' });
-    expect(renderer.status).toHaveBeenCalledWith('执行命令');
+
+    const result = { toolCallId: 't1', toolName: 'agent_exec', success: true, content: 'ok' };
+    expect(mirror.handleMessage({ type: 'STREAM_TOOL_RESULT', sessionId: 's1', callId: 'auto_1', result })).toBe(true);
+    expect(renderer.toolResult).toHaveBeenCalledWith(result);
+
+    const agentMsg = { type: 'AGENT_STREAM', sessionId: 's1', callId: 'auto_1', execId: 'e1', streamType: 'stdout', data: 'a' };
+    expect(mirror.handleMessage(agentMsg)).toBe(true);
+    expect(renderer.agentStream).toHaveBeenCalledWith(agentMsg);
+    const doneMsg = { type: 'AGENT_STREAM_DONE', sessionId: 's1', callId: 'auto_1', execId: 'e1', exitCode: 1 };
+    expect(mirror.handleMessage(doneMsg)).toBe(true);
+    expect(renderer.agentStreamDone).toHaveBeenCalledWith(doneMsg);
+  });
+
+  test('API_RETRYING / STREAM_PRESELECT 转给对应渲染回调', () => {
+    const { mirror, renderer } = make();
+    expect(mirror.handleMessage({ type: 'API_RETRYING', sessionId: 's1', callId: 'auto_1', attempt: 2, maxRetries: 3 })).toBe(true);
+    expect(renderer.retrying).toHaveBeenCalledWith(2, 3);
+    const preselectLog = [{ mode: 'filtered', total: 5, count: 2, tools: ['a', 'b'] }];
+    expect(mirror.handleMessage({ type: 'STREAM_PRESELECT', sessionId: 's1', callId: 'auto_1', preselectLog })).toBe(true);
+    expect(renderer.preselect).toHaveBeenCalledWith(preselectLog);
+  });
+
+  test('EXECUTION_STATUS_UPDATE 被消费但不渲染（接管气泡里不该有常驻状态行）', () => {
+    // 真机缺陷：nodeName 被写进气泡的 .stream-status，任务都在输出了还挂着
+    // 「🔧 API调用 (第2次)」。正常路径把 nodeName 交给 loading 消息的执行状态区，
+    // 接管侧没有那个区域 —— 宁可什么都不渲染，也不能留一条永不清除的假状态。
+    const { mirror, renderer } = make();
+    expect(mirror.handleMessage({ type: 'EXECUTION_STATUS_UPDATE', sessionId: 's1', callId: 'auto_1', nodeName: '执行命令', status: 'processing' })).toBe(true);
+    for (const fn of Object.values(renderer)) expect(fn).not.toHaveBeenCalled();
   });
 
   test('API_COMPLETE → 一律 finalize（空内容用兜底文案）+ 落库一次 + 收尾回调一次', async () => {
@@ -135,6 +167,36 @@ describe('createSessionStreamMirror 单会话流式镜像', () => {
     const { mirror, onFinished } = make({ persist });
     mirror.handleMessage({ type: 'API_COMPLETE', sessionId: 's1', callId: 'auto_1', content: '完成' });
     await vi.waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));
+  });
+
+  test('等待窗口内的消息按到达顺序回放，连续增量合成一次渲染', () => {
+    const { mirror, renderer } = make({ awaitSnapshot: true });
+    mirror.handleMessage({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: 'A' });
+    mirror.handleMessage({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: 'B' });
+    mirror.handleMessage({ type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1', toolCalls: [{ id: 't1' }] });
+    mirror.handleMessage({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: 'C' });
+    // 窗口里一条都不渲染：先渲染就会被随后的还原覆盖掉
+    expect(renderer.chunk).not.toHaveBeenCalled();
+    expect(renderer.toolCalls).not.toHaveBeenCalled();
+
+    mirror.restore(null);
+
+    // 顺序必须是真实到达顺序：AB → 工具卡片 → ABC（连续增量不会退化成逐条重渲染）
+    expect(renderer.chunk.mock.calls.map((c) => c[0])).toEqual(['AB', 'ABC']);
+    expect(renderer.toolCalls).toHaveBeenCalledTimes(1);
+  });
+
+  test('终态在窗口内先到：先补渲染积压再收口，并且不再还原快照', async () => {
+    const { mirror, renderer } = make({ awaitSnapshot: true });
+    mirror.handleMessage({ type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1', toolCalls: [{ id: 't1' }] });
+    mirror.handleMessage({ type: 'API_COMPLETE', sessionId: 's1', callId: 'auto_1', content: '完成' });
+    expect(renderer.toolCalls).toHaveBeenCalledTimes(1);
+    expect(renderer.final).toHaveBeenCalledTimes(1);
+
+    // 快照读盘晚一步回来，也不能把已收口的气泡盖回半截流
+    mirror.restore({ callId: 'auto_1', html: '<div class="stream-content"></div>', accumulated: '半截' });
+    expect(renderer.restore).not.toHaveBeenCalled();
+    expect(renderer.chunk).not.toHaveBeenCalled();
   });
 });
 
@@ -201,6 +263,32 @@ describe('createReattachManager 接管决策', () => {
 // 会跨 describe 继续响应事件（表现为「本该红的用例莫名变绿」）。
 // 因此这条清理链必须是文件级的，不能每个 describe 各自记一份。
 let prevMod = null;
+// 上一个用例的模块实例里可能还挂着快照节流定时器：不摘掉的话它会在本用例中途把
+// 「上一个气泡的 HTML」写进同一个 storage key，把种下的快照顶掉（跨用例串台）
+let prevSnap = null;
+
+// 气泡快照走 chrome.storage.session（跨面板实例的唯一通道）：内存版假实现，
+// set/get/remove 齐全，顺带消掉 syncPendingSessionsToStorage 缺 storage.session 的噪音。
+let sessionStore = null;
+
+function installSessionStore() {
+  sessionStore = {};
+  if (typeof chrome === 'undefined') global.chrome = {};
+  if (!chrome.storage) chrome.storage = {};
+  chrome.storage.session = {
+    set: vi.fn(async (obj) => { Object.assign(sessionStore, obj); }),
+    get: vi.fn(async (keys) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      const out = {};
+      for (const k of list) if (sessionStore[k] !== undefined) out[k] = sessionStore[k];
+      return out;
+    }),
+    remove: vi.fn(async (keys) => {
+      const list = Array.isArray(keys) ? keys : [keys];
+      for (const k of list) delete sessionStore[k];
+    }),
+  };
+}
 
 describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () => {
   let api;
@@ -211,6 +299,7 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
   beforeEach(async () => {
     // 上一轮模块实例的 document 监听要先摘掉：resetModules 会造出新实例，旧监听不会自己消失
     if (prevMod) prevMod.__resetChatReattachForTest();
+    if (prevSnap) prevSnap.__resetStreamSnapshotForTest();
     vi.resetModules();
     document.body.innerHTML = '<div id="chatContainer"></div>';
     chatContainer = document.getElementById('chatContainer');
@@ -218,6 +307,7 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
     // 后台登记可变：测试里改成新 callId 模拟「SW 被杀后自动续跑接管了这一轮」
     runningState = { activeSessionIds: ['s1'], activeCallIds: { s1: 'auto_1' } };
     chrome.runtime.sendMessage = (msg, cb) => { cb(runningState); };
+    installSessionStore();
     state = (await import('../../src/side_panel/state.js')).default;
     // 落库桩是文件级共享的：上一个用例的调用记录会污染「只落库一次」断言
     (await import('../../src/side_panel/session-manager.js')).appendMessageToSession.mockClear();
@@ -226,6 +316,7 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
     mod.__resetChatReattachForTest();
     api = mod.initChatReattach();
     prevMod = mod;
+    prevSnap = await import('../../src/side_panel/stream-snapshot.js');
   });
 
   test('接管的会话当前不可见 → 不把气泡塞进当前会话 DOM', async () => {
@@ -304,6 +395,355 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
   test('session-hydrated 不碰不属于本镜像的会话（正常会话零影响）', async () => {
     document.dispatchEvent(new CustomEvent('session-hydrated', { detail: { sessionId: 'other' } }));
     expect(chatContainer.children.length).toBe(0);
+  });
+
+  // ==================== 接管期间的消息口径必须与正常监听一致 ====================
+  // 正常 callApi 监听处理 16 种广播，镜像一开始只处理 6 种：接管期间工具结果、
+  // 命令输出、预筛选卡、重试提示全部静默丢弃，用户看到的就是「内容不全 / 只剩之后的正文」。
+
+  test('EXECUTION_STATUS_UPDATE 不得在气泡里渲染常驻状态行（正常流程根本不写 .stream-status）', async () => {
+    // 真机反馈：接管后的气泡下方多出一行「🔧 API调用 (第2次)」并且一直挂着。
+    // nodeName 在正常路径是走状态区 / 左侧 dock 的，气泡内的 .stream-status 只在
+    // STREAM_DONE 被清空、finalize 时被 remove —— 接管侧不该插这根管子。
+    await api.syncFromBackground();
+    state.activeSessionId = 's1';
+    const { syncReattachForSession } = await import('../../src/side_panel/chat-reattach.js');
+    syncReattachForSession('s1');
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+
+    listener({
+      type: 'EXECUTION_STATUS_UPDATE', sessionId: 's1', callId: 'auto_1',
+      nodeName: 'API调用 (第2次)', status: 'processing',
+    });
+
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    expect(el.querySelector('.stream-status').classList.contains('hidden')).toBe(true);
+    expect(el.textContent).not.toContain('API调用');
+  });
+
+  test('接管期间工具结果必须落到对应工具卡片（漏掉 STREAM_TOOL_RESULT 就是结果永不显示）', async () => {
+    await api.syncFromBackground();
+    state.activeSessionId = 's1';
+    const { syncReattachForSession } = await import('../../src/side_panel/chat-reattach.js');
+    syncReattachForSession('s1');
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+
+    listener({
+      type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1',
+      toolCalls: [{ id: 'tc1', function: { name: 'agent_file', arguments: '{}' } }],
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    expect(el.querySelector('.tool-call-item[data-tool-call-id="tc1"]')).toBeTruthy();
+
+    listener({
+      type: 'STREAM_TOOL_RESULT', sessionId: 's1', callId: 'auto_1',
+      result: { toolCallId: 'tc1', toolName: 'agent_file', success: true, content: '结果正文' },
+    });
+
+    await vi.waitFor(() => {
+      const card = el.querySelector('.tool-call-item[data-tool-call-id="tc1"]');
+      expect(card.dataset.status).toBe('success');
+      // 结果正文受 appendToolResult 的 400ms「执行中」最小展示延迟影响，一起在等待里断言
+      expect(card.textContent).toContain('结果正文');
+    }, { timeout: 2000 });
+  });
+
+  test('接管期间命令流式输出要建容器并持续追写（AGENT_STREAM / AGENT_STREAM_DONE）', async () => {
+    await api.syncFromBackground();
+    state.activeSessionId = 's1';
+    const { syncReattachForSession } = await import('../../src/side_panel/chat-reattach.js');
+    syncReattachForSession('s1');
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+
+    listener({
+      type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1',
+      toolCalls: [{ id: 'tc9', function: { name: 'agent_exec', arguments: '{}' } }],
+    });
+    listener({ type: 'AGENT_STREAM', sessionId: 's1', callId: 'auto_1', execId: 'ex1', toolCallId: 'tc9', streamType: 'stdout', data: '第1行' });
+    listener({ type: 'AGENT_STREAM', sessionId: 's1', callId: 'auto_1', execId: 'ex1', toolCallId: 'tc9', streamType: 'stdout', data: '\n第2行' });
+
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    const output = el.querySelector('.agent-stream-output');
+    expect(output).toBeTruthy();
+    expect(output.textContent).toContain('第1行');
+    expect(output.textContent).toContain('第2行');
+
+    listener({ type: 'AGENT_STREAM_DONE', sessionId: 's1', callId: 'auto_1', execId: 'ex1', exitCode: 1 });
+    expect(el.querySelector('.agent-stream-output').classList.contains('agent-stream-error')).toBe(true);
+  });
+
+  test('接管期间重试提示要就地改「思考中」文案（API_RETRYING）', async () => {
+    await api.syncFromBackground();
+    state.activeSessionId = 's1';
+    const { syncReattachForSession } = await import('../../src/side_panel/chat-reattach.js');
+    syncReattachForSession('s1');
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+
+    listener({ type: 'API_RETRYING', sessionId: 's1', callId: 'auto_1', attempt: 2, maxRetries: 3 });
+
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    const label = el.querySelector('.thinking-indicator:not(.hidden) .thinking-label');
+    expect(label).toBeTruthy();
+    expect(label.textContent).toContain('2');
+  });
+
+  test('接管后新一轮 STREAM_START 要重新出现「思考中」指示器（与正常路径同构）', async () => {
+    // 口径对齐正常路径：appendToolCallItems 会隐掉（并移除）本轮指示器，
+    // 下一轮 STREAM_START 必须补一个新的，否则工具执行完到下次输出之间界面是死的。
+    await api.syncFromBackground();
+    state.activeSessionId = 's1';
+    const { syncReattachForSession } = await import('../../src/side_panel/chat-reattach.js');
+    syncReattachForSession('s1');
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    expect(el.querySelector('.thinking-indicator:not(.hidden)')).toBeTruthy();
+
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '第一轮' });
+    listener({
+      type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1',
+      toolCalls: [{ id: 'tc1', function: { name: 'agent_file', arguments: '{}' } }],
+    });
+    expect(el.querySelector('.thinking-indicator:not(.hidden)')).toBe(null);
+
+    listener({ type: 'STREAM_START', sessionId: 's1', callId: 'auto_1' });
+    expect(el.querySelector('.thinking-indicator:not(.hidden)')).toBeTruthy();
+  });
+
+  // ==================== 接管时必须还原「脱落期间已经输出」的内容 ====================
+  // 真机反馈：关掉再打开，确实还在输出，但之前已经输出的内容看不到了，只剩之后的。
+  // 根因：接管气泡从接管那一刻才开始累积。修法：流式期间把气泡 HTML + 本轮累积正文
+  // 节流写进 chrome.storage.session，接管同一 callId 时读回还原。
+  const SNAP_KEY = (sid) => `streamSnap|${sid}`;
+
+  const roundHtml = (text) => `<div class="message-content"><div class="stream-content">`
+    + `<div class="thinking-content"><div class="thinking-text">${text}</div></div>`
+    + `</div><div class="thinking-indicator"><span class="thinking-label">思考中...</span></div>`
+    + `<div class="stream-status hidden"></div></div>`;
+
+  /**
+   * 模拟「用户重新打开面板」那一次启动：storage.session 里已经有上一个实例留下的快照，
+   * 然后重新走一遍 init → 接管，看还原有没有发生。
+   * 快照按落盘格式直接写进存储，不借道本实例的抓拍逻辑（那是 stream-snapshot 用例的事）。
+   * @returns {Promise<(msg:Object)=>boolean>} 本实例的广播入口
+   */
+  const restartPanelWithSnapshot = async ({ callId, text, html, accumulated, getDelayMs = 0 }) => {
+    const mod = await import('../../src/side_panel/chat-reattach.js');
+    const { deleteStreamingState } = await import('../../src/side_panel/chat-streaming.js');
+    // beforeEach 里 initChatReattach 那次启动对齐是未 await 的：先让它落地，
+    // 否则两次接管链会交叉（旧镜像晚一步覆盖新镜像），慢读盘用例会随机飘红。
+    await api.syncFromBackground();
+    // 把这一次启动之前的痕迹擦干净，才真的是「新实例」
+    mod.__resetChatReattachForTest();
+    deleteStreamingState('s1');
+    document.body.innerHTML = '<div id="chatContainer"></div>';
+    chatContainer = document.getElementById('chatContainer');
+
+    sessionStore[SNAP_KEY('s1')] = {
+      sessionId: 's1',
+      callId,
+      html: html !== undefined ? html : roundHtml(text),
+      accumulated: accumulated !== undefined ? accumulated : text,
+      ts: Date.now(),
+    };
+    if (getDelayMs) {
+      // 把读盘拖慢，确保还原等待窗口里真的来了新消息
+      const realGet = chrome.storage.session.get;
+      chrome.storage.session.get = async (keys) => {
+        await new Promise((r) => setTimeout(r, getDelayMs));
+        return realGet(keys);
+      };
+    }
+
+    state.activeSessionId = 's1';
+    api = mod.initChatReattach();
+    await api.syncFromBackground();
+    return chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+  };
+
+  test('同 callId 的快照 → 接管气泡还原脱落期正文，之后的输出接着往下走', async () => {
+    const listener = await restartPanelWithSnapshot({ callId: 'auto_1', text: '脱落期间已经输出的正文' });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    await vi.waitFor(() => expect(el.textContent).toContain('脱落期间已经输出的正文'), { timeout: 2000 });
+
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '，接着输出的新内容' });
+    // 已还原的正文不能被「本轮新文本」覆盖掉 —— 那正是用户看到的「只剩之后的内容」
+    expect(el.textContent).toContain('脱落期间已经输出的正文');
+    expect(el.textContent).toContain('接着输出的新内容');
+  });
+
+  test('快照里的工具卡片也要一起还原（只回填正文会把卡片结构丢掉）', async () => {
+    const cardHtml = '<div class="message-content"><div class="stream-content">'
+      + '<div class="thinking-content"><div class="thinking-text">已经输出的前半段</div></div>'
+      + '<div class="tool-call-item" data-tool-call-id="tc1"><div class="tool-call-header">'
+      + '<span class="tool-call-name">agent_file</span></div>'
+      + '<div class="tool-call-result"><pre><code>执行结果正文</code></pre></div></div>'
+      + '</div><div class="thinking-indicator"><span class="thinking-label">思考中...</span></div>'
+      + '<div class="stream-status hidden"></div></div>';
+    await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '', html: cardHtml, accumulated: '已经输出的前半段',
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    await vi.waitFor(() => expect(el.querySelector('.tool-call-item')).toBeTruthy(), { timeout: 2000 });
+    expect(el.querySelector('.tool-call-name').textContent).toBe('agent_file');
+    expect(el.textContent).toContain('执行结果正文');
+
+    // 还原后的续写不能把卡片冲掉：正文只替换最后一个 .thinking-content
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '，续写' });
+    expect(el.querySelector('.tool-call-item')).toBeTruthy();
+    expect(el.textContent).toContain('已经输出的前半段，续写');
+  });
+
+  test('接管重挂只负责把气泡挪回末尾：可见指示器与停止按钮必须活着', async () => {
+    // 接管气泡一直是「活的」（镜像每条增量都在原地更新），既不需要回填正文，
+    // 更不能把可见指示器收成「思考结果」——那等于同时藏掉「输出中」和停止按钮，
+    // 用户只会觉得「还在输出，但界面看起来已经结束了，而且停不下来」。
+    const liveHtml = '<div class="message-content"><div class="stream-content">'
+      + '<div class="thinking-content"><div class="thinking-text">脱落期正文</div></div>'
+      + '</div><div class="thinking-indicator">'
+      + '<span class="thinking-label">输出中...</span>'
+      + '<button class="streaming-stop-btn">停止</button></div>'
+      + '<div class="stream-status hidden"></div></div>';
+    const listener = await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '', html: liveHtml, accumulated: '脱落期正文',
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+    await vi.waitFor(() => expect(el.textContent).toContain('脱落期正文'), { timeout: 2000 });
+
+    document.dispatchEvent(new CustomEvent('chat-history-rendered', { detail: { sessionId: 's1' } }));
+
+    expect(el.querySelector('.thinking-indicator:not(.hidden)')).toBeTruthy();
+    expect(el.querySelector('.thinking-indicator:not(.hidden) .streaming-stop-btn')).toBeTruthy();
+
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '，续写A' });
+    expect(el.querySelectorAll('.stream-content .thinking-content').length).toBe(1);
+    expect(el.textContent.replace(/\s+/g, '')).toContain('脱落期正文，续写A');
+  });
+
+
+  test('快照属于别的 callId → 不还原（上一轮的内容不能接进这一轮）', async () => {
+    const listener = await restartPanelWithSnapshot({ callId: 'call_old_round', text: '别轮的旧内容' });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '本轮正文' });
+    await vi.waitFor(() => expect(el.textContent).toContain('本轮正文'), { timeout: 2000 });
+    expect(el.textContent).not.toContain('别轮的旧内容');
+  });
+
+  test('还原等待期间到达的 chunk 不丢：先攒着，还原完一起补渲染', async () => {
+    const listener = await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '快照里的前半段', accumulated: '快照里的前半段', getDelayMs: 60,
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '等待期内的新段落' });
+
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('快照里的前半段');
+      expect(el.textContent).toContain('等待期内的新段落');
+    }, { timeout: 3000 });
+  });
+
+  // 等待窗口里只把 chunk 攒着是不够的：工具卡片/命令输出先渲染出去，
+  // 随后 restore() 的 innerHTML 一盖就把它们抹掉。命令输出那条尤其致命：
+  // 渲染器按 execId 缓存的 entry.element 变成脱离文档的孤儿节点，
+  // 之后每条增量都写进那个看不见的节点 —— 这个 execId 的显示永久冻结。
+  test('等待窗口内到达的工具卡片不能被还原覆盖掉', async () => {
+    const listener = await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '快照里的前半段', accumulated: '快照里的前半段', getDelayMs: 60,
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    listener({
+      type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1',
+      toolCalls: [{ id: 'tc9', function: { name: 'agent_exec', arguments: '{"command":"ls"}' } }],
+    });
+
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('快照里的前半段');
+      const card = el.querySelector('.tool-call-item[data-tool-call-id="tc9"]');
+      expect(card).toBeTruthy();
+      expect(card.textContent).toContain('agent_exec');
+    }, { timeout: 3000 });
+  });
+
+  test('等待窗口内开始的命令输出要跟着还原后的 DOM 走（不能写进孤儿节点）', async () => {
+    const listener = await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '快照里的前半段', accumulated: '快照里的前半段', getDelayMs: 60,
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    listener({
+      type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1',
+      toolCalls: [{ id: 'tc9', function: { name: 'agent_exec', arguments: '{"command":"du"}' } }],
+    });
+    listener({ type: 'AGENT_STREAM', sessionId: 's1', callId: 'auto_1', execId: 'e1', toolCallId: 'tc9', streamType: 'stdout', data: '第一行' });
+    listener({ type: 'AGENT_STREAM', sessionId: 's1', callId: 'auto_1', execId: 'e1', toolCallId: 'tc9', streamType: 'stdout', data: '第二行' });
+
+    await vi.waitFor(() => {
+      const codeEl = el.querySelector('.tool-call-item[data-tool-call-id="tc9"] .agent-stream-output code');
+      expect(codeEl).toBeTruthy();
+      expect(codeEl.textContent).toContain('第一行第二行');
+    }, { timeout: 3000 });
+    // 写进去的那个节点必须还在文档里：否则界面永远停在最后一帧
+    expect(document.contains(el.querySelector('.tool-call-item[data-tool-call-id="tc9"] .agent-stream-output code'))).toBe(true);
+  });
+
+  // 窗口里遇到新一轮 STREAM_START 不能顺手把还原扫掉：同一个 callId 里
+  // 每一轮 ReAct 都是一次 STREAM_START，扫掉就是「脱落期已经输出的内容又看不到了」。
+  test('等待窗口内新一轮起步 → 旧快照照样还原，新轮输出接着往下走', async () => {
+    // 快照形状取「上一轮已由工具调用收口、新一轮还没起步」的真实形态：
+    // 指示器已被 appendToolCallItems 收起/移除，本轮正文后面跟着 badge + 工具卡片。
+    const closedRoundHtml = '<div class="message-content"><div class="stream-content">'
+      + '<div class="thinking-content"><div class="thinking-text">脱落期已经输出的一段</div></div>'
+      + '<span class="thinking-badge">思考结果</span>'
+      + '<div class="tool-call-item" data-tool-call-id="tc1"><div class="tool-call-header">'
+      + '<span class="tool-call-name">agent_exec</span></div></div>'
+      + '</div><div class="stream-status hidden"></div></div>';
+    const listener = await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '', html: closedRoundHtml, accumulated: '脱落期已经输出的一段', getDelayMs: 60,
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    listener({ type: 'STREAM_START', sessionId: 's1', callId: 'auto_1' });
+    listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '新一轮的输出' });
+
+    await vi.waitFor(() => {
+      expect(el.textContent).toContain('新一轮的输出');
+      expect(el.textContent).toContain('脱落期已经输出的一段');
+    }, { timeout: 3000 });
+    // 还原的 HTML 里已经有那一段正文，不能再拿 accumulated 补一重复的一份；
+    // 新一轮自己的正文是独立一块，所以总数恰好是 2。
+    expect(el.querySelectorAll('.stream-content .thinking-content').length).toBe(2);
+    expect(el.querySelectorAll('.stream-content .thinking-badge').length).toBe(1);
+  });
+
+  // 快照「只存正文」降级（html 为空）时，正文靠 chunk 补；html 还原成功时它已经在
+  // DOM 里，再 chunk 一遍就是把同一段文字写两份。
+  test('快照 HTML 已含正文时不再补写一份（accumulated 只用来记账）', async () => {
+    const closedRoundHtml = '<div class="message-content"><div class="stream-content">'
+      + '<div class="thinking-content"><div class="thinking-text">脱落期已经输出的一段</div></div>'
+      + '<span class="thinking-badge">思考结果</span>'
+      + '</div><div class="stream-status hidden"></div></div>';
+    await restartPanelWithSnapshot({
+      callId: 'auto_1', text: '', html: closedRoundHtml, accumulated: '脱落期已经输出的一段',
+    });
+    const el = chatContainer.querySelector('.message-wrapper.streaming');
+
+    await vi.waitFor(() => expect(el.textContent).toContain('脱落期已经输出的一段'), { timeout: 2000 });
+
+    expect(el.querySelectorAll('.stream-content .thinking-content').length).toBe(1);
+  });
+
+  test('接管收终态后清除快照（不留脏快照给下一次接管）', async () => {
+    await restartPanelWithSnapshot({ callId: 'auto_1', text: '将要结束的半截' });
+    const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+    expect(sessionStore[SNAP_KEY('s1')]).toBeTruthy();
+
+    listener({ type: 'API_COMPLETE', sessionId: 's1', callId: 'auto_1', content: '完成', executionLog: [] });
+
+    const snap = await import('../../src/side_panel/stream-snapshot.js');
+    await vi.waitFor(async () => expect(await snap.readStreamSnapshot('s1')).toBe(null), { timeout: 2000 });
   });
 
   test('真实监听 → 会话区实时渲染 + 终态只落库一次（带 callId 去重键）', async () => {
@@ -457,7 +897,6 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
     document.removeEventListener('generation-ended', ended);
   });
 
-
   test('核对窗口内的新波消息不丢：终态和正文在同一波到达也要收尾', async () => {
     // 让位核对是一次跨进程往返（QUERY_SESSION_RUNNING）。续跑很快失败时，
     // STREAM_START / STREAM_CHUNK / API_ERROR 会全部落在这个窗口里；
@@ -541,6 +980,98 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
     expect(state.generatingSessionIds.has('s1')).toBe(true);
   });
 
+  // 观察端口只建一次的隐含假设在真机上不成立：SW 被回收会把端口从两头拆掉，
+  // 而面板侧只知道自摘、没人重开。接下来的关闭就没有断开事件可报 ——
+  // 「第二次关闭不弹提醒」在那个路径上又回来了。
+
+  /**
+   * 用「能拿到端口对象 + 能手动拆端口」的 connect 重新起一次面板实例。
+   * beforeEach 里的那次接管用的是假 connect（返回 undefined），不擦掉就看不清
+   * 「接管 → 端口被拆 → 补开」这一条链。
+   * @returns {Promise<{ports:Array,killPort:()=>void,isOpen:()=>boolean,restart:()=>Promise<void>}>}
+   */
+  const withPortSpy = async () => {
+    const ports = [];
+    const prevConnect = chrome.runtime.connect;
+    const mod = await import('../../src/side_panel/chat-reattach.js');
+    const portMod = await import('../../src/side_panel/panel-observer-port.js');
+    const { deleteStreamingState } = await import('../../src/side_panel/chat-streaming.js');
+
+    const restart = async () => {
+      // 先让 beforeEach 那一次未 await 的对齐落地，再把 connect 换成可拆的代理：
+      // 反过来的话旧实例也会往 ports 里插一条，用例就看不清「几条是本次建的」
+      await api.syncFromBackground();
+      chrome.runtime.connect = (opts) => {
+        const port = {
+          name: opts.name,
+          postMessage: vi.fn(),
+          disconnect: vi.fn(),
+          onMessage: { addListener: vi.fn() },
+          onDisconnect: { addListener: (fn) => { port.kill = fn; } },
+        };
+        ports.push(port);
+        return port;
+      };
+      mod.__resetChatReattachForTest();
+      portMod.__resetPanelObserverPortsForTest();
+      deleteStreamingState('s1');
+      document.body.innerHTML = '<div id="chatContainer"></div>';
+      chatContainer = document.getElementById('chatContainer');
+      state.activeSessionId = 's1';
+      api = mod.initChatReattach();
+      await api.syncFromBackground();
+    };
+    await restart();
+
+    return {
+      ports,
+      killPort: () => ports[ports.length - 1].kill(),
+      isOpen: () => portMod.isPanelObserverOpen('s1'),
+      restart,
+      restoreConnect: () => { chrome.runtime.connect = prevConnect; },
+    };
+  };
+
+  test('端口被 SW 拆掉后：下一次对齐要重开一条', async () => {
+    const spy = await withPortSpy();
+    try {
+      expect(spy.ports.length).toBe(1);
+      expect(spy.isOpen()).toBe(true);
+
+      // SW 被回收：Chrome 拆掉端口，面板侧 onDisconnect 把本地引用摸掉
+      spy.killPort();
+      expect(spy.isOpen()).toBe(false);
+
+      // 镜像还活着（同一 callId）→ 不会重建接管，但对齐时必须把端口补回来
+      await api.syncFromBackground();
+      expect(spy.ports.length).toBe(2);
+      expect(spy.isOpen()).toBe(true);
+    } finally {
+      spy.restoreConnect();
+    }
+  });
+
+  test('面板一直开着、只靠广播自愈：下一条广播就要把端口补回来', async () => {
+    const spy = await withPortSpy();
+    try {
+      const listener = chrome.runtime.onMessage.addListener.mock.calls.at(-1)[0];
+      spy.killPort();
+      expect(spy.isOpen()).toBe(false);
+
+      // 这个场景里用户不会切会话、也不会重开面板：后台一发消息就该自愈，
+      // 否则他直接关面板时 SW 仍然不知情（问题②在原路径上复现）
+      listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '续写' });
+
+      expect(spy.isOpen()).toBe(true);
+      expect(spy.ports.length).toBe(2);
+      // 端口还在时不重复建（每条广播都 connect 一次会把 SW 刷爆）
+      listener({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '再续' });
+      expect(spy.ports.length).toBe(2);
+    } finally {
+      spy.restoreConnect();
+    }
+  });
+
 });
 
 // ==================== 启动时序：面板先开、任务后到 ====================
@@ -555,12 +1086,14 @@ describe('生产接线：面板先开、任务后到（SW 被杀后闹钟续跑�
 
   beforeEach(async () => {
     if (prevMod) prevMod.__resetChatReattachForTest();
+    if (prevSnap) prevSnap.__resetStreamSnapshotForTest();
     vi.resetModules();
     document.body.innerHTML = '<div id="chatContainer"></div>';
     chatContainer = document.getElementById('chatContainer');
     chrome.runtime.onMessage = { addListener: vi.fn(), removeListener: vi.fn() };
     runningState = { activeSessionIds: [], activeCallIds: {} };
     chrome.runtime.sendMessage = (msg, cb) => { cb(runningState); };
+    installSessionStore();
     state = (await import('../../src/side_panel/state.js')).default;
     (await import('../../src/side_panel/session-manager.js')).appendMessageToSession.mockClear();
     state.activeSessionId = 's1';
@@ -568,6 +1101,7 @@ describe('生产接线：面板先开、任务后到（SW 被杀后闹钟续跑�
     mod.__resetChatReattachForTest();
     api = mod.initChatReattach();
     prevMod = mod;
+    prevSnap = await import('../../src/side_panel/stream-snapshot.js');
   });
 
   test('打开时后台什么都没跑 → 不建镜像、不抢 DOM', async () => {

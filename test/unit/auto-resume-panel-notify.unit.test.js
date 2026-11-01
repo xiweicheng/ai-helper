@@ -263,19 +263,34 @@ describe('接线守卫', () => {
     expect(INDEX_SRC).toMatch(/getAllReactCheckpoints\(/);
   });
 
-  test('index.js keepalive onDisconnect：不直接弹，延迟复核后由 shouldNotifyPanelDetached 决定', () => {
-    const disconnectIdx = INDEX_SRC.indexOf("port.onDisconnect.addListener");
-    expect(disconnectIdx).toBeGreaterThan(-1);
-    const seg = INDEX_SRC.slice(disconnectIdx, disconnectIdx + 1400);
-    expect(seg).toMatch(/setTimeout\(/);
-    expect(seg).toMatch(/PANEL_DETACH_NOTIFY_DELAY_MS/);
-    expect(seg).toMatch(/shouldNotifyPanelDetached\(\{/);
-    expect(seg).toMatch(/active:\s*activeReactLoops\.has\(sessionId\)/);
-    expect(seg).toMatch(/cancelled:\s*isCancelled\(sessionId\)/);
-    expect(seg).toMatch(/panelReconnected:\s*hasKeepalivePort\(sessionId\)/);
-    expect(seg).toMatch(/notifyPanelDetached\(\{ sessionId \}\)/);
+  test('index.js keepalive onDisconnect：不直接弹，交给唯一的延迟复核入口', () => {
+    // 复核逻辑从 keepalive 分支里提出来给两类端口共用（keepalive + panel-observer），
+    // 这里改盯「断开必须走 checkPanelDetached」+「复核本体不许变形」，判定强度不降。
+    const kaIdx = INDEX_SRC.indexOf("startsWith('keepalive-')");
+    expect(kaIdx).toBeGreaterThan(-1);
+    const disconnectIdx = INDEX_SRC.indexOf('port.onDisconnect.addListener', kaIdx);
+    expect(disconnectIdx).toBeGreaterThan(kaIdx);
+    const seg = INDEX_SRC.slice(disconnectIdx, disconnectIdx + 400);
+    expect(seg).toMatch(/unregisterKeepalivePort\(sessionId, port\)/);
+    expect(seg).toMatch(/checkPanelDetached\(sessionId\)/);
+    // 断开当场直接弹的写法不允许回来（无论是老的 activeReactLoops 判定还是内联复核）
+    expect(seg).not.toMatch(/notifyPanelDetached/);
+
+    const checkIdx = INDEX_SRC.indexOf('function checkPanelDetached');
+    expect(checkIdx).toBeGreaterThan(-1);
+    const check = INDEX_SRC.slice(checkIdx, checkIdx + 1400);
+    expect(check).toMatch(/setTimeout\(/);
+    expect(check).toMatch(/PANEL_DETACH_NOTIFY_DELAY_MS/);
+    expect(check).toMatch(/shouldNotifyPanelDetached\(\{/);
+    expect(check).toMatch(/active:\s*activeReactLoops\.has\(sessionId\)/);
+    expect(check).toMatch(/cancelled:\s*isCancelled\(sessionId\)/);
+    // 「面板还在看」必须同时认发起实例与接管实例两类端口（口径统一在 state.hasLivePanel）
+    expect(check).toMatch(/panelReconnected:\s*hasLivePanel\(sessionId\)/);
+    expect(check).toMatch(/notifyPanelDetached\(\{ sessionId \}\)/);
     // 老写法（命中 activeReactLoops 就直接弹）必须消失，否则误报回归
-    expect(seg).not.toMatch(/if \(activeReactLoops\.has\(sessionId\)\)\s*\{\s*notifyPanelDetached/);
+    expect(check).not.toMatch(/if \(activeReactLoops\.has\(sessionId\)\)\s*\{\s*notifyPanelDetached/);
+    // 全文件只许有一份复核实现，两份必然各自演化回「第二次关闭不提醒」
+    expect((INDEX_SRC.match(/shouldNotifyPanelDetached\(\{/g) || []).length).toBe(1);
   });
 
   test('index.js 补齐判定所需依赖导入（isCancelled / hasKeepalivePort / shouldNotifyPanelDetached）', () => {

@@ -288,6 +288,47 @@ export function hasKeepalivePort(sessionId) {
   return Boolean(getKeepalivePort(sessionId));
 }
 
+// ========== Side Panel 观察端口注册表（接管实例：只报“面板不在了”） ==========
+//
+// keepalive 端口由 callApi 建立，接管运行中任务的 reattach 实例没有 callApi 闭包，
+// 于是第二次关闭面板时 SW 收不到任何断开事件，桌面提醒只响一次。
+// 观察端口（panel-observer-<sessionId>）专职补上这个事件源：它的断开与 keepalive
+// 走同一条“延迟复核 → 是否提醒”的判定，但刻意不进 keepalivePorts——那张表同时是
+// 澄清/工具确认等定向消息与实例身份上报的落点，接管实例不是发起实例，抢过来会把
+// 消息投给答不了的一侧。
+const observerPorts = new Map(); // sessionId → Port
+
+export function registerPanelObserverPort(sessionId, port) {
+  if (sessionId && port) observerPorts.set(sessionId, port);
+}
+
+export function getPanelObserverPort(sessionId) {
+  if (!sessionId) return null;
+  return observerPorts.get(sessionId) || null;
+}
+
+export function hasPanelObserverPort(sessionId) {
+  return Boolean(getPanelObserverPort(sessionId));
+}
+
+// 只摘掉自己那一条：旧端口的断开事件晚一步到达时，不能把新端口从表里抹掉
+export function unregisterPanelObserverPort(sessionId, port) {
+  if (!sessionId) return;
+  if (port && observerPorts.get(sessionId) !== port) return;
+  observerPorts.delete(sessionId);
+}
+
+/**
+ * 「还有没有面板看着这个任务」：发起实例的 keepalive 与接管实例的 observer 任一存活都算。
+ *
+ * 适用于“面板看得见就不用提醒”这类判定（断开复核）。不适用
+ * 「有没有人替这个任务写终态」这类判定（后台落库兜底）：那里要的是写入一定落地，
+ * 接管实例自己那一笔异步落库可能被关面板打断，详见 panel-absent-persist.js。
+ */
+export function hasLivePanel(sessionId) {
+  return hasKeepalivePort(sessionId) || hasPanelObserverPort(sessionId);
+}
+
 // ========== Side Panel 实例身份（发起实例的窗口与宿主 tab） ==========
 //
 // 桌面通知可见性判定（“发起任务的实例面板是否被用户看到”）的数据源：侧边栏建立
