@@ -259,6 +259,48 @@ describe('生产接线：接管的气泡只在目标会话可见时进 DOM', () 
     expect(chatContainer.children[0].dataset.sessionId).toBe('s1');
   });
 
+  test('历史渲染完成后气泡必须回到末尾（启动期先挂会被后 append 的历史挤到上面）', async () => {
+    // 真机缺陷：重开面板时 activeSessionId 恢复的就是那个正在跑的会话，启动期那一次
+    // 接管会把气泡挂进当时还空的会话区；loadChatHistory 随后 append 历史消息，气泡就
+    // 被挤到用户提问上面。探针证据：
+    //   [order] streaming@1 / total 3 → ["selection-floating-menu","...streaming","message user"]
+    // 既有单测全部在「接管会话不可见」下跑（activeSessionId='other'），恰好绕过这条路径。
+    await api.syncFromBackground();
+    expect(chatContainer.children.length).toBe(0);
+
+    // 启动期补水：会话此刻可见，游离气泡被挂回（历史还没渲染）
+    state.activeSessionId = 's1';
+    document.dispatchEvent(new CustomEvent('session-hydrated', { detail: { sessionId: 's1' } }));
+    expect(chatContainer.children.length).toBe(1);
+
+    // 历史渲染在气泡之后才开始 → 用户消息落在气泡下面，顺序错位
+    const userMsg = document.createElement('div');
+    userMsg.className = 'message user';
+    chatContainer.appendChild(userMsg);
+    expect(chatContainer.children[0].classList.contains('streaming')).toBe(true);
+
+    // 渲染完成的信号到达后，必须把接管气泡移回末尾
+    document.dispatchEvent(new CustomEvent('chat-history-rendered', { detail: { sessionId: 's1' } }));
+    const kids = [...chatContainer.children];
+    expect(kids[kids.length - 1].classList.contains('streaming')).toBe(true);
+    expect(kids[kids.length - 1].dataset.sessionId).toBe('s1');
+    // 移动不能把已渲染的历史消息弄丢
+    expect(kids.filter((k) => k.classList.contains('user')).length).toBe(1);
+  });
+
+  test('chat-history-rendered 不影响没有接管镜像的会话（正常会话零变化）', async () => {
+    // 没有接管气泡的会话收到这条事件必须什么都不做：正常发送流程的会话区不能因为
+    // 多一次 reconnect 被重排，更不能凭空长出一个「思考中」气泡。
+    const userMsg = document.createElement('div');
+    userMsg.className = 'message user';
+    chatContainer.appendChild(userMsg);
+
+    document.dispatchEvent(new CustomEvent('chat-history-rendered', { detail: { sessionId: 's2' } }));
+
+    expect(chatContainer.children.length).toBe(1);
+    expect(chatContainer.children[0].classList.contains('streaming')).toBe(false);
+  });
+
   test('session-hydrated 不碰不属于本镜像的会话（正常会话零影响）', async () => {
     document.dispatchEvent(new CustomEvent('session-hydrated', { detail: { sessionId: 'other' } }));
     expect(chatContainer.children.length).toBe(0);

@@ -160,6 +160,7 @@ const _mirrors = new Map();
 let _manager = null;
 let _listenerBound = false;
 let _hydratedHandler = null;
+let _historyRenderedHandler = null;
 let _syncTimer = null;
 
 // 对齐节流：一条流每秒能来几十条广播，不能每条都去问后台；
@@ -496,6 +497,16 @@ function _bindListener() {
     _scheduleSync();
   };
   document.addEventListener('session-hydrated', _hydratedHandler);
+
+  // 会话历史渲染完成后把接管气泡移回末尾。
+  // 启动期接管往往早于历史渲染：气泡先 appendChild 进当时还空的容器，历史消息
+  // 随后才 append —— 结果气泡停在用户提问上面（真机与探针均复现）。reconnect 内部
+  // 就是 appendChild，等于重新排到末尾，并顺带补回脱落期间累积的正文。
+  _historyRenderedHandler = (e) => {
+    const sessionId = e?.detail?.sessionId;
+    if (sessionId && _mirrors.has(sessionId)) reconnectStreamingElement(sessionId);
+  };
+  document.addEventListener('chat-history-rendered', _historyRenderedHandler);
 }
 
 /**
@@ -552,5 +563,9 @@ export function __resetChatReattachForTest() {
   if (_hydratedHandler) {
     document.removeEventListener('session-hydrated', _hydratedHandler);
     _hydratedHandler = null;
+  }
+  if (_historyRenderedHandler) {
+    document.removeEventListener('chat-history-rendered', _historyRenderedHandler);
+    _historyRenderedHandler = null;
   }
 }
