@@ -3643,7 +3643,8 @@ textarea {
   min-width: 0;
 }
 .kb-doc-title .kb-doc-name {
-  flex: 1;
+  /* 不占满整行：徽标要紧跟名称，超长时名称自己收缩出省略号 */
+  flex: 0 1 auto;
   min-width: 0;
 }
 .kb-doc-name {
