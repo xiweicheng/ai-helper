@@ -154,14 +154,7 @@ fs.writeFileSync("../manifest.json", next);
     log_ok "版本已更新: v${CURRENT_VERSION} → v${NEW_VERSION}（根目录 package.json / manifest.json 已同步）"
 
     echo ""
-    read -r -p "确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm? [y/N] " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        log_warn "已取消发布，回滚 agent/ 与根目录版本文件..."
-        git checkout package.json package-lock.json "$VERSION_JSON_PATH" \
-            ../package.json ../package-lock.json ../manifest.json
-        log_info "版本已回滚到 v${CURRENT_VERSION}"
-        exit 0
-    fi
+    log_info "自动确认发布 ${PACKAGE_NAME}@${NEW_VERSION} 到 npm"
 
     # 写入扩展端版本信息（侧边栏「版本信息」弹窗数据源）。
     # 必须在 npm publish 之前：npm publish 触发的 prepublishOnly 会把根目录
@@ -237,38 +230,34 @@ fi
 
 # ─── 9. Git 提交并打 tag（version.json 已在发布前写入工作区）───
 echo ""
-read -r -p "是否提交版本号变更并推送 git tag? [Y/n] " git_confirm
-if [[ ! "$git_confirm" =~ ^[Nn]$ ]]; then
-    git add package.json package-lock.json "$VERSION_JSON_PATH" \
-        ../package.json ../package-lock.json ../manifest.json
-    git commit -m "chore(agent): bump version to v${NEW_VERSION}"
-    git tag "v${NEW_VERSION}"
-    log_info "推送分支与 tag v${NEW_VERSION}..."
-    PUSHED_REMOTES=""
-    FAILED_REMOTES=""
-    for remote in $GIT_REMOTES; do
-        if ! git remote get-url "$remote" &>/dev/null; then
-            log_warn "远端 '${remote}' 未配置，跳过"
-            FAILED_REMOTES="${FAILED_REMOTES}${remote}(未配置) "
-            continue
-        fi
-        log_info "推送到 ${remote}..."
-        if git push "$remote" "$(git branch --show-current)" && git push "$remote" "v${NEW_VERSION}"; then
-            PUSHED_REMOTES="${PUSHED_REMOTES}${remote} "
-        else
-            log_warn "推送到 ${remote} 失败，继续推送其余远端"
-            FAILED_REMOTES="${FAILED_REMOTES}${remote}(失败) "
-        fi
-    done
-    if [ -n "$PUSHED_REMOTES" ]; then
-        log_ok "Git tag v${NEW_VERSION} 已推送到: ${PUSHED_REMOTES}"
+log_info "自动提交版本号变更并推送 git tag"
+git add package.json package-lock.json "$VERSION_JSON_PATH" \
+    ../package.json ../package-lock.json ../manifest.json
+git commit -m "chore(agent): bump version to v${NEW_VERSION}"
+git tag "v${NEW_VERSION}"
+log_info "推送分支与 tag v${NEW_VERSION}..."
+PUSHED_REMOTES=""
+FAILED_REMOTES=""
+for remote in $GIT_REMOTES; do
+    if ! git remote get-url "$remote" &>/dev/null; then
+        log_warn "远端 '${remote}' 未配置，跳过"
+        FAILED_REMOTES="${FAILED_REMOTES}${remote}(未配置) "
+        continue
     fi
-    if [ -n "$FAILED_REMOTES" ]; then
-        log_warn "以下远端推送未完成: ${FAILED_REMOTES}"
-        log_warn "可稍后手动重试: git push <remote> && git push <remote> v${NEW_VERSION}"
+    log_info "推送到 ${remote}..."
+    if git push "$remote" "$(git branch --show-current)" && git push "$remote" "v${NEW_VERSION}"; then
+        PUSHED_REMOTES="${PUSHED_REMOTES}${remote} "
+    else
+        log_warn "推送到 ${remote} 失败，继续推送其余远端"
+        FAILED_REMOTES="${FAILED_REMOTES}${remote}(失败) "
     fi
-else
-    log_info "跳过 git 提交，版本号变更与版本信息仅保留在本地"
+done
+if [ -n "$PUSHED_REMOTES" ]; then
+    log_ok "Git tag v${NEW_VERSION} 已推送到: ${PUSHED_REMOTES}"
+fi
+if [ -n "$FAILED_REMOTES" ]; then
+    log_warn "以下远端推送未完成: ${FAILED_REMOTES}"
+    log_warn "可稍后手动重试: git push <remote> && git push <remote> v${NEW_VERSION}"
 fi
 
 echo ""
