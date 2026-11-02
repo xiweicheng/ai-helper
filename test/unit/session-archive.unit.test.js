@@ -239,6 +239,30 @@ describe('归档面板接线（源码守卫）', () => {
     expect(src).toContain("new CustomEvent('session-archived'");
     expect(src).toContain("new CustomEvent('session-deleted'");
   });
+
+  it('三点按钮显隐条件是「溢出 ∥ 有归档」，不能只看溢出', () => {
+    // 归档区只挂在三点按钮的下拉面板里；若只看溢出，「标签全部放得下 + 有归档」
+    // 的组合就没有任何入口能看到归档会话
+    const src = read('src/side_panel/session-manager-ui.js');
+    const idx = src.indexOf('function checkOverflow');
+    expect(idx).toBeGreaterThan(0);
+    const body = src.slice(idx, idx + 500);
+    expect(body).toContain('archivedCountForMoreBtn > 0');
+    expect(body).toContain('scrollWidth > scrollContainer.clientWidth');
+  });
+
+  it('三点按钮的归档计数在渲染与徽标刷新两处都会更新', () => {
+    const src = read('src/side_panel/session-manager-ui.js');
+    // 渲染尾部异步补查（带令牌防竞态）
+    expect(src).toContain('void refreshMoreBtnArchivedState(scrollContainer)');
+    expect(src).toContain('token !== archivedCountToken');
+    // 归档/恢复/彻底删除走的 refreshArchiveEntryCount 必须同步计数并重算显隐，
+    // 否则归档后按钮消失 / 清空归档后残留
+    const entryIdx = src.indexOf('async function refreshArchiveEntryCount');
+    const entryBody = src.slice(entryIdx, entryIdx + 900);
+    expect(entryBody).toContain('archivedCountForMoreBtn = list.length');
+    expect(entryBody).toContain('checkOverflow(scrollContainer)');
+  });
 });
 
 describe('定时任务与归档的边界（源码守卫）', () => {

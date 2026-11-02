@@ -338,8 +338,9 @@ export async function renderSessionTabs(prefetchedData = null) {
   // 鼠标滚轮水平滚动支持
   bindWheelScroll(scrollContainer);
 
-  // 检测溢出并显示/隐藏更多按钮
+  // 检测溢出并显示/隐藏更多按钮（含异步补查归档会话：有归档时即使不溢出也要露出入口）
   checkOverflow(scrollContainer);
+  void refreshMoreBtnArchivedState(scrollContainer);
   // 滚动到当前活跃标签
   scrollToActiveTab(scrollContainer);
 }
@@ -387,14 +388,36 @@ function bindAddButton() {
 
 // ==================== 溢出检测 ====================
 
+/**
+ * 归档会话条数缓存：归档区只挂在三点按钮的下拉面板里，三点按钮是归档会话的
+ * 唯一入口。只有标签溢出才显示三点会让「全部放得下 + 有归档」的组合没有入口，
+ * 所以显隐条件是：溢出 ∥ 有归档。
+ */
+let archivedCountForMoreBtn = 0;
+let archivedCountToken = 0;
+
 function checkOverflow(scrollContainer) {
   const moreBtn = document.getElementById('sessionTabsMore');
   if (!moreBtn) return;
-  if (scrollContainer.scrollWidth > scrollContainer.clientWidth) {
-    moreBtn.style.display = 'flex';
-  } else {
-    moreBtn.style.display = 'none';
+  const overflow = scrollContainer.scrollWidth > scrollContainer.clientWidth;
+  moreBtn.style.display = (overflow || archivedCountForMoreBtn > 0) ? 'flex' : 'none';
+}
+
+/**
+ * 异步刷新归档计数并重算三点按钮显隐（在 renderSessionTabs 尾部 fire-and-forget）。
+ * 带请求令牌防竞态：只影响按钮显隐，不阻塞/不影响标签渲染。
+ */
+async function refreshMoreBtnArchivedState(scrollContainer) {
+  const token = ++archivedCountToken;
+  let list;
+  try {
+    list = await loadArchivedSessions();
+  } catch {
+    return;
   }
+  if (token !== archivedCountToken) return;
+  archivedCountForMoreBtn = list.length;
+  checkOverflow(scrollContainer);
 }
 
 // ResizeObserver 监听滚动容器尺寸变化
@@ -1067,6 +1090,11 @@ async function refreshArchiveEntryCount() {
   if (!countEl) return;
   const list = await loadArchivedSessions();
   archivedListCache = list;
+  // 归档数变化会改变三点按钮的显隐条件（溢出 ∥ 有归档）；
+  // 计数与徽标都更新后必须重算，否则归档后按钮消失 / 清空归档后残留
+  archivedCountForMoreBtn = list.length;
+  const scrollContainer = document.getElementById('sessionTabsScroll');
+  if (scrollContainer) checkOverflow(scrollContainer);
   if (list.length > 0) {
     countEl.textContent = String(list.length > 99 ? '99+' : list.length);
     countEl.hidden = false;

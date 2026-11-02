@@ -12640,6 +12640,49 @@ body {
   border-radius: 8px 8px 0 0;
 }
 
+/* 目录计数（左推到最右，为锁/叉让位） */
+.message-toc-count {
+  margin-left: auto;
+  font-weight: normal;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+/* 锁定 / 关闭按钮 */
+.message-toc-lock,
+.message-toc-close {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  transition: all 0.15s;
+}
+
+.message-toc-lock svg {
+  display: block;
+}
+
+.message-toc-lock:hover,
+.message-toc-close:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* 锁定态高亮 */
+.message-toc-lock.locked {
+  color: var(--brand-600);
+}
+
 .message-toc-content {
   padding: 8px;
   overflow-y: auto;

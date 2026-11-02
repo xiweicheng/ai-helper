@@ -20,6 +20,7 @@ import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
 import { formatMarkdown, splitTableCells, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
+import { hideMessageToc } from './message-toc.js';
 // chat-export 的 mermaid/docx 辅助改为按需加载：它的顶层 docx 依赖会把 MB 级代码
 // 拖进 side_panel 首屏 chunk（PERF-05）
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
@@ -765,6 +766,9 @@ export function initWorkspacePanel() {
           <button class="workspace-preview-close" id="workspacePreviewClose" title="${t('workspace.closePreview')}">×</button>
         </div>
         <div class="workspace-preview-content" id="workspacePreviewContent"></div>
+        <!-- 预览全屏内的目录导航挂载点：side-rail 被 fixed 全屏覆盖层遮挡，
+             故在覆盖层内另设此 rail 承载 .message-toc-container（同消息全屏的做法） -->
+        <div class="workspace-preview-rail" id="workspacePreviewRail"></div>
       </div>
     </div>
   `;
@@ -4036,6 +4040,8 @@ function togglePreviewFullscreen() {
   const panel = document.getElementById('workspacePanel');
   const btn = document.getElementById('workspacePreviewFullscreenBtn');
   const isFullscreen = previewArea.classList.toggle('fullscreen');
+  // 切换挂载点时旧的目录容器会留在已遮挡/已摘除的一侧，先收起再让 hover 重新生成
+  hideMessageToc();
   if (isFullscreen) {
     panel.classList.add('preview-fullscreen');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>';
@@ -4044,6 +4050,9 @@ function togglePreviewFullscreen() {
     panel.classList.remove('preview-fullscreen');
     btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
     btn.title = t('workspace.fullscreenPreview');
+    // 退出全屏：移除覆盖层 rail 里残留的目录容器，避免下次进入全屏时右缘挂着一个指向旧节点的入口
+    const rail = document.getElementById('workspacePreviewRail');
+    if (rail) rail.querySelectorAll('.message-toc-container').forEach((n) => n.remove());
   }
 }
 
@@ -4056,6 +4065,9 @@ function toggleMarkdownPreview() {
   const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
   const exportMenu = document.getElementById('workspacePreviewExportMenu');
 
+  // 渲染态↔源码态切换会重建正文：先收起旧目录，否则悬停入口指向的标题已随
+  // innerHTML 重建摘除，点击目录会跳到不存在的位置
+  hideMessageToc();
   const isRendered = previewContent.classList.toggle('markdown-rendered');
   const markdownText = previewArea.dataset.markdownText || '';
 
@@ -4226,6 +4238,10 @@ export async function closePreview(force = false) {
       btn.title = t('workspace.fullscreenPreview');
     }
   }
+  // 关闭预览：收起目录并清空全屏 rail 残留，避免下次预览挂着指向旧文档的入口
+  hideMessageToc();
+  const previewRail = document.getElementById('workspacePreviewRail');
+  if (previewRail) previewRail.querySelectorAll('.message-toc-container').forEach((n) => n.remove());
   // 清理 PDF 资源
   if (currentPdfDoc) {
     currentPdfDoc.destroy();
