@@ -14979,6 +14979,25 @@ body {
   border-radius: 0;
 }
 
+/* 预览全屏内目录导航挂载点：贴覆盖层右缘、垂直居中，浮于正文之上。
+   side-rail 被 fixed 全屏覆盖层(9999)遮挡，故在覆盖层内另设此 rail 承载
+   .message-toc-container（同消息全屏 .message-fullscreen-rail 的做法）；
+   非全屏时隐藏，避免浮窗模式下与 side-rail 目录入口双重出现 */
+.workspace-preview-rail {
+  display: none;
+}
+
+.workspace-preview-overlay.fullscreen .workspace-preview-rail {
+  display: flex;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .workspace-preview-content {
   flex: 1;
   overflow: auto;
@@ -18360,6 +18379,12 @@ body.has-session-dock .chat-container {
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-secondary);
+}
+
+/* 提示条已移入对话滚动区：内容不足一屏时 margin-top:auto 顶到底部，否则紧随最后一条消息 */
+.chat-container > .usage-tips-bar {
+  flex: 0 0 auto;
+  margin: auto 1px 2px;
 }
 
 .usage-tips-icon {

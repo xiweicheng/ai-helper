@@ -6,6 +6,7 @@
 //
 // 交互：
 //   - 默认每 8s 轮换一条，单行截断；
+//   - 提示条挂在对话滚动区末尾，随内容滚动：只有滚到底部时才出现，不改变对话区高度；
 //   - 鼠标悬停暂停轮播并展开完整文案，右侧出现「不再展示」按钮；
 //   - 点「不再展示」写入 usageTipsEnabled=false 并隐藏，配置页「基础」可重新打开。
 import { t, registerTranslations, getLanguage, subscribe } from '../shared/i18n.js';
@@ -331,6 +332,9 @@ let hovering = false;
 let currentId = null;
 let enabled = true;
 
+// 提示条作为对话滚动区的最后一个内容块：无需显隐切换，天然只滚到底时可见
+let chatEl = null;
+
 function isAgentConnected() {
   return state.agentPlatform?.connected === true;
 }
@@ -493,6 +497,18 @@ export function initUsageTips() {
   if (!barEl || !textEl || !tooltipEl || !dismissEl) return;
 
   bindEvents();
+
+  chatEl = document.getElementById('chatContainer');
+  if (chatEl) {
+    // 放进滚动区末尾：跟随内容一起滚走，滚到底时自然出现在底部；内容不足一屏时由 margin-top:auto 顶到底部
+    chatEl.appendChild(barEl);
+    if (typeof MutationObserver !== 'undefined') {
+      // 新消息会追加在提示条之后；会话切换/清空会重建 innerHTML，两种情况都要把它放回末尾
+      new MutationObserver(() => {
+        if (barEl.parentNode !== chatEl || barEl.nextElementSibling) chatEl.appendChild(barEl);
+      }).observe(chatEl, { childList: true });
+    }
+  }
 
   try {
     chrome.storage.local.get([STORAGE_KEY], (result) => {
