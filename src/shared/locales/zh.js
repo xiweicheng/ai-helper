@@ -1575,6 +1575,8 @@ export default {
     docViewTitle: '查看原文',
     docViewCopy: '复制',
     docViewCopied: '已复制到剪贴板',
+    docViewPreview: '预览',
+    docViewSource: '源码',
     docViewTruncated: '文本较长，仅显示前 {limit} 个字符（共 {total} 字符），可下载全文。',
     docViewEmpty: '（无文本内容）',
     docCharCount: '{count} 字符',

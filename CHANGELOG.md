@@ -2,6 +2,30 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-11-03
+
+### AI 回答全屏查看下的划词失效修复
+
+> 来源：用户反馈「AI 回答内容全屏模式下，划词功能没有生效」——普通聊天区划词正常，进入全屏阅读后选中文本完全不弹菜单。
+
+- **根因（三层耦合）**：全屏阅读采用节点迁移方案，消息真实节点被移出 `#chatContainer` 挂到覆盖层 body，而划词的三处判定都写死在 `#chatContainer` 上：① `mousedown`/`mouseup` 委托容器是 `#chatContainer`，全屏里事件根本不派发；② 选区归属用 `chatContainer.contains(anchorNode)`，迁移后恒为 false；③ 菜单静态声明在 `#chatContainer` 内（`position: absolute`），被 `position: fixed` / `z-index: 10005` 的全屏覆盖层整层遮住，即使弹出也看不见。
+- **触发层**：新增 `src/side_panel/selection-scope.js`，作用域统一为 `#chatContainer, .message-fullscreen-body`（与 `markdown-render.js` 的 Ctrl+单击口径一致）；事件改绑 `document` 并按该作用域收口，输入框等区域选文字依旧不误弹。
+- **承载层**：菜单改为 `document.body` 上的惰性单例 + `position: fixed` 视口坐标 clamp（`z-index: 10008`），不再寄生消息容器——顺带修掉「会话 DOM 快照把菜单一起缓存还原出重复节点」的隐患；`side_panel.html` 移除静态节点；菜单标题改为每次渲染取词，i18n 热切换不再残留旧语言。
+- **浮层解答**：`.selection-answer-popup` 的 `z-index` 由 2100 提到 10009，全屏里点菜单右侧图标打开的解答浮层不再被覆盖层遮挡。
+
+**验证**：`npm run build:silent` → `BUILD_SUCCESS`；`npx vitest run test/unit` → **254 文件 / 4192 例全绿**（新增 `test/unit/selection-fullscreen-scope.unit.test.js` 8 例，含「迁移后 `chatContainer.contains` 为 false」的根因固化断言）；`node test-results-probes/_selection-fullscreen-verify.mjs` → **11/11 断言通过**（真实构建产物 + 真实选区：全屏内弹菜单、菜单与解答浮层均未被遮挡、普通区/退出全屏后/输入框三条对照路径不回退）；`npx eslint` 无告警。
+
+### 知识库「查看原文」支持 Markdown 渲染预览
+
+> 来源：用户反馈知识库文档的「查看原文」把 Markdown 原样当纯文本显示（`#`、`**`、表格、代码块都不解析），读起来费劲，要求加 Markdown 渲染。
+
+- **前端（选项页 → 知识库 → 查看原文弹窗）**：Markdown 文档默认走「预览」渲染（`marked` + `DOMPurify` 清洗），并保留「源码」切换随时查看/核对未渲染原文；复制与下载文本始终基于原始文本，不受渲染影响。**所有文档都有「预览 / 源码」切换**，识别不出来时可手动切预览。
+- **渲染判定**：① 原件 `ext` / 原件名 / 文档名 / 网页 URL 命中 `.md/.markdown/.mdown/.mkd/.mdx` 直接认定；② 原件是 PDF/DOCX/HTML/XLSX/CSV/PPTX/JSON 等一律不认（正文只是解析器抽取结果）；③ 其余（**大模型工具写入的文本、手输文本、`.txt/.log`、无扩展名**）按正文特征识别：行首标题/围栏代码块/表格行/引用块/分隔线任一命中即认定，列表、加粗、链接、行内代码需命中两类以上，避免普通段落被误判。
+- **加载方式**：`options.html` 复用 `libs/marked.min.js`（与侧边栏同一份文件），无新增依赖；`marked` 缺失时自动降级为纯文本。
+- **样式**：新增 `.kb-doc-markdown` 阅读式排版（标题/列表/表格/代码块/引用/链接/图片），颜色全部走主题 token，深浅色一致。
+
+**验证**：`npm run build:silent` → `BUILD_SUCCESS`；`npx vitest run test/unit/knowledge-docs-original.unit.test.js` → **8 例全绿**（新增 3 例：Markdown 默认预览并可切回源码、无 `.md` 后缀的 Markdown 正文自动识别、非 Markdown 文档默认源码且可手动切预览）；`npx eslint src/options/knowledge-panel.js test/unit/knowledge-docs-original.unit.test.js` 无告警。
+
 ## 2026-11-01
 
 ### RAG 知识库原件留存与溯源（导入不再只留纯文本）

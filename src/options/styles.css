@@ -3762,6 +3762,26 @@ textarea {
   gap: 6px;
   flex: none;
 }
+/* 预览 / 源码 切换（仅 Markdown 文档出现） */
+.kb-doc-viewmode {
+  display: flex;
+  gap: 0;
+}
+.kb-doc-viewmode .kb-doc-act {
+  border-radius: 0;
+}
+.kb-doc-viewmode .kb-doc-act:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.kb-doc-viewmode .kb-doc-act:last-child {
+  border-radius: 0 6px 6px 0;
+  border-left: none;
+}
+.kb-doc-viewmode .kb-doc-act.active {
+  background: var(--brand-fill);
+  border-color: var(--brand-fill);
+  color: #fff;
+}
 .kb-doc-viewmeta {
   font-size: 11px;
   color: var(--text-tertiary);
@@ -3796,6 +3816,99 @@ textarea {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Markdown 预览（查看原文弹窗）：沿用源码框的容器外观，正文按阅读排版 */
+.kb-doc-markdown {
+  padding: 12px 14px;
+  max-height: 46vh;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+.kb-doc-markdown > :first-child { margin-top: 0; }
+.kb-doc-markdown > :last-child { margin-bottom: 0; }
+.kb-doc-markdown h1,
+.kb-doc-markdown h2,
+.kb-doc-markdown h3,
+.kb-doc-markdown h4,
+.kb-doc-markdown h5,
+.kb-doc-markdown h6 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+.kb-doc-markdown h1 { font-size: 20px; padding-bottom: 6px; border-bottom: 1px solid var(--border-default); }
+.kb-doc-markdown h2 { font-size: 17px; padding-bottom: 5px; border-bottom: 1px solid var(--border-default); }
+.kb-doc-markdown h3 { font-size: 15px; }
+.kb-doc-markdown h4 { font-size: 14px; }
+.kb-doc-markdown h5,
+.kb-doc-markdown h6 { font-size: 13px; color: var(--text-secondary); }
+.kb-doc-markdown p { margin: 8px 0; }
+.kb-doc-markdown ul,
+.kb-doc-markdown ol { margin: 8px 0; padding-left: 22px; }
+.kb-doc-markdown li { margin: 3px 0; }
+.kb-doc-markdown li > p { margin: 3px 0; }
+.kb-doc-markdown a { color: var(--text-link); text-decoration: none; }
+.kb-doc-markdown a:hover { text-decoration: underline; }
+.kb-doc-markdown strong { font-weight: 600; }
+.kb-doc-markdown code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.kb-doc-markdown pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  line-height: 1.55;
+}
+.kb-doc-markdown pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 12px;
+  white-space: pre;
+}
+.kb-doc-markdown blockquote {
+  margin: 10px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border-default);
+  color: var(--text-secondary);
+}
+.kb-doc-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+  margin: 10px 0;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.kb-doc-markdown th,
+.kb-doc-markdown td {
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  text-align: left;
+}
+.kb-doc-markdown th { background: var(--bg-sunken); font-weight: 600; }
+.kb-doc-markdown tr:nth-child(2n) td { background: var(--bg-surface); }
+.kb-doc-markdown hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--border-default);
+}
+.kb-doc-markdown img { max-width: 100%; height: auto; }
+.kb-doc-markdown del { color: var(--text-tertiary); }
 
 /* 检索测试弹窗 */
 .kb-search-scope {

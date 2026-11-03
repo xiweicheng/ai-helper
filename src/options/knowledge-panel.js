@@ -8,6 +8,7 @@ import { agentApi, escapeHtml, showToast, showCustomConfirm, state } from './too
 import { loadRagStatus, refreshRagSection, initRagEvents, setRagAvailabilityChangeHandler } from './toolbox-rag.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
+import DOMPurify from 'dompurify';
 
 // 单文件大小上限（agent 端 body 上限 200MB，base64 膨胀 33%，前端限 50MB 已足够覆盖文档场景）
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -1279,6 +1280,7 @@ function renderDocText(body, c, doc) {
   ];
   if (doc.original?.size) metaParts.push(t('knowledge.docOriginalSize', { size: formatBytes(doc.original.size) }));
 
+  const isMarkdown = isMarkdownDoc(doc, text);
   body.innerHTML = `
     <div class="kb-doc-viewhead">
       <div class="kb-doc-viewtitle">
@@ -1286,13 +1288,35 @@ function renderDocText(body, c, doc) {
         ${badge ? `<span class="kb-doc-badge ${badge.cls}">${escapeHtml(t(`knowledge.${badge.key}`))}</span>` : ''}
       </div>
       <div class="kb-doc-viewactions">
+        <div class="kb-doc-viewmode">
+          <button class="kb-doc-act" type="button" data-doc-mode="preview">${escapeHtml(t('knowledge.docViewPreview'))}</button>
+          <button class="kb-doc-act" type="button" data-doc-mode="source">${escapeHtml(t('knowledge.docViewSource'))}</button>
+        </div>
         <button class="kb-doc-act" type="button" data-doc-copy>${escapeHtml(t('knowledge.docViewCopy'))}</button>
         <button class="kb-doc-act" type="button" data-doc-download="text">${escapeHtml(t('knowledge.docDownloadText'))}</button>
       </div>
     </div>
     <div class="kb-doc-viewmeta">${escapeHtml(metaParts.join(' · '))}${doc.originUrl ? ` · <span class="kb-doc-origin">${escapeHtml(doc.originUrl)}</span>` : ''}</div>
     ${doc.truncated ? `<div class="kb-doc-textnote">${escapeHtml(t('knowledge.docViewTruncated', { limit: doc.viewLimit || text.length, total: doc.totalChars ?? text.length }))}</div>` : ''}
-    <pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
+    <div class="kb-doc-content"></div>`;
+
+  const content = body.querySelector('.kb-doc-content');
+  const modeBtns = body.querySelectorAll('[data-doc-mode]');
+
+  // 源码模式保留原文（可复制）；预览模式交给 marked 渲染 + DOMPurify 清洗
+  const paint = (mode) => {
+    if (mode === 'preview' && text) {
+      content.innerHTML = renderMarkdownPreview(text);
+    } else {
+      content.innerHTML = `<pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
+    }
+    modeBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.docMode === mode));
+  };
+  paint(isMarkdown ? 'preview' : 'source');
+
+  modeBtns.forEach((btn) => {
+    btn.addEventListener('click', () => paint(btn.dataset.docMode));
+  });
 
   body.querySelector('[data-doc-copy]')?.addEventListener('click', async () => {
     try {
@@ -1306,6 +1330,70 @@ function renderDocText(body, c, doc) {
   body.querySelector('[data-doc-download]')?.addEventListener('click', async (e) => {
     await handleDocDownload(e.currentTarget, c, doc.id, 'text');
   });
+}
+
+// ==================== Markdown 预览 ====================
+
+const MARKDOWN_EXTS = new Set(['.md', '.markdown', '.mdown', '.mkd', '.mdx']);
+const MARKDOWN_NAME_RE = /\.(?:md|markdown|mdown|mkd|mdx)(?:[?#].*)?$/i;
+// 明确的二进制/结构化原件：正文只是抽取结果，不按 Markdown 渲染（抽取出来的排版不是 Markdown 语法）
+const NON_MARKDOWN_EXTS = new Set([
+  '.pdf', '.doc', '.docx', '.html', '.htm', '.xls', '.xlsx', '.csv',
+  '.ppt', '.pptx', '.rtf', '.odt', '.odp', '.ods', '.epub', '.json',
+]);
+
+/**
+ * 判断文档是否按 Markdown 渲染。判定顺序：
+ *   1) 原件扩展名 / 原件名 / 文档名 / 网页 URL 命中 md 后缀 → 直接认定；
+ *   2) 原件是 PDF/DOCX/HTML 等 → 一律不认（正文是解析器抽出来的，不是 Markdown）；
+ *   3) 其余（大模型工具写入的文本、手输文本、.txt/.log、无扩展名）→ 按正文特征识别。
+ * 注意：即使识别为 false，弹窗里仍有「预览 / 源码」切换，用户可以手动切到预览。
+ */
+function isMarkdownDoc(doc, text) {
+  const ext = String(doc.original?.ext || '').toLowerCase();
+  if (MARKDOWN_EXTS.has(ext)) return true;
+  const named = [doc.original?.name, doc.name, doc.originUrl].filter(Boolean);
+  if (named.some(n => MARKDOWN_NAME_RE.test(String(n).trim()))) return true;
+  if (NON_MARKDOWN_EXTS.has(ext)) return false;
+  return looksLikeMarkdown(text);
+}
+
+// 强特征：出现任意一种就基本可以断定是 Markdown（普通文章几乎不会用这些行首语法）
+const STRONG_MARKDOWN_SIGNALS = [
+  /^#{1,6}[ \t]+\S/m,           // ATX 标题
+  /^```/m,                        // 围栏代码块
+  /^\s*\|.+\|\s*$/m,              // 表格行
+  /^\s*>\s+\S/m,                  // 引用块
+  /^[-*_]{3,}\s*$/m,              // 分隔线
+];
+// 弱特征：普通文本里也可能偶发，需要命中两种以上才认
+const WEAK_MARKDOWN_SIGNALS = [
+  /^\s*(?:[-*+]|\d+\.)\s+\S/m,    // 有序 / 无序列表
+  /\*\*(?!\s)[^*\n]+\*\*/,        // 加粗
+  /\[[^\]\n]+\]\([^)\s]+\)/,      // 链接
+  /`[^`\n]+`/,                    // 行内代码
+];
+
+/** 正文特征识别：面向没有 .md 后缀、但内容确实是 Markdown 的文档（如大模型工具写入的知识） */
+function looksLikeMarkdown(text) {
+  if (!text) return false;
+  if (STRONG_MARKDOWN_SIGNALS.some(re => re.test(text))) return true;
+  return WEAK_MARKDOWN_SIGNALS.reduce((hit, re) => hit + (re.test(text) ? 1 : 0), 0) >= 2;
+}
+
+/** Markdown → 安全 HTML（marked 缺失时降级为原文，不影响阅读与复制） */
+function renderMarkdownPreview(text) {
+  if (typeof marked === 'undefined') {
+    return `<pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
+  }
+  marked.setOptions({ breaks: true, gfm: true });
+  const html = DOMPurify.sanitize(marked.parse(text), {
+    FORBID_TAGS: ['style', 'iframe', 'script', 'object', 'embed', 'svg', 'form'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'oninput', 'onkeydown', 'onkeyup', 'onkeypress'],
+    ADD_ATTR: ['target'],
+  });
+  // 弹窗里的外链不该把配置页顶走
+  return `<div class="kb-doc-markdown">${html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ')}</div>`;
 }
 
 /**

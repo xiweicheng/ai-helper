@@ -4,7 +4,12 @@
 // 2) 查看原文弹窗：GET 详情 → 只读文本 + 截断提示 + 复制
 // 3) 下载原件：原生 fetch（带 Authorization）→ Content-Disposition 中文文件名 → <a download>
 import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { t } from '../../src/shared/i18n.js';
+
+// options.html 用 <script> 加载 libs/marked.min.js；jsdom 测试里没有这个标签，
+// 直接把同一份文件灌进全局，保证预览走真实解析而不是 mock
+new Function(readFileSync('libs/marked.min.js', 'utf8'))();
 
 const noop = () => {};
 
@@ -13,6 +18,8 @@ const { apiCalls, toastCalls, fetchCalls } = vi.hoisted(() => ({
   toastCalls: [],
   fetchCalls: [],
 }));
+
+const MD_TEXT = '# 使用说明\n\n这是 **Markdown** 正文。\n\n```js\nconsole.log(1)\n```';
 
 const DOCS = [
   {
@@ -30,7 +37,19 @@ const DOCS = [
     id: 'doc_text', name: '手输文本', source: 'text', chunkCount: 1,
     createdAt: '2026-11-01T04:00:00.000Z', original: null,
   },
+  {
+    id: 'doc_md', name: '使用说明.md', source: 'file', chunkCount: 2,
+    createdAt: '2026-11-01T05:00:00.000Z',
+    original: { name: '使用说明.md', ext: '.md', size: 1024, mime: 'text/markdown' },
+  },
+  {
+    // 大模型通过工具写入的知识：没有 .md 后缀，但正文是 Markdown
+    id: 'doc_llm', name: '会议纪要', source: 'text', chunkCount: 2,
+    createdAt: '2026-11-01T06:00:00.000Z', original: null,
+  },
 ];
+
+const LLM_TEXT = '## 会议要点\n\n- 确认发布节奏\n- 补充测试用例\n\n详见 [周报](https://example.com/weekly)';
 
 vi.mock('../../src/options/toolbox-shared.js', () => ({
   // 下载走原生 fetch，需要从 state 取代理地址与 token
@@ -56,6 +75,18 @@ vi.mock('../../src/options/toolbox-shared.js', () => ({
       return {
         success: true,
         document: { ...DOCS[2], text: '手输的正文内容', totalChars: 7, viewLimit: 200000, truncated: false },
+      };
+    }
+    if (method === 'GET' && path === '/api/rag/collections/kb-1/documents/doc_md') {
+      return {
+        success: true,
+        document: { ...DOCS[3], text: MD_TEXT, totalChars: MD_TEXT.length, viewLimit: 200000, truncated: false },
+      };
+    }
+    if (method === 'GET' && path === '/api/rag/collections/kb-1/documents/doc_llm') {
+      return {
+        success: true,
+        document: { ...DOCS[4], text: LLM_TEXT, totalChars: LLM_TEXT.length, viewLimit: 200000, truncated: false },
       };
     }
     return { success: false, error: 'unexpected api call' };
@@ -148,7 +179,7 @@ beforeEach(async () => {
   await vi.waitFor(() => expect(document.querySelectorAll('.kb-card')).toHaveLength(1));
 
   document.querySelector('.kb-card[data-kb-id="kb-1"] [data-action="docs"]').click();
-  await vi.waitFor(() => expect(document.querySelectorAll('.kb-doc-row')).toHaveLength(3));
+  await vi.waitFor(() => expect(document.querySelectorAll('.kb-doc-row')).toHaveLength(5));
 });
 
 describe('文档列表：来源徽标与原件状态', () => {
@@ -203,6 +234,44 @@ describe('查看原文弹窗', () => {
     await vi.waitFor(() => expect(document.querySelector('.kb-doc-textview')).toBeTruthy());
     expect(document.querySelector('.kb-doc-textview').textContent).toBe('手输的正文内容');
     expect(document.querySelector('.kb-doc-textnote')).toBeNull();
+  });
+
+  test('Markdown 文档默认渲染预览，可切回源码', async () => {
+    document.querySelector('.kb-doc-row[data-doc-id="doc_md"] [data-doc-view]').click();
+
+    await vi.waitFor(() => expect(document.querySelector('.kb-doc-markdown')).toBeTruthy());
+    expect(document.querySelector('.kb-doc-markdown h1').textContent).toBe('使用说明');
+    expect(document.querySelector('.kb-doc-markdown strong').textContent).toBe('Markdown');
+    expect(document.querySelector('.kb-doc-markdown pre code').textContent).toContain('console.log(1)');
+
+    // 源码模式必须还原未渲染的 Markdown 原文
+    document.querySelector('[data-doc-mode="source"]').click();
+    expect(document.querySelector('.kb-doc-textview').textContent).toBe(MD_TEXT);
+    expect(document.querySelector('[data-doc-mode="source"]').classList.contains('active')).toBe(true);
+
+    document.querySelector('[data-doc-mode="preview"]').click();
+    expect(document.querySelector('.kb-doc-markdown h1').textContent).toBe('使用说明');
+  });
+
+  test('无 .md 后缀但正文是 Markdown 的文档（大模型工具写入）自动识别并预览', async () => {
+    document.querySelector('.kb-doc-row[data-doc-id="doc_llm"] [data-doc-view]').click();
+
+    await vi.waitFor(() => expect(document.querySelector('.kb-doc-markdown')).toBeTruthy());
+    expect(document.querySelector('.kb-doc-markdown h2').textContent).toBe('会议要点');
+    expect(document.querySelectorAll('.kb-doc-markdown li')).toHaveLength(2);
+    expect(document.querySelector('.kb-doc-markdown a').textContent).toBe('周报');
+  });
+
+  test('非 Markdown 文档默认源码，但保留手动切到预览的入口', async () => {
+    document.querySelector('.kb-doc-row[data-doc-id="doc_file"] [data-doc-view]').click();
+
+    await vi.waitFor(() => expect(document.querySelector('.kb-doc-textview')).toBeTruthy());
+    // PDF 抽取正文不自动识别为 Markdown
+    expect(document.querySelector('[data-doc-mode="source"]').classList.contains('active')).toBe(true);
+
+    // 用户仍可强制预览
+    document.querySelector('[data-doc-mode="preview"]').click();
+    expect(document.querySelector('.kb-doc-markdown')?.textContent).toContain('报告正文前 200000 字');
   });
 });
 

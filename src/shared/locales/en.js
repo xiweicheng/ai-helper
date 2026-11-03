@@ -1575,6 +1575,8 @@ export default {
     docViewTitle: 'View Original Text',
     docViewCopy: 'Copy',
     docViewCopied: 'Copied to clipboard',
+    docViewPreview: 'Preview',
+    docViewSource: 'Source',
     docViewTruncated: 'Text is long; showing the first {limit} of {total} characters. Download the full text instead.',
     docViewEmpty: '(no text content)',
     docCharCount: '{count} chars',
