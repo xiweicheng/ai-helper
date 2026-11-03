@@ -9332,9 +9332,11 @@ body {
   color: var(--text-primary);
 }
 
-/* 选中文本浮动菜单样式 */
+/* 选中文本浮动菜单样式
+   fixed + 挂 body：普通模式与「AI 回答全屏阅读」覆盖层下都能显示——
+   覆盖层是 fixed / z-index 10005，菜单必须高于它，否则全屏里划词点了没反应 */
 .selection-floating-menu {
-  position: absolute;
+  position: fixed;
   background: rgba(var(--surface-rgb), 0.95);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -9344,7 +9346,7 @@ body {
     0 4px 16px rgba(var(--overlay-rgb), 0.1),
     0 8px 32px rgba(var(--overlay-rgb), 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  z-index: 2000;
+  z-index: 10008;
   display: none;
   min-width: 180px;
   max-height: 320px;
@@ -9374,6 +9376,43 @@ body {
   border-bottom: 1px solid rgba(var(--overlay-rgb), 0.1);
   font-weight: 500;
   letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 菜单右上角一键复制选中内容：与菜单项浮层解答图标同风格的 ghost 按钮 */
+.selection-floating-menu .menu-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.selection-floating-menu .menu-copy-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.selection-floating-menu .menu-copy-btn:hover {
+  background: rgba(var(--brand-violet-rgb), 0.12);
+  border-color: rgba(var(--brand-violet-rgb), 0.35);
+  color: var(--brand-violet-600);
+}
+
+/* 复制成功短暂打勾态：与代码块 .code-copy-btn.copied 同 Token，copyToClipboard 自动加/撤 */
+.selection-floating-menu .menu-copy-btn.copied {
+  color: var(--success-500);
 }
 
 .selection-floating-menu .menu-item {
@@ -9477,7 +9516,8 @@ body {
 
 .selection-answer-popup {
   position: fixed;
-  z-index: 2100;
+  /* 需高于 AI 回答全屏覆盖层（10005），否则全屏里由划词菜单打开的浮层解答会被遮住 */
+  z-index: 10009;
   display: none;
   width: 320px;
   max-width: calc(100vw - 16px);

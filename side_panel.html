@@ -245,11 +245,9 @@
       <h2 data-i18n="chat.welcomeTitle">开始对话</h2>
       <p data-i18n="chat.welcomeSubtitle">输入您的问题，AI 助手将为您解答</p>
     </div>
-    <!-- 选中文本浮动菜单 -->
-    <div class="selection-floating-menu" id="selectionFloatingMenu">
-      <div class="menu-header" data-i18n="chat.askBasedOnSelection">基于选中内容提问</div>
-      <div id="selectionMenuItems"></div>
-    </div>
+    <!-- 选中文本浮动菜单不在此处静态声明：AI 回答全屏阅读会把消息节点迁出本容器，
+         静态节点留在容器内既会被覆盖层遮住又会被会话 DOM 快照复制，改由
+         index.js 的 ensureSelectionMenuEl() 惰性建到 body 上（fixed 定位） -->
   </div>
   
   <!-- 消息跳转把手（上一个/下一个问题 + 问题列表；悬停展开，点击钉住） -->

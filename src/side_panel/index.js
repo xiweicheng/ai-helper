@@ -3,7 +3,7 @@
 import { initTheme, subscribeTheme, getTheme, setTheme } from '../shared/theme.js';
 import state from './state.js';
 import { BUILTIN_TOOLS, PRESET_MODES } from './constants.js';
-import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition } from './utils.js';
+import { showToast, loadChatConfig, getApiParams, ensureChatConfigLoaded, getCurrentActiveTabId, getSystemPrompt, escapeHtml, formatDuration, updateDropdownPosition, copyToClipboard } from './utils.js';
 import { estimateTokens, getContextWindow, compressQuotedContext, normalizeCustomModels, stripImagesFromContent, formatContextWindow, inferContextWindow } from '../shared/token-counter.js';
 import { selectHistoryForSend, applyCompactionInjection } from '../shared/context-usage.js';
 import { addToInputHistory } from './input-history.js';
@@ -16,7 +16,8 @@ import { initChatReattach, syncReattachForSession } from './chat-reattach.js';
 import { initSessionDock } from './session-dock.js';
 import { initBookmarkPanel } from './bookmark-panel.js';
 import { initMessageJumpNav } from './message-jump-nav.js';
-import { initMessageFullscreen, getSessionDOMSnapshot } from './message-fullscreen.js';
+import { initMessageFullscreen, getSessionDOMSnapshot, isFullscreenActive, closeMessageFullscreen } from './message-fullscreen.js';
+import { isInSelectionScope } from './selection-scope.js';
 import { initSearchPanel } from './search-panel.js';
 import { initSchedulePanel } from './schedule-panel.js';
 import { initWorkspacePanel, updateWorkspacePanelVisibility, resetAndRefreshWorkspace, attachFilesForQuestion } from './workspace-panel.js';
@@ -63,6 +64,8 @@ registerTranslations('zh', {
     configUpdated: '✅ 配置已更新',
     selectedPrefix: '📌 已选中',
     askBasedOnSelection: '基于选中内容提问',
+    copySelectionTooltip: '复制选中内容',
+    copySelectionDone: '已复制选中内容',
     selectedContentLabel: '选中内容',
     selectedContentSummary: '摘要',
     userQuestionLabel: '用户问题',
@@ -134,6 +137,8 @@ registerTranslations('en', {
     configUpdated: '✅ Configuration updated',
     selectedPrefix: '📌 Selected',
     askBasedOnSelection: 'Ask based on selection',
+    copySelectionTooltip: 'Copy selection',
+    copySelectionDone: 'Selection copied',
     selectedContentLabel: 'Selected content',
     selectedContentSummary: 'summary',
     userQuestionLabel: 'User question',
@@ -863,29 +868,52 @@ function setSelectedContext(text, prefix = t('sidePanel.selectedPrefix')) {
 
 // ==================== 划词问答 - 浮动菜单 ====================
 
+// 菜单浮层单例：挂到 document.body 并以 fixed 定位，不放进任何消息容器。
+// 留在 #chatContainer 内时，全屏覆盖层（position: fixed / z-index 10005）会把它整层遮住，
+// 且会被会话 DOM 快照一起缓存还原出重复节点；挂 body 后普通模式与全屏表现一致。
+let selectionMenuEl = null;
+// 当前菜单对应的选中文本：复制按钮的点击监听只绑一次，取最新值靠模块变量传递
+let selectionMenuText = '';
+
+function ensureSelectionMenuEl() {
+  if (selectionMenuEl && selectionMenuEl.isConnected) return selectionMenuEl;
+
+  selectionMenuEl = document.createElement('div');
+  selectionMenuEl.className = 'selection-floating-menu';
+  selectionMenuEl.id = 'selectionFloatingMenu';
+  selectionMenuEl.innerHTML = `
+    <div class="menu-header">
+      <span class="menu-header-title"></span>
+      <button class="menu-copy-btn" type="button">
+        <svg viewBox="0 0 16 16" fill="currentColor">
+          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
+        </svg>
+      </button>
+    </div>
+    <div class="menu-items"></div>
+  `;
+  // 右上角一键复制：复用表格/代码块同一套 copyToClipboard（图标变打勾后恢复），
+  // 不进对话流；复制完收口菜单（先清选区再隐藏，否则划词 mouseup 定时器检测到
+  // 选区仍在会把菜单重新弹出）。菜单隐藏后打勾看不见，成功 toast 是唯一可见反馈，
+  // 沿用表格复制的既有套路（copyToClipboard + 立即 toast，失败另有内部 toast）。
+  // 文案用点击时刻的局部快照（收口会清模块变量）。监听器随骨架创建只挂一次。
+  const copyBtn = selectionMenuEl.querySelector('.menu-copy-btn');
+  copyBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!selectionMenuText) return;
+    const pendingText = selectionMenuText;
+    copyToClipboard(pendingText, copyBtn);
+    showToast(t('sidePanel.copySelectionDone'), 'success');
+    window.getSelection()?.removeAllRanges();
+    window.hideFloatingMenu();
+  });
+  document.body.appendChild(selectionMenuEl);
+  return selectionMenuEl;
+}
+
 function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   if (!state.enableSelectionQuery) {
     return;
-  }
-
-  let selectionFloatingMenu = document.getElementById('selectionFloatingMenu');
-  let selectionMenuItems = document.getElementById('selectionMenuItems');
-
-  if (!selectionFloatingMenu || !selectionMenuItems) {
-    const chatContainer = document.getElementById('chatContainer');
-    if (!chatContainer) {
-      return;
-    }
-
-    selectionFloatingMenu = document.createElement('div');
-    selectionFloatingMenu.className = 'selection-floating-menu';
-    selectionFloatingMenu.id = 'selectionFloatingMenu';
-    selectionFloatingMenu.innerHTML = `
-      <div class="menu-header">${t('sidePanel.askBasedOnSelection')}</div>
-      <div id="selectionMenuItems"></div>
-    `;
-    chatContainer.appendChild(selectionFloatingMenu);
-    selectionMenuItems = document.getElementById('selectionMenuItems');
   }
 
   const menuPrompts = state.customPrompts.filter(p => p.enabledInMenu === true);
@@ -894,6 +922,14 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
     logger.debug('[SidePanel] showFloatingMenu skipped: no prompts enabled in menu');
     return;
   }
+
+  const menuEl = ensureSelectionMenuEl();
+  // 标题/悬停提示在每次渲染时取词，避免 i18n 热切换后仍是旧语言
+  selectionMenuText = text || '';
+  menuEl.querySelector('.menu-header-title').textContent = t('sidePanel.askBasedOnSelection');
+  const copyBtnEl = menuEl.querySelector('.menu-copy-btn');
+  if (copyBtnEl) copyBtnEl.title = t('sidePanel.copySelectionTooltip');
+  const selectionMenuItems = menuEl.querySelector('.menu-items');
 
   selectionMenuItems.innerHTML = '';
 
@@ -924,7 +960,7 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
       // 先把选区快照 clone 出来：后续清除选区 + hideFloatingMenu 会置空 currentSelectionRange，
       // 而浮层需要它提取选中片段所在的整条消息作为上下文
       const rangeSnapshot = state.currentSelectionRange ? state.currentSelectionRange.cloneRange() : null;
-      // 清除文本选区：否则 chatContainer 的 mouseup 定时器（+50ms）检测到选区仍在，会把菜单重新弹出
+      // 清除文本选区：否则划词 mouseup 定时器（+50ms）检测到选区仍在，会把菜单重新弹出
       window.getSelection()?.removeAllRanges();
       window.hideFloatingMenu();
       openSelectionAnswerPopup(prompt, text, mouseX, mouseY, rangeSnapshot);
@@ -932,50 +968,48 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
     selectionMenuItems.appendChild(item);
   });
 
-  const sidePanelBody = document.body;
-  const bodyRect = sidePanelBody.getBoundingClientRect();
+  // mouseX/mouseY 是视口坐标，菜单为 fixed 定位，直接以视口为基准估算并 clamp
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
 
   const estimatedMenuHeight = 40 + menuPrompts.length * 36;
   const estimatedMenuWidth = 180;
   const menuOffset = 30;
 
-  let top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
-  let left = mouseX - bodyRect.left - 20;
+  let top = mouseY - estimatedMenuHeight - menuOffset;
+  let left = mouseX - 20;
 
-  if (top < bodyRect.top + 10) {
-    top = mouseY - bodyRect.top + menuOffset;
+  if (top < 8) {
+    top = mouseY + menuOffset;
   }
 
-  if (left < bodyRect.left + 10) {
-    left = mouseX - bodyRect.left + 20;
+  if (left + estimatedMenuWidth > viewportWidth - 8) {
+    left = mouseX - estimatedMenuWidth - menuOffset;
+    if (left < 8) {
+      left = mouseX + 20;
+    }
   }
+  if (left < 8) left = 8;
 
-  if (left + estimatedMenuWidth > bodyRect.right - 10) {
-    left = mouseX - bodyRect.left - estimatedMenuWidth - menuOffset;
-    if (left < bodyRect.left + 10) {
-      left = mouseX - bodyRect.left + 20;
+  if (top + estimatedMenuHeight > viewportHeight - 8) {
+    top = mouseY - estimatedMenuHeight - menuOffset;
+    if (top < 8) {
+      top = 8;
     }
   }
 
-  if (top + estimatedMenuHeight > bodyRect.bottom - 10) {
-    top = mouseY - bodyRect.top - estimatedMenuHeight - menuOffset;
-    if (top < bodyRect.top + 10) {
-      top = mouseY - bodyRect.top + menuOffset;
-    }
-  }
-
-  selectionFloatingMenu.style.top = top + 'px';
-  selectionFloatingMenu.style.left = left + 'px';
-  selectionFloatingMenu.style.maxHeight = (bodyRect.bottom - top - 20) + 'px';
-  selectionFloatingMenu.classList.add('show');
+  menuEl.style.top = top + 'px';
+  menuEl.style.left = left + 'px';
+  menuEl.style.maxHeight = Math.max(120, viewportHeight - top - 20) + 'px';
+  menuEl.classList.add('show');
 }
 
 window.hideFloatingMenu = function() {
-  const selectionFloatingMenu = document.getElementById('selectionFloatingMenu');
-  if (selectionFloatingMenu) {
-    selectionFloatingMenu.classList.remove('show');
+  if (selectionMenuEl) {
+    selectionMenuEl.classList.remove('show');
   }
-  
+  selectionMenuText = '';
+
   state.lastSelectedText = '';
   state.currentSelectionRange = null;
 };
@@ -992,6 +1026,12 @@ async function handleSelectionPromptClick(prompt, selectedText) {
   if (state.isGenerating) {
     logger.debug('[SidePanel] generating,please wait...');
     return;
+  }
+
+  // 全屏阅读里点菜单项会把问题发进对话流，而对话流在覆盖层之下——发送前先退出全屏，
+  // 否则用户看不到新回答（「浮层解答」走的是另一条路径，它浮在覆盖层之上，不需要退出）
+  if (isFullscreenActive()) {
+    closeMessageFullscreen();
   }
 
   // 阈值驱动的半自动压缩：占用达到阈值则先静默压缩一次；任何失败都放行本次发送
@@ -2325,12 +2365,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ==================== 划词问答相关 ====================
 
-  chatContainerEl.addEventListener('mousedown', (e) => {
+  // 事件绑在 document 而不是 #chatContainer：AI 回答全屏阅读会把消息节点迁出
+  // #chatContainer，绑容器时全屏里 mouseup 根本不会派发到此处；作用域由
+  // isInSelectionScope 收口，输入框等容器外的选区依旧不会弹菜单。
+  document.addEventListener('mousedown', (e) => {
+    if (!isInSelectionScope(e.target)) return;
     state.lastMouseX = e.clientX;
     state.lastMouseY = e.clientY;
   });
 
-  chatContainerEl.addEventListener('mouseup', (e) => {
+  document.addEventListener('mouseup', (e) => {
+    if (!isInSelectionScope(e.target)) return;
     state.lastMouseX = e.clientX;
     state.lastMouseY = e.clientY;
 
@@ -2342,7 +2387,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed && selection.toString().trim()) {
         const selectedText = selection.toString().trim();
-        if (chatContainerEl.contains(selection.anchorNode)) {
+        if (isInSelectionScope(selection.anchorNode)) {
           state.lastSelectedText = selectedText;
           state.currentSelectionRange = selection.getRangeAt(0).cloneRange();
 
@@ -2351,7 +2396,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           showFloatingMenu(selection, selectedText, state.lastMouseX, state.lastMouseY);
         }
       } else {
-        if (!chatContainerEl.contains(selection.anchorNode)) {
+        if (!isInSelectionScope(selection.anchorNode)) {
           state.lastSelectedText = '';
           state.currentSelectionRange = null;
           window.hideFloatingMenu();
@@ -2752,10 +2797,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     if (selectionFloatingMenu && !selectionFloatingMenu.contains(e.target)) {
       const selection = window.getSelection();
-      const isClickInsideChat = chatContainerEl.contains(e.target);
-      const isSelectionInsideChat = selection && !selection.isCollapsed && chatContainerEl.contains(selection.anchorNode);
+      const isClickInScope = isInSelectionScope(e.target);
+      const isSelectionInScope = selection && !selection.isCollapsed && isInSelectionScope(selection.anchorNode);
       
-      if (!isClickInsideChat || !isSelectionInsideChat) {
+      if (!isClickInScope || !isSelectionInScope) {
         window.hideFloatingMenu();
       }
     }
