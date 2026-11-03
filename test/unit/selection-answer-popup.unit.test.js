@@ -3,8 +3,13 @@
 // 划词浮层解答的纯函数契约测试：
 //   1) extractSelectionContext：以选中片段所在消息为上下文；预算内取整条、超预算截断且保证选中片段落在窗口内；无消息祖先返回空。
 //   2) buildPopupMessages：system + user 两条，user 含 [上下文]/[选中内容]/[用户问题] 三段契约，截断时标注。
+//   3) 转入对话的全屏接线（源码守卫）：写入对话流前必须先退出全屏，否则新消息在覆盖层之下。
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { extractSelectionContext, buildPopupMessages } from '../../src/side_panel/selection-answer-popup.js';
+
+const modSrc = readFileSync(resolve(process.cwd(), 'src/side_panel/selection-answer-popup.js'), 'utf8');
 
 function makeRangeWithMessage(messageText, selectedText) {
   const msg = document.createElement('div');
@@ -96,5 +101,29 @@ describe('buildPopupMessages', () => {
     expect(msgs[1].content).not.toContain('[上下文]');
     expect(msgs[1].content).toContain('sel');
     expect(msgs[1].content).toContain('q');
+  });
+});
+
+describe('转入对话：全屏阅读下先退出全屏（接线守卫）', () => {
+  const fnStart = modSrc.indexOf('function handleTransferToChat');
+  const fnBody = modSrc.slice(fnStart, modSrc.indexOf('\n}\n', fnStart));
+
+  it('模块静态引入全屏开关与退出（message-fullscreen 只依 logger/i18n，不成环）', () => {
+    expect(modSrc).toContain("import { isFullscreenActive, closeMessageFullscreen } from './message-fullscreen.js';");
+  });
+
+  it('退出全屏在结果早退之后、写入对话流之前', () => {
+    expect(fnStart).toBeGreaterThan(-1);
+    expect(fnBody).toContain('if (isFullscreenActive()) {');
+    expect(fnBody.indexOf('if (!currentResult || !currentPrompt) return;')).toBeLessThan(fnBody.indexOf('if (isFullscreenActive())'));
+    expect(fnBody.indexOf('if (isFullscreenActive())')).toBeLessThan(fnBody.indexOf("import('./chat-manager.js')"));
+  });
+
+  it('只在转入真正发生时才退全屏：复制/重新生成/关闭三条路径不引入退出', () => {
+    for (const name of ['function handleCopy', 'function closePopup', 'function sendRequest']) {
+      const start = modSrc.indexOf(name);
+      const body = modSrc.slice(start, modSrc.indexOf('\n}\n', start));
+      expect(body, `${name} 不应退全屏`).not.toContain('closeMessageFullscreen');
+    }
   });
 });

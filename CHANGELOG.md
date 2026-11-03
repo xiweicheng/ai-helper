@@ -13,8 +13,11 @@
 - **承载层**：菜单改为 `document.body` 上的惰性单例 + `position: fixed` 视口坐标 clamp（`z-index: 10008`），不再寄生消息容器——顺带修掉「会话 DOM 快照把菜单一起缓存还原出重复节点」的隐患；`side_panel.html` 移除静态节点；菜单标题改为每次渲染取词，i18n 热切换不再残留旧语言。
 - **浮层解答**：`.selection-answer-popup` 的 `z-index` 由 2100 提到 10009，全屏里点菜单右侧图标打开的解答浮层不再被覆盖层遮挡。
 - **发送时自动退出全屏**（用户决策）：全屏里点菜单项是把问题发进对话流，而对话流在覆盖层之下，新回答看不见。故在 `handleSelectionPromptClick` 里、生成中早退之后与压缩/发送之前调 `closeMessageFullscreen()`（消息节点按锚点归位、主列表滚动位置还原）；「浮层解答」路径仍保持全屏不退出。
+- **「转入对话」同步退出全屏**（用户追加决策）：浮层解答底部的 `转入对话` 也是写进 `#chatContainer` 的两条消息，全屏里不退出则落项与滚底全部不可见。故 `selection-answer-popup.js` 的 `handleTransferToChat` 在「无结果/无提示词」早退之后、动态 `import('./chat-manager.js')` 写入之前退出全屏，使结束态与非全屏一致（阅读中的消息归位 → 用户项 + 助手项追加到列表末尾 → 滚到底部 → Toast 可见）；复制/重新生成/关闭三条路径不退出。
 
-**验证**：`npm run build:silent` → `BUILD_SUCCESS`；`npx vitest run test/unit` → **254 文件 / 4193 例全绿**（新增 `test/unit/selection-fullscreen-scope.unit.test.js` 9 例，含「迁移后 `chatContainer.contains` 为 false」的根因固化断言与「退出全屏发生在生成早退之后、发送之前」的顺序契约）；`node test-results-probes/_selection-fullscreen-verify.mjs` → **18/18 断言通过**（真实构建产物 + 真实选区：全屏内弹菜单、菜单与解答浮层均未被遮挡、点菜单项后自动退出全屏且问题进入对话流、自动退出后仍可再次进入全屏、普通区/退出全屏后/输入框三条对照路径不回退）；`npx eslint` 无告警。
+**验证**：`npm run build:silent` → `BUILD_SUCCESS`；`npx vitest run test/unit` → **255 文件 / 4204 例全绿**（新增 `test/unit/selection-fullscreen-scope.unit.test.js` 9 例，含「迁移后 `chatContainer.contains` 为 false」的根因固化断言与「退出全屏发生在生成早退之后、发送之前」的顺序契约；`test/unit/selection-answer-popup.unit.test.js` 新增 3 例守卫「转入对话：早退之后、写入对话流之前退全屏」与「复制/重新生成/关闭不退全屏」）；`node test-results-probes/_selection-fullscreen-verify.mjs` → **26/26 断言通过**（真实构建产物 + 真实选区 + 真实流式消息：全屏内弹菜单、菜单与解答浮层均未被遮挡、浮层收到流式回答后点「转入对话」退出全屏且两条消息落入列表并滚底、点菜单项发送后自动退出全屏、浮层解答不退出全屏、自动退出后仍可再次进入全屏、普通区/退出全屏后/输入框三条对照路径不回退）；`npx eslint` 无告警。
+
+**体积闸门**：本轮改动与同期的菜单头复制按钮一同使 `dist/assets/side_panel.js` 到 1.1408 MB，超出 `audit-small-fixes.unit.test.js` 的 1.14 MB 闸门 776 B。按该测试注释里已有的阈值调整惯例（1.10 → 1.12 → 1.14 MB）上调至 1.156 MB（保留 ~15KB 余量），并在注释里补上本次实测与理由；闸门语义不变——docx 懒加载被废（一次性 +280KB）仍会触发红。
 
 ### 知识库「查看原文」支持 Markdown 渲染预览
 

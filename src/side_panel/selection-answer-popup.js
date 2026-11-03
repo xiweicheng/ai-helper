@@ -6,6 +6,7 @@ import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { estimateTokens } from '../shared/token-counter.js';
 import { formatMessageContent } from './markdown-render.js';
+import { isFullscreenActive, closeMessageFullscreen } from './message-fullscreen.js';
 import { escapeHtml, showToast } from './utils.js';
 
 // 浮层自有文案：模块自注册，保证独立可测（不依赖 index.js 的注册时机）
@@ -355,6 +356,13 @@ function handleCopy() {
 
 function handleTransferToChat() {
   if (!currentResult || !currentPrompt) return;
+
+  // 「转入对话」的产物是写进 #chatContainer 的两条消息，而全屏阅读时对话流就在覆盖层
+  // 之下（且正在阅读的那条被迁出了容器）——先退出全屏，才能与非全屏模式下一致：
+  // 消息落在列表里、滚到底部、Toast 可见。必须在上面的早退之后，避免中途失败白退全屏。
+  if (isFullscreenActive()) {
+    closeMessageFullscreen();
+  }
 
   // 快照当前结果：closePopup() 会同步清空模块级 currentResult/currentPrompt，
   // 而下面写入对话流走的是异步回调，若直接引用模块变量会读到空值（助手气泡变空白）。
