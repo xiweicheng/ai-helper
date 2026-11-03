@@ -350,25 +350,30 @@ function Start-AgentService {
     Write-Host "  +-----------------------------------------------------------+" -ForegroundColor Green
 }
 
-# ==================== 开机自启 (Windows Task Scheduler) ====================
+# ==================== 开机自启 ====================
+# 由 aha autostart 统一实现（Windows 使用 HKCU Run 注册表键，无需管理员权限；
+# 不使用 schtasks /SC ONLOGON——该触发器在非提权环境常被拒绝，且计划任务结束时
+# 可能连带结束被 detach 的代理进程）
 function Setup-Autostart {
-    $taskName = "AIHelperAgent"
     $ahaCmd = Join-Path $BinDir "aha.cmd"
-
-    # 先删旧任务（幂等；任务不存在时 schtasks 会写 stderr，需容忍）
-    Invoke-Tolerant { schtasks /Delete /TN $taskName /F 2>$null | Out-Null }
-
-    # 创建新任务：登录时运行
-    Invoke-Tolerant { schtasks /Create /TN $taskName /TR "`"$ahaCmd`" _autostart-guard" /SC ONLOGON /RL LIMITED /F | Out-Null }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warn "开机自启设置失败（受限环境可忽略）；可稍后在任务计划程序中手动配置"
+    if (-not (Test-Path $ahaCmd)) {
+        Write-Warn "未找到 aha 命令，跳过开机自启设置（可稍后运行 aha autostart on）"
         return
     }
-
-    Write-Ok "已设置 Windows 开机自启（任务计划程序）"
+    Invoke-Tolerant { & $ahaCmd autostart on }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "开机自启设置失败，可稍后运行 aha autostart on 重试"
+    }
 }
 
 function Remove-Autostart {
+    $ahaCmd = Join-Path $BinDir "aha.cmd"
+    if (Test-Path $ahaCmd) {
+        Invoke-Tolerant { & $ahaCmd autostart off 2>$null | Out-Null }
+        return
+    }
+    # aha 已被删除时的兜底清理
+    Invoke-Tolerant { reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "AIHelperAgent" /f 2>$null | Out-Null }
     Invoke-Tolerant { schtasks /Delete /TN "AIHelperAgent" /F 2>$null | Out-Null }
 }
 

@@ -58,7 +58,7 @@ ai-helper-agent start --workdir /path/to/your/project --port 18911
 | `rag status` / `rag install` | 检测 RAG 依赖可用性 / 一键安装 RAG 依赖 |
 | `update` | 检查并更新到最新版本（`--check` 仅查看） |
 | `uninstall` | 一键卸载（保留用户数据） |
-| `autostart off` | 关闭开机自启 |
+| `autostart on` / `autostart off` | 开启 / 关闭开机自启（用户登录时自动运行，无需管理员权限） |
 | `help` | 显示帮助信息 |
 | `--version` / `-v` | 显示版本号 |
 

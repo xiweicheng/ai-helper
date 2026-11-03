@@ -93,7 +93,10 @@
     "uninstallAutostartRemoved": "已移除开机自启",
     "uninstallComplete": "✅ 卸载完成。用户数据已保留在 {dataDir}",
     "autostartDisabled": "开机自启已关闭",
-    "autostartUseScript": "开启自启请重新运行安装脚本，或手动配置系统服务",
+    "autostartEnabled": "已设置开机自启（用户登录时自动运行）",
+    "autostartEnableFailed": "设置开机自启失败",
+    "autostartDisableFailed": "关闭开机自启失败",
+    "autostartUsage": "用法: aha autostart <on|off>",
     "restartHelper": {
       "waitingOldExit": "等待老进程 {pid} 退出...",
       "waitOldTimeout": "等待老进程退出超时，尝试强制终止...",
@@ -198,7 +201,10 @@
     "uninstallAutostartRemoved": "Auto-start removed",
     "uninstallComplete": "✅ Uninstall complete. User data kept at {dataDir}",
     "autostartDisabled": "Auto-start disabled",
-    "autostartUseScript": "To enable auto-start, re-run the install script or configure system service manually",
+    "autostartEnabled": "Auto-start enabled (runs at user login)",
+    "autostartEnableFailed": "Failed to enable auto-start",
+    "autostartDisableFailed": "Failed to disable auto-start",
+    "autostartUsage": "Usage: aha autostart <on|off>",
     "restartHelper": {
       "waitingOldExit": "Waiting for old process {pid} to exit...",
       "waitOldTimeout": "Wait for old process exit timeout, trying force kill...",

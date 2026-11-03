@@ -58,7 +58,7 @@ After startup, the terminal will display a 6-digit pairing code. Enter it in the
 | `rag status` / `rag install` | Check RAG dependency availability / one-click install |
 | `update` | Check and update to latest version (`--check` for info only) |
 | `uninstall` | One-click uninstall (keeps user data) |
-| `autostart off` | Disable auto-start at boot |
+| `autostart on` / `autostart off` | Enable / disable auto-start at user login (no admin required) |
 | `help` | Show help information |
 | `--version` / `-v` | Show version number |
 

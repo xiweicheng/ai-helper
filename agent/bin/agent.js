@@ -748,8 +748,6 @@ if (command === 'start') {
 
 // ==================== uninstall ====================
 } else if (command === 'uninstall') {
-  const isWin = process.platform === 'win32';
-
   // 停止服务
   const config = readAgentConfig();
   if (await isRunning(config)) {
@@ -759,22 +757,9 @@ if (command === 'start') {
   const pid = getPidFromFile();
   if (pid) { killByPid(pid); removePidFile(); }
 
-  // 移除自启
-  const { homedir } = await import('os');
-  if (!isWin) {
-    const plist = join(homedir(), 'Library', 'LaunchAgents', 'com.ai-helper.agent.plist');
-    if (existsSync(plist)) {
-      spawnSync('launchctl', ['unload', plist], { stdio: 'ignore' });
-      try { unlinkSync(plist); } catch {}
-    }
-    const service = join(homedir(), '.config', 'systemd', 'user', 'ai-helper-agent.service');
-    if (existsSync(service)) {
-      spawnSync('systemctl', ['--user', 'disable', 'ai-helper-agent'], { stdio: 'ignore' });
-      try { unlinkSync(service); } catch {}
-    }
-  } else {
-    spawnSync('schtasks', ['/Delete', '/TN', 'AIHelperAgent', '/F'], { windowsHide: true, stdio: 'ignore' });
-  }
+  // 移除自启（跨平台统一走 autostart 模块）
+  const { disableAutostart } = await import('../src/autostart.js');
+  disableAutostart();
 
   console.log(`[Agent] ${t('uninstallAutostartRemoved')}`);
 
@@ -794,24 +779,28 @@ if (command === 'start') {
 // ==================== autostart ====================
 } else if (command === 'autostart') {
   const sub = rawArgs[1]; // 'on' | 'off'
-  const isWin = process.platform === 'win32';
-  const { homedir } = await import('os');
+  const { enableAutostart, disableAutostart } = await import('../src/autostart.js');
 
   if (sub === 'off') {
-    if (!isWin && process.platform === 'darwin') {
-      const plist = join(homedir(), 'Library', 'LaunchAgents', 'com.ai-helper.agent.plist');
-      spawnSync('launchctl', ['unload', plist], { stdio: 'ignore' });
-      try { unlinkSync(plist); } catch {}
-    } else if (!isWin) {
-      spawnSync('systemctl', ['--user', 'disable', 'ai-helper-agent'], { stdio: 'ignore' });
-      const service = join(homedir(), '.config', 'systemd', 'user', 'ai-helper-agent.service');
-      try { unlinkSync(service); } catch {}
-    } else {
-      spawnSync('schtasks', ['/Delete', '/TN', 'AIHelperAgent', '/F'], { windowsHide: true, stdio: 'ignore' });
+    const result = disableAutostart();
+    if (!result.ok) {
+      const detail = result.detail ? `: ${result.detail}` : '';
+      console.error(`[Agent] ${t('autostartDisableFailed')}${detail}`);
+      process.exit(1);
     }
     console.log(`[Agent] ${t('autostartDisabled')}`);
+  } else if (sub === 'on') {
+    // 显式开启自启时清除主动停止标记，否则下次登录会被 _autostart-guard 跳过
+    try { const stopped = join(AGENT_DIR, '.stopped'); if (existsSync(stopped)) unlinkSync(stopped); } catch {}
+    const result = enableAutostart();
+    if (!result.ok) {
+      const detail = result.detail ? `: ${result.detail}` : '';
+      console.error(`[Agent] ${t('autostartEnableFailed')}${detail}`);
+      process.exit(1);
+    }
+    console.log(`[Agent] ${t('autostartEnabled')}`);
   } else {
-    console.log(`[Agent] ${t('autostartUseScript')}`);
+    console.log(`[Agent] ${t('autostartUsage')}`);
   }
   process.exit(0);
 

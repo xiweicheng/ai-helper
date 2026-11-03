@@ -338,61 +338,17 @@ start_service() {
 }
 
 # ==================== 开机自启 ====================
+# 统一由 CLI 实现（macOS LaunchAgent / Linux systemd user / Windows 注册表 Run 键），
+# 安装脚本不再各自维护一套注册逻辑，避免行为偏差
 setup_autostart() {
-  case "$PLATFORM" in
-    darwin) setup_autostart_macos ;;
-    linux)  setup_autostart_linux ;;
-  esac
-}
-
-setup_autostart_macos() {
-  local plist_dir="$HOME/Library/LaunchAgents"
-  local plist_file="$plist_dir/com.ai-helper.agent.plist"
-  mkdir -p "$plist_dir"
-
-  cat > "$plist_file" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.ai-helper.agent</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$BIN_DIR/aha</string>
-    <string>_autostart-guard</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>$AGENT_ROOT/logs/launchd-out.log</string>
-  <key>StandardErrorPath</key><string>$AGENT_ROOT/logs/launchd-err.log</string>
-</dict>
-</plist>
-EOF
-  launchctl unload "$plist_file" 2>/dev/null || true
-  launchctl load "$plist_file" 2>/dev/null || true
-  ok "已设置 macOS 开机自启"
-}
-
-setup_autostart_linux() {
-  local service_dir="$HOME/.config/systemd/user"
-  local service_file="$service_dir/ai-helper-agent.service"
-  mkdir -p "$service_dir"
-
-  cat > "$service_file" <<EOF
-[Unit]
-Description=AI Helper Agent
-After=network.target
-
-[Service]
-Type=exec
-ExecStartPre=/bin/sh -c 'test -f $STOPPED_FLAG && exit 1 || true'
-ExecStart=$BIN_DIR/aha start
-
-[Install]
-WantedBy=default.target
-EOF
-  systemctl --user daemon-reload 2>/dev/null || true
-  systemctl --user enable ai-helper-agent 2>/dev/null || true
-  ok "已设置 Linux 开机自启 (systemd user service)"
+  local aha="$BIN_DIR/aha"
+  if [ ! -x "$aha" ]; then
+    warn "未找到 aha 命令，跳过开机自启设置（可稍后运行 aha autostart on）"
+    return
+  fi
+  if ! "$aha" autostart on; then
+    warn "开机自启设置失败，可稍后运行 aha autostart on 重试"
+  fi
 }
 
 # ==================== 卸载 ====================
@@ -406,17 +362,9 @@ do_uninstall() {
   fi
 
   # 移除自启
-  case "$(uname -s)" in
-    Darwin)
-      launchctl unload "$HOME/Library/LaunchAgents/com.ai-helper.agent.plist" 2>/dev/null || true
-      rm -f "$HOME/Library/LaunchAgents/com.ai-helper.agent.plist"
-      ;;
-    Linux)
-      systemctl --user disable ai-helper-agent 2>/dev/null || true
-      rm -f "$HOME/.config/systemd/user/ai-helper-agent.service"
-      systemctl --user daemon-reload 2>/dev/null || true
-      ;;
-  esac
+  if [ -x "$BIN_DIR/aha" ]; then
+    "$BIN_DIR/aha" autostart off 2>/dev/null || true
+  fi
 
   # 询问是否保留数据
   local keep_data=true
