@@ -50,11 +50,12 @@ registerTranslations('zh', {
     yesterday: '昨天',
     last7Days: '近 7 天',
     earlier: '更早',
-    todayFormat: '今天 {hour}:{minute}',
+    todayFormat: '{hour}:{minute}',
     yesterdayFormat: '昨天 {hour}:{minute}',
     daysAgo: '{count} 天前',
     archive: '归档会话',
     archiveEntry: '归档区',
+    archiveEntryCount: '归档区({count})',
     archiveEntryTitle: '查看归档会话',
     archivePanelTitle: '归档区',
     archiveSearchPlaceholder: '搜索归档会话...',
@@ -73,6 +74,9 @@ registerTranslations('zh', {
     confirmDeleteForeverMessage: '「{title}」将被彻底删除，消息与执行记录都无法恢复。确定继续吗？',
     archiveDeleted: '已彻底删除会话「{title}」',
     backToSessionList: '返回会话列表',
+    expandSidebar: '展开会话列表',
+    collapseSidebar: '收起会话列表',
+    searchSessions: '搜索会话',
   },
 });
 registerTranslations('en', {
@@ -97,11 +101,12 @@ registerTranslations('en', {
     yesterday: 'Yesterday',
     last7Days: 'Last 7 days',
     earlier: 'Earlier',
-    todayFormat: 'Today {hour}:{minute}',
+    todayFormat: '{hour}:{minute}',
     yesterdayFormat: 'Yesterday {hour}:{minute}',
     daysAgo: '{count}d ago',
     archive: 'Archive session',
     archiveEntry: 'Archived',
+    archiveEntryCount: 'Archived ({count})',
     archiveEntryTitle: 'View archived sessions',
     archivePanelTitle: 'Archived sessions',
     archiveSearchPlaceholder: 'Search archived sessions...',
@@ -120,6 +125,9 @@ registerTranslations('en', {
     confirmDeleteForeverMessage: '"{title}" will be permanently deleted. Messages and execution logs cannot be recovered. Continue?',
     archiveDeleted: 'Session "{title}" permanently deleted',
     backToSessionList: 'Back to sessions',
+    expandSidebar: 'Expand session list',
+    collapseSidebar: 'Collapse session list',
+    searchSessions: 'Search sessions',
   },
 });
 
@@ -138,7 +146,7 @@ let dragState = {
 
 /**
  * 将会话 updatedAt 格式化为友好的时间标签
- * 今天 → "今天 HH:mm"，昨天 → "昨天 HH:mm"，7天内 → "X天前"，更早 → 日期
+ * 今天 → "HH:mm"（不加「今天」二字，默认就是今天），昨天 → "昨天 HH:mm"，7天内 → "X天前"，更早 → 日期
  */
 function formatSessionTime(isoString) {
   if (!isoString) return '';
@@ -343,6 +351,10 @@ export async function renderSessionTabs(prefetchedData = null) {
   void refreshMoreBtnArchivedState(scrollContainer);
   // 滚动到当前活跃标签
   scrollToActiveTab(scrollContainer);
+  // 左栏展开时同步刷新其列表（保留搜索过滤态）
+  refreshSidebarView();
+  // 首次渲染时完成左栏初始化（幂等）
+  void initSessionSidebar();
 }
 
 // ==================== 更多按钮 ====================
@@ -355,7 +367,8 @@ function bindMoreButton() {
   moreBtn.parentNode.replaceChild(newMoreBtn, moreBtn);
   newMoreBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    toggleDropdown();
+    // 宽屏 toggle 左侧纵向栏；窄屏打开全屏会话列表（兜底视图）
+    toggleSidebarOrOverlay();
   });
 }
 
@@ -399,6 +412,12 @@ let archivedCountToken = 0;
 function checkOverflow(scrollContainer) {
   const moreBtn = document.getElementById('sessionTabsMore');
   if (!moreBtn) return;
+  // 宽屏：图标轨常显，» 即会话列表切换入口（归档入口也在 rail 底部），⋯ 与其重复，恒隐藏；
+  // 窄屏：rail 整条隐藏，⋯ 按溢出/归档数显隐，作全屏兜底列表的入口
+  if (!isSidebarNarrow()) {
+    moreBtn.style.display = 'none';
+    return;
+  }
   const overflow = scrollContainer.scrollWidth > scrollContainer.clientWidth;
   moreBtn.style.display = (overflow || archivedCountForMoreBtn > 0) ? 'flex' : 'none';
 }
@@ -610,19 +629,31 @@ function updateSearchClearVisibility() {
 }
 
 function renderDropdownList() {
-  const listEl = document.getElementById('sessionDropdownList');
+  renderSessionListView({
+    listEl: document.getElementById('sessionDropdownList'),
+    closeAllBtn: document.getElementById('sessionDropdownCloseAll'),
+    filteredSessions: dropdownState.filteredSessions,
+    highlightIndex: dropdownState.highlightIndex,
+    onSelect: (sessionId) => handleDropdownSelectSession(sessionId),
+  });
+}
+
+/**
+ * 会话列表通用渲染：全屏覆盖列表（sessionDropdown）与左侧纵向栏（sessionSidebar）共用。
+ * 时间分组 + 行操作（重命名/复制/归档/关闭）两处完全一致，差异只在点选行为与容器。
+ */
+function renderSessionListView({ listEl, closeAllBtn, filteredSessions, highlightIndex, onSelect }) {
   if (!listEl) return;
 
   listEl.innerHTML = '';
 
   // 更新"关闭全部"按钮的会话数量
-  const closeAllBtn = document.getElementById('sessionDropdownCloseAll');
   if (closeAllBtn) {
     const total = (state.sessions || []).length;
     closeAllBtn.textContent = t('session.closeAllCount', { count: total });
   }
 
-  if (dropdownState.filteredSessions.length === 0) {
+  if (filteredSessions.length === 0) {
     const emptyEl = document.createElement('div');
     emptyEl.className = 'session-dropdown-empty';
     emptyEl.textContent = t('session.noMatch');
@@ -639,14 +670,14 @@ function renderDropdownList() {
 
   // 预计算每个分组的会话数量
   const groupCounts = {};
-  dropdownState.filteredSessions.forEach(s => {
+  filteredSessions.forEach(s => {
     const g = getTimeGroupKey(s.updatedAt);
     groupCounts[g] = (groupCounts[g] || 0) + 1;
   });
 
   let lastGroup = null;
 
-  dropdownState.filteredSessions.forEach((session, index) => {
+  filteredSessions.forEach((session, index) => {
     // 时间分组标题 + 分组关闭按钮
     const group = getTimeGroupKey(session.updatedAt);
     if (group !== lastGroup) {
@@ -673,133 +704,143 @@ function renderDropdownList() {
       listEl.appendChild(header);
     }
 
-    const item = document.createElement('div');
-    item.className = 'session-dropdown-item';
-    item.dataset.sessionId = session.id;
-    item.dataset.index = index;
-
-    if (session.id === state.activeSessionId) {
-      item.classList.add('active');
-    }
-    if (index === dropdownState.highlightIndex) {
-      item.classList.add('highlighted');
-    }
-
-    // 后台任务已完成、等待查看的会话：在标题前显示静态完成标记
-    const isCompletedPending = state.completedSessionIds.has(session.id) && session.id !== state.activeSessionId
-      && !session.isGenerating && !state.generatingSessionIds.has(session.id);
-    if (isCompletedPending) {
-      const completedDot = document.createElement('span');
-      completedDot.className = 'session-dropdown-item-completed';
-      completedDot.title = t('session.taskCompleted');
-      item.appendChild(completedDot);
-    }
-
-    // 有排队任务的会话：在标题前显示条数徽标
-    const queuedCount = getQueuedCount(session.id);
-    if (queuedCount > 0) {
-      const queueDot = document.createElement('span');
-      queueDot.className = 'session-dropdown-item-queue';
-      queueDot.textContent = String(queuedCount > 99 ? '99+' : queuedCount);
-      queueDot.title = t('queue.badgeTitle', { count: queuedCount });
-      item.appendChild(queueDot);
-    }
-
-    // 会话图标（聊天气泡）
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'session-dropdown-item-icon';
-    iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-    item.appendChild(iconSpan);
-
-    // 标题
-    const titleSpan = document.createElement('span');
-    titleSpan.className = 'session-dropdown-item-title';
-    titleSpan.textContent = session.title || t('session.newSession');
-    titleSpan.title = session.title || t('session.newSession');
-    item.appendChild(titleSpan);
-
-    // 当前会话打勾标记
-    if (session.id === state.activeSessionId) {
-      const checkSpan = document.createElement('span');
-      checkSpan.className = 'session-dropdown-item-check';
-      checkSpan.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-      item.appendChild(checkSpan);
-    }
-
-    // 时间标签（绝对定位右侧，hover 时淡出让位给操作按钮）
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'session-dropdown-item-time';
-    timeSpan.textContent = formatSessionTime(session.updatedAt);
-    item.appendChild(timeSpan);
-
-    // 操作按钮容器（重命名 + 分叉 + 关闭）
-    const actionsWrapper = document.createElement('span');
-    actionsWrapper.className = 'session-dropdown-item-actions';
-
-    // 重命名按钮
-    const renameBtn = document.createElement('span');
-    renameBtn.className = 'session-dropdown-item-rename';
-    renameBtn.title = t('session.rename');
-    renameBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
-    renameBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      showRenameModal(session);
-    });
-    actionsWrapper.appendChild(renameBtn);
-
-    // 会话分叉按钮
-    const duplicateBtn = document.createElement('span');
-    duplicateBtn.className = 'session-dropdown-item-duplicate';
-    duplicateBtn.title = t('session.duplicate');
-    duplicateBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-6 3.5-6 3.5"/></svg>`;
-    duplicateBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      await handleDuplicateSession(session.id);
-      // 刷新列表
-      const sessionsData = await loadSessions();
-      state.sessions = sessionsData.list;
-      state.activeSessionId = sessionsData.activeSessionId;
-      filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
-    });
-    actionsWrapper.appendChild(duplicateBtn);
-
-    // 归档按钮（移出视野、随时可恢复；执行中/排队中的会话会被拦下并提示）
-    const archiveBtn = document.createElement('span');
-    archiveBtn.className = 'session-dropdown-item-archive';
-    archiveBtn.title = t('session.archive');
-    archiveBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
-    archiveBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      await archiveSessionFlow(session.id);
-      filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
-    });
-    actionsWrapper.appendChild(archiveBtn);
-
-    // 关闭按钮
-    const closeBtn = document.createElement('span');
-    closeBtn.className = 'session-dropdown-item-close';
-    closeBtn.innerHTML = '&#10005;';
-    closeBtn.title = t('session.closeSession');
-    closeBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      await handleDropdownCloseSession(session.id);
-    });
-    actionsWrapper.appendChild(closeBtn);
-
-    item.appendChild(actionsWrapper);
-
-    // 点击切换会话
-    item.addEventListener('click', async (e) => {
-      e.preventDefault();
-      await handleDropdownSelectSession(session.id);
-    });
-
-    listEl.appendChild(item);
+    listEl.appendChild(createSessionListItem(session, { index, highlightIndex, onSelect }));
   });
+}
+
+/**
+ * 会话列表行：图标 + 标题 + 状态徽标 + 时间 + 行操作（重命名/复制/归档/关闭）。
+ * 点选整行的行为由 onSelect 决定：全屏列表切走并关闭自身，左栏切走但常驻不收起。
+ * 行操作后的刷新：数据变化最终都会走 renderSessionTabs → refreshSidebarView 同步左栏，
+ * 这里顺带刷新全屏列表的过滤态即可（面板隐藏时调用无副作用）。
+ */
+function createSessionListItem(session, { index, highlightIndex, onSelect }) {
+  const item = document.createElement('div');
+  item.className = 'session-dropdown-item';
+  item.dataset.sessionId = session.id;
+  item.dataset.index = index;
+
+  if (session.id === state.activeSessionId) {
+    item.classList.add('active');
+  }
+  if (index === highlightIndex) {
+    item.classList.add('highlighted');
+  }
+
+  // 后台任务已完成、等待查看的会话：在标题前显示静态完成标记
+  const isCompletedPending = state.completedSessionIds.has(session.id) && session.id !== state.activeSessionId
+    && !session.isGenerating && !state.generatingSessionIds.has(session.id);
+  if (isCompletedPending) {
+    const completedDot = document.createElement('span');
+    completedDot.className = 'session-dropdown-item-completed';
+    completedDot.title = t('session.taskCompleted');
+    item.appendChild(completedDot);
+  }
+
+  // 有排队任务的会话：在标题前显示条数徽标
+  const queuedCount = getQueuedCount(session.id);
+  if (queuedCount > 0) {
+    const queueDot = document.createElement('span');
+    queueDot.className = 'session-dropdown-item-queue';
+    queueDot.textContent = String(queuedCount > 99 ? '99+' : queuedCount);
+    queueDot.title = t('queue.badgeTitle', { count: queuedCount });
+    item.appendChild(queueDot);
+  }
+
+  // 会话图标（聊天气泡）
+  const iconSpan = document.createElement('span');
+  iconSpan.className = 'session-dropdown-item-icon';
+  iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  item.appendChild(iconSpan);
+
+  // 标题
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'session-dropdown-item-title';
+  titleSpan.textContent = session.title || t('session.newSession');
+  titleSpan.title = session.title || t('session.newSession');
+  item.appendChild(titleSpan);
+
+  // 当前会话打勾标记
+  if (session.id === state.activeSessionId) {
+    const checkSpan = document.createElement('span');
+    checkSpan.className = 'session-dropdown-item-check';
+    checkSpan.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    item.appendChild(checkSpan);
+  }
+
+  // 时间标签（绝对定位右侧，hover 时淡出让位给操作按钮）
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'session-dropdown-item-time';
+  timeSpan.textContent = formatSessionTime(session.updatedAt);
+  item.appendChild(timeSpan);
+
+  // 操作按钮容器（重命名 + 分叉 + 归档 + 关闭）
+  const actionsWrapper = document.createElement('span');
+  actionsWrapper.className = 'session-dropdown-item-actions';
+
+  // 重命名按钮
+  const renameBtn = document.createElement('span');
+  renameBtn.className = 'session-dropdown-item-rename';
+  renameBtn.title = t('session.rename');
+  renameBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+  renameBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    showRenameModal(session);
+  });
+  actionsWrapper.appendChild(renameBtn);
+
+  // 会话分叉按钮
+  const duplicateBtn = document.createElement('span');
+  duplicateBtn.className = 'session-dropdown-item-duplicate';
+  duplicateBtn.title = t('session.duplicate');
+  duplicateBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M6 8.5v7"/><path d="M18 8.5c0 4-6 3.5-6 3.5"/></svg>`;
+  duplicateBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await handleDuplicateSession(session.id);
+    // 刷新列表
+    const sessionsData = await loadSessions();
+    state.sessions = sessionsData.list;
+    state.activeSessionId = sessionsData.activeSessionId;
+    filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
+  });
+  actionsWrapper.appendChild(duplicateBtn);
+
+  // 归档按钮（移出视野、随时可恢复；执行中/排队中的会话会被拦下并提示）
+  const archiveBtn = document.createElement('span');
+  archiveBtn.className = 'session-dropdown-item-archive';
+  archiveBtn.title = t('session.archive');
+  archiveBtn.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>`;
+  archiveBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await archiveSessionFlow(session.id);
+    filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
+  });
+  actionsWrapper.appendChild(archiveBtn);
+
+  // 关闭按钮
+  const closeBtn = document.createElement('span');
+  closeBtn.className = 'session-dropdown-item-close';
+  closeBtn.innerHTML = '&#10005;';
+  closeBtn.title = t('session.closeSession');
+  closeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await handleDropdownCloseSession(session.id);
+  });
+  actionsWrapper.appendChild(closeBtn);
+
+  item.appendChild(actionsWrapper);
+
+  // 点击切换会话
+  item.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await onSelect(session.id);
+  });
+
+  return item;
 }
 
 function filterDropdownSessions(searchText) {
@@ -947,13 +988,13 @@ function handleDropdownKeydown(e) {
       e.preventDefault();
       dropdownState.highlightIndex = Math.min(dropdownState.highlightIndex + 1, len - 1);
       renderDropdownList();
-      scrollHighlightedIntoView();
+      scrollHighlightedIntoView(document.getElementById('sessionDropdownList'));
       break;
     case 'ArrowUp':
       e.preventDefault();
       dropdownState.highlightIndex = Math.max(dropdownState.highlightIndex - 1, 0);
       renderDropdownList();
-      scrollHighlightedIntoView();
+      scrollHighlightedIntoView(document.getElementById('sessionDropdownList'));
       break;
     case 'Enter':
       e.preventDefault();
@@ -969,11 +1010,322 @@ function handleDropdownKeydown(e) {
   }
 }
 
-function scrollHighlightedIntoView() {
-  const highlighted = document.querySelector('.session-dropdown-item.highlighted');
+function scrollHighlightedIntoView(containerEl) {
+  // 左栏与全屏列表都复用 session-dropdown-item，必须限定容器避免滚错列表
+  const root = containerEl || document;
+  const highlighted = root.querySelector('.session-dropdown-item.highlighted');
   if (highlighted) {
     highlighted.scrollIntoView({ block: 'nearest' });
   }
+}
+
+// ==================== 左侧纵向会话栏 ====================
+//
+// 与横向 session-tabs 并存：标签栏做快速切换，左栏做全量管理器（搜索/归档/批量关闭）。
+// 三态呈现：
+//   宽屏收起 → 36px 图标轨；宽屏展开 → 200-480px 可拖拽面板（持久化偏好）；
+//   窄屏（mainRow < SIDEBAR_MIN_TOTAL_W）→ 整条隐藏，⋯ 回退打开全屏覆盖列表（兜底视图）。
+
+/** 左栏最小 200px + 对话区至少 360px，低于此总宽不允许停靠 */
+const SIDEBAR_MIN_TOTAL_W = 560;
+const SIDEBAR_MIN_W = 200;
+const SIDEBAR_MAX_W = 480;
+const CHAT_MIN_W = 360; // 对话区至少保留的宽度（窄屏阈值 560 = 左栏最小 200 + 对话区 360）
+const SIDEBAR_DEFAULT_W = 240;
+const STORAGE_SIDEBAR_EXPANDED = 'sessionSidebarExpanded';
+const STORAGE_SIDEBAR_WIDTH = 'sessionSidebarWidth';
+
+const sidebarState = {
+  expanded: false,        // 持久化偏好：是否停靠展开
+  width: SIDEBAR_DEFAULT_W,
+  narrow: false,          // 当前 mainRow 宽度不足以停靠（整条隐藏）
+  pendingRestore: false,  // 展开中被挤窄临时隐藏，宽度恢复后自动重新展开（不清除偏好）
+  highlightIndex: -1,
+  filteredSessions: [],
+  inited: false,
+  lastActiveId: null,     // 上次渲染时的激活会话，用于判断是否需要滚动联动
+};
+
+function clampSidebarWidth(w) {
+  // 硬上限之外再叠动态上限：不能把对话区挤到 360 以下（面板整体偏窄时生效）
+  const mainRow = document.getElementById('mainRow');
+  const dynamicMax = mainRow ? Math.max(SIDEBAR_MIN_W, mainRow.clientWidth - CHAT_MIN_W) : SIDEBAR_MAX_W;
+  return Math.max(SIDEBAR_MIN_W, Math.min(w, SIDEBAR_MAX_W, dynamicMax));
+}
+
+/** 实时判定：mainRow 宽度是否已不足以停靠左栏 */
+function isSidebarNarrow() {
+  const mainRow = document.getElementById('mainRow');
+  return mainRow ? mainRow.clientWidth < SIDEBAR_MIN_TOTAL_W : true;
+}
+
+/** 按 narrow/expanded 偏好刷新左栏呈现（窄屏整条隐藏，图标轨与面板二选一） */
+function applySidebarState() {
+  const el = document.getElementById('sessionSidebar');
+  if (!el) return;
+  sidebarState.narrow = isSidebarNarrow();
+  el.classList.toggle('sidebar-hidden', sidebarState.narrow);
+  el.classList.toggle('expanded', !sidebarState.narrow && sidebarState.expanded);
+  el.style.setProperty('--session-sidebar-width', `${sidebarState.width}px`);
+  updateSidebarOffsetVar();
+}
+
+/** 执行中会话停靠条（.session-dock 固定在视口左缘）为左栏让位：隐藏 0 / 图标轨 36 / 面板宽度 */
+function updateSidebarOffsetVar() {
+  const offset = sidebarState.narrow ? 0 : (sidebarState.expanded ? sidebarState.width : 36);
+  document.body.style.setProperty('--session-sidebar-offset', `${offset}px`);
+}
+
+async function persistSidebarState() {
+  try {
+    await chrome.storage.local.set({
+      [STORAGE_SIDEBAR_EXPANDED]: sidebarState.expanded,
+      [STORAGE_SIDEBAR_WIDTH]: sidebarState.width,
+    });
+  } catch { /* 持久化失败不影响本次展示 */ }
+}
+
+function expandSidebar({ focusSearch = false } = {}) {
+  if (isSidebarNarrow()) return; // 窄屏不允许停靠
+  sidebarState.expanded = true;
+  applySidebarState();
+  void persistSidebarState();
+  refreshSidebarView();
+  if (focusSearch) {
+    const input = document.getElementById('sessionSidebarSearch');
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+}
+
+function collapseSidebar() {
+  sidebarState.expanded = false;
+  applySidebarState();
+  void persistSidebarState();
+}
+
+/** ⋯ 按钮入口：宽屏 toggle 左栏；窄屏打开全屏会话列表（兜底视图） */
+function toggleSidebarOrOverlay() {
+  if (isSidebarNarrow()) {
+    toggleDropdown();
+    return;
+  }
+  if (sidebarState.expanded) collapseSidebar();
+  else expandSidebar();
+}
+
+function renderSidebarList() {
+  const listEl = document.getElementById('sessionSidebarList');
+  renderSessionListView({
+    listEl,
+    closeAllBtn: document.getElementById('sessionSidebarCloseAll'),
+    filteredSessions: sidebarState.filteredSessions,
+    highlightIndex: sidebarState.highlightIndex,
+    onSelect: (sessionId) => handleSidebarSelectSession(sessionId),
+  });
+  // 激活会话联动：激活项变化时滚动进可视区（block:'nearest'，已在可视区则不跳动）；
+  // 仅变化时滚一次，用户手动滚动浏览期间不会被标题刷新等重渲染拽回去
+  const activeId = state.activeSessionId;
+  if (activeId && sidebarState.lastActiveId !== activeId) {
+    sidebarState.lastActiveId = activeId;
+    listEl?.querySelector('.session-dropdown-item.active')?.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function filterSidebarSessions(searchText) {
+  const allSessions = state.sessions || [];
+  let filtered;
+  if (!searchText.trim()) {
+    filtered = [...allSessions];
+  } else {
+    const lower = searchText.trim().toLowerCase();
+    filtered = allSessions.filter(s =>
+      (s.title || t('session.newSession')).toLowerCase().includes(lower)
+    );
+  }
+  sidebarState.filteredSessions = sortByUpdatedAt(filtered);
+  sidebarState.highlightIndex = -1;
+  renderSidebarList();
+}
+
+/** 左栏展开且可见时按当前搜索词刷新列表（renderSessionTabs 尾部调用） */
+function refreshSidebarView() {
+  const sidebar = document.getElementById('sessionSidebar');
+  if (!sidebar || !sidebar.classList.contains('expanded')) return;
+  filterSidebarSessions(document.getElementById('sessionSidebarSearch')?.value || '');
+}
+
+/** 左栏点选会话：左栏是常驻管理器，切换后不收起 */
+async function handleSidebarSelectSession(sessionId) {
+  if (sessionId === state.activeSessionId) return;
+  await handleSessionSwitch(sessionId);
+}
+
+/** 左栏搜索框键盘导航：上下键移动高亮，Enter 选中，Escape 收起左栏 */
+function handleSidebarKeydown(e) {
+  const list = sidebarState.filteredSessions;
+  const len = list.length;
+  if (len === 0) {
+    if (e.key === 'Escape') collapseSidebar();
+    return;
+  }
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      sidebarState.highlightIndex = Math.min(sidebarState.highlightIndex + 1, len - 1);
+      renderSidebarList();
+      scrollHighlightedIntoView(document.getElementById('sessionSidebarList'));
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      sidebarState.highlightIndex = Math.max(sidebarState.highlightIndex - 1, 0);
+      renderSidebarList();
+      scrollHighlightedIntoView(document.getElementById('sessionSidebarList'));
+      break;
+    case 'Enter':
+      e.preventDefault();
+      if (sidebarState.highlightIndex >= 0 && sidebarState.highlightIndex < len) {
+        handleSidebarSelectSession(list[sidebarState.highlightIndex].id);
+      }
+      break;
+    case 'Escape':
+      e.preventDefault();
+      collapseSidebar();
+      break;
+  }
+}
+
+function updateSidebarSearchClear() {
+  const input = document.getElementById('sessionSidebarSearch');
+  const clearBtn = document.getElementById('sessionSidebarSearchClear');
+  if (clearBtn && input) {
+    clearBtn.style.display = input.value ? 'flex' : 'none';
+  }
+}
+
+/** 左栏宽度拖拽：把手在面板右缘，向右拖变宽，松手后持久化 */
+function setupSidebarGrip() {
+  const sidebar = document.getElementById('sessionSidebar');
+  const grip = document.getElementById('sessionSidebarGrip');
+  if (!sidebar || !grip) return;
+
+  grip.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarState.width;
+    sidebar.classList.add('resizing');
+
+    function onMove(ev) {
+      const w = clampSidebarWidth(startW + (ev.clientX - startX));
+      sidebarState.width = w;
+      sidebar.style.setProperty('--session-sidebar-width', `${w}px`);
+      // 停靠条让位量跟随面板宽度实时变化
+      updateSidebarOffsetVar();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      sidebar.classList.remove('resizing');
+      void persistSidebarState();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+/**
+ * 窄屏自动回退：宽度跌破阈值时整条左栏隐藏；展开中的记 pendingRestore（不清除
+ * 持久化偏好），宽度恢复后 applySidebarState 会按偏好自动重新展开。
+ */
+function setupSidebarResizeObserver() {
+  const mainRow = document.getElementById('mainRow');
+  if (!mainRow || typeof ResizeObserver === 'undefined') return;
+  const ro = new ResizeObserver(() => {
+    // 使用 requestAnimationFrame 避免 ResizeObserver loop 错误
+    requestAnimationFrame(() => {
+      const narrow = isSidebarNarrow();
+      if (narrow === sidebarState.narrow) return;
+      if (narrow && sidebarState.expanded) {
+        sidebarState.pendingRestore = true;
+      } else if (!narrow && sidebarState.pendingRestore) {
+        sidebarState.pendingRestore = false;
+      }
+      applySidebarState();
+      if (!narrow && sidebarState.expanded) refreshSidebarView();
+    });
+  });
+  ro.observe(mainRow);
+}
+
+/** 归档面板返回：按宽度决定落点 —— 宽屏展开左栏，窄屏打开全屏会话列表（兜底） */
+function returnToSessionListView() {
+  if (isSidebarNarrow()) {
+    void openDropdown();
+  } else {
+    expandSidebar();
+  }
+}
+
+/** 初始化左侧纵向会话栏（幂等：renderSessionTabs 会被反复调用） */
+async function initSessionSidebar() {
+  if (sidebarState.inited) return;
+  const sidebar = document.getElementById('sessionSidebar');
+  if (!sidebar) return;
+  sidebarState.inited = true;
+
+  // 恢复持久化偏好
+  try {
+    const saved = await chrome.storage.local.get([STORAGE_SIDEBAR_EXPANDED, STORAGE_SIDEBAR_WIDTH]);
+    sidebarState.expanded = saved[STORAGE_SIDEBAR_EXPANDED] === true;
+    if (typeof saved[STORAGE_SIDEBAR_WIDTH] === 'number') {
+      sidebarState.width = clampSidebarWidth(saved[STORAGE_SIDEBAR_WIDTH]);
+    }
+  } catch { /* 读取失败用默认值 */ }
+
+  // 启动即窄屏：挂起展开偏好，等宽度恢复后自动补展开
+  if (isSidebarNarrow() && sidebarState.expanded) {
+    sidebarState.pendingRestore = true;
+  }
+  applySidebarState();
+
+  // 图标轨
+  document.getElementById('sessionSidebarExpand')?.addEventListener('click', () => expandSidebar());
+  document.getElementById('sessionRailSearch')?.addEventListener('click', () => expandSidebar({ focusSearch: true }));
+  document.getElementById('sessionRailAdd')?.addEventListener('click', () => { void newSession(); });
+  document.getElementById('sessionRailArchiveEntry')?.addEventListener('click', () => { void openArchivePanel(); });
+
+  // 展开面板
+  document.getElementById('sessionSidebarCollapse')?.addEventListener('click', () => collapseSidebar());
+  document.getElementById('sessionSidebarAdd')?.addEventListener('click', () => { void newSession(); });
+  document.getElementById('sessionSidebarArchiveEntry')?.addEventListener('click', () => { void openArchivePanel(); });
+  document.getElementById('sessionSidebarCloseAll')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await handleCloseAllSessions();
+  });
+
+  const searchInput = document.getElementById('sessionSidebarSearch');
+  const clearBtn = document.getElementById('sessionSidebarSearchClear');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      updateSidebarSearchClear();
+      filterSidebarSessions(searchInput.value);
+    });
+    searchInput.addEventListener('keydown', (e) => { handleSidebarKeydown(e); });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (!searchInput) return;
+      searchInput.value = '';
+      updateSidebarSearchClear();
+      filterSidebarSessions('');
+      searchInput.focus();
+    });
+  }
+
+  setupSidebarGrip();
+  setupSidebarResizeObserver();
+  // rail / 面板底部的归档计数徽标与下拉入口同源
+  void refreshArchiveEntryCount();
 }
 
 // ==================== 自定义确认弹窗 ====================
@@ -1084,10 +1436,11 @@ async function switchAwayFromArchived(archivedId) {
   await reloadAfterDelete();
 }
 
-/** 刷新「归档区 (N)」入口的条数徽标 */
+/** 刷新归档区入口计数：文字入口用「归档区(N)」括号形式（与「关闭全部(N)」统一） */
 async function refreshArchiveEntryCount() {
-  const countEl = document.getElementById('sessionArchiveEntryCount');
-  if (!countEl) return;
+  const labelEls = ['sessionArchiveEntryLabel', 'sessionSidebarArchiveLabel']
+    .map((id) => document.getElementById(id));
+  if (!labelEls.some(Boolean)) return;
   const list = await loadArchivedSessions();
   archivedListCache = list;
   // 归档数变化会改变三点按钮的显隐条件（溢出 ∥ 有归档）；
@@ -1095,13 +1448,12 @@ async function refreshArchiveEntryCount() {
   archivedCountForMoreBtn = list.length;
   const scrollContainer = document.getElementById('sessionTabsScroll');
   if (scrollContainer) checkOverflow(scrollContainer);
-  if (list.length > 0) {
-    countEl.textContent = String(list.length > 99 ? '99+' : list.length);
-    countEl.hidden = false;
-  } else {
-    countEl.textContent = '';
-    countEl.hidden = true;
-  }
+  // 计数直接跟在「归档区」后面，宽度拉宽也不会脱节；
+  // 图标轨（收起态）只有图标、不展示数量，避免无谓的注意力干扰
+  const labelText = list.length > 0
+    ? t('session.archiveEntryCount', { count: list.length > 99 ? '99+' : list.length })
+    : t('session.archiveEntry');
+  labelEls.forEach((el) => { if (el) el.textContent = labelText; });
 }
 
 /** 打开归档面板（覆盖在会话列表面板之上） */
@@ -1283,7 +1635,7 @@ function initArchivePanel() {
   if (backBtn) {
     backBtn.addEventListener('click', () => {
       closeArchivePanel();
-      void openDropdown();
+      returnToSessionListView();
     });
   }
   const closeBtn = document.getElementById('sessionArchiveCloseBtn');
@@ -1301,7 +1653,7 @@ function initArchivePanel() {
       if (e.key === 'Escape') {
         e.stopPropagation();
         closeArchivePanel();
-        void openDropdown();
+        returnToSessionListView();
       }
     });
   }
@@ -1774,9 +2126,13 @@ document.addEventListener('generating-state-changed', () => {
   renderSessionTabs();
 });
 
-// 在模块加载时设置 ResizeObserver
+// 在模块加载时设置 ResizeObserver 与左侧纵向会话栏
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', setupOverflowObserver);
+  document.addEventListener('DOMContentLoaded', () => {
+    setupOverflowObserver();
+    void initSessionSidebar();
+  });
 } else {
   setupOverflowObserver();
+  void initSessionSidebar();
 }

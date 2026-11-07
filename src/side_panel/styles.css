@@ -3393,6 +3393,10 @@ body {
 .session-dropdown-item.active {
   color: var(--brand-500);
   font-weight: 500;
+  /* 品牌浅底色 + 左缘指示条，让「当前会话」在列表里一眼可辨；
+     inset 阴影不占用布局空间，不会把内容挤偏 */
+  background: var(--brand-soft-bg);
+  box-shadow: inset 3px 0 0 var(--brand-500);
 }
 
 /* 会话图标（聊天气泡） */
@@ -17505,20 +17509,6 @@ body.voice-recording-active .input-container {
   text-align: left;
 }
 
-.session-archive-entry-count {
-  min-width: 16px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--brand-500);
-  color: var(--text-on-brand);
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
 /* 归档面板底部提示条 */
 .session-archive-footer {
   position: sticky;
@@ -17606,7 +17596,8 @@ body.voice-recording-active .input-container {
 .session-dock {
   display: none;
   position: fixed;
-  left: 0;
+  /* 左侧纵向会话栏占据视口左缘时，停靠条为其让位（0 / 44px / 面板宽度，由 session-manager-ui.js 维护） */
+  left: var(--session-sidebar-offset, 0px);
   top: 100px;
   width: 26px;
   flex-direction: column;
@@ -18571,4 +18562,231 @@ body.has-session-dock .chat-container {
   .usage-tips-bar {
     font-size: 12px;
   }
+}
+
+/* ============================================
+   左侧纵向会话栏（图标轨 + 可拖拽宽度的展开面板）
+   窄屏时整条隐藏由 JS 加 .sidebar-hidden，宽度阈值见 session-manager-ui.js
+   ============================================ */
+
+.session-sidebar {
+  flex-shrink: 0;
+  width: 36px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sunken);
+  border-right: 1px solid var(--border-default);
+  overflow: hidden;
+}
+
+.session-sidebar.sidebar-hidden {
+  display: none;
+}
+
+.session-sidebar.expanded {
+  width: var(--session-sidebar-width, 240px);
+}
+
+/* ---- 收起态：图标轨 ---- */
+
+.session-sidebar-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.session-sidebar.expanded .session-sidebar-rail {
+  display: none;
+}
+
+.session-rail-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.session-rail-btn:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.session-rail-spacer {
+  flex: 1;
+  min-height: 8px;
+}
+
+/* ---- 展开态：会话管理面板 ---- */
+
+.session-sidebar-panel {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.session-sidebar.expanded .session-sidebar-panel {
+  display: flex;
+}
+
+.session-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+.session-sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.session-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* 新建与收起共用同一副 26px 图标按钮外观 */
+.session-sidebar-add,
+.session-sidebar-collapse {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.session-sidebar-add {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.session-sidebar-add:hover,
+.session-sidebar-collapse:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* 搜索行：复用 session-dropdown-search 的图标/清除按钮样式 */
+.session-sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.session-sidebar-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+  min-width: 0;
+}
+
+.session-sidebar-search input::placeholder {
+  color: var(--text-disabled);
+}
+
+.session-sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.session-sidebar-list::-webkit-scrollbar {
+  width: 3px;
+}
+
+.session-sidebar-list::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+/* 底部：归档区入口 + 关闭全部（复用 session-archive-entry / session-dropdown-close-all 样式） */
+.session-sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+/* ---- 展开态右缘宽度拖拽把手 ---- */
+
+.session-sidebar-grip {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.session-sidebar.expanded .session-sidebar-grip {
+  display: block;
+}
+
+.session-sidebar-grip:hover {
+  background: rgba(var(--info-rgb), 0.25);
+}
+
+.session-sidebar.resizing {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================
+   会话列表行操作按钮可读性修复（全屏列表与左栏共用组件）：
+   1) hover 时用行 hover 底色遮住背后的标题文字，否则窄行下图标与标题叠字看不清；
+   2) 图标基色从 --text-disabled 提一档到 --text-tertiary，hover 行底色上才看得清。
+   ============================================ */
+
+.session-dropdown-item:hover .session-dropdown-item-actions {
+  background: var(--bg-subtle);
+  border-radius: 6px;
+}
+
+.session-dropdown-item-rename,
+.session-dropdown-item-duplicate,
+.session-dropdown-item-archive,
+.session-dropdown-item-close {
+  color: var(--text-tertiary);
 }
