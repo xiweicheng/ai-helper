@@ -130,11 +130,24 @@ function adaptMeasured(bar, container) {
   restoreOverlays();
 }
 
-/** 初始化底行自适应：窗口缩放 / 底行内可见文字变化（语言切换、助手名与记忆标签更新）后重测 */
+/** 初始化底行自适应：窗口缩放 / 底行自身宽度变化 / 底行内可见文字变化（语言切换、助手名与记忆标签更新）后重测 */
 export function initToolbarAdaptive() {
   adaptInputToolbar();
   window.addEventListener('resize', scheduleToolbarAdapt);
   const bar = document.querySelector('.input-bottom-row');
+  const container = bar?.closest('.input-container') || null;
+  // 窗口没变但可用宽度变了：左侧会话栏展开/收起、宽度拖拽、工作目录面板分栏都会
+  // 压缩对话区，此时底行会溢出却不触发 window resize，只靠 resize 事件不会降级。
+  // 观察容器自身宽度（只随父级 flex 变化），降级只改内部布局，不会反馈成新的宽度变化。
+  if (container && typeof ResizeObserver !== 'undefined') {
+    let lastWidth = container.clientWidth;
+    new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? 0;
+      if (Math.abs(width - lastWidth) < 1) return;
+      lastWidth = width;
+      scheduleToolbarAdapt();
+    }).observe(container);
+  }
   if (bar && typeof MutationObserver !== 'undefined') {
     new MutationObserver((mutations) => {
       // 浮层内部变更不影响底行宽度（浮层为绝对定位覆盖层），且重测的隐藏-恢复

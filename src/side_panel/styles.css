@@ -5463,7 +5463,8 @@ body {
 }
 /* ========== 消息跳转把手（上一条/下一条 + 问题列表，默认收起，hover 展开，点击钉住） ========== */
 .chat-nav-hotzone {
-  position: fixed;
+  /* 绝对定位到 .main-left：左侧会话栏占用窗口左边后，把手仍贴对话区左缘 */
+  position: absolute;
   left: 0;
   top: 50%;
   transform: translateY(-50%);
@@ -5484,7 +5485,7 @@ body {
   box-shadow: 0 0 10px rgba(var(--brand-rgb), 0.45);
 }
 .chat-nav-buttons {
-  position: fixed;
+  position: absolute;
   left: 10px;
   top: 50%;
   display: flex;
@@ -5543,12 +5544,13 @@ body {
 }
 /* ========== 用户问题列表（悬停消息跳转把手时右侧展开，可钉住） ========== */
 .chat-nav-question-panel {
-  position: fixed;
+  position: absolute;
   left: 45px;
   top: 50%;
   transform: translateY(-50%) translateX(-8px);
   width: 300px;
-  max-width: calc(100vw - 64px);
+  /* 相对对话区收窄：左侧会话栏占位后不能再按整窗宽度算 */
+  max-width: calc(100% - 56px);
   max-height: 62vh;
   /* 面板自身不滚动：Header 固定，滚动交给内部的 .chat-nav-question-list */
   display: flex;
@@ -5781,11 +5783,14 @@ body {
 
 .input-container {
   position: relative;
-  padding: 10px 16px 22px 16px;
+  padding: 10px 16px 26px 16px;
+  margin-right: 8px;
+  margin-left: 8px;
+  margin-bottom: 8px;
   background: rgba(var(--surface-rgb), 0.85);
   border: 1px solid rgba(var(--overlay-rgb), 0.12);
   /* 四角统一 8px */
-  border-radius: 8px;
+  border-radius: 16px;
   box-shadow: 0 2px 10px rgba(var(--overlay-rgb), 0.08);
   display: flex;
   flex-direction: column;
@@ -5855,7 +5860,7 @@ body {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: 2px;
+  bottom: 6px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -13991,6 +13996,9 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* 消息跳转把手/问题列表以此列为定位基准：
+     左侧会话栏展开后它们要贴着对话区左边，而不是贴整个窗口左边 */
+  position: relative;
 }
 
 /* ============================================
