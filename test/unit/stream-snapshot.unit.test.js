@@ -162,6 +162,26 @@ describe('stream-snapshot 面板侧流式气泡快照', () => {
     warnSpy.mockRestore();
   });
 
+  test('同一轮流式超限只 warn 一次（节流落盘每 700ms 一次，不刷屏）；新一轮重新计', async () => {
+    const mod = await importModule();
+    const { logger } = await import('../../src/shared/logger.js');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const big = 'x'.repeat(mod.MAX_HTML_BYTES + 1024);
+
+    // 同一轮 call_1：连续多次落盘（模拟长流式里的一次次节流抓拍），只留一行日志
+    for (let i = 0; i < 5; i += 1) {
+      mod.scheduleStreamSnapshot('s1', 'call_1', () => ({ html: big, accumulated: '正文' }));
+      await mod.flushStreamSnapshot('s1');
+    }
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    // 新一轮 call_2：重新计，再留一行
+    mod.scheduleStreamSnapshot('s1', 'call_2', () => ({ html: big, accumulated: '正文' }));
+    await mod.flushStreamSnapshot('s1');
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+
   test('终态清除后读不到（正常会话不留脏快照）', async () => {
     const { scheduleStreamSnapshot, clearStreamSnapshot, readStreamSnapshot, FLUSH_MS } = await importModule();
     scheduleStreamSnapshot('s1', 'call_1', () => ({ html: '<p>done</p>', accumulated: 'done' }));
