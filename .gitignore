@@ -31,6 +31,8 @@ docs/demo/form-autofill/video-build/*.mp4
 docs/demo/form-autofill/video-build/*.png
 docs/demo/form-autofill/video-build/list.txt
 .trae/
+# Trae IDE 的 HTML 预览分享包（自动生成，随预览刷新）
+.trae-html-share-packages/
 test-results-probes/
 dist/
 # Wiki 构建中转目录（正式内容在独立 wiki 仓库）
