@@ -33,7 +33,6 @@ registerTranslations('zh', {
     newSession: '新会话',
     closeSession: '关闭会话',
     taskCompleted: '任务已完成',
-    closeAllCount: '关闭全部({count})',
     noMatch: '未找到匹配的会话',
     rename: '重命名',
     duplicate: '复制会话',
@@ -55,7 +54,6 @@ registerTranslations('zh', {
     daysAgo: '{count} 天前',
     archive: '归档会话',
     archiveEntry: '归档区',
-    archiveEntryCount: '归档区({count})',
     archiveEntryTitle: '查看归档会话',
     archivePanelTitle: '归档区',
     archiveSearchPlaceholder: '搜索归档会话...',
@@ -77,6 +75,9 @@ registerTranslations('zh', {
     expandSidebar: '展开会话列表',
     collapseSidebar: '收起会话列表',
     searchSessions: '搜索会话',
+    sortModeTitle: '会话排序',
+    sortManual: '手动排序（拖拽调整，与标签栏一致）',
+    sortRecent: '最近更新优先（按时间倒序，带时间分组）',
   },
 });
 registerTranslations('en', {
@@ -84,7 +85,6 @@ registerTranslations('en', {
     newSession: 'New Session',
     closeSession: 'Close Session',
     taskCompleted: 'Task completed',
-    closeAllCount: 'Close All ({count})',
     noMatch: 'No matching sessions found',
     rename: 'Rename',
     duplicate: 'Duplicate',
@@ -106,7 +106,6 @@ registerTranslations('en', {
     daysAgo: '{count}d ago',
     archive: 'Archive session',
     archiveEntry: 'Archived',
-    archiveEntryCount: 'Archived ({count})',
     archiveEntryTitle: 'View archived sessions',
     archivePanelTitle: 'Archived sessions',
     archiveSearchPlaceholder: 'Search archived sessions...',
@@ -128,6 +127,9 @@ registerTranslations('en', {
     expandSidebar: 'Expand session list',
     collapseSidebar: 'Collapse session list',
     searchSessions: 'Search sessions',
+    sortModeTitle: 'Session order',
+    sortManual: 'Manual order (drag to arrange, same as tabs)',
+    sortRecent: 'Most recent first (time order with day groups)',
   },
 });
 
@@ -631,7 +633,6 @@ function updateSearchClearVisibility() {
 function renderDropdownList() {
   renderSessionListView({
     listEl: document.getElementById('sessionDropdownList'),
-    closeAllBtn: document.getElementById('sessionDropdownCloseAll'),
     filteredSessions: dropdownState.filteredSessions,
     highlightIndex: dropdownState.highlightIndex,
     onSelect: (sessionId) => handleDropdownSelectSession(sessionId),
@@ -640,18 +641,14 @@ function renderDropdownList() {
 
 /**
  * 会话列表通用渲染：全屏覆盖列表（sessionDropdown）与左侧纵向栏（sessionSidebar）共用。
- * 时间分组 + 行操作（重命名/复制/归档/关闭）两处完全一致，差异只在点选行为与容器。
+ * 行操作（重命名/复制/归档/关闭）两处完全一致，差异只在点选行为与容器。
+ * @param {boolean} [options.grouped=true] - 是否渲染「今天/昨天」时间分组标题（含分组批量关闭）
+ * @param {boolean} [options.draggable=false] - 是否允许拖拽调整顺序（仅左栏的「手动排序」模式）
  */
-function renderSessionListView({ listEl, closeAllBtn, filteredSessions, highlightIndex, onSelect }) {
+function renderSessionListView({ listEl, filteredSessions, highlightIndex, onSelect, grouped = true, draggable = false }) {
   if (!listEl) return;
 
   listEl.innerHTML = '';
-
-  // 更新"关闭全部"按钮的会话数量
-  if (closeAllBtn) {
-    const total = (state.sessions || []).length;
-    closeAllBtn.textContent = t('session.closeAllCount', { count: total });
-  }
 
   if (filteredSessions.length === 0) {
     const emptyEl = document.createElement('div');
@@ -670,42 +667,110 @@ function renderSessionListView({ listEl, closeAllBtn, filteredSessions, highligh
 
   // 预计算每个分组的会话数量
   const groupCounts = {};
-  filteredSessions.forEach(s => {
-    const g = getTimeGroupKey(s.updatedAt);
-    groupCounts[g] = (groupCounts[g] || 0) + 1;
-  });
+  if (grouped) {
+    filteredSessions.forEach(s => {
+      const g = getTimeGroupKey(s.updatedAt);
+      groupCounts[g] = (groupCounts[g] || 0) + 1;
+    });
+  }
 
   let lastGroup = null;
 
   filteredSessions.forEach((session, index) => {
-    // 时间分组标题 + 分组关闭按钮
-    const group = getTimeGroupKey(session.updatedAt);
-    if (group !== lastGroup) {
-      lastGroup = group;
-      const header = document.createElement('div');
-      header.className = 'session-dropdown-group-header';
+    // 时间分组标题 + 分组关闭按钮（仅分组视图；手动顺序里没有时间边界，不能分组）
+    if (grouped) {
+      const group = getTimeGroupKey(session.updatedAt);
+      if (group !== lastGroup) {
+        lastGroup = group;
+        const header = document.createElement('div');
+        header.className = 'session-dropdown-group-header';
 
-      const label = document.createElement('span');
-      label.textContent = groupLabels[group] || group;
-      header.appendChild(label);
+        const label = document.createElement('span');
+        label.textContent = groupLabels[group] || group;
+        header.appendChild(label);
 
-      const count = groupCounts[group] || 0;
-      if (count > 0) {
-        const closeBtn = document.createElement('button');
-        closeBtn.className = 'session-dropdown-group-close';
-        closeBtn.textContent = t('session.closeGroupAll');
-        closeBtn.onclick = (e) => {
-          e.stopPropagation();
-          handleGroupCloseAll(group, groupLabels[group] || group);
-        };
-        header.appendChild(closeBtn);
+        const count = groupCounts[group] || 0;
+        if (count > 0) {
+          const closeBtn = document.createElement('button');
+          closeBtn.className = 'session-dropdown-group-close';
+          closeBtn.textContent = t('session.closeGroupAll');
+          closeBtn.onclick = (e) => {
+            e.stopPropagation();
+            handleGroupCloseAll(group, groupLabels[group] || group);
+          };
+          header.appendChild(closeBtn);
+        }
+
+        listEl.appendChild(header);
       }
-
-      listEl.appendChild(header);
     }
 
-    listEl.appendChild(createSessionListItem(session, { index, highlightIndex, onSelect }));
+    const item = createSessionListItem(session, { index, highlightIndex, onSelect });
+    if (draggable) bindListDrag(item, session.id);
+    listEl.appendChild(item);
   });
+}
+
+/** 左栏拖拽排序的源会话 id（独立于标签栏 dragState，避免两处拖拽互相污染） */
+let sidebarDragId = null;
+
+/**
+ * 给左栏会话行挂拖拽排序（仅「手动排序」且未搜索时启用）。
+ * 落点后改的是 state.sessions 的同一份顺序，并持久化 order —— 与标签栏完全同步。
+ */
+function bindListDrag(item, sessionId) {
+  item.draggable = true;
+  item.classList.add('draggable');
+
+  item.addEventListener('dragstart', (e) => {
+    sidebarDragId = sessionId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', sessionId);
+    item.classList.add('dragging');
+  });
+
+  item.addEventListener('dragover', (e) => {
+    if (!sidebarDragId || sidebarDragId === sessionId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    item.classList.add('drag-over');
+  });
+
+  item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+
+  item.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    item.classList.remove('drag-over');
+    void handleSidebarDrop(sidebarDragId, sessionId);
+  });
+
+  item.addEventListener('dragend', () => {
+    item.classList.remove('dragging');
+    document.querySelectorAll('.session-dropdown-item.drag-over')
+      .forEach(el => el.classList.remove('drag-over'));
+    sidebarDragId = null;
+  });
+}
+
+/** 左栏拖拽落点：移动后持久化，再整体重渲染（标签栏同源刷新，左栏由 refreshSidebarView 跟随） */
+async function handleSidebarDrop(draggedId, targetId) {
+  const movedId = draggedId;
+  sidebarDragId = null;
+  if (!movedId || movedId === targetId) return;
+
+  const sessions = state.sessions || [];
+  const draggedIndex = sessions.findIndex(s => s.id === movedId);
+  const targetIndex = sessions.findIndex(s => s.id === targetId);
+  if (draggedIndex === -1 || targetIndex === -1) return;
+
+  const reordered = [...sessions];
+  const [moved] = reordered.splice(draggedIndex, 1);
+  reordered.splice(targetIndex, 0, moved);
+
+  state.sessions = reordered;
+  await reorderSessions(reordered.map(s => s.id));
+  await renderSessionTabs();
 }
 
 /**
@@ -727,9 +792,10 @@ function createSessionListItem(session, { index, highlightIndex, onSelect }) {
     item.classList.add('highlighted');
   }
 
-  // 后台任务已完成、等待查看的会话：在标题前显示静态完成标记
+  // 后台任务已完成、等待查看的会话：静态完成标记
+  const isRunning = session.isGenerating || state.generatingSessionIds.has(session.id);
   const isCompletedPending = state.completedSessionIds.has(session.id) && session.id !== state.activeSessionId
-    && !session.isGenerating && !state.generatingSessionIds.has(session.id);
+    && !isRunning;
   if (isCompletedPending) {
     const completedDot = document.createElement('span');
     completedDot.className = 'session-dropdown-item-completed';
@@ -747,10 +813,17 @@ function createSessionListItem(session, { index, highlightIndex, onSelect }) {
     item.appendChild(queueDot);
   }
 
-  // 会话图标（聊天气泡）
+  // 会话图标槽：固定 13×13 占位。执行中时槽内换成脉动圆点，
+  // 由它顶替原图标的位置——标题起点不变，状态消失后图标原地回来，文字不会左右跳
   const iconSpan = document.createElement('span');
   iconSpan.className = 'session-dropdown-item-icon';
-  iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  if (isRunning) {
+    const runningDot = document.createElement('span');
+    runningDot.className = 'session-dropdown-item-running';
+    iconSpan.appendChild(runningDot);
+  } else {
+    iconSpan.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  }
   item.appendChild(iconSpan);
 
   // 标题
@@ -1023,8 +1096,8 @@ function scrollHighlightedIntoView(containerEl) {
 //
 // 与横向 session-tabs 并存：标签栏做快速切换，左栏做全量管理器（搜索/归档/批量关闭）。
 // 三态呈现：
-//   宽屏收起 → 36px 图标轨；宽屏展开 → 200-480px 可拖拽面板（持久化偏好）；
-//   窄屏（mainRow < SIDEBAR_MIN_TOTAL_W）→ 整条隐藏，⋯ 回退打开全屏覆盖列表（兜底视图）。
+//   宽屏收起 → 不占位（仅标签栏左端一个切换图标）；宽屏展开 → 200-480px 可拖拽面板（持久化偏好）；
+//   窄屏（mainRow < SIDEBAR_MIN_TOTAL_W）→ 切换图标与面板一起隐藏，⋯ 回退打开全屏覆盖列表（兜底视图）。
 
 /** 左栏最小 200px + 对话区至少 360px，低于此总宽不允许停靠 */
 const SIDEBAR_MIN_TOTAL_W = 560;
@@ -1034,10 +1107,21 @@ const CHAT_MIN_W = 360; // 对话区至少保留的宽度（窄屏阈值 560 = �
 const SIDEBAR_DEFAULT_W = 240;
 const STORAGE_SIDEBAR_EXPANDED = 'sessionSidebarExpanded';
 const STORAGE_SIDEBAR_WIDTH = 'sessionSidebarWidth';
+const STORAGE_SIDEBAR_SORT = 'sessionSidebarSortMode';
+
+/**
+ * 左栏排序规则（互斥的两套视图，同时只生效一套）：
+ *   manual（默认）→ 直接用 state.sessions 的顺序，与标签栏同一份 order；可拖拽调整、不分组
+ *   recent       → 按 updatedAt 倒序；渲染「今天/昨天」分组与分组批量关闭；禁用拖拽
+ * 分组与拖拽天然冲突（手动顺序里没有时间边界），所以二者按模式切换而非叠加。
+ */
+const SIDEBAR_SORT_MANUAL = 'manual';
+const SIDEBAR_SORT_RECENT = 'recent';
 
 const sidebarState = {
   expanded: false,        // 持久化偏好：是否停靠展开
   width: SIDEBAR_DEFAULT_W,
+  sortMode: SIDEBAR_SORT_MANUAL, // 持久化偏好：排序规则
   narrow: false,          // 当前 mainRow 宽度不足以停靠（整条隐藏）
   pendingRestore: false,  // 展开中被挤窄临时隐藏，宽度恢复后自动重新展开（不清除偏好）
   highlightIndex: -1,
@@ -1059,7 +1143,7 @@ function isSidebarNarrow() {
   return mainRow ? mainRow.clientWidth < SIDEBAR_MIN_TOTAL_W : true;
 }
 
-/** 按 narrow/expanded 偏好刷新左栏呈现（窄屏整条隐藏，图标轨与面板二选一） */
+/** 按 narrow/expanded 偏好刷新左栏呈现（窄屏整条隐藏；收起态不占位，只留切换图标） */
 function applySidebarState() {
   const el = document.getElementById('sessionSidebar');
   if (!el) return;
@@ -1068,11 +1152,29 @@ function applySidebarState() {
   el.classList.toggle('expanded', !sidebarState.narrow && sidebarState.expanded);
   el.style.setProperty('--session-sidebar-width', `${sidebarState.width}px`);
   updateSidebarOffsetVar();
+
+  // 标签栏左端的展开图标与面板头部的收起图标互斥：窄屏或已展开时都不显示
+  const toggleBtn = document.getElementById('sessionSidebarToggle');
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('sidebar-hidden', sidebarState.narrow || sidebarState.expanded);
+  }
+
+  // 两种会话列表不并存：左栏展开时整条横向标签栏让位；收起/窄屏回退时恢复。
+  // 标签栏曾以 display:none 渲染，宽度为 0，重见天日时偏移量全失效 —— 重新把激活标签滚回可视区。
+  const tabsEl = document.getElementById('sessionTabs');
+  if (tabsEl) {
+    const hideTabs = !sidebarState.narrow && sidebarState.expanded;
+    tabsEl.classList.toggle('tabs-hidden', hideTabs);
+    if (!hideTabs) {
+      const scrollContainer = document.getElementById('sessionTabsScroll');
+      if (scrollContainer) scrollToActiveTab(scrollContainer);
+    }
+  }
 }
 
-/** 执行中会话停靠条（.session-dock 固定在视口左缘）为左栏让位：隐藏 0 / 图标轨 36 / 面板宽度 */
+/** 执行中会话停靠条（.session-dock 固定在视口左缘）为左栏让位：收起/隐藏 0 / 展开面板宽度 */
 function updateSidebarOffsetVar() {
-  const offset = sidebarState.narrow ? 0 : (sidebarState.expanded ? sidebarState.width : 36);
+  const offset = (!sidebarState.narrow && sidebarState.expanded) ? sidebarState.width : 0;
   document.body.style.setProperty('--session-sidebar-offset', `${offset}px`);
 }
 
@@ -1081,20 +1183,17 @@ async function persistSidebarState() {
     await chrome.storage.local.set({
       [STORAGE_SIDEBAR_EXPANDED]: sidebarState.expanded,
       [STORAGE_SIDEBAR_WIDTH]: sidebarState.width,
+      [STORAGE_SIDEBAR_SORT]: sidebarState.sortMode,
     });
   } catch { /* 持久化失败不影响本次展示 */ }
 }
 
-function expandSidebar({ focusSearch = false } = {}) {
+function expandSidebar() {
   if (isSidebarNarrow()) return; // 窄屏不允许停靠
   sidebarState.expanded = true;
   applySidebarState();
   void persistSidebarState();
   refreshSidebarView();
-  if (focusSearch) {
-    const input = document.getElementById('sessionSidebarSearch');
-    if (input) setTimeout(() => input.focus(), 50);
-  }
 }
 
 function collapseSidebar() {
@@ -1115,12 +1214,17 @@ function toggleSidebarOrOverlay() {
 
 function renderSidebarList() {
   const listEl = document.getElementById('sessionSidebarList');
+  const isRecent = sidebarState.sortMode === SIDEBAR_SORT_RECENT;
+  // 搜索中不开放拖拽：列表只是全量的子集，落点顺序与真实 order 对不上，
+  // 拖赢的结果会让另一批会话位置莫名变化，所以宁可先禁用
+  const hasSearch = !!(document.getElementById('sessionSidebarSearch')?.value || '').trim();
   renderSessionListView({
     listEl,
-    closeAllBtn: document.getElementById('sessionSidebarCloseAll'),
     filteredSessions: sidebarState.filteredSessions,
     highlightIndex: sidebarState.highlightIndex,
     onSelect: (sessionId) => handleSidebarSelectSession(sessionId),
+    grouped: isRecent,
+    draggable: !isRecent && !hasSearch,
   });
   // 激活会话联动：激活项变化时滚动进可视区（block:'nearest'，已在可视区则不跳动）；
   // 仅变化时滚一次，用户手动滚动浏览期间不会被标题刷新等重渲染拽回去
@@ -1142,9 +1246,34 @@ function filterSidebarSessions(searchText) {
       (s.title || t('session.newSession')).toLowerCase().includes(lower)
     );
   }
-  sidebarState.filteredSessions = sortByUpdatedAt(filtered);
+  // 手动：只做展示层倒序 —— 顶部标签栏仍是 order 升序（新会话在最右侧），
+  // 左栏翻过来把最新的排在最上面，两者共用同一份 order，谁都不改数据。
+  // 最近更新：时间倒序，配合分组标题与分组批量关闭
+  sidebarState.filteredSessions = sidebarState.sortMode === SIDEBAR_SORT_RECENT
+    ? sortByUpdatedAt(filtered)
+    : filtered.reverse();
   sidebarState.highlightIndex = -1;
   renderSidebarList();
+}
+
+/** 排序按钮的选中态：与 sidebarState.sortMode 保持一致 */
+function applySidebarSortButtons() {
+  document.querySelectorAll('.session-sidebar-sort-btn').forEach((btn) => {
+    const active = btn.dataset.mode === sidebarState.sortMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
+/** 切换排序规则：两套视图互斥，切换后重置联动基准并把当前会话滚回可视区 */
+function setSidebarSortMode(mode) {
+  if (mode !== SIDEBAR_SORT_MANUAL && mode !== SIDEBAR_SORT_RECENT) return;
+  if (sidebarState.sortMode === mode) return;
+  sidebarState.sortMode = mode;
+  applySidebarSortButtons();
+  sidebarState.lastActiveId = null;
+  filterSidebarSessions(document.getElementById('sessionSidebarSearch')?.value || '');
+  void persistSidebarState();
 }
 
 /** 左栏展开且可见时按当前搜索词刷新列表（renderSessionTabs 尾部调用） */
@@ -1275,12 +1404,16 @@ async function initSessionSidebar() {
 
   // 恢复持久化偏好
   try {
-    const saved = await chrome.storage.local.get([STORAGE_SIDEBAR_EXPANDED, STORAGE_SIDEBAR_WIDTH]);
+    const saved = await chrome.storage.local.get([STORAGE_SIDEBAR_EXPANDED, STORAGE_SIDEBAR_WIDTH, STORAGE_SIDEBAR_SORT]);
     sidebarState.expanded = saved[STORAGE_SIDEBAR_EXPANDED] === true;
     if (typeof saved[STORAGE_SIDEBAR_WIDTH] === 'number') {
       sidebarState.width = clampSidebarWidth(saved[STORAGE_SIDEBAR_WIDTH]);
     }
+    if (saved[STORAGE_SIDEBAR_SORT] === SIDEBAR_SORT_RECENT || saved[STORAGE_SIDEBAR_SORT] === SIDEBAR_SORT_MANUAL) {
+      sidebarState.sortMode = saved[STORAGE_SIDEBAR_SORT];
+    }
   } catch { /* 读取失败用默认值 */ }
+  applySidebarSortButtons();
 
   // 启动即窄屏：挂起展开偏好，等宽度恢复后自动补展开
   if (isSidebarNarrow() && sidebarState.expanded) {
@@ -1288,15 +1421,15 @@ async function initSessionSidebar() {
   }
   applySidebarState();
 
-  // 图标轨
-  document.getElementById('sessionSidebarExpand')?.addEventListener('click', () => expandSidebar());
-  document.getElementById('sessionRailSearch')?.addEventListener('click', () => expandSidebar({ focusSearch: true }));
-  document.getElementById('sessionRailAdd')?.addEventListener('click', () => { void newSession(); });
-  document.getElementById('sessionRailArchiveEntry')?.addEventListener('click', () => { void openArchivePanel(); });
+  // 标签栏左端切换图标
+  document.getElementById('sessionSidebarToggle')?.addEventListener('click', () => toggleSidebarOrOverlay());
 
   // 展开面板
-  document.getElementById('sessionSidebarCollapse')?.addEventListener('click', () => collapseSidebar());
   document.getElementById('sessionSidebarAdd')?.addEventListener('click', () => { void newSession(); });
+  document.getElementById('sessionSidebarCollapse')?.addEventListener('click', () => collapseSidebar());
+  document.querySelectorAll('.session-sidebar-sort-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setSidebarSortMode(btn.dataset.mode));
+  });
   document.getElementById('sessionSidebarArchiveEntry')?.addEventListener('click', () => { void openArchivePanel(); });
   document.getElementById('sessionSidebarCloseAll')?.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1448,11 +1581,8 @@ async function refreshArchiveEntryCount() {
   archivedCountForMoreBtn = list.length;
   const scrollContainer = document.getElementById('sessionTabsScroll');
   if (scrollContainer) checkOverflow(scrollContainer);
-  // 计数直接跟在「归档区」后面，宽度拉宽也不会脱节；
-  // 图标轨（收起态）只有图标、不展示数量，避免无谓的注意力干扰
-  const labelText = list.length > 0
-    ? t('session.archiveEntryCount', { count: list.length > 99 ? '99+' : list.length })
-    : t('session.archiveEntry');
+  // 归档区入口只显示文案，不展示归档数量（数量对用户无意义，还会因语言切换而丢失）
+  const labelText = t('session.archiveEntry');
   labelEls.forEach((el) => { if (el) el.textContent = labelText; });
 }
 

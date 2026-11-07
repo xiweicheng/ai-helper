@@ -166,29 +166,25 @@
   
   <!-- 主内容区：左侧（标签栏+对话+输入）与右侧（工作目录面板，嵌入模式时参与分栏） -->
   <div class="main-row" id="mainRow">
-  <!-- 左侧纵向会话栏：收起为 36px 图标轨，展开为会话管理面板（宽度可拖拽）；
+  <!-- 左侧纵向会话栏：默认不占位，点标签栏左端的切换图标才展开为可拖拽宽度的面板；
        窄屏（mainRow < 560px）整条隐藏，会话列表入口回退为 ⋯ 打开的全屏覆盖列表 -->
   <div class="session-sidebar" id="sessionSidebar">
-    <!-- 收起态：图标轨 -->
-    <div class="session-sidebar-rail" id="sessionSidebarRail">
-      <button class="session-rail-btn" id="sessionSidebarExpand" data-i18n-title="session.expandSidebar" title="展开会话列表">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
-      </button>
-      <button class="session-rail-btn session-rail-add" id="sessionRailAdd" data-i18n-title="session.newSessionTitle" title="新建会话 (Alt+N)">+</button>
-      <button class="session-rail-btn" id="sessionRailSearch" data-i18n-title="session.searchSessions" title="搜索会话">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-      </button>
-      <div class="session-rail-spacer"></div>
-      <button class="session-rail-btn session-rail-archive" id="sessionRailArchiveEntry" data-i18n-title="session.archiveEntryTitle" title="查看归档会话">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-      </button>
-    </div>
     <!-- 展开态：会话管理面板 -->
     <div class="session-sidebar-panel" id="sessionSidebarPanel">
       <div class="session-sidebar-header">
         <span class="session-sidebar-title" data-i18n="session.sessionListTitle">会话列表</span>
         <div class="session-sidebar-header-actions">
+          <!-- 排序规则：手动（可拖拽，与标签栏同一份顺序）/ 最近更新（时间倒序 + 时间分组） -->
+          <div class="session-sidebar-sort" id="sessionSidebarSort" role="group" data-i18n-title="session.sortModeTitle" title="会话排序">
+            <button class="session-sidebar-sort-btn" data-mode="manual" aria-pressed="true" data-i18n-title="session.sortManual" title="手动排序">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+            </button>
+            <button class="session-sidebar-sort-btn" data-mode="recent" aria-pressed="false" data-i18n-title="session.sortRecent" title="最近更新优先">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+            </button>
+          </div>
           <button class="session-sidebar-add" id="sessionSidebarAdd" data-i18n-title="session.newSessionTitle" title="新建会话 (Alt+N)">+</button>
+          <!-- 与标签栏左端的展开图标互斥：面板展开时只在这里显示收起 -->
           <button class="session-sidebar-collapse" id="sessionSidebarCollapse" data-i18n-title="session.collapseSidebar" title="收起会话列表">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
           </button>
@@ -219,6 +215,12 @@
 
   <!-- 会话标签栏 -->
   <div class="session-tabs" id="sessionTabs">
+    <!-- 左栏切换：宽屏下常驻于此，收起时不占位；窄屏隐藏（改由 ⋯ 打开全屏列表） -->
+    <button class="session-sidebar-toggle" id="sessionSidebarToggle" data-i18n-title="session.expandSidebar" title="展开会话列表">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/>
+      </svg>
+    </button>
     <div class="session-tabs-scroll" id="sessionTabsScroll" style="opacity:0"></div>
     <div class="session-tabs-actions" id="sessionTabsActions">
       <div class="session-tab-add" id="sessionTabsAdd" data-i18n-title="session.newSessionTitle" title="新建会话 (Alt+N)">+</div>

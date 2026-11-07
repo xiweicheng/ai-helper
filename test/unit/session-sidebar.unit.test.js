@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // test/unit/session-sidebar.unit.test.js - 左侧纵向会话栏
 // 左栏与横向 session-tabs 并存：标签栏快速切换，左栏做全量管理器（搜索/归档/批量关闭）。
-// 三态：宽屏收起=36px 图标轨；宽屏展开=200-480px 可拖拽面板；窄屏（mainRow<560）整条隐藏，
+// 两种形态：宽屏收起=不占位（标签栏左端只留切换图标）；宽屏展开=200-480px 可拖拽面板；窄屏（mainRow<560）
 // ⋯ 回退打开全屏覆盖列表（兜底视图，sessionDropdown 保留不删）。本文件用源码守卫锁定这些约定。
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
@@ -33,15 +33,17 @@ describe('左栏 DOM 结构（源码守卫）', () => {
     expect(sidebarIdx).toBeLessThan(mainLeftIdx);
   });
 
-  it('图标轨与展开面板的全部控件 id 齐全', () => {
-    // 图标轨
-    expect(html).toContain('id="sessionSidebarExpand"');
-    expect(html).toContain('id="sessionRailAdd"');
-    expect(html).toContain('id="sessionRailSearch"');
-    expect(html).toContain('id="sessionRailArchiveEntry"');
-    // 收起态图标轨不展示归档数量（无意义的注意力干扰），只有图标
-    expect(html).not.toContain('sessionRailArchiveCount');
-    // 展开面板
+  it('展开面板与切换按钮的全部控件 id 齐全，收起态不留竖向窄条', () => {
+    // 切换入口在标签栏左端，收起时不占位
+    expect(html).toContain('id="sessionSidebarToggle"');
+    expect(html.indexOf('id="sessionSidebarToggle"')).toBeLessThan(html.indexOf('id="sessionTabsScroll"'));
+    // 旧的收起态图标轨已整体移除
+    expect(html).not.toContain('id="sessionSidebarRail"');
+    expect(html).not.toContain('id="sessionSidebarExpand"');
+    expect(html).not.toContain('id="sessionRailAdd"');
+    expect(html).not.toContain('id="sessionRailSearch"');
+    expect(html).not.toContain('id="sessionRailArchiveEntry"');
+    // 展开面板：头部含新建与收起（收起与标签栏左端展开图标互斥显示）
     expect(html).toContain('id="sessionSidebarCollapse"');
     expect(html).toContain('id="sessionSidebarAdd"');
     expect(html).toContain('id="sessionSidebarSearch"');
@@ -62,12 +64,28 @@ describe('左栏 DOM 结构（源码守卫）', () => {
     expect(html).toContain('id="sessionArchiveEntryLabel"');
   });
 
-  it('新建会话入口两态都有：图标轨 ＋ 与展开面板头部 ＋ 绑同一个 newSession', () => {
+  it('切换按钮点击走 toggleSidebarOrOverlay，展开面板头部 ＋ 绑 newSession、« 绑 collapseSidebar', () => {
     const init = sliceFrom('async function initSessionSidebar', 3000);
-    expect(init).toContain("document.getElementById('sessionRailAdd')?.addEventListener('click', () => { void newSession(); })");
+    expect(init).toContain("document.getElementById('sessionSidebarToggle')?.addEventListener('click', () => toggleSidebarOrOverlay())");
     expect(init).toContain("document.getElementById('sessionSidebarAdd')?.addEventListener('click', () => { void newSession(); })");
+    expect(init).toContain("document.getElementById('sessionSidebarCollapse')?.addEventListener('click', () => collapseSidebar())");
     // 复用既有 i18n key，不另起新 key
     expect(html).toContain('id="sessionSidebarAdd" data-i18n-title="session.newSessionTitle"');
+  });
+
+  it('展开图标与收起按钮互斥显示：展开或窄屏时不显示标签栏左端图标', () => {
+    const apply = sliceFrom('function applySidebarState', 800);
+    expect(apply).toContain("classList.toggle('sidebar-hidden', sidebarState.narrow || sidebarState.expanded)");
+  });
+
+  it('两种会话列表不并存：左栏展开时整条标签栏隐藏，收起/窄屏回退时恢复并重定位激活标签', () => {
+    const apply = sliceFrom('function applySidebarState', 1500);
+    expect(apply).toContain('const hideTabs = !sidebarState.narrow && sidebarState.expanded;');
+    expect(apply).toContain("tabsEl.classList.toggle('tabs-hidden', hideTabs)");
+    // 标签栏隐藏时宽度为 0，重新出现必须重算激活标签位置
+    expect(apply).toContain('scrollToActiveTab(scrollContainer)');
+    expect(css).toContain('.session-tabs.tabs-hidden');
+    expect(css).toMatch(/\.session-tabs\.tabs-hidden \{\s*display: none;/);
   });
 });
 
@@ -78,7 +96,7 @@ describe('左栏三态与窄屏兜底（源码守卫）', () => {
     expect(src).toContain('const SIDEBAR_MAX_W = 480');
   });
 
-  it('窄屏时整条左栏隐藏（图标轨也不留），用 sidebar-hidden 类控制', () => {
+  it('窄屏时面板与切换图标一起隐藏，用 sidebar-hidden 类控制', () => {
     const apply = sliceFrom('function applySidebarState', 500);
     expect(apply).toContain("classList.toggle('sidebar-hidden', sidebarState.narrow)");
     expect(apply).toContain("classList.toggle('expanded', !sidebarState.narrow && sidebarState.expanded)");
@@ -145,7 +163,7 @@ describe('左栏偏好持久化与宽度拖拽（源码守卫）', () => {
   });
 
   it('启动即窄屏且偏好为展开时挂起 pendingRestore', () => {
-    const init = sliceFrom('async function initSessionSidebar', 700);
+    const init = sliceFrom('async function initSessionSidebar', 1300);
     expect(init).toContain('sidebarState.pendingRestore = true');
   });
 });
@@ -174,7 +192,7 @@ describe('左栏列表复用与联动（源码守卫）', () => {
   });
 
   it('激活会话联动：激活项变化时滚动进可视区，手动滚动浏览时不被拽回', () => {
-    const render = sliceFrom('function renderSidebarList', 800);
+    const render = sliceFrom('function renderSidebarList', 1400);
     expect(render).toContain('sidebarState.lastActiveId');
     expect(render).toContain(".session-dropdown-item.active");
     expect(render).toContain("scrollIntoView({ block: 'nearest' })");
@@ -189,17 +207,16 @@ describe('左栏列表复用与联动（源码守卫）', () => {
     expect(keydown).toContain('collapseSidebar()');
   });
 
-  it('归档计数：文字入口统一「归档区(N)」括号形式（同关闭全部），收起态图标轨不显示数字', () => {
+  it('底部不展示数量：归档区与关闭全部都只显示文案，避免语言切换后数字丢失', () => {
     const refresh = sliceFrom('async function refreshArchiveEntryCount', 900);
-    // 两处文字入口（全屏列表底部 + 展开面板底部）同源用括号文本
+    // 两处文字入口（全屏列表底部 + 展开面板底部）同源，且不带计数
     expect(refresh).toContain('sessionArchiveEntryLabel');
     expect(refresh).toContain('sessionSidebarArchiveLabel');
-    expect(refresh).toContain("t('session.archiveEntryCount'");
-    // 收起态图标轨不展示归档数量
-    expect(refresh).not.toContain('sessionRailArchiveCount');
-    // i18n key 中英文齐全
-    expect(src).toContain("archiveEntryCount: '归档区({count})'");
-    expect(src).toContain("archiveEntryCount: 'Archived ({count})'");
+    expect(refresh).toContain("t('session.archiveEntry')");
+    expect(refresh).not.toContain('archiveEntryCount');
+    // 关闭全部按钮由 data-i18n 负责文案，渲染层不再写入带计数的文本
+    expect(src).not.toContain('closeAllCount');
+    expect(src).not.toContain('archiveEntryCount');
   });
 
   it('归档面板返回按宽度分流：宽屏展开左栏，窄屏打开全屏兜底列表', () => {
@@ -218,11 +235,28 @@ describe('左栏列表复用与联动（源码守卫）', () => {
     expect(scroll).toContain('containerEl || document');
   });
 
+  it('执行中圆点顶替会话图标位，标题不因状态出现而位移', () => {
+    const item = sliceFrom('function createSessionListItem', 2500);
+    // 判据与横向 tab 一致，且执行中时圆点放进图标槽内而不是另起一个节点
+    expect(item).toContain('session.isGenerating || state.generatingSessionIds.has(session.id)');
+    expect(item).toContain('session-dropdown-item-running');
+    expect(item).toMatch(/if \(isRunning\) \{[\s\S]{0,120}iconSpan\.appendChild\(runningDot\)/);
+    // 图标槽固定 13×13：圆点替换图标时占位不变，文字起点不跳
+    const iconCss = css.slice(css.indexOf('.session-dropdown-item-icon {'), css.indexOf('.session-dropdown-item-icon {') + 260);
+    expect(iconCss).toContain('width: 13px');
+    expect(iconCss).toContain('justify-content: center');
+    // 圆点自身不再额外占位：只截 .session-dropdown-item-running 这一条规则，避免串到下一条
+    const dotStart = css.indexOf('.session-dropdown-item-running {');
+    const dotCss = css.slice(dotStart, css.indexOf('}', dotStart) + 1);
+    expect(dotCss).toContain('animation: sessionPulse');
+    expect(dotCss).not.toContain('margin-right');
+  });
+
   it('执行中会话停靠条（.session-dock）为左栏让位：left 跟随 CSS 变量，拖拽时实时更新', () => {
     // CSS：left 不再写死 0，改读 --session-sidebar-offset
     const dock = css.slice(css.indexOf('.session-dock {'), css.indexOf('.session-dock {') + 300);
     expect(dock).toContain('left: var(--session-sidebar-offset, 0px)');
-    // JS：applySidebarState 维护该变量（隐藏 0 / 图标轨 36 / 面板宽度），拖拽把手 onMove 实时跟随
+    // JS：applySidebarState 维护该变量（收起/隐藏 0 / 展开面板宽度），拖拽把手 onMove 实时跟随
     const offsetFn = sliceFrom('function updateSidebarOffsetVar', 300);
     expect(offsetFn).toContain("--session-sidebar-offset");
     const apply = sliceFrom('function applySidebarState', 500);
@@ -232,14 +266,93 @@ describe('左栏列表复用与联动（源码守卫）', () => {
   });
 });
 
+describe('左栏排序规则（手动 / 最近更新）', () => {
+  it('默认手动排序：不按时间重排，只把共用的一份 order 倒序展示', () => {
+    const filter = sliceFrom('function filterSidebarSessions', 700);
+    expect(filter).toContain('sidebarState.sortMode === SIDEBAR_SORT_RECENT');
+    expect(filter).toContain('? sortByUpdatedAt(filtered)');
+    expect(filter).toContain(': filtered.reverse();');
+    expect(src).toContain("const SIDEBAR_SORT_MANUAL = 'manual'");
+    expect(src).toContain('sortMode: SIDEBAR_SORT_MANUAL');
+  });
+
+  it('排序偏好持久化：写入与其他偏好同一批，读回时校验取值', () => {
+    expect(src).toContain("const STORAGE_SIDEBAR_SORT = 'sessionSidebarSortMode'");
+    const persist = sliceFrom('async function persistSidebarState', 400);
+    expect(persist).toContain('[STORAGE_SIDEBAR_SORT]: sidebarState.sortMode');
+    const init = sliceFrom('async function initSessionSidebar', 900);
+    expect(init).toContain('STORAGE_SIDEBAR_SORT');
+  });
+
+  it('互斥：手动可拖拽不分组；最近更新分组带批量关闭但不拖拽', () => {
+    const list = sliceFrom('function renderSidebarList', 900);
+    expect(list).toContain('grouped: isRecent');
+    expect(list).toContain('draggable: !isRecent && !hasSearch');
+    // 视图层：分组标题与分组批量关闭整体受 grouped 控制，拖拽单独受 draggable 控制
+    const view = sliceFrom('function renderSessionListView', 2600);
+    expect(view).toContain('grouped = true, draggable = false');
+    expect(view).toContain('if (grouped) {');
+    expect(view).toContain('if (draggable) bindListDrag(item, session.id);');
+  });
+
+  it('拖拽落点与标签栏同源：改 state.sessions 后持久化 order 并重渲染', () => {
+    const drop = sliceFrom('async function handleSidebarDrop', 800);
+    expect(drop).toContain('state.sessions = reordered;');
+    expect(drop).toContain('await reorderSessions(reordered.map(s => s.id));');
+    expect(drop).toContain('await renderSessionTabs();');
+    // 搜索中禁用拖拽：子集顺序与真实 order 对不上，拖拽会让别的会话位置乱跳
+    expect(src).toContain("const hasSearch = !!(document.getElementById('sessionSidebarSearch')?.value || '').trim();");
+  });
+
+  it('切换模式后重置滚动基准，把当前会话带回可视区', () => {
+    const set = sliceFrom('function setSidebarSortMode', 800);
+    expect(set).toContain('sidebarState.lastActiveId = null;');
+    expect(set).toContain('filterSidebarSessions(');
+    expect(set).toContain('void persistSidebarState();');
+    const init = sliceFrom('async function initSessionSidebar', 3200);
+    expect(init).toContain("btn.addEventListener('click', () => setSidebarSortMode(btn.dataset.mode))");
+  });
+
+  it('只翻转左栏展示顺序：新会话在左栏顶端，顶部标签栏仍留在最右侧', () => {
+    const filter = sliceFrom('function filterSidebarSessions', 800);
+    expect(filter).toContain(': filtered.reverse();');
+    // 数据层不动：新建仍是 order=Date.now()（升序末位 = 标签栏最右侧）
+    const store = read('src/storage/session-store.js');
+    expect(store).toContain('order: Date.now(),');
+    expect(store).not.toContain('nextSessionOrderAtTop');
+  });
+
+  it('倒序展示下拖拽落点仍按底层 order 计算（标准 splice 语义与视觉一致）', () => {
+    // 左栏渲染 reverse(state.sessions)，落点用底层的 dragged/target 下标做「移到目标位置」，
+    // 两种顺序互为镜像，相对位置结论一致，因此不需要额外的下标翻转
+    const drop = sliceFrom('async function handleSidebarDrop', 700);
+    expect(drop).toContain('const draggedIndex = sessions.findIndex(s => s.id === movedId);');
+    expect(drop).toContain('const targetIndex = sessions.findIndex(s => s.id === targetId);');
+    expect(drop).toContain('reordered.splice(targetIndex, 0, moved);');
+  });
+
+  it('DOM 与样式：头部两枚排序按钮、当前态高亮、可拖拽行光标', () => {
+    expect(html).toContain('id="sessionSidebarSort"');
+    expect(html).toContain('data-mode="manual"');
+    expect(html).toContain('data-mode="recent"');
+    expect(css).toContain('.session-sidebar-sort-btn.active');
+    expect(css).toContain('.session-sidebar-list .session-dropdown-item.draggable');
+  });
+});
+
 describe('左栏样式与文案（源码守卫）', () => {
-  it('核心样式：收起 36px、展开 CSS var 宽度、grip col-resize', () => {
-    expect(css).toContain('.session-sidebar {');
-    expect(css).toContain('width: 36px');
+  it('核心样式：收起不占位（display:none），展开才用 CSS var 宽度，grip col-resize', () => {
+    const base = css.slice(css.indexOf('.session-sidebar {'), css.indexOf('.session-sidebar {') + 400);
+    expect(base).toContain('display: none');
     expect(css).toContain('.session-sidebar.expanded');
     expect(css).toContain('var(--session-sidebar-width, 240px)');
     expect(css).toContain('.session-sidebar-grip');
     expect(css).toContain('cursor: col-resize');
+    // 旧的 36px 图标轨样式已删除
+    expect(css).not.toContain('.session-sidebar-rail');
+    expect(css).not.toContain('.session-rail-btn');
+    // 切换按钮在标签栏左端
+    expect(css).toContain('.session-sidebar-toggle');
   });
 
   it('行操作按钮可读性：hover 时用行底色遮住标题，图标基色提一档', () => {
@@ -253,6 +366,24 @@ describe('左栏样式与文案（源码守卫）', () => {
   it('激活行选中态加强：品牌浅底色 + 左缘 inset 指示条（不占布局）', () => {
     expect(css).toMatch(/\.session-dropdown-item\.active \{[\s\S]*?background: var\(--brand-soft-bg\)/);
     expect(css).toMatch(/\.session-dropdown-item\.active \{[\s\S]*?box-shadow: inset 3px 0 0 var\(--brand-500\)/);
+  });
+
+  it('底部两个按钮各贴一侧：面板加宽时「关闭全部」不跟着居中漂移', () => {
+    // 共用样式是 width:100%（全屏列表的整行按钮），左栏必须按文字宽度收缩
+    const entryIdx = css.indexOf('.session-sidebar-footer .session-archive-entry {');
+    expect(entryIdx).toBeGreaterThan(-1);
+    const entry = css.slice(entryIdx, entryIdx + 200);
+    expect(entry).toContain('width: auto');
+    const closeIdx = css.indexOf('.session-sidebar-footer .session-dropdown-close-all {');
+    expect(closeIdx).toBeGreaterThan(-1);
+    const close = css.slice(closeIdx, closeIdx + 220);
+    expect(close).toContain('width: auto');
+    expect(close).toContain('text-align: right');
+    expect(close).toContain('white-space: nowrap');
+    // 只做左栏作用域覆盖，全屏列表的整行按钮不受影响
+    const sharedIdx = css.indexOf('.session-dropdown-close-all {');
+    const shared = css.slice(sharedIdx, sharedIdx + 260);
+    expect(shared).toContain('width: 100%');
   });
 
   it('新增 i18n key 中英文齐全', () => {

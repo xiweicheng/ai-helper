@@ -3402,8 +3402,12 @@ body {
 /* 会话图标（聊天气泡） */
 .session-dropdown-item-icon {
   flex-shrink: 0;
+  /* 固定槽宽 = 图标 13px，执行中换成圆点时占位不变，标题起点不会左右移动 */
+  width: 13px;
+  height: 13px;
   display: flex;
   align-items: center;
+  justify-content: center;
   color: var(--text-disabled);
   margin-right: 6px;
 }
@@ -3430,6 +3434,15 @@ body {
   flex-shrink: 0;
   margin-right: 6px;
   box-shadow: 0 0 0 2px rgba(var(--success-rgb), 0.18);
+}
+
+/* 执行中圆点：嵌在固定 13×13 的图标槽中央（不额外占位，顶替原会话图标） */
+.session-dropdown-item-running {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brand-500);
+  animation: sessionPulse 1.5s ease-in-out infinite;
 }
 
 /* 下拉列表项的“有排队任务”条数徽标 */
@@ -17604,8 +17617,10 @@ body.voice-recording-active .input-container {
   align-items: center;
   gap: 6px;
   padding: 4px 0;
-  /* 低于会话列表面板（10003）：面板打开时整条被盖住，不抢视线 */
-  z-index: 10002;
+  /* 1：只保证浮在聊天内容（auto）之上。所有弹框 / 下拉 / 面板 / 抽屉的层级都 >= 100，
+     其中不少弹框挂在低层容器里（父容器 z-index 形成层叠上下文），数值再高也压不过顶层元素，
+     所以这里取最小值——任何弹框打开时停靠条都会被盖住，不会再遮挡弹框文字 */
+  z-index: 1;
 }
 
 .session-dock.show {
@@ -18565,15 +18580,15 @@ body.has-session-dock .chat-container {
 }
 
 /* ============================================
-   左侧纵向会话栏（图标轨 + 可拖拽宽度的展开面板）
-   窄屏时整条隐藏由 JS 加 .sidebar-hidden，宽度阈值见 session-manager-ui.js
+   左侧纵向会话栏（默认不占位，展开为可拖拽宽度的面板）
+   切换入口在标签栏左端；窄屏时整条隐藏由 JS 加 .sidebar-hidden，
+   宽度阈值见 session-manager-ui.js
    ============================================ */
 
 .session-sidebar {
   flex-shrink: 0;
-  width: 36px;
   position: relative;
-  display: flex;
+  display: none;
   flex-direction: column;
   background: var(--bg-sunken);
   border-right: 1px solid var(--border-default);
@@ -18585,52 +18600,44 @@ body.has-session-dock .chat-container {
 }
 
 .session-sidebar.expanded {
+  display: flex;
   width: var(--session-sidebar-width, 240px);
 }
 
-/* ---- 收起态：图标轨 ---- */
+/* ---- 标签栏左端的切换按钮（收起时不占位，仅按钮存在） ---- */
 
-.session-sidebar-rail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 0;
-  height: 100%;
-  min-height: 0;
-}
-
-.session-sidebar.expanded .session-sidebar-rail {
-  display: none;
-}
-
-.session-rail-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
+.session-sidebar-toggle {
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
+  width: 24px;
+  height: 24px;
+  margin-left: 10px;
+  border-radius: 6px;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
   flex-shrink: 0;
-  font-size: 16px;
-  line-height: 1;
   padding: 0;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
-.session-rail-btn:hover {
-  background: var(--border-subtle);
-  color: var(--text-primary);
+.session-sidebar-toggle:hover {
+  color: var(--brand-500);
+  border-color: var(--brand-500);
+  background: rgba(var(--brand-rgb), 0.05);
 }
 
-.session-rail-spacer {
-  flex: 1;
-  min-height: 8px;
+/* 窄屏：整条左栏不可用，入口交给 ⋯ 打开的全屏列表 */
+.session-sidebar-toggle.sidebar-hidden {
+  display: none;
+}
+
+/* 左栏展开时顶部横向标签栏整条让位：两种会话列表不同时并存，
+   收起左栏 / 窄屏回退时由 applySidebarState 移除本类恢复标签栏 */
+.session-tabs.tabs-hidden {
+  display: none;
 }
 
 /* ---- 展开态：会话管理面板 ---- */
@@ -18669,7 +18676,54 @@ body.has-session-dock .chat-container {
   flex-shrink: 0;
 }
 
-/* 新建与收起共用同一副 26px 图标按钮外观 */
+/* 排序规则切换：两枚图标按钮并列（手动 / 最近更新），当前生效的一枚高亮。
+   不用弹层，避免在窄面板里被 overflow 裁掉，也少一层层级关系。 */
+.session-sidebar-sort {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 7px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  margin-right: 2px;
+}
+
+.session-sidebar-sort-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.session-sidebar-sort-btn:hover {
+  color: var(--text-primary);
+}
+
+.session-sidebar-sort-btn.active {
+  background: var(--bg-surface);
+  color: var(--brand-500);
+  box-shadow: 0 1px 2px var(--shadow-sm);
+}
+
+/* 手动排序下会话行可拖拽：光标暗示可抓取（仅左栏启用拖拽） */
+.session-sidebar-list .session-dropdown-item.draggable {
+  cursor: grab;
+}
+
+.session-sidebar-list .session-dropdown-item.draggable:active {
+  cursor: grabbing;
+}
+
+/* 面板头部的 26px 图标按钮：新建 + 收起（收起与标签栏左端的展开图标互斥显示） */
 .session-sidebar-add,
 .session-sidebar-collapse {
   width: 26px;
@@ -18745,6 +18799,31 @@ body.has-session-dock .chat-container {
   padding: 8px 10px;
   border-top: 1px solid var(--border-default);
   flex-shrink: 0;
+}
+
+/* 两个按钮各按自身文字宽度：左贴左缘、右贴右缘。
+   共用样式里它们都是 width:100%（为全屏列表的整行按钮准备），在左栏这行里会被
+   平分剩余宽度，文字跟着盒子居中——面板一加宽，「关闭全部」的位置就往中间漂。 */
+.session-sidebar-footer .session-archive-entry {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.session-sidebar-footer .session-archive-entry-label {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-sidebar-footer .session-dropdown-close-all {
+  width: auto;
+  flex: 0 1 auto;
+  padding: 6px 8px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 /* ---- 展开态右缘宽度拖拽把手 ---- */

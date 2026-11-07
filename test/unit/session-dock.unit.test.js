@@ -606,6 +606,21 @@ describe('走廊样式与动效克制', () => {
     // 上一轮改样式时差一点把状态行整条删掉，在这里钉住
     expect(css).toContain('.session-dock-tip-status {');
   });
+  it('停靠条层级压到最低：任何含 z-index 的弹框 / 下拉都能盖住它', () => {
+    const css = read('src/side_panel/styles.css');
+    const dockStart = css.indexOf('.session-dock {');
+    const dockZ = Number(css.slice(dockStart, dockStart + 800).match(/z-index:\s*(\d+)/)[1]);
+    // 必须高于聊天内容（auto = 0），否则会滑到消息背后
+    expect(dockZ).toBeGreaterThan(0);
+    // 必须低于所有浮层：样式表里带 z-index 的浮层最低是 1/2/3/5/10 …（含挂在低层容器里的弹框），
+    // 所以取 1 才能保证「任何弹框打开都盖住停靠条」
+    expect(dockZ).toBe(1);
+    // 澄清弹框（5000）自然也在其上
+    const clarifyStart = css.indexOf('.clarify-overlay {');
+    const clarifyZ = Number(css.slice(clarifyStart, clarifyStart + 600).match(/z-index:\s*(\d+)/)[1]);
+    expect(clarifyZ).toBeGreaterThan(dockZ);
+  });
+
   it('停靠条与聊天区走廊样式齐备', () => {
     const css = read('src/side_panel/styles.css');
     expect(css).toContain('.session-dock {');
