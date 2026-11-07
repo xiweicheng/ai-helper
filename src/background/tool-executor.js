@@ -236,7 +236,10 @@ registerTranslations('zh', {
     docImageFileNotFound: '附件 {file} 不在当前会话的图片清单中，可用附件：{files}',
     docImageIndexOutOfRange: '图片序号 {image} 越界（{file} 共 {total} 张）',
     docImageCacheLost: '图片缓存已失效，请重新附加该文件后再试',
-    docImageAgentOffline: 'Agent 不在线或取图失败，无法读取 {file} 的图片 {image}',
+    docImageAgentFetchFailed: '读取 {file} 的第 {image} 张图片失败（{detail}）。',
+    docImageFetchOffline: 'Agent 不在线或取图请求未送达',
+    docImageFetchNotFound: '落盘的图片文件已不存在',
+    docImageFetchBlocked: '图片落盘路径被沙箱拒绝',
     docImageVisionNotConfigured: '未配置图片识别 API（可在设置中开启图片识别并配置端点），无法深读图片',
     docImageVisionFailed: '图片识别 API 调用失败：{detail}',
     docImageNoAttachment: '无',
@@ -245,7 +248,10 @@ registerTranslations('zh', {
     docImagePathInvalid: 'path 参数无效：必须为非空字符串（代理端图片文件路径）：{path}',
     docImagePathNotImage: '代理端文件不是可识别的图片（png/jpeg/gif/bmp/webp），已拒绝深读：{path}',
     docImagePathTooLarge: '代理端图片文件过大（超过单图上限），已拒绝深读：{path}',
-    docImagePathFailed: '读取代理端图片失败（Agent 不在线，或路径不在工作目录/已授权范围内）：{path}',
+    docImagePathFailed: '无法连接代理端（Agent 不在线或取图请求未送达），暂时无法读取图片：{path}',
+    docImagePathNotFound: '代理端文件不存在：{path}。这通常是路径拼错了——请勿凭猜测拼路径。先用文件工具（agent_file 列目录，或 agent_exec 的 ls/dir）确认工作目录里的真实文件名与相对路径后再深读。若这张图其实是会话中附加文档里的图片、或用户贴进对话的图片，请改用 file + image 来源而不是 path。',
+    docImagePathBlocked: '路径被代理端沙箱拒绝（不在本会话工作目录或已授权范围内）：{path}。请把图片放到工作目录内（用相对路径）再读；越权路径无法深读。',
+    docImagePathError: '读取代理端图片失败：{detail}（路径：{path}）',
     docImageDeepReadPrompt: '详细完整描述图片内容，逐项转录图中全部可读文字与数值。',
     docImageDeepReadPromptQuestion: '请结合以下问题重点分析图片，并逐项转录图中相关可读文字与数值。问题：{question}',
   },
@@ -460,7 +466,10 @@ registerTranslations('en', {
     docImageFileNotFound: 'Attachment {file} is not in the image manifest of this session. Available: {files}',
     docImageIndexOutOfRange: 'Image index {image} out of range ({file} has {total} images in total)',
     docImageCacheLost: 'Image cache expired, please re-attach this file and try again',
-    docImageAgentOffline: 'Agent is offline or image fetch failed, cannot read image {image} of {file}',
+    docImageAgentFetchFailed: 'Failed to read image {image} of {file} ({detail}).',
+    docImageFetchOffline: 'Agent is offline or the fetch request did not reach it',
+    docImageFetchNotFound: 'the saved image file no longer exists',
+    docImageFetchBlocked: 'the saved image path was blocked by the sandbox',
     docImageVisionNotConfigured: 'Image recognition API is not configured (enable it in settings and set an endpoint), cannot deep-read the image',
     docImageVisionFailed: 'Image recognition API call failed: {detail}',
     docImageNoAttachment: 'none',
@@ -469,7 +478,10 @@ registerTranslations('en', {
     docImagePathInvalid: 'Invalid path argument: must be a non-empty string (agent-side image file path): {path}',
     docImagePathNotImage: 'The agent-side file is not a recognized image (png/jpeg/gif/bmp/webp); deep read refused: {path}',
     docImagePathTooLarge: 'The agent-side image file exceeds the single-image size limit; deep read refused: {path}',
-    docImagePathFailed: 'Failed to read the agent-side image (Agent offline, or path not within the working dir / allowed scope): {path}',
+    docImagePathFailed: 'Cannot reach the agent (offline or the fetch did not get through); the image cannot be read right now: {path}',
+    docImagePathNotFound: 'The agent-side file does not exist: {path}. This is usually a wrong/guessed path — do not keep guessing. List the working directory first (agent_file, or agent_exec ls/dir) to confirm the real file name and relative path, then deep-read. If the image is actually inside a document attached to this chat or one the user pasted, use the file + image source instead of path.',
+    docImagePathBlocked: 'The path was rejected by the agent sandbox (not inside this session working dir or the allowed scope): {path}. Save the image inside the working directory (a relative path) and read it again; out-of-scope paths cannot be read.',
+    docImagePathError: 'Failed to read the agent-side image: {detail} (path: {path})',
     docImageDeepReadPrompt: 'Describe the image in full detail, transcribing every readable text and numeric value item by item.',
     docImageDeepReadPromptQuestion: 'Analyze the image focusing on the question below, transcribing related readable text and numeric values item by item. Question: {question}',
   },
@@ -2169,6 +2181,21 @@ async function analyzeImageWithVision(dataUrl, question, toolCallId) {
 }
 
 /**
+ * 将代理端 /api/fs/download 的失败响应归类为具体原因。
+ * 代理端已用 httpStatus 区分「404 文件不存在」「403 越权」「无 httpStatus = 离线/网络」
+ * （口径同 local-agent-client 的 statFile）。早前一律回「Agent 不在线或越权」，
+ * 会把 AI 自己拼错的路径误报成环境问题，误导它反复重试错路径而不是纠正文件名。
+ * @param {{ httpStatus?: number, error?: string }} dl downloadFile 的失败返回
+ * @returns {{ reason: 'offline'|'notFound'|'blocked'|'error', detail?: string }}
+ */
+function describeAgentFetchFailure(dl) {
+  if (!dl || dl.httpStatus == null) return { reason: 'offline' };
+  if (dl.httpStatus === 404) return { reason: 'notFound' };
+  if (dl.httpStatus === 403) return { reason: 'blocked' };
+  return { reason: 'error', detail: String(dl.error || ('HTTP ' + dl.httpStatus)) };
+}
+
+/**
  * read_image：按需深读图片并返回视觉模型文本分析。两个来源二选一：
  *  - path：代理端任意图片文件（AI 生成/落盘的截图等），经 downloadFile 现拉；
  *          越权读由代理端 /api/fs/download 的 checkPath 沙箱兜底（工作目录内永远放行）。
@@ -2195,7 +2222,14 @@ async function executeReadImage(args, toolCallId, sessionId) {
     }
     const dl = await AgentClient.downloadFile(args.path, sessionId);
     if (!dl || !dl.success || !dl.content) {
-      return makeResult(false, t('toolExec.docImagePathFailed', { path: String(args.path) }), { tool_call_id: toolCallId });
+      // 按代理端真实状态码分类报错，不能把「文件不存在」误报成「离线/越权」而误导模型继续用错路径
+      const path = String(args.path);
+      const f = describeAgentFetchFailure(dl);
+      const key = f.reason === 'notFound' ? 'toolExec.docImagePathNotFound'
+        : f.reason === 'blocked' ? 'toolExec.docImagePathBlocked'
+        : f.reason === 'error' ? 'toolExec.docImagePathError'
+        : 'toolExec.docImagePathFailed';
+      return makeResult(false, t(key, { path, detail: f.detail || '' }), { tool_call_id: toolCallId });
     }
     const guard = guardDownloadedImageBase64(dl.content);
     if (!guard.ok) {
@@ -2228,7 +2262,13 @@ async function executeReadImage(args, toolCallId, sessionId) {
     // agent 来源：落盘路径现拉（跨会话仍可用）；同样过 magic bytes 硬校验（纵深防御）
     const dl = await AgentClient.downloadFile(img.path, sessionId);
     if (!dl || !dl.success || !dl.content) {
-      return makeResult(false, t('toolExec.docImageAgentOffline', { file: String(args.file), image: String(args.image) }), { tool_call_id: toolCallId });
+      // 落盘路径由发送链路写入（非模型自拼），仍细化真实原因供诊断
+      const f = describeAgentFetchFailure(dl);
+      const detail = f.reason === 'notFound' ? t('toolExec.docImageFetchNotFound')
+        : f.reason === 'blocked' ? t('toolExec.docImageFetchBlocked')
+        : f.reason === 'error' ? f.detail
+        : t('toolExec.docImageFetchOffline');
+      return makeResult(false, t('toolExec.docImageAgentFetchFailed', { file: String(args.file), image: String(args.image), detail }), { tool_call_id: toolCallId });
     }
     // 与 path 来源同口径：先体积闸门再 magic bytes，堵来源二漏挡
     const guard = guardDownloadedImageBase64(dl.content);

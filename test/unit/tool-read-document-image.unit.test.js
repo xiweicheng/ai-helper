@@ -196,12 +196,45 @@ describe('read_image — 代理端任意路径来源', () => {
     expect(body.messages[0].content[1].image_url.url).toBe('data:image/png;base64,' + PNG_B64);
   });
 
-  it('path 取图失败（离线/越权）→ 错误文案含 path，不调视觉', async () => {
+  // 回归：代理端 download 失败必须按 httpStatus 分状报真实原因，
+  // 不能把「文件不存在」误报成「离线/越权」而误导模型反复重试错路径
+  it('path 无 httpStatus → 判定为离线，不谎称路径问题', async () => {
     const dl = await import('../../src/background/local-agent-client.js');
     dl.downloadFile.mockResolvedValueOnce({ success: false });
+    const r = await call({ path: 'shot.png' });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('无法连接');
+    expect(r.content).toContain('shot.png');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('path 404 → 报「文件不存在」并引导先列目录纠正，不再猜路径', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    dl.downloadFile.mockResolvedValueOnce({ success: false, httpStatus: 404, error: '文件/目录不存在' });
+    const r = await call({ path: 'wrong-shot.png' });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('文件不存在');
+    expect(r.content).toContain('wrong-shot.png');
+    // 纠正引导：提示用文件+image 来源、先列目录
+    expect(r.content).toContain('file + image');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('path 403 → 报沙箱越权而非离线', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    dl.downloadFile.mockResolvedValueOnce({ success: false, httpStatus: 403, error: '路径不允许访问' });
     const r = await call({ path: '/etc/secret.png' });
     expect(r.success).toBe(false);
-    expect(r.content).toContain('/etc/secret.png');
+    expect(r.content).toContain('沙箱');
+    expect(visionCall()).toBeUndefined();
+  });
+
+  it('path 其他状态码 → 转达代理端真实 error', async () => {
+    const dl = await import('../../src/background/local-agent-client.js');
+    dl.downloadFile.mockResolvedValueOnce({ success: false, httpStatus: 500, error: '下载失败: boom' });
+    const r = await call({ path: 'shot.png' });
+    expect(r.success).toBe(false);
+    expect(r.content).toContain('下载失败: boom');
     expect(visionCall()).toBeUndefined();
   });
 
