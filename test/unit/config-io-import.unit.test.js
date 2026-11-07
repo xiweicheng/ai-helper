@@ -253,3 +253,56 @@ describe('confirmImport（内网访问策略不参与导入）', () => {
     expect(store.modelName).toBe('m-imported');
   });
 });
+
+describe('confirmImport（代理连接信息的空白继承）', () => {
+  // 不勾密钥导出的文件里 pairedAgents.url/token 被置空；合并导入时
+  // 同 ID 本机条目必须兜底，否则导入会把已配好的代理连接清空
+  test('merge：文件 url/token 为空时继承本机同 ID 条目', async () => {
+    mockLocal();
+    store.pairedAgents = [
+      { id: 'pa_1', name: '家里代理', url: 'ws://192.168.1.10:8787', token: 'tok', pairedAt: 1 },
+    ];
+
+    setupDom({
+      version: 1,
+      includeSecrets: false,
+      config: {
+        pairedAgents: [
+          { id: 'pa_1', name: '家里代理改名', url: '', token: '', pairedAt: 1 },
+        ],
+      },
+    });
+
+    await confirmImport();
+
+    const agent = store.pairedAgents.find(a => a.id === 'pa_1');
+    expect(agent.url).toBe('ws://192.168.1.10:8787');
+    // 导入时令牌经 encodeSecret(decodeSecret(x)) 归一为 enc: 存储格式
+    expect(decodeSecret(agent.token)).toBe('tok');
+    // 非敏感字段以文件为准
+    expect(agent.name).toBe('家里代理改名');
+  });
+
+  test('merge：文件携带 url/token 时以文件为准，不被本机覆盖', async () => {
+    mockLocal();
+    store.pairedAgents = [
+      { id: 'pa_1', name: '旧代理', url: 'ws://192.168.1.10:8787', token: 'old', pairedAt: 1 },
+    ];
+
+    setupDom({
+      version: 1,
+      includeSecrets: true,
+      config: {
+        pairedAgents: [
+          { id: 'pa_1', name: '新代理', url: 'ws://10.0.0.5:9000', token: 'new', pairedAt: 2 },
+        ],
+      },
+    });
+
+    await confirmImport();
+
+    const agent = store.pairedAgents.find(a => a.id === 'pa_1');
+    expect(agent.url).toBe('ws://10.0.0.5:9000');
+    expect(decodeSecret(agent.token)).toBe('new');
+  });
+});

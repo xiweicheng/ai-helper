@@ -1631,7 +1631,7 @@ export default {
     exportTitle: 'Export Settings',
     includeSecrets: 'Include API keys',
     secretWarn: '⚠ Sensitive information; keep the file safe',
-    exportDesc: 'The exported file will contain all settings except Agent connection info. You can choose whether to include API keys.',
+    exportDesc: 'The exported file contains all settings except Agent connection info (proxy URL and pairing token); check the option below to include API keys and connection info as well.',
     export: 'Export',
     importTitle: 'Import Settings',
     mergeImport: 'Merge import — only overwrite settings present in the file; keep the rest',

@@ -983,7 +983,7 @@ export function loadConfig() {
   chrome.storage.local.get([
     'apiBase', 'apiKey', 'modelName', 'customModels', 'systemPrompt',
     'enableImageInput', 'imageModelName', 'imageModels',
-    'imageApiBase', 'imageApiKey', 'enableFileInput',
+    'imageApiBase', 'imageApiKey',
     'reactLoopTimeout',
     // 只为一次性清理旧残留而读：不在设置页渲染，也不参与保存
     'reactMaxIterations', 'reactApiTimeout', 'reactToolTimeout',

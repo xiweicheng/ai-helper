@@ -1631,7 +1631,7 @@ export default {
     exportTitle: '导出配置',
     includeSecrets: '包含 API 密钥',
     secretWarn: '⚠ 敏感信息，请确保文件安全',
-    exportDesc: '导出文件将包含除 Agent 连接信息外的所有配置，可选择是否包含 API 密钥。',
+    exportDesc: '导出文件将包含除 Agent 连接信息（代理地址与配对令牌）外的所有配置；勾选下方选项后一并导出 API 密钥与连接信息。',
     export: '导出',
     importTitle: '导入配置',
     mergeImport: '合并导入 — 仅覆盖文件中存在的配置项，保留其他',

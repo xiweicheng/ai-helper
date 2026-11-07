@@ -51,6 +51,13 @@ const EXPORT_KEYS = [
   'mcpEnabled', 'skillsEnabled', 'ragEnabled',
   // 外观主题（三态偏好 + 划词浮层是否跟随扩展主题）
   'appTheme', 'selectionToolbarFollowTheme',
+  // 界面语言（设置页语言下拉框，i18n.js 落盘）
+  'language',
+  // 语音输入：单键快捷键开关 + 选定的麦克风设备（均为用户配置，设备 ID 跨机器
+  // 失效时会自动回落「跟随系统默认」，携带无害）
+  'voiceShortcutConfig', 'voiceInputDevice',
+  // 会话压缩与记忆注入（侧边栏会话配置下拉里的真实开关）
+  'chatAutoCompaction', 'chatPersistSummaryToMemory', 'chatMaxMemoryMessages',
 ];
 
 // 敏感的密钥 key（agentToken 已废弃，token 嵌入在 pairedAgents 中）
@@ -111,9 +118,11 @@ async function collectConfig(includeSecrets) {
           config[key] = result[key];
         }
       }
-      // 不包含密钥时，清除 pairedAgents 中的 token
+      // 不包含密钥时，清除 pairedAgents 中的 token 与连接地址：
+      // 代理端口 token 是鉴权凭据，url 是内网地址/端口，两者同属「Agent 连接信息」，
+      // 必须与弹窗文案一致地一起受「包含 API 密钥」勾选控制，否则等于把内网拓扑白送出去
       if (!includeSecrets && config.pairedAgents) {
-        config.pairedAgents = config.pairedAgents.map(a => ({ ...a, token: '' }));
+        config.pairedAgents = config.pairedAgents.map(a => ({ ...a, url: '', token: '' }));
       }
       // 不包含密钥时，逐厂商配置剥离 apiKey
       if (!includeSecrets && Array.isArray(config.modelProfiles)) {
@@ -323,6 +332,18 @@ export async function confirmImport() {
         config.modelName = activeProfile.modelName || DEFAULT_MODEL_NAME;
         config.customModels = normalizeModels(activeProfile.models);
       }
+    }
+
+    // 合并导入：不勾密钥的导出文件里 pairedAgents 的 url/token 已被置空，
+    // 同 ID 本机条目存在时继承空键原值，避免把已配好的代理连接清空
+    // （与 mergeProfiles 里「文件 apiKey 为空时继承本机密钥」同口径）
+    if (strategy === 'merge' && Array.isArray(config.pairedAgents) && config.pairedAgents.length) {
+      const localPaired = (await chrome.storage.local.get(['pairedAgents'])).pairedAgents || [];
+      config.pairedAgents = config.pairedAgents.map(a => {
+        const localEntry = localPaired.find(x => x && x.id === a.id);
+        if (!localEntry) return a;
+        return { ...a, url: a.url || localEntry.url, token: a.token || localEntry.token };
+      });
     }
 
     if (strategy === 'replace') {

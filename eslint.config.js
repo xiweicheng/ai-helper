@@ -28,6 +28,7 @@ const GLOBALS = {
   Node: 'readonly', NodeFilter: 'readonly', Element: 'readonly', Range: 'readonly',
   Selection: 'readonly', ShadowRoot: 'readonly', DocumentFragment: 'readonly', TreeWalker: 'readonly',
   HTMLElement: 'readonly', HTMLInputElement: 'readonly', HTMLTextAreaElement: 'readonly',
+  HTMLAnchorElement: 'readonly',
   HTMLCanvasElement: 'readonly', HTMLDivElement: 'readonly', HTMLImageElement: 'readonly',
   CSS: 'readonly', CSSStyleSheet: 'readonly', MediaQueryList: 'readonly', ClipboardItem: 'readonly',
   getComputedStyle: 'readonly', getSelection: 'readonly', matchMedia: 'readonly', scrollTo: 'readonly',
