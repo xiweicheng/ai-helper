@@ -217,7 +217,8 @@ function getTimeGroupKey(isoString) {
  *   传入时跳过内部全量读（热路径去重复读）；不传时行为与原来一致
  */
 export async function renderSessionTabs(prefetchedData = null) {
-  const sessionsData = prefetchedData || await loadSessions();
+  // 列表只需要摘要：高频重绘不读激活会话的大历史（历史由 switchToSession / loadChatHistory 负责）
+  const sessionsData = prefetchedData || await loadSessions({ withActiveHistory: false });
   state.sessions = sessionsData.list;
   state.activeSessionId = sessionsData.activeSessionId;
 
@@ -253,10 +254,10 @@ export async function renderSessionTabs(prefetchedData = null) {
     closeBtn.title = t('session.closeSession');
     closeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+      // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用摘要里的 messageCount
       const msgCount = session.id === state.activeSessionId
         ? (state.messageHistory?.length || 0)
-        : (session.messageHistory?.length || 0);
+        : (session.messageCount ?? session.messageHistory?.length ?? 0);
       // 空会话直接关闭，无需弹框确认
       if (msgCount === 0) {
         notifyDroppedJobs(await deleteSessionCountingJobs(session.id));
@@ -873,7 +874,7 @@ function createSessionListItem(session, { index, highlightIndex, onSelect }) {
     e.preventDefault();
     await handleDuplicateSession(session.id);
     // 刷新列表
-    const sessionsData = await loadSessions();
+    const sessionsData = await loadSessions({ withActiveHistory: false });
     state.sessions = sessionsData.list;
     state.activeSessionId = sessionsData.activeSessionId;
     filterDropdownSessions(document.getElementById('sessionDropdownSearch')?.value || '');
@@ -960,10 +961,10 @@ async function handleDropdownCloseSession(sessionId) {
   const session = allSessions.find(s => s.id === sessionId);
   if (!session) return;
 
-  // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+  // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用摘要里的 messageCount
   const msgCount = sessionId === state.activeSessionId
     ? (state.messageHistory?.length || 0)
-    : (session.messageHistory?.length || 0);
+    : (session.messageCount ?? session.messageHistory?.length ?? 0);
   // 空会话直接关闭，无需弹框确认
   if (msgCount > 0) {
     const confirmed = await showCustomConfirm(
@@ -2149,10 +2150,10 @@ function showTabContextMenu(event, session) {
   // 关闭会话（原"删除"，统一命名为"关闭会话"；空会话无需确认）
   const deleteItem = createMenuItem(t('session.closeSession'), '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>', async () => {
     menu.remove();
-    // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用 session.messageHistory
+    // 判断会话是否有对话记录：当前会话用 state.messageHistory，其它用摘要里的 messageCount
     const msgCount = session.id === state.activeSessionId
       ? (state.messageHistory?.length || 0)
-      : (session.messageHistory?.length || 0);
+      : (session.messageCount ?? session.messageHistory?.length ?? 0);
     // 空会话直接关闭，无需弹框确认
     if (msgCount === 0) {
       notifyDroppedJobs(await deleteSessionCountingJobs(session.id));

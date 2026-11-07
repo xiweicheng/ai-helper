@@ -87,13 +87,25 @@ async function cleanupOrphanScrollPositions() {
  * @param {{includeArchived?: boolean}} [options]
  * @returns {Promise<{activeSessionId: string|null, list: Array}>}
  */
-export async function loadSessions({ includeArchived = false } = {}) {
+export async function loadSessions({ includeArchived = false, withActiveHistory = true } = {}) {
   await init();
-  const [all, activeId] = await Promise.all([
-    idb.getAllSessions(),
-    idb.getActiveSessionId(),
-  ]);
-  const list = includeArchived ? all : all.filter((s) => !s.archivedAt);
+  // 列表只读摘要（不含 messageHistory）：读库量只随会话条数增长，不再随历史消息总量线性变慢
+  const activeId = await idb.getActiveSessionId();
+  let summaries = null;
+  try {
+    summaries = await idb.getAllSessionSummaries();
+  } catch (e) {
+    logger.error('[SessionStore] read session summaries failed, fallback to full read:', e.message);
+  }
+  if (!summaries) {
+    // 兜底：摘要库不可用（升级异常等）时退回全量读，宁可慢一次也不能让列表变空
+    const all = await idb.getAllSessions();
+    summaries = all.map((s) => {
+      const { messageHistory, ...rest } = s;
+      return { ...rest, messageCount: Array.isArray(messageHistory) ? messageHistory.length : 0 };
+    });
+  }
+  const list = includeArchived ? summaries : summaries.filter((s) => !s.archivedAt);
   // 按 order 排序，没有 order 的按 createdAt 兜底
   list.sort((a, b) => {
     if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
@@ -101,6 +113,16 @@ export async function loadSessions({ includeArchived = false } = {}) {
     if (b.order !== undefined) return 1;
     return new Date(a.createdAt) - new Date(b.createdAt);
   });
+  // 只有激活会话需要完整记录（消息历史、工作目录绑定等）。
+  // 纯列表刷新传 withActiveHistory=false，避免频繁重绘时反复读这一条的大历史。
+  if (withActiveHistory && activeId) {
+    const full = await idb.getSession(activeId);
+    if (full) {
+      const idx = list.findIndex((s) => s.id === activeId);
+      // 激活会话若已被归档就不在列表里，保持原行为（由调用方兜底），不硬塞进来
+      if (idx >= 0) list[idx] = full;
+    }
+  }
   return { activeSessionId: activeId, list };
 }
 

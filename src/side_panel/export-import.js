@@ -4,6 +4,7 @@
 import state from './state.js';
 import { showToast, escapeHtml } from './utils.js';
 import { loadSessions, importSessions } from './session-manager.js';
+import { getSession } from '../storage/db.js';
 import { renderSessionTabs } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -56,7 +57,7 @@ export async function showExportDialog() {
   listEl.innerHTML = `<div class="export-sessions-empty">${t('common.loading')}</div>`;
 
   try {
-    const { list: sessions, activeSessionId } = await loadSessions();
+    const { list: sessions, activeSessionId } = await loadSessions({ withActiveHistory: false });
 
     if (sessions.length === 0) {
       listEl.innerHTML = `<div class="export-sessions-empty">${t('exportImport.noSessionsToExport')}</div>`;
@@ -64,7 +65,7 @@ export async function showExportDialog() {
       const activeId = activeSessionId || state.activeSessionId;
       listEl.innerHTML = sessions.map((s, idx) => {
         const isCurrent = s.id === activeId;
-        const msgCount = (s.messageHistory || []).length;
+        const msgCount = s.messageCount ?? (s.messageHistory || []).length;
         const createdAt = s.createdAt ? new Date(s.createdAt).toLocaleDateString('zh-CN') : '';
         return `
         <div class="export-session-item" data-id="${s.id}">
@@ -159,8 +160,14 @@ export async function performExport() {
   }
 
   try {
-    const { list: allSessions } = await loadSessions();
-    const selectedSessions = allSessions.filter(s => selectedIds.includes(s.id));
+    const { list: allSessions } = await loadSessions({ withActiveHistory: false });
+    // 导出必须拿完整记录：列表只有摘要，这里按选中 id 逐个读正文（选几个读几个）
+    const selectedSessions = await Promise.all(
+      allSessions.filter(s => selectedIds.includes(s.id)).map(async (s) => {
+        const full = await getSession(s.id);
+        return full || s;
+      })
+    );
 
     const exportData = {
       version: 1,

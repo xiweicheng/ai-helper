@@ -338,6 +338,13 @@ describe('左栏排序规则（手动 / 最近更新）', () => {
     expect(css).toContain('.session-sidebar-sort-btn.active');
     expect(css).toContain('.session-sidebar-list .session-dropdown-item.draggable');
   });
+
+  it('可拖拽行内的工具按钮保持按钮光标，不继承行的抓手光标', () => {
+    // cursor 沿 DOM 继承：只给行设 grab 会把重命名/分叉/归档/关闭也变成抓手
+    expect(css).toMatch(
+      /\.session-sidebar-list \.session-dropdown-item\.draggable \.session-dropdown-item-actions[\s\S]*?cursor: pointer/
+    );
+  });
 });
 
 describe('左栏样式与文案（源码守卫）', () => {

@@ -18723,6 +18723,13 @@ body.has-session-dock .chat-container {
   cursor: grabbing;
 }
 
+/* cursor 会从行往子元素继承：不覆盖的话，鼠标移到行内重命名/分叉/归档/关闭上也会显示抓手。
+   这些是按钮，必须保持按钮光标（整行的抓手暗示只属于「行本身」） */
+.session-sidebar-list .session-dropdown-item.draggable .session-dropdown-item-actions,
+.session-sidebar-list .session-dropdown-item.draggable .session-dropdown-item-actions > span {
+  cursor: pointer;
+}
+
 /* 面板头部的 26px 图标按钮：新建 + 收起（收起与标签栏左端的展开图标互斥显示） */
 .session-sidebar-add,
 .session-sidebar-collapse {

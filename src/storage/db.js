@@ -19,7 +19,8 @@ registerTranslations('en', {
 });
 
 const DB_NAME = 'ai-helper-db';
-const DB_VERSION = 7;
+// v8：新增 sessionIndex（会话摘要），会话列表只读摘要，不再随「全部会话的消息总量」线性变慢
+const DB_VERSION = 8;
 
 // ReAct Checkpoint TTL：7 天
 export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -27,6 +28,20 @@ export const REACT_CHECKPOINT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // chrome.storage.local 中 checkpoint 的 key 前缀（后备存储）
 // 当 IndexedDB 的 reactCheckpoints store 不可用时，使用 chrome.storage.local 作为可靠后备
 const CHECKPOINT_KEY_PREFIX = 'react_checkpoint_';
+
+/**
+ * 会话摘要：整条记录去掉 messageHistory，其余字段原样保留。
+ * 只丢最占体积的那个数组——列表渲染、启动恢复用到的标量字段（标题/order/agentId/
+ * 工作目录绑定/model 等）全部保留，将来新增标量字段也不会漏。
+ */
+function buildSessionSummary(session) {
+  if (!session || !session.id) return null;
+  const { messageHistory, ...rest } = session;
+  return {
+    ...rest,
+    messageCount: Array.isArray(messageHistory) ? messageHistory.length : 0,
+  };
+}
 
 /**
  * 获取数据库连接（单例）
@@ -95,6 +110,26 @@ function openDB() {
         const todosStore = db.createObjectStore('todos', { keyPath: 'id' });
         todosStore.createIndex('status', 'status', { unique: false });
         todosStore.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+
+      // 会话摘要（keyPath: id）—— 列表页只读这里，避免把全部会话的消息历史都反序列化一遍。
+      // 与 sessions 用同一个事务双写，摘要永远和正文同源，不会各自漂移。
+      if (!db.objectStoreNames.contains('sessionIndex')) {
+        db.createObjectStore('sessionIndex', { keyPath: 'id' });
+      }
+
+      // 老库一次性回填：用游标逐条投影，绝不 store.getAll() 一次性把历史读进内存。
+      // 只在升级到 v8 时跑一次，之后摘要由双写维护。
+      if (event.oldVersion < 8) {
+        const tx = event.target.transaction;
+        const indexStore = tx.objectStore('sessionIndex');
+        tx.objectStore('sessions').openCursor().onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (!cursor) return;
+          const summary = buildSessionSummary(cursor.value);
+          if (summary) indexStore.put(summary);
+          cursor.continue();
+        };
       }
     };
 
@@ -272,6 +307,50 @@ export function getAllSessions() {
 }
 
 /**
+ * 获取所有会话摘要（不含 messageHistory）。
+ * 列表页用它：读库成本只跟「会话条数」有关，跟历史消息总量无关。
+ */
+export function getAllSessionSummaries() {
+  return withStore('sessionIndex', 'readonly', (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    // 返回 null 表示「摘要不可用」，由调用方回退到全量读：
+    // 绝不能返回空数组——那会让用户看到空会话列表
+    request.onerror = () => resolve(null);
+  });
+}
+
+/**
+ * 在同一个事务里同时写 sessions 与 sessionIndex —— 原子性保证摘要不会跟正文分叉。
+ * 连接/事务异常时重置连接重试一次（与 withStore 的处理保持一致）。
+ */
+function withSessionWrite(mutator, isRetry = false) {
+  return getDB().then((db) => {
+    let tx;
+    try {
+      tx = db.transaction(['sessions', 'sessionIndex'], 'readwrite');
+    } catch (e) {
+      logger.error('[IDB] create session transaction failed:', e.message);
+      if (isRetry) return false;
+      resetDBConnection();
+      return new Promise((resolve) => setTimeout(() => resolve(withSessionWrite(mutator, true)), 50));
+    }
+    try {
+      mutator(tx.objectStore('sessions'), tx.objectStore('sessionIndex'));
+    } catch (e) {
+      logger.error('[IDB] write session stores failed:', e.message);
+      return false;
+    }
+    return new Promise((resolve) => {
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      // abort 也要收口，否则调用方永远等不到结果
+      tx.onabort = () => resolve(false);
+    });
+  });
+}
+
+/**
  * 获取单个会话
  */
 export function getSession(id) {
@@ -311,10 +390,10 @@ export async function deleteMessageFromSession(sessionId, messageId) {
  * 保存/更新会话（put = insert or update）
  */
 export function putSession(session) {
-  return withStore('sessions', 'readwrite', (store, resolve) => {
-    const request = store.put(session);
-    request.onsuccess = () => resolve(true);
-    request.onerror = () => resolve(false);
+  return withSessionWrite((sessions, index) => {
+    sessions.put(session);
+    const summary = buildSessionSummary(session);
+    if (summary) index.put(summary);
   });
 }
 
@@ -322,24 +401,22 @@ export function putSession(session) {
  * 删除会话
  */
 export function deleteSession(id) {
-  return withStore('sessions', 'readwrite', (store, resolve) => {
-    const request = store.delete(id);
-    request.onsuccess = () => resolve(true);
-    request.onerror = () => resolve(false);
+  return withSessionWrite((sessions, index) => {
+    sessions.delete(id);
+    // 摘要必须同事务删掉：漏删会让列表里出现一条点不开的幽灵会话
+    index.delete(id);
   });
 }
 
 /**
  * 批量保存/更新多个会话
  */
-export function putSessions(sessions) {
-  return getDB().then((db) => {
-    return new Promise((resolve) => {
-      const tx = db.transaction('sessions', 'readwrite');
-      const store = tx.objectStore('sessions');
-      sessions.forEach((s) => store.put(s));
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
+export function putSessions(sessionsList) {
+  return withSessionWrite((sessions, index) => {
+    sessionsList.forEach((s) => {
+      sessions.put(s);
+      const summary = buildSessionSummary(s);
+      if (summary) index.put(summary);
     });
   });
 }

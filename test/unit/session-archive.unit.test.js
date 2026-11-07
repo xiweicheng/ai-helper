@@ -42,6 +42,11 @@ vi.mock('../../src/storage/db.js', () => ({
   getSession: async (id) => (SESSIONS.has(id) ? JSON.parse(JSON.stringify(SESSIONS.get(id))) : null),
   putSession: (...args) => putSession(...args),
   getAllSessions: async () => Array.from(SESSIONS.values()).map((s) => JSON.parse(JSON.stringify(s))),
+  // 会话列表现在只读摘要：与生产实现一致地去掉 messageHistory、补 messageCount
+  getAllSessionSummaries: async () => Array.from(SESSIONS.values()).map((s) => {
+    const { messageHistory, ...rest } = JSON.parse(JSON.stringify(s));
+    return { ...rest, messageCount: Array.isArray(messageHistory) ? messageHistory.length : 0 };
+  }),
   getActiveSessionId: async () => ACTIVE.id,
   setActiveSessionId: async (id) => { ACTIVE.id = id; },
   deleteSession: async () => {},
@@ -196,6 +201,42 @@ describe('归档语义层（源码守卫）', () => {
   it('全局搜索与「全部会话」都不返回归档会话', () => {
     expect(read('src/storage/db.js')).toContain('all.filter((s) => !s.archivedAt)');
     expect(read('src/side_panel/search-panel.js')).toContain('!s.archivedAt');
+  });
+});
+
+describe('会话摘要索引（列表读库不随消息总量增长）', () => {
+  it('列表只读 sessionIndex：摘要在同一事务里与正文双写，删除也同步', () => {
+    const db = read('src/storage/db.js');
+    expect(db).toContain("db.createObjectStore('sessionIndex'");
+    expect(db).toContain('export function getAllSessionSummaries()');
+    expect(db).toContain("db.transaction(['sessions', 'sessionIndex'], 'readwrite')");
+    // 漏删摘要会出现点不开的幽灵会话，必须同事务删
+    expect(db).toContain('index.delete(id)');
+  });
+
+  it('摘要只丢 messageHistory，其余字段原样保留（未来新增标量字段不会漏）', () => {
+    const db = read('src/storage/db.js');
+    expect(db).toContain('const { messageHistory, ...rest } = session;');
+    expect(db).toContain('messageCount: Array.isArray(messageHistory) ? messageHistory.length : 0');
+    // 老库升级时用游标逐条回填，不允许 getAll 一次性把历史读进内存
+    expect(db).toContain('if (event.oldVersion < 8)');
+    expect(db).toContain('openCursor().onsuccess');
+  });
+
+  it('loadSessions 不再全量读正文；激活会话的完整记录按需单独读', () => {
+    const store = read('src/storage/session-store.js');
+    const load = store.slice(
+      store.indexOf('export async function loadSessions'),
+      store.indexOf('export async function saveSessions')
+    );
+    expect(load).toContain('idb.getAllSessionSummaries()');
+    // 只有摘要不可用时才退回全量读（宁可慢一次，也不能列表变空）
+    expect(load).toContain('if (!summaries)');
+    expect(load).toContain('withActiveHistory');
+    expect(load).toContain('const full = await idb.getSession(activeId);');
+    // 高频列表刷新不带历史，避免反复读大记录
+    expect(read('src/side_panel/session-manager-ui.js'))
+      .toContain('await loadSessions({ withActiveHistory: false })');
   });
 });
 
