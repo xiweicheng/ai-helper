@@ -100,10 +100,7 @@ export async function loadSessions({ includeArchived = false, withActiveHistory 
   if (!summaries) {
     // 兜底：摘要库不可用（升级异常等）时退回全量读，宁可慢一次也不能让列表变空
     const all = await idb.getAllSessions();
-    summaries = all.map((s) => {
-      const { messageHistory, ...rest } = s;
-      return { ...rest, messageCount: Array.isArray(messageHistory) ? messageHistory.length : 0 };
-    });
+    summaries = all.map((s) => idb.buildSessionSummary(s)).filter(Boolean);
   }
   const list = includeArchived ? summaries : summaries.filter((s) => !s.archivedAt);
   // 按 order 排序，没有 order 的按 createdAt 兜底
@@ -711,20 +708,50 @@ export async function renameSession(sessionId, newTitle) {
  * @param {string[]} orderedIds - 按新顺序排列的会话 ID 列表
  */
 export async function reorderSessions(orderedIds) {
-  const allSessions = await idb.getAllSessions();
-  const sessionMap = new Map(allSessions.map(s => [s.id, s]));
+  // 摘要库优先：拖拽一次只需要知道「谁的位置变了」，不必把全部历史反序列化一遍。
+  let summaries = null;
+  try {
+    summaries = await idb.getAllSessionSummaries();
+  } catch (e) {
+    logger.error('[SessionStore] read session summaries failed, fallback to full read:', e.message);
+  }
+  if (!summaries) {
+    // 兜底：摘要不可用时退回全量读（一次性拿到完整记录，行为与改造前一致）
+    const all = await idb.getAllSessions();
+    const byId = new Map(all.map((s) => [s.id, s]));
+    const updates = [];
+    orderedIds.forEach((id, index) => {
+      const session = byId.get(id);
+      if (session && session.order !== index) {
+        session.order = index;
+        updates.push(session);
+      }
+    });
+    if (!updates.length) return true;
+    return idb.putSessions(updates);
+  }
+
+  const orderById = new Map(summaries.map((s) => [s.id, s.order]));
+  const newOrderById = new Map(orderedIds.map((id, index) => [id, index]));
+  // 只有跨度内被顶位的会话需要改 order；拖到相邻位置通常只动一两条，
+  // 避免每次落点都把整个会话库重新读写一遍。order 缺失的老会话也算变更，顺手补齐。
+  const changedIds = orderedIds.filter((id) => {
+    if (!orderById.has(id)) return false;
+    return orderById.get(id) !== newOrderById.get(id);
+  });
+  if (!changedIds.length) return true;
 
   const updates = [];
-  orderedIds.forEach((id, index) => {
-    const session = sessionMap.get(id);
-    if (session) {
-      session.order = index;
-      updates.push(idb.putSession(session));
-    }
-  });
-
-  await Promise.all(updates);
-  return true;
+  for (const id of changedIds) {
+    // 单条读完整记录再写回：摘要不能反向补全 messageHistory
+    const full = await idb.getSession(id);
+    if (!full) continue;
+    full.order = newOrderById.get(id);
+    updates.push(full);
+  }
+  if (!updates.length) return true;
+  // 一次事务批量写回，避免 N 条记录开 N 个事务
+  return idb.putSessions(updates);
 }
 
 /**
@@ -780,7 +807,15 @@ export async function unarchiveSession(sessionId) {
  */
 export async function listArchivedSessions() {
   await init();
-  const all = await idb.getAllSessions();
+  // 归档区只需要标题与归档时间：读摘要即可。
+  // 这里曾被 loadArchivedSessions 在每次标签栏重绘时调用，全量读会把摘要优化直接抵消。
+  let summaries = null;
+  try {
+    summaries = await idb.getAllSessionSummaries();
+  } catch (e) {
+    logger.error('[SessionStore] read session summaries failed, fallback to full read:', e.message);
+  }
+  const all = summaries ?? await idb.getAllSessions();
   return all
     .filter((s) => s.archivedAt)
     .sort((a, b) => new Date(b.archivedAt || 0) - new Date(a.archivedAt || 0));

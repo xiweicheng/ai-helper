@@ -34,7 +34,7 @@ const CHECKPOINT_KEY_PREFIX = 'react_checkpoint_';
  * 只丢最占体积的那个数组——列表渲染、启动恢复用到的标量字段（标题/order/agentId/
  * 工作目录绑定/model 等）全部保留，将来新增标量字段也不会漏。
  */
-function buildSessionSummary(session) {
+export function buildSessionSummary(session) {
   if (!session || !session.id) return null;
   const { messageHistory, ...rest } = session;
   return {
@@ -339,13 +339,30 @@ function withSessionWrite(mutator, isRetry = false) {
       mutator(tx.objectStore('sessions'), tx.objectStore('sessionIndex'));
     } catch (e) {
       logger.error('[IDB] write session stores failed:', e.message);
+      // 已排队但未提交的写请求必须作废：不作废会出现「正文写成功、摘要没写」的分叉，
+      // 列表里就会显示陈旧的标题/条数。abort 后再返回，保证两个 store 同生共死。
+      try { tx.abort(); } catch (e2) {}
       return false;
     }
     return new Promise((resolve) => {
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => resolve(false);
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      // onerror 之后还会跟一个 onabort，只有一个能生效
+      const retryOrFail = () => {
+        if (isRetry) return finish(false);
+        settled = true;
+        // 连接可能已被 Service Worker 重启关闭：与 withStore 一致，重置后重试一次
+        resetDBConnection();
+        withSessionWrite(mutator, true).then(resolve, () => resolve(false));
+      };
+      tx.oncomplete = () => finish(true);
+      tx.onerror = retryOrFail;
       // abort 也要收口，否则调用方永远等不到结果
-      tx.onabort = () => resolve(false);
+      tx.onabort = retryOrFail;
     });
   });
 }

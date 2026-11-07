@@ -1421,6 +1421,9 @@ async function initSessionSidebar() {
     sidebarState.pendingRestore = true;
   }
   applySidebarState();
+  // 首帧渲染可能早于本次 init 完成（那时还没有 .expanded，refreshSidebarView 会直接返回）。
+  // 恢复展开偏好后补一次列表渲染，避免首屏左栏空白，直到下一次列表刷新才出现内容。
+  refreshSidebarView();
 
   // 标签栏左端切换图标
   document.getElementById('sessionSidebarToggle')?.addEventListener('click', () => toggleSidebarOrOverlay());

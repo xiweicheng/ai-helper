@@ -240,6 +240,43 @@ describe('会话摘要索引（列表读库不随消息总量增长）', () => {
   });
 });
 
+describe('摘要索引的完整覆盖（归档 / 拖拽 / 写入失败）', () => {
+  it('归档列表与归档计数只读摘要，不再每次重绘反序列化全部历史', () => {
+    const store = read('src/storage/session-store.js');
+    const idx = store.indexOf('export async function listArchivedSessions');
+    expect(idx).toBeGreaterThan(0);
+    const body = store.slice(idx, idx + 900);
+    expect(body).toContain('idb.getAllSessionSummaries()');
+    // 只有摘要不可用才兜底全量读
+    expect(body).toContain('summaries ?? await idb.getAllSessions()');
+    // 标签栏每次重绘都会补查归档计数，这条路径必须保持轻量
+    expect(read('src/side_panel/session-manager-ui.js')).toContain('refreshMoreBtnArchivedState(scrollContainer)');
+  });
+
+  it('拖拽排序只更新位置变化的会话，并合并为一次事务', () => {
+    const store = read('src/storage/session-store.js');
+    const idx = store.indexOf('export async function reorderSessions');
+    expect(idx).toBeGreaterThan(0);
+    const body = store.slice(idx, idx + 1400);
+    expect(body).toContain('const changedIds');
+    // 只对变化项单读完整记录，避免把整库历史反序列化一遍
+    expect(body).toContain('const full = await idb.getSession(id);');
+    expect(body).toContain('return idb.putSessions(updates);');
+  });
+
+  it('会话写事务失败会重置重试，mutator 异常会 abort（正文与摘要不分叉）', () => {
+    const db = read('src/storage/db.js');
+    const idx = db.indexOf('function withSessionWrite');
+    expect(idx).toBeGreaterThan(0);
+    const body = db.slice(idx, idx + 900);
+    expect(body).toContain('try { tx.abort(); } catch (e2) {}');
+    expect(body).toContain('withSessionWrite(mutator, true)');
+    expect(body).toContain('resetDBConnection()');
+    // 兜底投影复用统一实现，避免两处字段语义漂移
+    expect(read('src/storage/session-store.js')).toContain('idb.buildSessionSummary(s)');
+  });
+});
+
 describe('归档面板接线（源码守卫）', () => {
   it('会话列表底部有归档区入口，页面里有一层独立面板', () => {
     const html = read('side_panel.html');

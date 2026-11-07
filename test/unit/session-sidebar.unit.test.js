@@ -345,6 +345,13 @@ describe('左栏排序规则（手动 / 最近更新）', () => {
       /\.session-sidebar-list \.session-dropdown-item\.draggable \.session-dropdown-item-actions[\s\S]*?cursor: pointer/
     );
   });
+
+  it('恢复展开偏好后补一次左栏渲染，避免首屏空白', () => {
+    // renderSessionTabs 先 refreshSidebarView（此时还没有 .expanded 会直接返回），再 void init；
+    // init 恢复展开态后必须自己补渲染，否则要等下一次列表刷新才出现内容
+    const body = sliceFrom('async function initSessionSidebar', 1800);
+    expect(body).toMatch(/applySidebarState\(\);[\s\S]*?refreshSidebarView\(\);/);
+  });
 });
 
 describe('左栏样式与文案（源码守卫）', () => {
