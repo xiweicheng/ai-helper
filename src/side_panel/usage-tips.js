@@ -505,6 +505,11 @@ export function initUsageTips() {
     if (typeof MutationObserver !== 'undefined') {
       // 新消息会追加在提示条之后；会话切换/清空会重建 innerHTML，两种情况都要把它放回末尾
       new MutationObserver(() => {
+        // 会话 DOM 缓存还原会顺带带进一份静态副本（缓存快照时提示条就在容器里，
+        // innerHTML 一恢复就多出一条，且每轮切换越积越多），只保留受控的这条
+        chatEl.querySelectorAll('.usage-tips-bar').forEach((el) => {
+          if (el !== barEl) el.remove();
+        });
         if (barEl.parentNode !== chatEl || barEl.nextElementSibling) chatEl.appendChild(barEl);
       }).observe(chatEl, { childList: true });
     }
