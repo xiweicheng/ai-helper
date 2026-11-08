@@ -23,7 +23,7 @@ import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
 import { executeSnapshotQuery, shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
-import { requestToolConfirmation, hasLoopApproval, hasGoalUnattended } from './react-loop.js';
+import { requestToolConfirmation, hasLoopApproval, hasGoalUnattended, consumeNetworkAccessGrant } from './react-loop.js';
 
 // 注册 toolExecutor 命名空间翻译
 registerTranslations('zh', {
@@ -3294,7 +3294,11 @@ export async function executeFetchUrl(args, toolCallId) {
     enabled: config.reactConfig.networkAccessEnabled,
     allowedHosts: config.reactConfig.allowedNetworkHosts,
   });
-  if (!decision.allowed) {
+  if (!decision.allowed && consumeNetworkAccessGrant(toolCallId, decision.hostname)) {
+    // 用户在本次调用的确认弹窗里选择了「本次放行」：一次性凭据，仅放行这一次
+    // （不改全局总闸与白名单；凭据消费后立即作废）
+    console.log('[Background] fetch_url allowed by one-time network grant:', decision.hostname);
+  } else if (!decision.allowed) {
     const errorKey = {
       schemeBlocked: 'toolExec.schemeBlocked',
       gateClosed: 'toolExec.networkGateClosed',
@@ -3504,7 +3508,10 @@ export async function executeOpenTab(args, toolCallId, sessionId) {
     enabled: openConfig.reactConfig.networkAccessEnabled,
     allowedHosts: openConfig.reactConfig.allowedNetworkHosts,
   });
-  if (!openDecision.allowed) {
+  if (!openDecision.allowed && consumeNetworkAccessGrant(toolCallId, openDecision.hostname)) {
+    // 本次放行一次性凭据：放行这一次 open，不写入白名单
+    console.log('[Background] manage_tab(open) allowed by one-time network grant:', openDecision.hostname);
+  } else if (!openDecision.allowed) {
     const errorKey = {
       schemeBlocked: 'toolExec.schemeBlocked',
       gateClosed: 'toolExec.networkGateClosed',

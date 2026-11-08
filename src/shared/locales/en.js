@@ -38,6 +38,15 @@ export default {
     pendingQueue: '(+{count} queued)',
     pendingQueueClarify: '(+{count} awaiting clarification)',
     otherPending: '(+{count} other waiting)',
+    // Private network access confirmation (same dialog, third button = permanent allow)
+    approveWhitelist: 'Add to allowlist & allow',
+    networkTitle: 'Private Network Access',
+    networkToolLabel: 'Private network access',
+    networkAccessRequest: 'The model requests access to the private address {hostname} ({reason}). Allow?',
+    networkWhitelistHint: '"Add to allowlist & allow" turns on private network access and adds this host to the allowlist; "Allow Once" only applies to this request.',
+    networkReasonGateClosed: 'Private network access is currently off',
+    networkReasonNoAllowlist: 'The private-network allowlist is empty',
+    networkReasonNotAllowlisted: 'This host is not in the private-network allowlist',
   },
 
   // Sensitive tool display names

@@ -982,8 +982,8 @@
         <div class="clarify-header">
           <div class="clarify-icon">⚠️</div>
           <div class="clarify-header-content">
-            <div class="clarify-title" data-i18n="dialog.operationConfirm">操作确认</div>
-            <div class="clarify-question" id="confirmMessage" data-i18n="dialog.confirmDefaultMessage">模型请求执行敏感操作，是否允许？</div>
+            <div class="clarify-title" id="confirmTitle">操作确认</div>
+            <div class="clarify-question" id="confirmMessage">模型请求执行敏感操作，是否允许？</div>
             <div class="confirm-tool-name" id="confirmToolName" style="font-weight: 600; color: var(--warning-500); margin-top: 4px;"></div>
             <div class="confirm-args" id="confirmArgsSummary" style="display: none; font-size: 12px; color: var(--text-secondary); margin-top: 8px; padding: 8px; background: var(--bg-subtle); border-radius: 4px;"></div>
             <div class="confirm-countdown" id="confirmCountdown" style="margin-top: 12px; font-size: 13px; color: var(--warning-500); display: flex; align-items: center; gap: 6px;">
@@ -997,7 +997,7 @@
       <div class="clarify-footer">
         <button class="clarify-btn cancel" id="confirmDenyBtn" data-i18n="dialog.deny">拒绝</button>
         <button class="clarify-btn confirm-once" id="confirmApproveOnceBtn" data-i18n="dialog.approveOnce" style="background: linear-gradient(135deg, var(--success-strong), var(--success-500));">本次放行</button>
-        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" data-i18n="dialog.approveLoop" style="background: linear-gradient(135deg, var(--info-strong), var(--info-500));">当前任务放行</button>
+        <button class="clarify-btn confirm-loop" id="confirmApproveLoopBtn" style="background: linear-gradient(135deg, var(--info-strong), var(--info-500));">当前任务放行</button>
       </div>
     </div>
   </div>

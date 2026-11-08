@@ -2,6 +2,7 @@
 import { cancelReactLoop, resetReactCancel, isCancelled, getOrCreateAbortController, getOrCreateToolAbortController, clearToolAbortController, getCurrentReactTabId, setCurrentReactTabId, incrementDialogApiCallCount, getDialogApiCallCount, getKeepalivePort, getSessionAncestry, getLastOperatedTab } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, executeTool, fetchWithRetry, getSessionForcedMcpServers } from './tool-executor.js';
+import { decideNetworkAccess, classifyUrlTarget, toCleanHostList } from '../shared/network-scope.js';
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT, DEFAULT_REACT_CONFIG } from './constants.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, truncateContentSmart, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -208,6 +209,118 @@ const pendingConfirmations = new Map();
 // （模型给的 tool_call.id 并不保证唯一，详见 buildConfirmKey）
 const inFlightConfirmKeys = new Set();
 
+// 内网访问「本次放行」的一次性凭据：toolCallId -> { hostname, ts }
+// 用户点「本次放行」后，不改全局白名单/总闸，只在本次工具调用上放行；
+// 工具侧闸门消费后立即作废（TTL 仅用于兜底清理——正常路径在几十毫秒内就被消费）
+const networkAccessGrants = new Map();
+const NETWORK_GRANT_TTL_MS = 60000;
+
+/**
+ * 清理过期的一次性凭据：正常路径由工具侧消费即删，但永久放行/无人值守等场景
+ * 可能留下未被消费的条目，这里按 TTL 兜底，保证 Map 规模有界。
+ */
+function pruneNetworkAccessGrants(now = Date.now()) {
+  for (const [key, grant] of networkAccessGrants) {
+    if (now - grant.ts > NETWORK_GRANT_TTL_MS) networkAccessGrants.delete(key);
+  }
+}
+
+/**
+ * 授予「本次放行」内网访问凭据（仅对指定 toolCallId 与主机生效）
+ * @param {string} toolCallId
+ * @param {string} hostname
+ */
+export function grantNetworkAccessOnce(toolCallId, hostname) {
+  if (!toolCallId || !hostname) return;
+  pruneNetworkAccessGrants();
+  networkAccessGrants.set(toolCallId, { hostname, ts: Date.now() });
+}
+
+/**
+ * 消费「本次放行」凭据：命中（同一 toolCallId + 同一主机）即作废并返回 true。
+ * 工具侧闸门只在原有拒绝分支里调用，公网/已命中白名单路径完全不受影响。
+ * @param {string} toolCallId
+ * @param {string} hostname
+ * @returns {boolean}
+ */
+export function consumeNetworkAccessGrant(toolCallId, hostname) {
+  const grant = networkAccessGrants.get(toolCallId);
+  if (!grant) return false;
+  if (Date.now() - grant.ts > NETWORK_GRANT_TTL_MS) {
+    networkAccessGrants.delete(toolCallId);
+    return false;
+  }
+  if (grant.hostname !== hostname) return false;
+  networkAccessGrants.delete(toolCallId);
+  return true;
+}
+
+// 内网闸门可确认（而非硬拒）的拒绝档：scheme/invalid 属确定性错误，弹框无意义
+const NETWORK_CONFIRMABLE_REASONS = new Set(['gateClosed', 'noAllowlistedHost', 'hostNotAllowlisted']);
+
+/**
+ * 识别本次工具调用是否会被内网闸门拒绝（供弹框前置判定）。
+ * 只覆盖真正拿 URL 发起网络访问的两条入口：fetch_url 与 manage_tab(open)。
+ * 公网目标不读 storage、不触发任何确认——正常联网行为逐字节不变。
+ * @param {string} toolName
+ * @param {Object} toolArgs
+ * @returns {Promise<{url: string, hostname: string, reason: string}|null>}
+ */
+async function detectNetworkGateTarget(toolName, toolArgs) {
+  const url = toolName === 'fetch_url'
+    ? toolArgs?.url
+    : (toolName === 'manage_tab' && toolArgs?.action === 'open' ? toolArgs?.url : null);
+  if (typeof url !== 'string' || !url) return null;
+  const target = classifyUrlTarget(url);
+  if (!target.ok || !target.isPrivate) return null;
+  // 每次读最新 storage：用户可能刚在设置页开闸/加白名单，也可能刚在弹窗里选择永久放行
+  const config = await getStoredConfig();
+  const decision = decideNetworkAccess(url, {
+    enabled: config.reactConfig.networkAccessEnabled,
+    allowedHosts: config.reactConfig.allowedNetworkHosts,
+  });
+  if (decision.allowed) return null;
+  if (!NETWORK_CONFIRMABLE_REASONS.has(decision.reason)) return null;
+  return { url, hostname: decision.hostname, reason: decision.reason };
+}
+
+// 允许列表读-合并-写的串行链：两个并行会话同时选择"加入白名单并放行"时，
+// 若各自先读后写，后写者会覆盖前者刚加的条目。所有永久放行都排在同一条链上。
+let networkAllowlistWriteChain = Promise.resolve();
+
+/**
+ * 永久放行：把主机写入允许列表，并确保总闸开启（开关本来就是开的不做额外写入）。
+ * 条目清洗复用共享判定源，避免设置页与拦截侧出现两套语义。
+ * @param {string} hostname
+ * @returns {Promise<boolean>} 是否写入成功
+ */
+function persistNetworkHostToAllowlist(hostname) {
+  const entry = toCleanHostList([hostname])[0];
+  if (!entry) return Promise.resolve(false);
+  const task = networkAllowlistWriteChain.then(() => new Promise((resolve) => {
+    chrome.storage.local.get(['allowedNetworkHosts'], (result) => {
+      if (chrome.runtime.lastError) {
+        logger.debug('[Background] read network allowlist failed:', chrome.runtime.lastError.message);
+        resolve(false);
+        return;
+      }
+      const list = toCleanHostList(result.allowedNetworkHosts);
+      const next = list.includes(entry) ? list : [...list, entry];
+      chrome.storage.local.set({ networkAccessEnabled: true, allowedNetworkHosts: next }, () => {
+        if (chrome.runtime.lastError) {
+          logger.debug('[Background] persist network allowlist failed:', chrome.runtime.lastError.message);
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      });
+    });
+  }));
+  // 失败不打断链（后续永久放行仍应继续），同时把结果回传给本次调用
+  networkAllowlistWriteChain = task.catch(() => false);
+  return task.catch(() => false);
+}
+
 /**
  * 生成本次确认请求的关联键。
  * 关联键重复会同时造成两个故障：一次点击命中所有挂起 handler（未点过的命令被集体
@@ -316,6 +429,8 @@ function grantTaskLoopApproval(sessionId) {
   loopApprovedSessions.add(root);
   logger.debug(`[Background] task ${root} set as current taskallow`);
   for (const [key, pending] of [...pendingConfirmations]) {
+    // 内网访问是独立闸门：它的确认不能被"敏感操作任务级放行"顺带结算
+    if (pending.kind === 'network') continue;
     if (getRootSessionId(pending.sessionId) === root) {
       logger.debug('[Background] taskallow releases pending confirm:', key);
       pending.settle(true, { dismiss: true });
@@ -399,12 +514,6 @@ function confirmSessionMatches(respondedSessionId, expectedSessionId) {
 export async function requestToolConfirmation(toolName, toolArgs, tabId, sessionId, correlationId = null) {
   const toolLabelKey = TOOL_DISPLAY_NAME_KEYS[toolName];
   const toolLabel = toolLabelKey ? t(toolLabelKey) : toolName;
-  const confirmTimeout = INTERACTION_CONFIRM_TIMEOUT_MS; // 5分钟确认超时
-  // 关联键必须“本次请求”唯一：共用一键会让一次点击释放所有同名挂起确认，
-  // 并被面板的去重当成重复投递吞掉（见 buildConfirmKey）
-  const confirmKey = buildConfirmKey(correlationId, toolName);
-
-  logger.debug(`[Background] requesting user confirmation for tool operation: ${toolName}`, toolArgs);
 
   // 为 manage_tab(close) 获取标签页标题和 URL，帮助用户判断
   let extraMessage = '';
@@ -420,7 +529,118 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
   if (toolName === 'debug_page' && toolArgs.action === 'attach') {
     extraMessage = t('sensitiveTool.debuggerAttachHint');
   }
-  
+
+  const res = await requestUserDecision({
+    toolName,
+    toolLabel,
+    args: toolArgs,
+    sessionId,
+    correlationId,
+    kind: 'tool',
+    message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined,
+  });
+  if (res.confirmed && res.scope === 'loop') {
+    // 任务级放行：按整棵任务树生效，并释放同任务内其他挂起确认
+    grantTaskLoopApproval(sessionId);
+  }
+  return res.confirmed;
+}
+
+/**
+ * 内网访问确认（fetch_url / manage_tab open 命中 B2 闸门拒绝档时）。
+ *
+ * 与敏感操作确认共用同一套队列/倒计时/去重/会话匹配通道，额外提供第三种应答：
+ *   - 拒绝：工具不执行，按既有 fail-closed 语义返回；
+ *   - 本次放行：只给本次 toolCallId 一枚一次性凭据，不改全局开关与白名单；
+ *   - 加入白名单并放行：开启「内网地址访问」总闸 + 把该主机写入允许列表，
+ *     并把同主机其余挂起的内网确认一并放行（并行会话/子任务不必逐条重点）。
+ *
+ * @param {{url: string, hostname: string, reason: string}} target
+ * @param {string|null} sessionId
+ * @param {string|null} [correlationId]
+ * @returns {Promise<{confirmed: boolean, scope: 'single'|'whitelist'}>}
+ */
+export async function requestNetworkAccessConfirmation(target, sessionId, correlationId = null) {
+  const reasonKey = {
+    gateClosed: 'dialog.networkReasonGateClosed',
+    noAllowlistedHost: 'dialog.networkReasonNoAllowlist',
+    hostNotAllowlisted: 'dialog.networkReasonNotAllowlisted',
+  }[target.reason] || 'dialog.networkReasonNotAllowlisted';
+  const message = `${t('dialog.networkAccessRequest', { hostname: target.hostname, reason: t(reasonKey) })} ${t('dialog.networkWhitelistHint')}`;
+
+  const res = await requestUserDecision({
+    toolName: 'network_access',
+    toolLabel: t('dialog.networkToolLabel'),
+    args: { url: target.url },
+    sessionId,
+    correlationId,
+    kind: 'network',
+    hostname: target.hostname,
+    variant: 'network',
+    message,
+  });
+
+  if (res.confirmed && res.scope === 'whitelist') {
+    const saved = await persistNetworkHostToAllowlist(target.hostname);
+    if (!saved) {
+      // 写入失败：本次仍放行，但降级为一次性语义——不改全局配置，也不释放其他挂起确认
+      logger.debug('[Background] network allowlist persist failed, degrade to one-time pass:', target.hostname);
+      return { confirmed: true, scope: 'single' };
+    }
+    releasePendingNetworkConfirmations(target.hostname);
+  }
+  return res;
+}
+
+/**
+ * 永久放行后，释放同主机其余挂起的内网确认。
+ * 只结算 kind==='network' 且主机相同的条目；敏感操作确认不受影响。
+ * @param {string} hostname
+ */
+function releasePendingNetworkConfirmations(hostname) {
+  for (const [key, pending] of [...pendingConfirmations]) {
+    if (pending.kind !== 'network' || pending.hostname !== hostname) continue;
+    logger.debug('[Background] network whitelist releases pending confirm:', key);
+    pending.settle(true, { dismiss: true });
+  }
+}
+
+/**
+ * 通用确认通道（敏感操作确认与内网访问确认共用）。
+ * 队列、倒计时起点、去重、会话归属匹配等并发语义与旧实现完全一致：
+ * 关联键按"本次请求"唯一（buildConfirmKey），响应必须同时匹配关联 ID 与会话，
+ * 因此多会话/并行子任务同时等待确认时，一次点击只结算对应那一条。
+ * @param {Object} options
+ * @param {string} options.toolName - 关联键前缀与日志用
+ * @param {string} options.toolLabel - 面向用户的显示名
+ * @param {Object} options.args
+ * @param {string|null} options.sessionId
+ * @param {string|null} [options.correlationId]
+ * @param {'tool'|'network'} [options.kind] - 结算扩散时区分两类确认
+ * @param {string|null} [options.hostname] - network 专用：同主机批量结算
+ * @param {string|null} [options.variant] - 'network' 时面板改写标题与第三按钮语义
+ * @param {string} [options.message] - 已组装好的说明文案
+ * @returns {Promise<{confirmed: boolean, scope: 'single'|'loop'|'whitelist'}>}
+ */
+async function requestUserDecision(options) {
+  const {
+    toolName,
+    toolLabel,
+    args,
+    sessionId,
+    correlationId = null,
+    kind = 'tool',
+    hostname = null,
+    variant = null,
+    message = undefined,
+  } = options;
+  const confirmTimeout = INTERACTION_CONFIRM_TIMEOUT_MS; // 5分钟确认超时
+  // 关联键必须“本次请求”唯一：共用一键会让一次点击释放所有同名挂起确认，
+  // 并被面板的去重当成重复投递吞掉（见 buildConfirmKey）
+  const confirmKey = buildConfirmKey(correlationId, toolName);
+
+  logger.debug(`[Background] requesting user confirmation for tool operation: ${toolName}`, args);
+
   return new Promise((resolve) => {
     // 注册表 key 带上会话：同名工具在无 correlationId 回退时也不会互相顶掉
     const pendingKey = `${sessionId || ''}\u0000${confirmKey}`;
@@ -449,7 +669,7 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
       if (opts.dismiss) {
         sendConfirmDialogCommand('DISMISS_CONFIRM_DIALOG', { toolCallId: confirmKey, sessionId }, sessionId);
       }
-      resolve(confirmed);
+      resolve({ confirmed: !!confirmed, scope: opts.scope || 'single' });
     };
 
     /**
@@ -489,13 +709,9 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
         confirmSessionMatches(message.sessionId, sessionId)
       ) {
         logger.debug(`[Background] userconfirmresult: ${toolName} = ${message.confirmed}, scope: ${message.scope}`);
-        const approvedForTask = message.confirmed && message.scope === 'loop';
+        const scope = message.scope === 'loop' || message.scope === 'whitelist' ? message.scope : 'single';
         // 用户亲自应答：面板已自行关闭该条，无需再下行撤销
-        settle(message.confirmed);
-        if (approvedForTask) {
-          // 任务级放行：按整棵任务树生效，并释放同任务内其他挂起确认
-          grantTaskLoopApproval(sessionId);
-        }
+        settle(message.confirmed, { scope });
       }
     };
     
@@ -517,8 +733,8 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
       }, INTERACTION_PANEL_POLL_MS);
     }
 
-    // 登记挂起确认：供任务级放行扩散结算与超时撤销
-    pendingConfirmations.set(pendingKey, { sessionId, settle });
+    // 登记挂起确认：供任务级放行扩散结算与超时撤销（kind 区分敏感操作 / 内网访问）
+    pendingConfirmations.set(pendingKey, { sessionId, settle, kind, hostname });
     
     // 发送显示确认对话框的消息：
     // 定向优先（keepalive port 点对点）——本实例发起的确认只弹在发起实例上，
@@ -529,11 +745,13 @@ export async function requestToolConfirmation(toolName, toolArgs, tabId, session
       data: {
         toolName,
         toolLabel,
-        args: toolArgs,
+        args,
         toolCallId: confirmKey,
         sessionId,
         timeout: confirmTimeout,
-        message: extraMessage ? t('dialog.confirmAction', { name: toolLabel }) + extraMessage : undefined
+        message,
+        // 面板据此改写标题 / 第三个按钮的语义（网络确认：加入白名单并放行）
+        ...(variant ? { variant } : {})
       }
     };
     let portSent = false;
@@ -2688,15 +2906,28 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           // 而检测器的 refEnum 步进 / 振荡尾迹判定依赖声明顺序，flush 前须按此序号重排
           const callOrder = assistantMessage.tool_calls.indexOf(toolCall);
           
-          // 检查是否需要用户确认（敏感操作 + 开关开启）
+          // 检查是否需要用户确认（敏感操作 / 内网访问）
           // 1. 工具级确认（requiresConfirmation: true）
           // 2. action 级确认（合并工具的特定 action，如 manage_tab 的 close）
+          // 3. 内网访问确认：fetch_url / manage_tab(open) 的目标被闸门拒绝时，询问本次是否放行
           const toolLevelConfirm = CONFIRMATION_REQUIRED_TOOLS.has(toolName);
           const actionLevelConfirm = CONFIRMATION_ACTION_MAP[toolName]?.includes(toolArgs.action);
           const needsConfirmation = (toolLevelConfirm || actionLevelConfirm) && reactConfig.toolConfirmationEnabled;
-          if (needsConfirmation) {
-            // 如果该会话已获得"当前任务放行"，跳过确认
-            if (hasLoopApproval(sessionId)) {
+          let networkTarget = await detectNetworkGateTarget(toolName, toolArgs);
+          // 与敏感操作统一口径：目标模式无人值守（autoApprove 已授予）下，敏感操作本来就是
+          // 默认放行、不弹框；内网访问同样默认放行，且只给本次调用一次性凭据，
+          // 不改全局总闸与白名单——与"本次放行"语义一致，授权随本次运行结束失效。
+          if (networkTarget && hasGoalUnattended(sessionId)) {
+            logger.debug(`[Background] goal unattended auto-allows network access: ${networkTarget.hostname}`);
+            grantNetworkAccessOnce(toolCallId, networkTarget.hostname);
+            // 同参调用此前若被拒过，60s 缓存里可能留着一份拒绝结果，清掉才能让本次真正执行
+            toolResultCache.delete(`${toolName}:${JSON.stringify(toolArgs)}`);
+            networkTarget = null;
+          }
+          if (needsConfirmation || networkTarget) {
+            // 如果该会话已获得"当前任务放行"，跳过敏感操作确认；
+            // 内网访问走独立闸门（上面的无人值守分支已处理），这里仍需逐地址确认
+            if (needsConfirmation && hasLoopApproval(sessionId) && !networkTarget) {
               logger.debug(`[Background] session ${sessionId} got currenttaskallow,skip confirm: ${toolName}`);
             } else {
               // 暂停整体循环超时 + 通知前端暂停单次请求超时
@@ -2709,9 +2940,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                 logger.debug('[Background] send TOOL_CONFIRM_START message failed:', err.message);
               });
 
-              let confirmed;
+              let decision;
               try {
-                confirmed = await requestToolConfirmation(toolName, toolArgs, tabId, sessionId, toolCallId);
+                decision = networkTarget
+                  ? await requestNetworkAccessConfirmation(networkTarget, sessionId, toolCallId)
+                  : { confirmed: await requestToolConfirmation(toolName, toolArgs, tabId, sessionId, toolCallId), scope: 'single' };
               } finally {
                 // 无论确认/拒绝/超时，都恢复超时计时
                 resumeLoopTimer();
@@ -2722,7 +2955,15 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                   logger.debug('[Background] send TOOL_CONFIRM_END message failed:', err.message);
                 });
               }
-              if (!confirmed) {
+              if (decision.confirmed && networkTarget && decision.scope !== 'whitelist') {
+                // 本次放行（或永久放行写入失败降级）才需要一次性凭据；
+                // 永久放行已落盘，工具侧读到的最新配置本就允许，无需凭据
+                grantNetworkAccessOnce(toolCallId, networkTarget.hostname);
+                // 放行后必须让本次调用真正执行：若此前同参调用被拒过，60s 缓存里可能还留着一份
+                // 拒绝结果，不清掉会在下面的缓存检查处直接命中，用户点了放行却仍然失败。
+                toolResultCache.delete(`${toolName}:${JSON.stringify(toolArgs)}`);
+              }
+              if (!decision.confirmed) {
                 // 用户拒绝，返回错误结果
                 const toolLogId = crypto.randomUUID();
                 executionLog.push({
@@ -2736,6 +2977,22 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                   error: t('reactLoop.userDenied')
                 });
                 sendExecutionStatusUpdate(t('reactLoop.toolExec', { name: toolName }), 'cancelled');
+                // 补发工具结果：前端卡片由 STREAM_TOOL_CALL 创建，只有 STREAM_TOOL_RESULT
+                // 才能把它从"执行中..."落定为失败态；这里提前 return 会绕过下方的统一发送
+                if (!isSubtask) {
+                  chrome.runtime.sendMessage({
+                    type: 'STREAM_TOOL_RESULT',
+                    sessionId,
+                    result: {
+                      toolCallId: toolCallId,
+                      toolName,
+                      success: false,
+                      content: t('reactLoop.userDenied'),
+                      truncated: false,
+                      duration: Date.now() - toolStartTime
+                    }
+                  }).catch(() => {});
+                }
                 // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
                 currentMessages.push({
                   role: 'tool',

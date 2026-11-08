@@ -38,6 +38,15 @@ export default {
     pendingQueue: '（另有 {count} 条待确认）',
     pendingQueueClarify: '（另有 {count} 条待澄清）',
     otherPending: '（另有 {count} 条其他请求在排队）',
+    // 内网访问确认（复用同一弹窗，第三个按钮语义改为永久放行）
+    approveWhitelist: '加入白名单并放行',
+    networkTitle: '内网访问确认',
+    networkToolLabel: '内网地址访问',
+    networkAccessRequest: '模型请求访问内网地址 {hostname}（{reason}），是否放行？',
+    networkWhitelistHint: '选择「加入白名单并放行」会开启「内网地址访问」并把该主机加入允许列表；「本次放行」只对这一次请求生效。',
+    networkReasonGateClosed: '当前未开启内网地址访问',
+    networkReasonNoAllowlist: '内网允许列表为空',
+    networkReasonNotAllowlisted: '该主机未加入内网允许列表',
   },
 
   // 敏感操作显示名

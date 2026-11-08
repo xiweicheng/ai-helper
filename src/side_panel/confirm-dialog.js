@@ -89,7 +89,7 @@ function buildConfirmMessage(data) {
 
 /**
  * 渲染一条确认请求到 DOM 并启动面板侧倒计时
- * @param {Object} data - { toolName, toolLabel, args, message, toolCallId, sessionId, timeout }
+ * @param {Object} data - { toolName, toolLabel, args, message, toolCallId, sessionId, timeout, variant }
  * @returns {boolean} 是否渲染成功（DOM 缺失时返回 false，由调用方按拒绝结算）
  */
 function renderActiveConfirm(data) {
@@ -104,6 +104,18 @@ function renderActiveConfirm(data) {
   // 更新显示
   document.getElementById('confirmToolName').textContent = toolLabel || toolName;
 
+  // 内网访问确认复用同一弹窗，但改标题与第三个按钮语义：
+  // 「当前任务放行」→「加入白名单并放行」（回发 scope='whitelist'）
+  const isNetwork = data.variant === 'network';
+  const titleEl = document.getElementById('confirmTitle');
+  if (titleEl) {
+    titleEl.textContent = isNetwork ? t('dialog.networkTitle') : t('dialog.operationConfirm');
+  }
+  const approveLoopBtn = document.getElementById('confirmApproveLoopBtn');
+  if (approveLoopBtn) {
+    approveLoopBtn.textContent = isNetwork ? t('dialog.approveWhitelist') : t('dialog.approveLoop');
+  }
+
   // 显示参数摘要
   const argsSummary = document.getElementById('confirmArgsSummary');
   if (argsSummary && args) {
@@ -111,14 +123,23 @@ function renderActiveConfirm(data) {
       .filter(([k, v]) => v !== undefined && v !== null && v !== '')
       .slice(0, 5);
     if (relevantArgs.length > 0) {
-      argsSummary.innerHTML = relevantArgs
-        .map(([k, v]) => {
-          const rawValue = typeof v === 'string' ? v : JSON.stringify(v);
-          const displayValue = rawValue.length > 80 ? rawValue.substring(0, 80) + '...' : rawValue;
-          const titleAttr = rawValue.length > 80 ? ` title="${rawValue.replace(/"/g, '&quot;')}"` : '';
-          return `<span class="confirm-arg" style="margin-right: 8px;"${titleAttr}><strong>${k}:</strong> ${displayValue}</span>`;
-        })
-        .join('、 ');
+      // 参数值包含模型可控内容（如内网确认的原始 URL），必须用 DOM 构建而非拼接 HTML，
+      // 否则经 innerHTML 会形成注入面
+      argsSummary.textContent = '';
+      relevantArgs.forEach(([k, v], index) => {
+        if (index > 0) argsSummary.appendChild(document.createTextNode('、 '));
+        const rawValue = typeof v === 'string' ? v : JSON.stringify(v);
+        const displayValue = rawValue.length > 80 ? rawValue.substring(0, 80) + '...' : rawValue;
+        const span = document.createElement('span');
+        span.className = 'confirm-arg';
+        span.style.marginRight = '8px';
+        if (rawValue.length > 80) span.title = rawValue;
+        const strong = document.createElement('strong');
+        strong.textContent = `${k}:`;
+        span.appendChild(strong);
+        span.appendChild(document.createTextNode(` ${displayValue}`));
+        argsSummary.appendChild(span);
+      });
       argsSummary.style.display = 'block';
     } else {
       argsSummary.style.display = 'none';
@@ -265,7 +286,7 @@ export function showConfirmDialog(data) {
 /**
  * 处理用户确认/拒绝（只作用于当前正在展示的那一条）
  * @param {boolean} confirmed
- * @param {string} scope - 'single' | 'loop'
+ * @param {string} scope - 'single' | 'loop' | 'whitelist'（网络确认的永久放行）
  */
 function handleConfirmResponse(confirmed, scope = 'single') {
   // 没有正在展示的确认：忽略陈旧点击（例如队列已推进完毕）
@@ -343,7 +364,11 @@ export function initConfirmEvents() {
     approveOnceBtn.addEventListener('click', () => handleConfirmResponse(true, 'single'));
   }
   if (approveLoopBtn) {
-    approveLoopBtn.addEventListener('click', () => handleConfirmResponse(true, 'loop'));
+    // 网络确认的第三个按钮 = 永久放行（加入白名单并开启总闸），回发 scope='whitelist'
+    approveLoopBtn.addEventListener('click', () => {
+      const scope = visibleConfirm?.variant === 'network' ? 'whitelist' : 'loop';
+      handleConfirmResponse(true, scope);
+    });
   }
   if (denyBtn) {
     denyBtn.addEventListener('click', () => handleConfirmResponse(false, 'single'));
