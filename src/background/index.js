@@ -2333,7 +2333,15 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   // 更新代理
   if (message.type === 'AGENT_UPDATE') {
     (async () => {
-      const result = await AgentClient.updateAgent();
+      const result = await AgentClient.updateAgent(message.target);
+      sendResponse(result);
+    })();
+    return true;
+  }
+
+  if (message.type === 'AGENT_UPDATE_CHECK') {
+    (async () => {
+      const result = await AgentClient.checkAgentUpdate(message.target);
       sendResponse(result);
     })();
     return true;

@@ -4,6 +4,19 @@
 
 ## 2026-11-08
 
+### 代理端更新：兼容区间锁定 + 自动检测新版本
+
+> 应用市场插件发布节奏晚于 npm/代理端，旧插件被更新到新 minor/major 后可能无法使用。更新动作改为由插件下发 `~插件版本` 区间，代理端只升同 minor 内最高 patch；并对老插件、老代理做双向兼容。
+
+- **`agent/src/server.js`**：`POST /api/agent/update` 必须携带 `~x.y.z`；先 `npm view` 解析区间内最高版本，再按精确版本安装；已装代理 `major.minor` 高于插件时返回 409 阻止降级；老插件不传 `target` 时回落 `~当前代理版本`，仅做同小版本 patch 升级。新增只读接口 `GET /api/agent/update/check`，返回 `current/latest/available`。
+- **`agent/src/version-compat.js`**（新增）：抽出区间解析、版本比较、降级判定、`npm view --json` 输出解析等纯函数。
+- **`src/background/local-agent-client.js` / `src/background/index.js`**：更新请求携带 `target`；新增 `AGENT_UPDATE_CHECK` 消息。
+- **`src/side_panel/index.js` / `styles.css`**：按插件版本生成区间；连接成功后自动检测（结果缓存 1h），有可升级版本时「更新代理」按钮右上角显示小圆点，悬浮提示「当前 → 最新」；老代理无检测接口（404）时静默隐藏角标；更新完成清空缓存与角标。
+- **`install.sh` / `install.ps1`**：`--update` / `-Update` 支持 `--agent-version=~x.y.z`，先解析为精确版本再写入 manifest。
+- **其他**：清理更新路径不再使用的 locale key（`npmInstallTimeout`、`npmInstallExitCode`）。
+
+**验证**：`node --test agent/test/unit/*.test.js` → **915 例全绿**（新增 `version-compat` 13 例）；`npx vitest run` → **258 文件 / 4284 例通过**；`npx eslint src/ agent/` 无告警；`node --check` 通过。
+
 ### 工作目录选择：双击进入子目录 + 行内快捷回填（内置浏览器交互修正）
 
 > 先前的「双击即回填」被用户判定不符合系统目录列表习惯（正常双击应进入下一层）。本次回退为双击进入子目录，并把快速回填放到目录行最右侧的悬停按钮上，与底部「选择此目录」并列成两个回填入口。

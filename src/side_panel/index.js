@@ -91,10 +91,13 @@ registerTranslations('zh', {
     agentRestarting: '代理服务正在重启...',
     restartFailed: '重启失败: {error}',
     restartRequestFailed: '重启请求失败: {error}',
-    updateAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要更新代理吗？将通过 npm 安装最新版本，然后重启服务。更新期间服务不可用。',
+    updateAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要更新代理吗？只会在当前插件兼容的 {version} 小版本范围内安装最新补丁版本，然后重启服务。更新期间服务不可用。',
     updateAgentTitle: '更新代理',
     agentUpdating: '正在更新代理（可能需要几分钟）...',
     agentUpdateRestarting: '代理正在更新并重启...',
+    agentVersionAhead: '代理端版本高于当前插件，请先从应用市场更新插件',
+    agentAlreadyLatest: '当前已是兼容范围内的最新版本',
+    agentUpdateAvailable: '有新版本可升级：当前 v{current} → v{latest}',
     updateFailed: '更新失败: {error}',
     updateRequestFailed: '更新请求失败: {error}',
     stopAgentConfirm: '代理名称：{name}\n代理地址：{url}\n\n确定要停止代理服务吗？停止后将无法连接，需要手动重新启动。',
@@ -164,10 +167,13 @@ registerTranslations('en', {
     agentRestarting: 'Agent service is restarting...',
     restartFailed: 'Restart failed: {error}',
     restartRequestFailed: 'Restart request failed: {error}',
-    updateAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to update the agent? It will install the latest version via npm, then restart the service. The service will be unavailable during update.',
+    updateAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to update the agent? It will install the latest patch version within the {version} minor range compatible with this extension, then restart the service. The service will be unavailable during update.',
     updateAgentTitle: 'Update Agent',
     agentUpdating: 'Updating agent (may take a few minutes)...',
     agentUpdateRestarting: 'Agent is updating and restarting...',
+    agentVersionAhead: 'Agent version is newer than this extension. Please update the extension from the store first',
+    agentAlreadyLatest: 'Already at the latest compatible version',
+    agentUpdateAvailable: 'Update available: v{current} → v{latest}',
     updateFailed: 'Update failed: {error}',
     updateRequestFailed: 'Update request failed: {error}',
     stopAgentConfirm: 'Agent name: {name}\nAgent address: {url}\n\nAre you sure you want to stop the agent service? You will not be able to connect and will need to manually restart it.',
@@ -1237,6 +1243,144 @@ async function updateAgentIndicator(platformInfo, skipPing = false) {
   updateWorkspacePanelVisibility(connected);
   // 目录 chip 与连接态/代理信息绑定，一起刷新
   updateWorkdirTag();
+  // 自动检测兼容区间内的新版本（内部 1h 缓存，老代理 404 时静默）
+  void refreshAgentUpdateBadge(activeAgent, connected);
+}
+
+/**
+ * 代理端 major.minor 是否高于插件版本
+ * 高于时需要先升级插件（否则插件无法识别新代理，且不允许把代理降级）
+ */
+function isAgentVersionAhead(agentVersion, pluginVersion) {
+  if (!agentVersion || !pluginVersion) return false;
+  const a = String(agentVersion).split('.').map(Number);
+  const p = String(pluginVersion).split('.').map(Number);
+  if (!Number.isFinite(a[0]) || !Number.isFinite(p[0])) return false;
+  if (a[0] !== p[0]) return a[0] > p[0];
+  return (a[1] || 0) > (p[1] || 0);
+}
+
+/**
+ * 轻量版本比较（只比较 x.y.z 核心段）
+ */
+function compareSemver(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+const AGENT_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 检测成功结果缓存 1 小时
+const AGENT_UPDATE_UNSUPPORTED_TTL_MS = 24 * 60 * 60 * 1000; // 老代理无检测接口，24h 内不再重试
+// 单飞按「代理 + 区间」隔离：切换代理时各自检测，避免互相顶掉或结果串到别的按钮上
+const _agentUpdateCheckInFlight = new Map();
+
+/**
+ * 根据检测结果刷新“更新代理”按钮右上角角标与悬浮提示
+ */
+function applyAgentUpdateBadge(info) {
+  const btn = document.getElementById('agentDdUpdateBtn');
+  if (!btn) return;
+  const current = info?.current || '';
+  const latest = info?.latest || '';
+  const available = !!latest && compareSemver(latest, current) > 0;
+  btn.classList.toggle('has-update', available);
+  btn.title = available
+    ? t('sidePanel.agentUpdateAvailable', { current, latest })
+    : t('header.updateAndRestart');
+}
+
+/**
+ * 清空更新角标并丢弃检测缓存（更新完成/已是最新时调用）
+ */
+async function clearAgentUpdateBadge() {
+  try { await chrome.storage.local.remove(['agentUpdateCheck', 'agentUpdateCheckUnsupported']); } catch { /* ignore */ }
+  applyAgentUpdateBadge(null);
+}
+
+/**
+ * 仅当目标代理仍是当前活跃代理时才应用检测结果
+ * 切换代理后旧请求返回的结果必须丢弃，否则会串到新代理的角标上
+ */
+async function applyAgentUpdateResult(agentId, info) {
+  let activeId = null;
+  try { activeId = (await chrome.storage.local.get('activeAgentId')).activeAgentId; } catch { /* ignore */ }
+  if (activeId !== agentId) return;
+  applyAgentUpdateBadge(info);
+  if (info) {
+    try { await chrome.storage.local.set({ agentUpdateCheck: info }); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * 自动检测当前插件兼容区间内是否有代理新版本
+ * - 成功结果缓存 1 小时，避免每次打开侧边栏都请求 npm
+ * - 老版本代理没有该接口（404）时静默隐藏角标，并记住 24h 不再请求
+ * - 其他失败（超时/网络/代理重启中）不写缓存，下次刷新自动重试
+ */
+async function refreshAgentUpdateBadge(agent, connected) {
+  if (!connected || !agent?.id) {
+    applyAgentUpdateBadge(null);
+    return;
+  }
+  const extVersion = chrome.runtime.getManifest().version;
+  const target = `~${extVersion}`;
+  let cached = null;
+  let unsupported = null;
+  try {
+    const store = await chrome.storage.local.get(['agentUpdateCheck', 'agentUpdateCheckUnsupported']);
+    cached = store.agentUpdateCheck;
+    unsupported = store.agentUpdateCheckUnsupported;
+  } catch { /* ignore */ }
+  if (cached?.agentId === agent.id && cached?.target === target && cached?.checkedAt &&
+      Date.now() - cached.checkedAt < AGENT_UPDATE_CHECK_INTERVAL_MS) {
+    applyAgentUpdateBadge(cached);
+    return;
+  }
+  if (unsupported?.agentId === agent.id && unsupported?.target === target && unsupported?.checkedAt &&
+      Date.now() - unsupported.checkedAt < AGENT_UPDATE_UNSUPPORTED_TTL_MS) {
+    applyAgentUpdateBadge(null);
+    return;
+  }
+  const key = `${agent.id}:${target}`;
+  if (_agentUpdateCheckInFlight.has(key)) return;
+  const task = (async () => {
+    try {
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'AGENT_UPDATE_CHECK', target }, (r) => {
+          // 读到 lastError：Service Worker 无响应时回调会拿到 undefined，不能当成“成功但无版本”
+          resolve(chrome.runtime.lastError ? null : r);
+        });
+      });
+      if (res?.success && res.latest) {
+        await applyAgentUpdateResult(agent.id, {
+          agentId: agent.id,
+          target,
+          checkedAt: Date.now(),
+          current: res.current || '',
+          latest: res.latest
+        });
+        return;
+      }
+      if (res?.httpStatus === 404) {
+        try {
+          await chrome.storage.local.set({
+            agentUpdateCheckUnsupported: { agentId: agent.id, target, checkedAt: Date.now() }
+          });
+        } catch { /* ignore */ }
+        await applyAgentUpdateResult(agent.id, null);
+        return;
+      }
+      // 其他失败（超时/网络/代理重启中）：不写缓存，下次刷新自动重试
+    } catch { /* ignore */ } finally {
+      _agentUpdateCheckInFlight.delete(key);
+    }
+  })();
+  _agentUpdateCheckInFlight.set(key, task);
+  await task;
 }
 
 /**
@@ -1272,6 +1416,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
     const isActive = a.id === activeAgent?.id;
     const isDisabled = !!a.disabled;
     const version = state.agentVersions.get(a.id);
+    const agentAhead = isAgentVersionAhead(version, chrome.runtime.getManifest().version);
     let dotClass, statusLabel;
     if (isDisabled) {
       dotClass = 'disabled';
@@ -1294,7 +1439,7 @@ function updateAgentDropdown(activeAgent, allAgents, connected) {
       <div class="agent-dd-item${isActive ? ' active' : ''}${isDisabled ? ' disabled' : ''}" data-agent-id="${a.id}">
         <span class="agent-dd-item-dot ${dotClass}"></span>
         <div class="agent-dd-item-info">
-          <div class="agent-dd-item-name"><span class="agent-dd-item-name-text" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>${version ? `<span class="agent-dd-item-version" title="v${escapeHtml(version)}">v${escapeHtml(version)}</span>` : ''}${sysInfo ? `<span class="agent-dd-item-sysinfo" title="${escapeHtml(sysInfo)}">${escapeHtml(sysInfo)}</span>` : ''}</div>
+          <div class="agent-dd-item-name"><span class="agent-dd-item-name-text" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>${version ? `<span class="agent-dd-item-version${agentAhead ? ' warn' : ''}" title="${agentAhead ? escapeHtml(t('sidePanel.agentVersionAhead')) : `v${escapeHtml(version)}`}">v${escapeHtml(version)}${agentAhead ? ' !' : ''}</span>` : ''}${sysInfo ? `<span class="agent-dd-item-sysinfo" title="${escapeHtml(sysInfo)}">${escapeHtml(sysInfo)}</span>` : ''}</div>
           <span class="agent-dd-item-url" title="${escapeHtml(a.url || '')}">${escapeHtml(a.url || '')}</span>
           ${displayWorkdir ? `<span class="agent-dd-item-workdir" title="${t('sidePanel.workingDirectory', { path: escapeHtml(workdir) })}">${escapeHtml(displayWorkdir)}</span>` : ''}
         </div>
@@ -1760,7 +1905,7 @@ async function initAgentDropdown() {
     }
   });
 
-  // 更新并重启代理
+  // 更新并重启代理（只允许在当前插件兼容的 major.minor 内升级）
   updateBtn.addEventListener('click', async () => {
     dropdown.style.display = 'none';
     const storage = await chrome.storage.local.get(['pairedAgents', 'activeAgentId']);
@@ -1768,15 +1913,26 @@ async function initAgentDropdown() {
     const active = agents.find(a => a.id === storage.activeAgentId);
     const name = active?.name || t('sidePanel.unknownAgent');
     const url = active?.url || t('sidePanel.unknownAgent');
+    // 以插件自身版本为锚点：~x.y.z 表示只升级到同 major.minor 内的最高 patch
+    const extVersion = chrome.runtime.getManifest().version;
+    const target = `~${extVersion}`;
+    const compatLabel = extVersion.split('.').slice(0, 2).join('.') + '.x';
     const confirmed = await window.showCustomConfirm(
-      t('sidePanel.updateAgentConfirm', { name, url }),
+      t('sidePanel.updateAgentConfirm', { name, url, version: compatLabel }),
       t('sidePanel.updateAgentTitle')
     );
     if (!confirmed) return;
     showToast(t('sidePanel.agentUpdating'), 'info');
     try {
-      chrome.runtime.sendMessage({ type: 'AGENT_UPDATE' }, async (response) => {
+      chrome.runtime.sendMessage({ type: 'AGENT_UPDATE', target }, async (response) => {
+        if (response?.success && response.upToDate) {
+          // 已是兼容范围内最新版本，代理无需重启
+          await clearAgentUpdateBadge();
+          showToast(response.message || t('sidePanel.agentAlreadyLatest'), 'info');
+          return;
+        }
         if (response?.success) {
+          await clearAgentUpdateBadge();
           showToast(t('sidePanel.agentUpdateRestarting'), 'success');
           // 更新期间立即更新 UI 为未连接状态（skipPing 避免在代理未真正 shutdown 前 ping 到它）
           state.agentPlatform = { ...state.agentPlatform, connected: false };

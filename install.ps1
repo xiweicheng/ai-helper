@@ -4,6 +4,8 @@
 # 指定代理版本（管道执行用环境变量，本地执行可用参数）:
 #        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $env:AGENT_VERSION='2.2.0'; irm .../install.ps1 | iex
 #        install.ps1 -AgentVersion 2.2.0
+#        区间升级（仅升同小版本内的最高 patch，与插件端更新策略一致）:
+#        install.ps1 -Update -AgentVersion "~2.7.10"
 param(
     [switch]$Uninstall,
     [switch]$Update,
@@ -206,7 +208,7 @@ function Install-Node($Net) {
 }
 
 # ==================== Agent 安装 ====================
-function Install-Agent($Net) {
+function Install-Agent($Net, $VersionOverride) {
     $npm = Join-Path $RuntimeDir "npm.cmd"
     if (-not (Test-Path $npm)) { $npm = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js" }
     # 内嵌 Node 进 PATH，保证包的安装脚本调用 node 时可用
@@ -222,7 +224,7 @@ function Install-Agent($Net) {
 
     $registryArg = if ($Net.Registry -ne $RegOfficial) { "--registry=$($Net.Registry)" } else { "" }
 
-    $targetVersion = Get-TargetVersion
+    $targetVersion = if ($VersionOverride) { $VersionOverride } else { Get-TargetVersion }
     Write-Info "正在安装 AI Helper Agent (版本: $targetVersion)..."
 
     Push-Location $AppDir
@@ -431,12 +433,12 @@ function Do-Update {
     $pkgJson = Join-Path $AppDir "node_modules\ai-helper-agent\package.json"
     $current = if (Test-Path $pkgJson) { (Get-Content $pkgJson | ConvertFrom-Json).version } else { "0.0.0" }
 
-    # 确定目标版本：显式指定则用指定值（可回退/锁定），否则升级到最新
+    # 确定目标版本：显式指定则用指定值（可为 ~x.y.z 区间或精确版本），否则升级到最新
     $requested = Get-TargetVersion
     $target = $requested
+    $registryArg = if ($net.Registry -ne $RegOfficial) { "--registry=$($net.Registry)" } else { "" }
+    $npmCli = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js"
     if ($target -eq "latest") {
-        $registryArg = if ($net.Registry -ne $RegOfficial) { "--registry=$($net.Registry)" } else { "" }
-        $npmCli = Join-Path $RuntimeDir "node_modules\npm\bin\npm-cli.js"
         # npm 的 notice 信息走 stderr，PS5.1+Stop 会误判为终止错误，需容忍
         $target = Invoke-Tolerant {
             if (Test-Path $npmCli) {
@@ -446,13 +448,34 @@ function Do-Update {
             }
         }
         $target = "$target".Trim()
+    } elseif ($target.StartsWith("~")) {
+        # ~x.y.z 区间：交给 npm 解析同小版本内的最高 patch（与插件端更新策略一致）
+        $resolved = Invoke-Tolerant {
+            if (Test-Path $npmCli) {
+                & $nodeExe $npmCli view "$NodePackage@$target" version --json $registryArg 2>$null
+            } else {
+                & (Join-Path $RuntimeDir "npm.cmd") view "$NodePackage@$target" version --json $registryArg 2>$null
+            }
+        }
+        $target = ""
+        try {
+            $raw = ("$resolved").Trim()
+            $jsonStart = $raw.IndexOfAny([char[]]@('[', '"'))
+            if ($jsonStart -ge 0) {
+                $parsed = $raw.Substring($jsonStart) | ConvertFrom-Json
+                $list = @($parsed) | Where-Object { $_ -is [string] }
+                $target = ($list | Sort-Object { [version]$_ } | Select-Object -Last 1)
+            }
+        } catch { $target = "" }
+        if (-not $target) { Die "npm 上不存在匹配 $requested 的版本区间" }
     }
 
     if ($target -eq $current) { Write-Ok "已是目标版本 v$current"; return }
 
     Write-Info "正在从 v$current 更新到 v$target..."
     Invoke-Tolerant { & (Join-Path $BinDir "aha.cmd") stop 2>$null }
-    Install-Agent $net
+    # 传已解析的精确版本，避免 Install-Agent 内部再取回原始 ~x.y.z 区间
+    Install-Agent $net $target
     Start-AgentService
     Write-Ok "更新完成: v$current → v$target"
 }

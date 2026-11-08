@@ -5,6 +5,8 @@
 # 指定代理版本（管道执行用环境变量，本地执行可用参数）:
 #        curl -fsSL .../install.sh | AGENT_VERSION=2.2.0 bash
 #        bash install.sh --agent-version=2.2.0
+#        区间升级（仅升同小版本内的最高 patch，与插件端更新策略一致）:
+#        bash install.sh --update --agent-version=~2.7.10
 set -euo pipefail
 
 # ==================== 常量 ====================
@@ -421,13 +423,31 @@ do_update() {
     registry_flag="--registry=$NPM_REGISTRY"
   fi
 
-  # 确定目标版本：显式指定则用指定值（可回退/锁定），否则升级到最新
+  # 确定目标版本：显式指定则用指定值（可为 ~x.y.z 区间或精确版本），否则升级到最新
   local target
   if [ "$AGENT_VERSION" != "latest" ]; then
     target="$AGENT_VERSION"
   else
     target=$(cd "$APP_DIR" && "$npm" view "$NODE_PACKAGE" version $registry_flag 2>/dev/null)
   fi
+
+  # ~x.y.z 区间：交给 npm 解析同小版本内的最高 patch（与插件端更新策略一致），
+  # 解析出精确版本后再写入 manifest，避免 manifest 记录成 "~x.y.z"
+  if [[ "$target" == "~"* ]]; then
+    target=$(cd "$APP_DIR" && "$npm" view "$NODE_PACKAGE@$target" version --json $registry_flag 2>/dev/null | "$RUNTIME_DIR/bin/node" -e "
+      let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+        try{
+          const p=JSON.parse(d||'null');
+          const a=(Array.isArray(p)?p:[p]).filter(v=>typeof v==='string');
+          a.sort((x,y)=>x.localeCompare(y,undefined,{numeric:true}));
+          console.log(a[a.length-1]||'')
+        }catch{console.log('')}
+      }") || true
+    if [ -z "$target" ]; then
+      die "npm 上不存在匹配 $AGENT_VERSION 的版本区间"
+    fi
+  fi
+
   local current
   current=$(cat "$MANIFEST_FILE" 2>/dev/null | "$RUNTIME_DIR/bin/node" -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{console.log(JSON.parse(d).version)}catch{console.log('unknown')}})")
 

@@ -468,6 +468,10 @@ body {
   flex-shrink: 0;
   white-space: nowrap;
 }
+.agent-dd-item-version.warn {
+  color: var(--warning-strong);
+  background: var(--warning-soft-bg);
+}
 .agent-dd-item-sysinfo {
   display: inline-block;
   margin-left: 2px;
@@ -601,6 +605,7 @@ body {
 }
 
 .agent-dd-action-btn {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
@@ -614,6 +619,19 @@ body {
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+/* 有新版本可升级：按钮右上角小圆点，悬浮按钮即可看到 title 提示 */
+.agent-dd-action-btn.has-update::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning-strong);
+  box-shadow: 0 0 0 1px var(--bg-subtle);
 }
 
 .agent-dd-action-btn:hover {

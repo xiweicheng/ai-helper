@@ -1001,11 +1001,25 @@ async function restartAgent() {
 
 /**
  * 更新并重启代理服务
- * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ * @param {string} target - 兼容版本区间（形如 ~2.7.10），由插件自身版本计算
+ * @returns {Promise<{success: boolean, upToDate?: boolean, version?: string, message?: string, error?: string}>}
  */
-async function updateAgent() {
+async function updateAgent(target) {
   try {
-    return await agentRequest('/api/agent/update', {}, 'POST', 120000);
+    return await agentRequest('/api/agent/update', { target }, 'POST', 120000);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 检测兼容区间内是否有可升级的代理版本（只读）
+ * 老版本代理没有该路由，会返回 404；调用方据此静默隐藏更新角标
+ * @param {string} target - 兼容版本区间（形如 ~2.7.10）
+ */
+async function checkAgentUpdate(target) {
+  try {
+    return await agentRequest(`/api/agent/update/check?target=${encodeURIComponent(target)}`, null, 'GET', 20000);
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -1135,6 +1149,7 @@ export {
   // Agent 管理
   restartAgent,
   updateAgent,
+  checkAgentUpdate,
   stopAgent,
   // 审计日志
   queryAuditLogs,

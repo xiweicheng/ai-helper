@@ -30,6 +30,14 @@ import { warmupAsrEngines, closeOfflinePool } from './asr/offline-pool.js';
 import { memoryRouter } from './memory/routes.js';
 import { stopProcessTree } from './process-tree.js';
 import {
+  parseTargetRange,
+  buildFallbackTarget,
+  compareVersions,
+  isMajorMinorAhead,
+  isUpdateAvailable,
+  parseNpmViewVersions
+} from './version-compat.js';
+import {
   initializeMcpRegistry,
   shutdownMcpRegistry,
   getMcpServersStatus,
@@ -313,6 +321,45 @@ function parseBody(req) {
     });
 
     req.on('error', () => reject(new Error(t('error.readRequestFailed'))));
+  });
+}
+
+/**
+ * 执行 npm 命令并收集输出
+ * 非 Windows 下以独立进程组运行，超时整树终止，避免 SIGTERM 只杀 shell 留下孤儿 npm
+ * @param {string[]} args - npm 参数（纯静态或经严格校验，不含用户原始输入）
+ * @param {number} timeoutMs - 超时毫秒数
+ * @returns {Promise<{success: boolean, code?: number, error?: string, stdout: string, stderr: string}>}
+ */
+function runNpmCommand(args, timeoutMs) {
+  return new Promise((resolvePromise) => {
+    const isWin = process.platform === 'win32';
+    const npm = spawn(isWin ? 'npm.cmd' : 'npm', args, {
+      shell: isWin,
+      detached: !isWin,
+      env: { ...process.env },
+      windowsHide: true
+    });
+    const stdout = [];
+    const stderr = [];
+    npm.stdout.on('data', d => stdout.push(d.toString()));
+    npm.stderr.on('data', d => stderr.push(d.toString()));
+
+    let settled = false;
+    let timer = null;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolvePromise(result);
+    };
+    npm.on('error', (err) => finish({ success: false, error: err.message, stdout: '', stderr: '' }));
+    timer = setTimeout(() => {
+      finish({ success: false, error: 'timeout', stdout: stdout.join(''), stderr: stderr.join('') });
+      stopProcessTree(npm, { graceMs: 5000 }).catch(() => {});
+    }, timeoutMs);
+    timer.unref();
+    npm.on('close', (code) => finish({ success: code === 0, code, stdout: stdout.join(''), stderr: stderr.join('') }));
   });
 }
 
@@ -759,7 +806,33 @@ export function startServer() {
       return;
     }
 
+    // 检测当前插件兼容区间内是否有可升级的 Agent 版本（只读，不安装/不重启）
+    // 老版本 Agent 没有该路由会返回 404，插件端静默降级为不展示更新角标
+    if (req.method === 'GET' && pathname === '/api/agent/update/check') {
+      const rawTarget = (url.searchParams.get('target') || '').trim();
+      const range = parseTargetRange(rawTarget);
+      if (!range) {
+        return jsonResponse(res, 400, { success: false, error: t('error.updateTargetInvalid') });
+      }
+      const viewResult = await runNpmCommand(['view', `ai-helper-agent@${range.raw}`, 'version', '--json'], 15000);
+      const latest = viewResult.success ? parseNpmViewVersions(viewResult.stdout) : '';
+      if (!latest) {
+        logError('update_check_failed', (viewResult.stderr || viewResult.error || 'no matching version').slice(-300));
+      }
+      return jsonResponse(res, 200, {
+        success: true,
+        current: AGENT_VERSION,
+        target: range.version,
+        latest,
+        available: isUpdateAvailable(AGENT_VERSION, latest)
+      });
+    }
+
     // 更新并重启 Agent（需认证）
+    // 只允许在插件下发的兼容区间内更新（target 形如 "~2.7.10"）：
+    // 由 npm 解析到同一 major.minor 下的最高 patch，避免应用市场插件端滞后时
+    // 被更新到插件无法识别的新 minor/major 版本。
+    // 老插件不传 target 时回落为 "~当前代理版本"，只做同小版本 patch 升级。
     if (req.method === 'POST' && pathname === '/api/agent/update') {
       if (agentOperationInProgress) {
         return jsonResponse(res, 409, { success: false, error: t('error.operationInProgress') });
@@ -772,9 +845,39 @@ export function startServer() {
         const wait = Math.ceil((OPERATION_COOLDOWN_MS - (Date.now() - lastOperationTime)) / 1000);
         return jsonResponse(res, 429, { success: false, error: t('error.tooFrequent', { wait }) });
       }
+
+      let body;
+      try { body = await parseBody(req); }
+      catch (err) { return jsonResponse(res, 400, { success: false, error: err.message }); }
+
+      // target 由插件按自身版本下发，仅接受 "~x.y.z"：~ 区间把升级锁在同一 major.minor 内
+      const rawTarget = typeof body.target === 'string' ? body.target.trim() : '';
+      let target = rawTarget;
+      let range = parseTargetRange(rawTarget);
+      let legacyFallback = false;
+      if (!target) {
+        // 兼容未传 target 的老插件：锚定代理自身 major.minor，只做同小版本 patch 升级。
+        // 老插件无法表达兼容范围，用自身小版本最保守——不跨 minor、不降级，
+        // 也避免直接升 latest 把老插件带到它无法识别的 major 版本。
+        target = buildFallbackTarget(AGENT_VERSION);
+        range = parseTargetRange(target);
+        legacyFallback = true;
+      }
+      if (!range) {
+        return jsonResponse(res, 400, { success: false, error: t('error.updateTargetInvalid') });
+      }
+
+      // 降级保护：已安装 Agent 的 major.minor 高于插件版本时，不允许用旧区间覆盖
+      if (isMajorMinorAhead(AGENT_VERSION, range.version)) {
+        return jsonResponse(res, 409, {
+          success: false,
+          error: t('error.agentNewerThanPlugin', { agent: AGENT_VERSION, target: range.version })
+        });
+      }
+
       agentOperationInProgress = true;
       lastOperationTime = Date.now();
-      logSystem('update', { reason: 'api_request', extId });
+      logSystem('update', { reason: 'api_request', extId, target, legacyFallback });
 
       const agentScript = resolve(process.argv[1]);
       const restartPort = config.port || 18910;
@@ -784,59 +887,42 @@ export function startServer() {
 
       // 同步执行 npm 全局安装，完成后才返回结果（前端能收到真实成功/失败）
       (async () => {
-        let npmSuccess = false;
-        let npmError = '';
-        const npmOutput = [];
-
-        try {
-          // npm install -g ai-helper-agent@latest
-          // 不指定 --registry，继承用户环境配置（公司内网/外网自适应）
-          const result = await new Promise((resolvePromise) => {
-            const isWin = process.platform === 'win32';
-            // 非 Windows 直接执行 npm（shell: false）并以 detached 成为进程组组长，
-            // 超时/退出可整树组杀，避免 SIGTERM 只杀 /bin/sh 留下孤儿 npm（R1）
-            const npm = spawn(isWin ? 'npm.cmd' : 'npm', ['install', '-g', 'ai-helper-agent@latest', '--no-audit', '--no-fund'], {
-              shell: isWin,
-              detached: !isWin,
-              env: { ...process.env },
-              windowsHide: true
-            });
-            npm.stdout.on('data', d => npmOutput.push(d.toString().trim()));
-            npm.stderr.on('data', d => npmOutput.push(d.toString().trim()));
-
-            let settled = false;
-            let timer = null;
-            const finish = (result) => {
-              if (settled) return;
-              settled = true;
-              if (timer) clearTimeout(timer);
-              resolvePromise(result);
-            };
-            npm.on('error', (err) => finish({ success: false, error: err.message }));
-
-            // 超时保护（90s），防止 npm 卡住导致前端长等待；终止整棵进程树防孤儿（R1）
-            timer = setTimeout(() => {
-              finish({ success: false, error: t('error.npmInstallTimeout') });
-              stopProcessTree(npm, { graceMs: 5000 }).catch(() => {});
-            }, 90000);
-            timer.unref();
-
-            npm.on('close', (code) => {
-              finish({ success: code === 0, code });
-            });
+        // 1) 先解析区间内的最高版本；区间无匹配时 view 失败，提示先升级插件
+        const viewResult = await runNpmCommand(['view', `ai-helper-agent@${target}`, 'version', '--json'], 20000);
+        const resolved = viewResult.success ? parseNpmViewVersions(viewResult.stdout) : '';
+        if (!resolved) {
+          agentOperationInProgress = false;
+          lastOperationTime = 0; // 解析失败属空操作，不占用冷却
+          logError('update_resolve_failed', (viewResult.stderr || viewResult.error || 'no matching version').slice(-500));
+          jsonResponse(res, 200, {
+            success: false,
+            error: t('error.noCompatibleVersion', { target: target.slice(1) })
           });
-          npmSuccess = result.success;
-          if (!npmSuccess) {
-            npmError = result.error || t('error.npmInstallExitCode', { code: result.code });
-          }
-        } catch (err) {
-          npmError = err.message;
+          return;
         }
 
-        if (!npmSuccess) {
+        // 已是区间内最新（或已装版本更高）：不重复安装与重启，避免同 minor 内降级
+        // 老插件不传 target 时保持原语义（安装并重启），否则它会把 upToDate 误当成“正在重启”
+        if (!legacyFallback && compareVersions(resolved, AGENT_VERSION) <= 0) {
+          agentOperationInProgress = false;
+          lastOperationTime = 0;
+          logSystem('update_skipped', { version: resolved, current: AGENT_VERSION });
+          jsonResponse(res, 200, {
+            success: true,
+            upToDate: true,
+            version: resolved,
+            message: t('message.updateAlreadyLatest', { version: resolved })
+          });
+          return;
+        }
+
+        // 2) 安装解析出的精确版本，避免安装时再次解析到更新的版本
+        // 不指定 --registry，继承用户环境配置（公司内网/外网自适应）
+        const result = await runNpmCommand(['install', '-g', `ai-helper-agent@${resolved}`, '--no-audit', '--no-fund'], 90000);
+        if (!result.success) {
           // 更新失败：不重启，保持老进程运行，提示用户手动执行
           agentOperationInProgress = false; // 重置防重入标志，允许后续重试
-          logError('update_npm_failed', npmError + ' | output: ' + npmOutput.join('\n').slice(-500));
+          logError('update_npm_failed', (result.error || result.stderr || '').slice(-500));
           jsonResponse(res, 200, {
             success: false,
             error: t('error.updateFailed')
@@ -845,8 +931,8 @@ export function startServer() {
         }
 
         // 更新成功：返回响应并触发两阶段重启
-        logSystem('update_success', { output: npmOutput.join('\n').slice(-500) });
-        jsonResponse(res, 200, { success: true, message: t('message.updateSuccess') });
+        logSystem('update_success', { from: AGENT_VERSION, to: resolved });
+        jsonResponse(res, 200, { success: true, version: resolved, legacyFallback, message: t('message.updateSuccess') });
 
         // spawn 两阶段重启包装器
         const child = spawn(process.execPath, [
