@@ -354,6 +354,18 @@ function classifyPickResult(runResult, item) {
           error: `decode-failed: ${residue.slice(0, 160)}`,
         };
       }
+      // 退出码说「取消」，但全程没观测到窗口标记：窗口根本没画出来，
+      // 用户没有机会点任何按钮。这种情况必须报 no-window 而不是「用户取消」，
+      // 否则表现为「点击后毫无反应」——本模块最典型的静默失败。
+      if (item.expectShown && !runResult.shown) {
+        return {
+          success: false,
+          path: null,
+          available: true,
+          exitCode: code ?? null,
+          error: 'no-window',
+        };
+      }
       return { success: true, path: null, available: true };
     }
     return {
@@ -412,6 +424,13 @@ function runPickOnce(command, args, opts, spawnImpl) {
       try { child.kill(); } catch { /* 进程可能已退出 */ }
       setTimeout(() => finish({ code: null, stdout, stderr, ...extra }), KILL_SETTLE_MS);
     };
+    // 把「结束当前子进程」的能力交给调用方：显式取消 / 客户端断开时用它，
+    // 否则旧窗口会一直占着 inFlight，后续请求全部只能是 busy
+    if (typeof opts.onSpawn === 'function') {
+      try {
+        opts.onSpawn({ child, kill: killAndSettle });
+      } catch { /* 注册失败不影响正常流程 */ }
+    }
     timer = setTimeout(() => {
       timedOut = true;
       killAndSettle({ timedOut: true, shown });
@@ -471,8 +490,11 @@ function buildEnvironmentSnapshot(platform, env, plan) {
 
 /** 进行中的选择：同一时刻只允许一个窗口，避免连点拉起多个弹窗把 agent 拖住 */
 let inFlight = null;
+/** inFlight 的开始时间与「取消句柄」：busy 时回传已等待时长，并允许显式取消 */
+let inFlightStartedAt = 0;
+let currentRun = null;
 
-async function doPickDirectory(title, options) {
+async function doPickDirectory(title, options, controls = {}) {
   const platform = options.platform ?? process.platform;
   const env = options.env || process.env;
   const spawnImpl = options.spawnImpl || spawn;
@@ -494,8 +516,14 @@ async function doPickDirectory(title, options) {
 
   const attempts = [];
   let lastTimeout = null;
+  // 取消后的统一结论：显式取消 / 连接断开都走这里，客户端据此区分「不是用户取消」
+  const cancelledResult = () => ({
+    success: false, path: null, available: true, error: 'cancelled', cancelled: true, attempts,
+  });
 
   for (const item of plan) {
+    // 取消请求可能发生在后端切换之间：一旦收到就不再拉起新窗口
+    if (controls.cancelled) return cancelledResult();
     // 总预算控制：串行三后端最坏情况下也不能无限拖长
     const elapsed = Date.now() - startedAt;
     const remaining = totalBudgetMs - elapsed;
@@ -524,12 +552,22 @@ async function doPickDirectory(title, options) {
         shownTimeoutMs: Math.min(shownTimeoutMs, remaining),
         timeoutMs: Math.min(timeoutMs, remaining),
         expectShown: Boolean(item.expectShown),
+        // 记录当前子进程的终止句柄，供 cancelPickDirectory / 连接断开时强杀
+        onSpawn: (handle) => {
+          controls.killCurrent = handle.kill;
+          // 极端时序：取消请求早于 spawn 完成时，立刻收尾而不是让窗口弹出来
+          if (controls.cancelled) handle.kill({ cancelled: true });
+        },
       }, spawnImpl);
 
       if (r.spawnError) {
         // 该命令不可用（未安装/路径不对/无法执行），记录原因后尝试下一个后端
         attempts.push({ backend: item.backend, error: `spawn-failed: ${String(r.stderr || '').slice(0, 160)}` });
         continue;
+      }
+      if (r.cancelled) {
+        attempts.push({ backend: item.backend, error: 'cancelled: 已取消（不只是用户取消选择）' });
+        return cancelledResult();
       }
       if (r.noWindow) {
         // 进程活着但窗口始终没出现（加载程序集失败/会话无桌面等）：换下一个后端，不在这里干等
@@ -546,7 +584,17 @@ async function doPickDirectory(title, options) {
         // 窗口已经出现，继续拉第二个窗口会让人困惑，直接结束
         break;
       }
-      const result = classifyPickResult(r, { kind: item.kind, decode: prepared.decode });
+      const result = classifyPickResult(r, {
+        kind: item.kind,
+        decode: prepared.decode,
+        expectShown: Boolean(item.expectShown),
+      });
+      if (!result.success && result.error === 'no-window') {
+        // 进程按「取消」退出，但窗口标记从未出现：用户根本没看到窗口。
+        // 不能当作用户取消收场，换下一个后端继续尝试
+        attempts.push({ backend: item.backend, exitCode: r.code ?? null, error: 'no-window: 窗口未出现即退出' });
+        continue;
+      }
       if (result.success) {
         return { ...result, backend: item.backend, attempts };
       }
@@ -555,6 +603,7 @@ async function doPickDirectory(title, options) {
       // 单个后端内的任何意外都不能中断整体流程，更不能冒泡到 HTTP 层
       attempts.push({ backend: item.backend, error: `unexpected: ${err?.message || err}` });
     } finally {
+      controls.killCurrent = null;
       try { prepared.cleanup?.(); } catch { /* 清理失败不影响结果 */ }
     }
   }
@@ -600,14 +649,38 @@ async function doPickDirectory(title, options) {
  *   - 环境不支持：{ success: false, path: null, available: false, error: 'no-dialog-tool: …' | 'no-display' }
  *   - 后端都失败：{ success: false, path: null, available: false, error: 'all-backends-failed: …', attempts }
  *   - 超时：{ success: false, path: null, available: true, error: 'timeout', attempts }
- *   - 已有窗口在等待：{ success: false, path: null, available: true, error: 'busy' }
+ *   - 被取消（显式 cancel / 客户端断开）：{ success: false, path: null, available: true, error: 'cancelled' }
+ *   - 已有窗口在等待：{ success: false, path: null, available: true, error: 'busy',
+ *       cancellable: true, elapsedMs }（可调 cancelPickDirectory() 取消旧窗口后重试）
  * 本函数永不 reject。
  */
 export async function pickDirectoryNative(title = '', options = {}) {
   if (inFlight) {
-    return { success: false, path: null, available: true, error: 'busy', attempts: [] };
+    // busy 必须是「可取消」的：旧窗口最长可挂 180s，期间所有点击都会落到这里。
+    // 回传 cancellable + elapsedMs，让客户端能显式取消并重试，而不是死等或反复点
+    return {
+      success: false,
+      path: null,
+      available: true,
+      error: 'busy',
+      cancellable: true,
+      elapsedMs: Math.max(0, Date.now() - (inFlightStartedAt || Date.now())),
+      attempts: [],
+    };
   }
-  inFlight = doPickDirectory(title, options || {});
+  const controls = { cancelled: false, killCurrent: null };
+  inFlightStartedAt = Date.now();
+  inFlight = doPickDirectory(title, options || {}, controls);
+  // 取消句柄挂在当前运行上：killCurrent 在每次 spawn 后更新，取消时强杀
+  currentRun = {
+    promise: inFlight,
+    cancel() {
+      controls.cancelled = true;
+      if (typeof controls.killCurrent === 'function') {
+        try { controls.killCurrent({ cancelled: true }); } catch { /* 进程可能已退出 */ }
+      }
+    },
+  };
   try {
     return await inFlight;
   } catch (err) {
@@ -621,7 +694,28 @@ export async function pickDirectoryNative(title = '', options = {}) {
     };
   } finally {
     inFlight = null;
+    inFlightStartedAt = 0;
+    currentRun = null;
   }
+}
+
+/**
+ * 取消正在等待的目录选择框（显式取消 / 客户端断开时调用）
+ * 会强杀当前子进程并等待本次 pick 收尾，保证取消返回后 inFlight 已释放，
+ * 客户端可以立刻重试而不是继续拿到 busy。
+ * 本函数永不 reject。
+ * @returns {Promise<{success: boolean, cancelled: boolean, error?: string}>}
+ */
+export async function cancelPickDirectory() {
+  const run = currentRun;
+  if (!run) return { success: false, cancelled: false, error: 'not-running' };
+  try {
+    run.cancel();
+  } catch { /* 取消本身不应抛异常 */ }
+  try {
+    await run.promise;
+  } catch { /* 结果由原请求方处理 */ }
+  return { success: true, cancelled: true };
 }
 
 /** 测试用：查询是否有选择框正在等待 */

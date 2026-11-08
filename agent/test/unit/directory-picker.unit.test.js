@@ -7,8 +7,8 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import {
-  buildPickPlan, pickDirectoryNative, normalizePickedPath, resolveTmpDir, readEnvVar,
-  SHOWN_MARKER_FOR_TEST,
+  buildPickPlan, pickDirectoryNative, cancelPickDirectory, isPickInFlight, normalizePickedPath,
+  resolveTmpDir, readEnvVar, SHOWN_MARKER_FOR_TEST,
 } from '../../src/directory-picker.js';
 
 /** 构造一个 fake child（模拟真实 child_process 的 on / stdout / stderr / kill） */
@@ -166,11 +166,28 @@ describe('pickDirectoryNative', () => {
     assert.equal(r.available, true);
   });
 
-  test('Windows 取消：exit 2 → 视为取消（不报错）', async () => {
-    const { spawnImpl } = scriptedSpawn([{ code: 2 }]);
+  test('Windows 取消：窗口已出现（收到标记）后 exit 2 → 视为取消（不报错）', async () => {
+    const { spawnImpl } = scriptedSpawn([{ code: 2, stdout: SHOWN_MARKER_FOR_TEST }]);
     const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
     assert.equal(r.success, true);
     assert.equal(r.path, null);
+  });
+
+  test('Windows 取消但没有窗口标记 → 必须是 no-window（不能当用户取消静默吞掉）', async () => {
+    // 回归：窗口根本没画出来却以「取消」退出码结束，用户没有任何机会点按钮。
+    // 旧逻辑直接归为取消 → 点击后毫无反应且无任何提示
+    const { spawnImpl, calls } = scriptedSpawn([
+      { code: 2 }, // 后端 1：无标记
+      { code: 2 }, // 后端 2：无标记
+      { code: 2 }, // 后端 3：无标记
+    ]);
+    const r = await pickDirectoryNative('', { spawnImpl, platform: 'win32', env: {} });
+    assert.equal(r.success, false);
+    // 工具在但窗口始终画不出来：总体失败，错误摘要里必须留下 no-window 证据
+    assert.ok(r.error.startsWith('all-backends-failed'), r.error);
+    assert.equal(calls.length, 3, '窗口没出现时要继续尝试下一个后端');
+    assert.ok(r.attempts.every((a) => String(a.error).startsWith('no-window')), r.attempts.map((a) => a.error).join(' | '));
+    assert.equal(r.attempts[0].exitCode, 2);
   });
 
   test('Windows 选中：真实形态（窗口标记 + base64 同行）→ 正确解码（中文路径不乱码）', async () => {
@@ -310,6 +327,38 @@ describe('pickDirectoryNative', () => {
     await first;
   });
 
+  test('busy 可取消：回传 cancellable 与 elapsedMs（客户端才能取消旧窗口后重试）', async () => {
+    const { spawnImpl } = scriptedSpawn([{ hang: true }]);
+    const first = pickDirectoryNative('', { spawnImpl, platform: 'darwin', timeoutMs: 30 });
+    const second = await pickDirectoryNative('', { spawnImpl, platform: 'darwin', timeoutMs: 30 });
+    assert.equal(second.error, 'busy');
+    assert.equal(second.cancellable, true);
+    assert.ok(typeof second.elapsedMs === 'number' && second.elapsedMs >= 0);
+    await first;
+  });
+
+  test('cancelPickDirectory：强杀子进程、释放 inFlight，取消后可以立刻重试', async () => {
+    const { spawnImpl } = scriptedSpawn([{ hang: true }, { stdout: '/Users/x/ws' }]);
+    const first = pickDirectoryNative('', { spawnImpl, platform: 'darwin' });
+    const cancelled = await cancelPickDirectory();
+    const firstResult = await first;
+    assert.equal(cancelled.success, true);
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(firstResult.success, false);
+    assert.equal(firstResult.error, 'cancelled', '被取消不能伪装成用户取消（success:true）');
+    assert.equal(isPickInFlight(), false, '取消返回后必须已释放 inFlight');
+    const second = await pickDirectoryNative('', { spawnImpl, platform: 'darwin' });
+    assert.equal(second.success, true);
+    assert.equal(second.path, '/Users/x/ws');
+  });
+
+  test('cancelPickDirectory：没有进行中的选择时返回 not-running（不抛异常）', async () => {
+    const r = await cancelPickDirectory();
+    assert.equal(r.success, false);
+    assert.equal(r.cancelled, false);
+    assert.equal(r.error, 'not-running');
+  });
+
   test('spawnImpl 同步抛异常也不会冒泡（服务不崩）', async () => {
     const spawnImpl = () => { throw new Error('EACCES: spawn blocked by policy'); };
     const r = await pickDirectoryNative('', { spawnImpl, platform: 'darwin' });
@@ -346,7 +395,7 @@ describe('窗口可见性探测与终端环境差异', () => {
   test('win32：窗口始终没出现 → 按 shownTimeout 快速换下一个后端（不再干等 120s 后 break）', async () => {
     const { spawnImpl, calls } = scriptedSpawn([
       { hang: true }, // 后端 1：进程活着但没有任何输出
-      { code: 2 }, // 后端 2：用户取消
+      { code: 2, stdout: SHOWN_MARKER_FOR_TEST }, // 后端 2：窗口出现后用户取消
     ]);
     const r = await pickDirectoryNative('', {
       spawnImpl, platform: 'win32', env: {}, shownTimeoutMs: 20, timeoutMs: 5000,

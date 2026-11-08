@@ -148,9 +148,11 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
     // 1.12 MB 的余量再次用完（实测超出 ~4KB），故再留 ~16KB 余量。
     // 2026-11-03：划词菜单改为 body 惰性单例（全屏阅读适配）+ 菜单头复制按钮两项自然增长，
     // 实测到 1.1408 MB，1.14 MB 余量再次用完，按同一惯例再留 ~15KB 余量。
+    // 2026-11-08：切换工作目录新增内置目录浏览器（workdir-browser.js）自然增长，
+    // 实测 1.1587 MB，按同一惯例再留 ~16KB 余量。
     // docx 回退是一次性多 ~280KB，本闸依然能红——它要阻止的是「懒加载被废」，
     // 不是不准长一个字节。
-    expect(size).toBeLessThan(1_156_000);
+    expect(size).toBeLessThan(1_175_000);
   });
 
   test.skipIf(!distReady)('产物：docx 落在按需 chunk 里（确实打出来了，只是不首屏加载）', () => {

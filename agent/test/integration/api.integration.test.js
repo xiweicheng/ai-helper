@@ -238,6 +238,39 @@ describe('2. 文件系统基础操作', () => {
     assert.ok('mtime' in entry);
   });
 
+  test('browse 只返回目录（不返回文件）', async () => {
+    const mk = await req('/api/fs/mkdir', { path: join(ctx.testDir, 'browse_sub') });
+    assert.equal(mk.data.success, true);
+
+    const res = await req('/api/fs/browse', { path: ctx.testDir });
+    assert.equal(res.data.success, true);
+    assert.equal(res.data.path, ctx.testDir);
+    const names = res.data.entries.map(e => e.name);
+    assert.ok(names.includes('browse_sub'));
+    assert.ok(!names.includes('a.txt'));
+    assert.ok(res.data.entries.every(e => e.kind === 'dir'));
+  });
+
+  test('browse 空 path → 根节点集合', async () => {
+    const res = await req('/api/fs/browse', {});
+    assert.equal(res.data.success, true);
+    assert.equal(res.data.path, null);
+    assert.ok(Array.isArray(res.data.roots) && res.data.roots.length > 0);
+    assert.deepEqual(res.data.entries, []);
+  });
+
+  test('browse 文件（非目录）→ 400', async () => {
+    const res = await req('/api/fs/browse', { path: join(ctx.testDir, 'a.txt') });
+    assert.equal(res.status, 400);
+    assert.equal(res.data.error, 'not_a_directory');
+  });
+
+  test('browse 不存在目录 → 404', async () => {
+    const res = await req('/api/fs/browse', { path: join(ctx.testDir, 'no_such_dir') });
+    assert.equal(res.status, 404);
+    assert.equal(res.data.error, 'path_not_found');
+  });
+
   test('stat 获取文件详情', async () => {
     const filePath = join(ctx.testDir, 'a.txt');
     const res = await req('/api/fs/stat', { path: filePath });

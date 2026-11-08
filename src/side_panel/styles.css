@@ -18884,3 +18884,237 @@ body.has-session-dock .chat-container {
 .session-dropdown-item-close {
   color: var(--text-tertiary);
 }
+
+/* ============================================
+   内置目录浏览器（切换工作目录弹窗）
+   纯 HTTP 列目录，不依赖系统原生弹窗
+   ============================================ */
+
+.wdb-view {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.wdb-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wdb-agent {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.wdb-roots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.wdb-roots-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.wdb-root {
+  padding: 2px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wdb-root:hover {
+  background: var(--bg-subtle);
+}
+
+.wdb-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 26px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bg-subtle);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.wdb-crumb {
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--info-500);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wdb-crumb:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.wdb-crumb.current {
+  color: var(--text-tertiary);
+  cursor: default;
+}
+
+.wdb-crumb-sep {
+  color: var(--text-disabled);
+  font-size: 11px;
+}
+
+.wdb-list {
+  max-height: 220px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.wdb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-bottom: 1px solid var(--bg-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wdb-item:hover {
+  background: var(--bg-subtle);
+}
+
+.wdb-item.selected {
+  background: rgba(var(--info-rgb), 0.1);
+}
+
+.wdb-item:focus-visible {
+  outline: 2px solid var(--info-500);
+  outline-offset: -2px;
+}
+
+.wdb-item-icon {
+  flex-shrink: 0;
+}
+
+.wdb-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wdb-link {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+/* 每行右侧的快捷选择按钮：悬停或该行被选中时才出现，
+   作用是把这个目录回填到工作目录输入框（与底部「选择此目录」等价） */
+.wdb-pick {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+}
+
+.wdb-item:hover .wdb-pick,
+.wdb-item.selected .wdb-pick {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.wdb-pick:hover {
+  background: rgba(var(--success-rgb), 0.15);
+  color: var(--success-500);
+}
+
+.wdb-state {
+  padding: 14px 10px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+.wdb-truncated {
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.wdb-error {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-subtle);
+  color: var(--danger-500);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.wdb-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.wdb-spacer {
+  flex: 1;
+}
+
+.wdb-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.wdb-btn:hover:not(:disabled) {
+  background: var(--bg-subtle);
+}
+
+.wdb-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wdb-choose {
+  border-color: var(--info-500);
+  color: var(--info-500);
+}
+
+.wdb-choose:hover:not(:disabled) {
+  background: rgba(var(--info-rgb), 0.1);
+}

@@ -10,8 +10,9 @@ import {
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getPreviewType, getMimeType,
-  switchWorkspace, removeAllowedPath, pickDirectory
+  switchWorkspace, removeAllowedPath, pickDirectory, cancelPickDirectory, browseDirs
 } from './workspace-manager.js';
+import { createWorkdirBrowserView } from './workdir-browser.js';
 import logger from '../shared/logger.js';
 import { showToast, copyToClipboard, clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
@@ -212,6 +213,24 @@ registerTranslations('zh', {
     browseBusy: '已有一个目录选择窗口在等待，请先完成或关闭它',
     browseTimeout: '目录选择窗口未响应（可能被系统安全策略拦截或窗口不可见），请手动输入路径',
     picking: '等待选择…',
+    browseAgentHost: '代理端: {platform} · {host}',
+    browseRoots: '位置',
+    browseLinkTag: '链接',
+    browseLoading: '正在读取…',
+    browseEmpty: '此目录下没有子目录',
+    browseTruncated: '目录项过多，仅显示前 5000 项',
+    browseNotFound: '目录不存在或已被删除',
+    browseNotDir: '该路径不是目录',
+    browsePermissionDenied: '无权访问该目录（当前 Agent 进程权限不足）',
+    browseBadPath: '目录路径无效，请使用 Agent 主机的原生绝对路径',
+    browseRateLimited: '操作过于频繁，请稍后重试',
+    browseLoadFailed: '读取目录失败: {error}',
+    browseUnsupported: '当前代理端版本过旧，暂不支持目录浏览，请手动输入路径或更新代理端',
+    browseBackToList: '返回列表',
+    browseUp: '上级',
+    browseChooseCurrent: '选择当前目录',
+    browseChooseDir: '选择此目录',
+    browseUseNative: '改用系统对话框',
     switchBtn: '切换',
     noAllowedPaths: '暂无允许的目录',
     currentTag: '当前',
@@ -449,6 +468,24 @@ registerTranslations('en', {
     browseBusy: 'A directory picker is already open. Please finish or close it first.',
     browseTimeout: 'The directory picker did not respond (it may be blocked by security policy or not visible). Please enter the path manually.',
     picking: 'Waiting…',
+    browseAgentHost: 'Agent: {platform} · {host}',
+    browseRoots: 'Locations',
+    browseLinkTag: 'link',
+    browseLoading: 'Loading…',
+    browseEmpty: 'No subdirectories here',
+    browseTruncated: 'Too many entries; showing the first 5000',
+    browseNotFound: 'Directory does not exist or has been removed',
+    browseNotDir: 'This path is not a directory',
+    browsePermissionDenied: 'Access denied to this directory (insufficient Agent process permissions)',
+    browseBadPath: 'Invalid directory path; use an absolute native path on the Agent host',
+    browseRateLimited: 'Too many requests; please try again later',
+    browseLoadFailed: 'Failed to read directory: {error}',
+    browseUnsupported: 'The Agent version is too old to browse directories; enter the path manually or update the Agent',
+    browseBackToList: 'Back to list',
+    browseUp: 'Up',
+    browseChooseCurrent: 'Choose this directory',
+    browseChooseDir: 'Choose selected',
+    browseUseNative: 'Use system dialog',
     switchBtn: 'Switch',
     noAllowedPaths: 'No allowed directories',
     currentTag: 'Current',
@@ -6153,16 +6190,19 @@ export async function showSwitchWorkdirDialog(options = {}) {
     return merged;
   };
 
-  // 浏览按钮仅在回环本机代理时展示：原生目录选择框弹在代理端所在机器，
-  // 远端机器可能无桌面环境（弹窗用户也看不到），且工作目录语义本就是代理端机器的路径
-  let browseAvailable = false;
+  // 内置目录浏览不依赖系统原生弹窗：远端代理同样可用，因此不再按 hostname 隐藏「浏览…」；
+  // 原生弹窗只作为本机（回环）桌面环境下的次级入口
+  let canUseNativePicker = false;
   try {
     const agentCfg = await getAgentConfig();
     const hostname = agentCfg && agentCfg.url ? new URL(agentCfg.url).hostname : '';
-    browseAvailable = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+    canUseNativePicker = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
   } catch (err) {
     logger.debug('[WorkspacePanel] detect local agent failed:', err);
   }
+  const agentPlatform = detail.platform || 'linux';
+  const agentPlatformName = detail.platformName || agentPlatform;
+  const agentHostname = detail.hostname || '';
 
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -6175,12 +6215,13 @@ export async function showSwitchWorkdirDialog(options = {}) {
           <span style="flex:1;min-width:0;">${t('workspace.currentLabel')}<span style="color:var(--info-500);" title="${escapeHtml(currentWorkdir)}">${escapeHtml(currentWorkdir) || t('workspace.notSet')}</span><span>${scopeSuffix}</span></span>
           ${isBound ? `<button class="switch-workdir-restore" style="flex-shrink:0;padding:4px 10px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:12px;cursor:pointer;white-space:nowrap;">${t('workdirTag.restoreDefault')}</button>` : ''}
         </div>
-        <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
+        <div class="switch-workdir-list-label" style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.selectFromAllowed')}</div>
         <div class="switch-workdir-list" id="switchWorkdirList" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:8px;margin-bottom:10px;"></div>
+        <div class="switch-workdir-browser" hidden></div>
         <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0;">${t('workspace.orInputPath')}</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <input type="text" class="switch-workdir-manual" placeholder="${t('workspace.manualPathPlaceholder')}" style="flex:1;min-width:0;padding:8px 12px;border:1px solid var(--border-default);border-radius:6px;font-size:13px;box-sizing:border-box;" autofocus>
-          ${browseAvailable ? `<button class="switch-workdir-browse" title="${t('workspace.browseBtn')}" style="flex-shrink:0;padding:6px 14px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap;">${t('workspace.browseBtn')}</button>` : ''}
+          <button class="switch-workdir-browse" title="${t('workspace.browseBtn')}" style="flex-shrink:0;padding:6px 14px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:13px;cursor:pointer;white-space:nowrap;">${t('workspace.browseBtn')}</button>
         </div>
         ${sessionSupported ? `<label title="${t('workdirTag.setAsAgentDefaultHint')}" style="display:flex;align-items:flex-start;gap:6px;margin-bottom:10px;font-size:12px;color:var(--text-tertiary);cursor:pointer;"><input type="checkbox" class="switch-workdir-set-default" style="margin-top:1px;flex-shrink:0;"><span>${t('workdirTag.setAsAgentDefault')}</span></label>` : ''}
         <div style="display:flex;justify-content:flex-end;gap:8px;">
@@ -6191,6 +6232,8 @@ export async function showSwitchWorkdirDialog(options = {}) {
     document.body.appendChild(overlay);
 
     const listEl = overlay.querySelector('#switchWorkdirList');
+    const listLabel = overlay.querySelector('.switch-workdir-list-label');
+    const browserContainer = overlay.querySelector('.switch-workdir-browser');
     const manualInput = overlay.querySelector('.switch-workdir-manual');
     const cancelBtn = overlay.querySelector('.switch-workdir-cancel');
     const confirmBtn = overlay.querySelector('.switch-workdir-confirm');
@@ -6199,48 +6242,102 @@ export async function showSwitchWorkdirDialog(options = {}) {
     const restoreBtn = overlay.querySelector('.switch-workdir-restore');
     const setDefaultCheckbox = overlay.querySelector('.switch-workdir-set-default');
 
-    // 浏览：弹出代理端系统原生目录选择框，选中后填入输入框（仍由用户点击 Switch 确认）
-    if (browseBtn) {
-      browseBtn.addEventListener('click', async () => {
-        const originalText = browseBtn.textContent;
-        browseBtn.disabled = true;
-        browseBtn.textContent = t('workspace.picking');
-        try {
-          const raw = await pickDirectory();
-          const result = raw && typeof raw === 'object' ? raw : {};
-          const errorText = typeof result.error === 'string' ? result.error : '';
-          if (result.success && result.path) {
-            manualInput.value = result.path;
-            manualInput.focus();
-          } else if (result.success) {
-            // 用户取消选择：静默
-          } else if (result.outdated) {
-            showToast(t('workspace.browseAgentOutdated'), 'error');
-          } else if (errorText === 'busy') {
-            // 代理端已有选择窗口在等待：不重复拉起第二个弹窗
-            showToast(t('workspace.browseBusy'), 'info');
-          } else if (errorText === 'timeout' || errorText === 'client-timeout') {
-            // 进程起来了却没等到结果：多为被系统策略拦截或窗口不可见，必须提示而不是静默
-            showToast(t('workspace.browseTimeout'), 'info', 5000);
-          } else if (/^(no-dialog-tool|no-display|remote-source)/.test(errorText)) {
-            showToast(t('workspace.browseUnavailable'), 'info');
-          } else {
-            // all-backends-failed / internal 等：把各后端的真实失败原因透出来，避免“不知道怎么回事”
-            showToast(t('workspace.browseFailedWithError', { error: errorText || t('workspace.unknownError') }), 'error', 8000);
-          }
-        } catch (err) {
-          showToast(t('workspace.browseFailedWithError', { error: err.message || err }), 'error');
-        } finally {
-          browseBtn.disabled = false;
-          browseBtn.textContent = originalText;
+    const applyPickedPath = (pickedPath) => {
+      if (!pickedPath) return;
+      manualInput.value = pickedPath;
+      manualInput.focus();
+    };
+
+    // 原生弹窗（仅本机回环代理）：作为内置浏览器的次级入口，保留原有失败提示分支
+    async function runNativePicker() {
+      const originalText = browseBtn.textContent;
+      browseBtn.disabled = true;
+      browseBtn.textContent = t('workspace.picking');
+      try {
+        let result = await pickDirectory();
+        // busy 曾是不可恢复的死局：上一个窗口最长可挂 180s，期间每次点击都只拿到 busy。
+        // 现在先显式取消那个（用户已关掉面板/看不到的）旧窗口，再重试一次；
+        // 取消接口会等旧 pick 收尾，因此重试不会再撞上同一个 busy
+        if (!result.success && result.error === 'busy' && result.cancellable) {
+          await cancelPickDirectory();
+          result = await pickDirectory();
         }
+        const errorText = typeof result.error === 'string' ? result.error : '';
+        if (result.success && result.path) {
+          applyPickedPath(result.path);
+        } else if (result.success) {
+          // 用户取消选择：静默
+        } else if (errorText === 'cancelled') {
+          // 请求被取消（面板关闭/连接断开）：既非失败也不是用户取消，静默
+        } else if (result.outdated) {
+          showToast(t('workspace.browseAgentOutdated'), 'error');
+        } else if (errorText === 'busy') {
+          // 代理端已有选择窗口在等待：不重复拉起第二个弹窗
+          showToast(t('workspace.browseBusy'), 'info');
+        } else if (errorText === 'timeout' || errorText === 'client-timeout') {
+          // 进程起来了却没等到结果：多为被系统策略拦截或窗口不可见，必须提示而不是静默
+          showToast(t('workspace.browseTimeout'), 'info', 5000);
+        } else if (/^(no-dialog-tool|no-display|remote-source)/.test(errorText)) {
+          showToast(t('workspace.browseUnavailable'), 'info');
+        } else {
+          // all-backends-failed / internal 等：把各后端的真实失败原因透出来，避免“不知道怎么回事”
+          showToast(t('workspace.browseFailedWithError', { error: errorText || t('workspace.unknownError') }), 'error', 8000);
+        }
+      } catch (err) {
+        showToast(t('workspace.browseFailedWithError', { error: err.message || err }), 'error');
+      } finally {
+        browseBtn.disabled = false;
+        browseBtn.textContent = originalText;
+      }
+    }
+
+    // 内置目录浏览：纯 HTTP，本地/远端一致；选中只回填输入框，仍由用户点「切换」确认
+    const browserView = browserContainer ? createWorkdirBrowserView({
+      container: browserContainer,
+      t,
+      platform: agentPlatform,
+      platformName: agentPlatformName,
+      hostname: agentHostname,
+      listDirs: browseDirs,
+      canUseNative: canUseNativePicker,
+      onUseNative: () => { runNativePicker(); },
+      onSelect: (pickedPath) => { applyPickedPath(pickedPath); },
+      onClose: () => {
+        browserContainer.hidden = true;
+        if (listEl) listEl.hidden = false;
+        if (listLabel) listLabel.hidden = false;
+        manualInput.focus();
+      },
+    }) : null;
+
+    if (browseBtn && browserView) {
+      browseBtn.addEventListener('click', () => {
+        if (listEl) listEl.hidden = true;
+        if (listLabel) listLabel.hidden = true;
+        browserContainer.hidden = false;
+        browserView.open(manualInput.value.trim() || currentWorkdir || '');
+        browseBtn.blur();
       });
     }
+
+    // Esc 分层：浏览器视图打开时先关闭视图，再按一次才关闭整个弹窗。
+    // 挂在 document 而不是 overlay：视图内点击/重渲染后焦点会落回 body，
+    // 事件不再经过 overlay，挂 overlay 时 Esc 会静默失效
+    const onBrowserEscape = (e) => {
+      if (e.key === 'Escape' && browserView && browserView.isOpen()) {
+        e.preventDefault();
+        e.stopPropagation();
+        browserView.close();
+      }
+    };
+    document.addEventListener('keydown', onBrowserEscape, true);
 
     let closed = false;
     const cleanup = () => {
       if (closed) return;
       closed = true;
+      document.removeEventListener('keydown', onBrowserEscape, true);
+      if (browserView) browserView.destroy();
       overlay.remove();
     };
 

@@ -370,6 +370,9 @@ export async function removeAllowedPath(path) {
 // 否则扩展端会先放弃，把一次正常的选择判成超时
 export const PICK_DIRECTORY_CLIENT_TIMEOUT_MS = 200 * 1000;
 
+// 内置目录浏览是普通 HTTP 请求（agent 端 5s 上限），客户端留出 8s 兜底
+export const BROWSE_DIRS_CLIENT_TIMEOUT_MS = 8 * 1000;
+
 /**
  * 弹出 Agent 端系统原生目录选择框（仅本机代理支持，远端/无桌面环境返回 available:false）
  * 显式捕获 HTTP 状态：旧版代理端无此端点会返回 404，需区分“版本过旧”与“弹窗失败”
@@ -404,6 +407,61 @@ export async function pickDirectory() {
       return { success: false, path: null, available: true, error: 'client-timeout' };
     }
     return { success: false, path: null, error: t('workspaceMgr.requestFailed', { message: err.message }) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 取消 Agent 端正在等待的原生目录选择框
+ * busy 时旧窗口最长可挂 180s：不取消就只能一直等，取消后即可立刻重试
+ * @returns {Promise<{success: boolean, cancelled: boolean, error?: string}>}
+ */
+export async function cancelPickDirectory() {
+  return agentRequest('/api/config/pick-directory/cancel', {});
+}
+
+/**
+ * 浏览器内置目录浏览：读取 Agent 主机上的单层子目录（只读，不受工作目录沙箱限制）
+ * 与 pickDirectory 不同，本方法不依赖系统原生弹窗，远端代理同样可用
+ * @param {string} [path] 省略/空串时返回根节点集合（盘符 / 主目录）
+ * @returns {Promise<{success: boolean, path?: string|null, parent?: string|null, platform?: string,
+ *   entries?: Array<{name: string, path: string, kind: string, link: boolean}>,
+ *   roots?: Array<{name: string, path: string, kind: string}>, truncated?: boolean,
+ *   outdated?: boolean, error?: string, message?: string}>}
+ */
+export async function browseDirs(path) {
+  const config = await getAgentConfig();
+  if (!config) return { success: false, error: t('workspaceMgr.agentNotPairedDetail') };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BROWSE_DIRS_CLIENT_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${config.url}/api/fs/browse`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...buildAgentHeaders(config)
+      },
+      body: JSON.stringify(typeof path === 'string' && path ? { path } : {}),
+      signal: controller.signal
+    });
+    // 旧版代理端没有该端点：区分「版本过旧」与「读取失败」
+    if (resp.status === 404) {
+      return { success: false, path: null, outdated: true, error: 'endpoint-missing' };
+    }
+    const data = await resp.json().catch(() => null);
+    if (!data || typeof data !== 'object') {
+      return { success: false, error: 'bad-response' };
+    }
+    if (!resp.ok) {
+      return { ...data, success: false, status: resp.status };
+    }
+    return data;
+  } catch (err) {
+    if (err && err.name === 'AbortError') {
+      return { success: false, error: 'client-timeout' };
+    }
+    return { success: false, error: t('workspaceMgr.requestFailed', { message: err.message }) };
   } finally {
     clearTimeout(timer);
   }

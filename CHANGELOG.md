@@ -2,6 +2,62 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-11-08
+
+### 工作目录选择：双击进入子目录 + 行内快捷回填（内置浏览器交互修正）
+
+> 先前的「双击即回填」被用户判定不符合系统目录列表习惯（正常双击应进入下一层）。本次回退为双击进入子目录，并把快速回填放到目录行最右侧的悬停按钮上，与底部「选择此目录」并列成两个回填入口。
+
+- **`src/side_panel/workdir-browser.js`**：双击恢复为 `load(path)` 进入下一层，并新增 `pendingEnter`（同一路径 + 600ms）锁定双击目标，避免第二下点击落到异步重渲染后的子目录；目录行右侧新增 `.wdb-pick`（`✓`）按钮，点击走共用出口 `choosePath(path)`（`onSelect` + `close()`），与底部按钮行为等价；根节点层（盘符/主目录）不渲染 `✓`，只作导航（单击进入）。单击选中、`Enter` 进入、`Backspace`/`Alt+↑` 返回父级保持不变。
+- **样式**：`styles.css` 新增 `.wdb-pick`（默认 `opacity: 0` + `pointer-events: none`，`:hover` 或 `.selected` 时显现，避免误触）；移除旧的 `.wdb-enter` 箭头。
+- **文案**：`workspace-panel.js` 移除 `browseEnter`（进入此目录 / Open this folder），保留 `browseChooseDir`（选择此目录 / Choose selected）供行内按钮与底部按钮共用。
+- **Agent 端评审修复**：`agent/src/dir-browse.js` 符号链接解析改为有界并发（16 路）+ 整层 deadline，避免大量链接串行拖死一层列举；根节点探测加 10s TTL 缓存（`resetRootsCache()` 供测试/配置变更重置）。`agent/src/server.js` 的 `POST /api/config/pick-directory/cancel` 补 loopback 门控（非本机来源返回 `remote-source`，审计 `pick_directory_cancel_remote_blocked`），避免远端代理被反复取消原生弹窗。
+
+**验证**：`node --test agent/test/unit/*.test.js` → **901 例全绿**（新增「大量符号链接并发解析后全部返回」「根节点探测 TTL 缓存」两例）；`npx vitest run test/unit/workdir-browse-ui.unit.test.js` → **22 例通过**（双击用例改为「双击进入下一层」、新增「点行内 ✓ 快捷按钮回填并关闭视图」「根节点层不渲染行内 ✓」）；`npx vitest run` → **258 文件 / 4284 例通过**；`npm run build:silent` → `BUILD_SUCCESS`；`npx eslint src/ agent/` 无告警。MV3 探针 `_workdir-ext-ui.mjs` → **122/122 PASS**，`_workdir-browse-remote.mjs` → **15/15 PASS**。
+
+### 工作目录选择：MV3 探针联调 + 真机矩阵（阶段 3）
+
+- **本机探针扩展**（`test-results-probes/_workdir-ext-ui.mjs`）：新增 6b 段，真实扩展里逐项验证内置浏览：只列子目录（文件不出现）、单击选中、双击进入嵌套、面包屑回上级、行内 `✓` 悬停显现并快捷回填、Esc 分层、全程 **0 次**原生端点调用、`/api/fs/browse` 返回 404 时提示「版本过旧」。**122/122 PASS**。
+- **新增远端探针**（`test-results-probes/_workdir-browse-remote.mjs`）：代理监听 `0.0.0.0`，扩展用 `http://[::ffff:127.0.0.1]:18987` 配对（URL 规范化后 hostname 为 `[::ffff:7f00:1]`，非本机判定成立且底层仍是回环，不需要放开防火墙）。验证：远端同样展示工作目录入口、内置浏览可用、**不出现「改用系统对话框」**、不触碰原生端点、选中回填后按会话级切换生效。**15/15 PASS**。
+- **探针发现并修复一个真实缺陷**：Esc 分层处理器原先挂在 `.modal-overlay`，视图内点击/重渲染后焦点落回 `body`，keydown 不再经过 overlay，**Esc 静默失效**。改为挂在 `document`（capture）并在 `cleanup` 中移除。
+- Windows 真机矩阵（CMD/PowerShell/Git Bash/detached/远端/RDP/无权限/空目录/超长路径/旧版 Agent）写入设计文档 §8，仍需真机执行。
+
+**验证**：两个探针全绿；`npm run build:silent` → `BUILD_SUCCESS`；`npx eslint src/ agent/` 无告警。
+
+### 工作目录选择：原生弹窗降级与失败治理（阶段 2）
+
+> 内置浏览器已是默认通道，但本机「改用系统对话框」这条次级入口仍可能「点了没反应」：旧窗口最长挂 180s 期间所有点击只拿到 `busy`；窗口明明没画出来却按「用户取消」退出码结束，被静默吞掉。本次把这三处死局都改成可恢复、可解释的状态。
+
+- **busy 可取消**（`agent/src/directory-picker.js`）：并发时不再返回光秃秃的 `busy`，而是 `{ error: 'busy', cancellable: true, elapsedMs }`；新增 `cancelPickDirectory()`，强杀当前子进程并 **await 本次 pick 收尾**，保证取消返回后 `inFlight` 已释放、客户端可立刻重试。
+- **断连即 kill**（`agent/src/server.js`）：`/api/config/pick-directory` 挂 `res.on('close')`，客户端关闭侧边栏/刷新/fetch abort 时立刻 `cancelPickDirectory()`，不再让旧窗口占着单例、也不往已销毁的 res 写响应；新增 `POST /api/config/pick-directory/cancel` 端点（`not-running` 时安全返回），取消结果以 `error: 'cancelled'` 与真实失败区分，且不计入失败日志。
+- **cancel 但窗口未出现 → `no-window`**：退出码 2/0 只在**观测到窗口标记**时才算用户取消；没有标记说明窗口根本没画出来，用户没有机会点任何按钮，此时返回 `no-window` 并继续尝试下一个后端（VBS 兜底因此不再被静默短路）。
+- **扩展端自动恢复**（`workspace-panel.js` / `workspace-manager.js`）：拿到 `busy && cancellable` 时先 `cancelPickDirectory()` 再重试一次（按钮本身在请求期间已 disabled，不会误杀用户正在看的窗口）；新增 `errorText === 'cancelled'` 静默分支——那是面板关闭导致的中断，不该弹错误 toast。
+
+**验证**：`node --test agent/test/unit/*.test.js` → **899 例全绿**（`directory-picker.unit.test.js` 由 37 → 41 例：`busy` 回传 `cancellable/elapsedMs`、取消强杀 + 释放单例 + 可立即重试、无进行中时 `not-running`、无窗口标记的 exit 2 必须 `no-window`）；`npx vitest run` → **258 文件 / 4281 例通过**（`workdir-browse-ui.unit.test.js` 新增 4 例阶段 2 守卫）；`npm run build:silent` → `BUILD_SUCCESS`；`npx eslint src/ agent/` 无告警。Windows 真机矩阵仍留待阶段 3。
+
+### 工作目录选择：接入面板内置目录浏览器（阶段 1）
+
+> 「浏览…」不再依赖系统原生弹窗：改为弹窗内嵌目录浏览器（纯 HTTP 列目录），本地/远端、CMD/PowerShell/Git Bash、detached 与 RDP 断开场景行为一致。原生弹窗降级为本机次级入口。
+
+- **新增 `src/side_panel/workdir-browser.js`**：`createWorkdirBrowserView`（面包屑、根节点/盘符、目录列表、加载/空/权限/截断/旧版状态、键盘上下选择与 Enter/Backspace、单击选中 + 「选择此目录」、双击即选中并回填、行内 `›` 箭头进入下一层；**同日后续条目已回归「双击进入下一层 + 行内 `✓` 快捷回填」**）与纯函数 `buildBreadcrumbSegments` / `browseErrorTextKey`。
+- **弹窗改造 `workspace-panel.js`**：移除按 hostname 隐藏「浏览…」的门控，按钮常驻；点击后隐藏白名单列表并打开内嵌视图；Esc 分层（先关视图、再关弹窗）；选中只回填输入框，仍由用户点「切换」确认；「改用系统对话框」仅回环代理展示，原有 pickDirectory 失败 toast 分支原样保留。
+- **`workspace-manager.js` 新增 `browseDirs(path)`**：`POST /api/fs/browse`，8s 客户端超时（`BROWSE_DIRS_CLIENT_TIMEOUT_MS`），404 → `outdated`，统一走 `buildAgentHeaders`（带会话头）。
+- **样式与文案**：`styles.css` 新增 `.wdb-*` 样式；中英文各补 16 条 `browse*` 文案。
+- **Agent 端小修**：`/api/fs/browse` 的 429 响应改为机器码 `error: 'rate_limited'` + 本地化 `message`，便于前端稳定映射。
+
+**验证**：`npx vitest run test/unit/workdir-browse-ui.unit.test.js` → 15 例通过；受影响的 `workdir-switch-confirm` / `workdir-session-header-coverage` / `audit-small-fixes`（主 chunk 阈值按惯例上调至 1.175 MB）全部通过；`npx vitest run` 全量通过；`npm run build:silent` → BUILD_SUCCESS；`npx eslint` 无告警。Windows 真机矩阵仍留待阶段 3。
+
+### 工作目录选择：新增内置目录浏览接口（阶段 0）
+
+> 来源：Windows 上「浏览…」偶发点击无反应（Git Bash / PowerShell 启动 Agent 时原生弹窗不出现），且远端代理因 loopback 门控没有入口。根治方案改为面板内置目录浏览器；本次先落地 Agent 端只读浏览接口，见 `docs/superpowers/specs/2026-11-08-workdir-picker-browse-in-panel-design.md`。
+
+- **新增 `agent/src/dir-browse.js`**：`normalizeBrowsePath`（`~` 展开、绝对路径校验、尾分隔符归一、拒绝 MSYS 风格 `/c/`、UNC 共享根保留）、`listRoots`（Windows 盘符探测 + 主目录；POSIX `/` + 主目录）、`listChildDirs`（只返回目录、链接解析后必须是目录、断链剔除、大小写不敏感排序、5000 条截断）、`parentOf`、`buildBrowsePayload`、`createBrowseRateLimiter`。
+- **新增端点 `POST /api/fs/browse`**（需认证）：只读、只列目录，不返回文件与 stat；空 `path` 返回根节点集合。**不受 `checkPath` 沙箱约束**（`/api/fs/list` 保持原样），因为「切换工作目录」本质就要浏览沙箱之外的目录；浏览不授予访问权，切换仍走 `/api/config/workdir`。
+- **错误与防护**：`bad_path` / `path_too_long` / `not_a_directory` / `path_not_found` / `permission_denied` / `timeout` 机器码 + zh/en 文案；频控 30 次/10 秒（超出 429）；审计 `logFs('browse', { path, entryCount, truncated })`；单层列举不递归，链接只解析目标目录。
+- **不改动**：现有原生弹窗链路（`directory-picker.js`）与 `/api/config/pick-directory` 的 loopback 门控保持原样，仅作为本机可选增强。
+
+**验证**：`node --test agent/test/unit/*.test.js` → **895 例全绿**（新增 `dir-browse.unit.test.js` 19 例：路径规范化/盘符/只列目录/链接剔除/截断/错误映射/频控）；`agent/test/integration/api.integration.test.js` 增补 4 例（只列目录、空 path 根节点、文件 400、不存在 404，需真实 token 时运行）；`node --check agent/src/server.js` 与 `npx eslint agent/src/dir-browse.js agent/src/server.js agent/test/unit/dir-browse.unit.test.js` 无告警。
+
 ## 2026-11-03
 
 ### AI 回答全屏查看下的划词失效修复

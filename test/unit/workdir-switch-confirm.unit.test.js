@@ -104,7 +104,7 @@ function doSwitchOrDialog(src) {
 }
 
 describe('弹窗列表把「本会话目录 / 代理默认目录」也展示出来', () => {
-  const composeSeg = slice(panelSrc, 'const computeDisplayPaths = () => {', '// 浏览按钮仅在回环');
+  const composeSeg = slice(panelSrc, 'const computeDisplayPaths = () => {', '// 内置目录浏览不依赖系统原生弹窗');
   const listSeg = slice(panelSrc, 'function renderList()', '// 移除允许目录');
 
   test('展示列表 = 白名单 ∪ 默认目录 ∪ 本会话有效目录（切到列表外目录后仍看得见「当前」）', () => {

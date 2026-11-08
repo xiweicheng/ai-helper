@@ -62,8 +62,12 @@ import { setSkillExecutorLang } from './skill/executor.js';
 import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
 import { setMcpClientLang } from './mcp/client.js';
 import { getRequestI18n, t, parseAcceptLanguage } from './i18n.js';
-import { pickDirectoryNative } from './directory-picker.js';
+import { pickDirectoryNative, cancelPickDirectory } from './directory-picker.js';
+import { buildBrowsePayload, BrowseError, createBrowseRateLimiter } from './dir-browse.js';
 import { extractImagesHandler } from './documents/routes.js';
+
+// 目录浏览频控：按配对扩展（extId）限速，防止被刷成目录枚举器
+const browseRateLimiter = createBrowseRateLimiter();
 
 // Server-level i18n helper (uses env/CLI language)
 const serverLang = parseAcceptLanguage();
@@ -1218,6 +1222,22 @@ export function startServer() {
         }
       }
 
+      // === 取消正在等待的系统原生目录选择框 ===
+      // 弹窗最长可挂 180s：期间关闭侧边栏/断开的请求若不清理，旧窗口会一直占着 inFlight，
+      // 后续点击全部只能拿到 busy（观感就是「点了没反应」）。显式取消让 busy 变成可恢复状态。
+      // 与 pick-directory 保持同一来源门控：远端无法打开本机弹窗，也不应能取消本机用户的弹窗。
+      if (pathname === '/api/config/pick-directory/cancel' && req.method === 'POST') {
+        const remoteIp = req.socket.remoteAddress || '';
+        const isLocal = remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1' || remoteIp === 'localhost';
+        if (!isLocal) {
+          logSecurity('pick_directory_cancel_remote_blocked', { remote: remoteIp, extId });
+          return jsonResponse(res, 200, { success: false, cancelled: false, available: false, error: 'remote-source' });
+        }
+        const result = await cancelPickDirectory();
+        if (result.success) logSystem('directory_pick_cancelled', { extId });
+        return jsonResponse(res, 200, result);
+      }
+
       // === 弹出系统原生目录选择框（仅限本机来源） ===
       // 仅本机（loopback）代理有意义：远端机器可能无桌面环境，弹窗用户也看不到；
       // 且工作目录本就是代理端机器的路径，浏览器侧选择框语义上也不成立。
@@ -1231,7 +1251,10 @@ export function startServer() {
         }
         // 这是全服务里唯一可能耗时数分钟的端点（等用户选目录）：客户端很可能在此期间
         // 关闭侧边栏/断开。向已销毁的 res 写入会触发流错误，因此统一走安全响应。
+        let finished = false;
         const respond = (payload) => {
+          if (finished) return;
+          finished = true;
           if (res.writableEnded || res.destroyed) return;
           try {
             jsonResponse(res, 200, payload);
@@ -1239,14 +1262,23 @@ export function startServer() {
             try { logError('config', 'pick_directory_respond_failed', { error: err.message }); } catch { /* 日志失败不影响进程 */ }
           }
         };
+        // 客户端断开（关闭侧边栏 / 刷新 / fetch abort）：立刻强杀子进程并注意不要写已销毁的 res。
+        // 否则旧窗口会一直占着 inFlight，后续点击只能拿到 busy，且用户桌面会残留一个无人管的弹窗
+        res.on('close', () => {
+          if (finished) return;
+          finished = true;
+          Promise.resolve(cancelPickDirectory()).catch(() => { /* 取消失败无需上报 */ });
+          try { logSystem('directory_pick_aborted', { extId }); } catch { /* 日志失败不影响进程 */ }
+        });
         try {
           const title = typeof body.title === 'string' ? body.title.slice(0, 120) : '';
           // pickDirectoryNative 内部已做多后端兜底、超时强杀与异常吸收，此处只会拿到结果对象
           const result = await pickDirectoryNative(title);
           if (result.success && result.path) {
             logSystem('directory_picked', { path: result.path, backend: result.backend || '', extId });
-          } else if (!result.success && result.error !== 'busy') {
+          } else if (!result.success && result.error !== 'busy' && result.error !== 'cancelled') {
             // busy 是并发保护的正常分支（已有窗口在等），不算失败
+            // cancelled 是客户端主动取消/断开，也不是失败
             // 其余记录各后端真实失败原因（无桌面会话 / 被安全策略拦截 / 超时等），
             // 用户端只看得到摘要，完整 attempts 落到日志里备查
             // environment 快照记录父进程环境特征（SystemRoot/pathStartsWithPosix/stdoutIsTTY）：
@@ -1376,6 +1408,37 @@ export function startServer() {
 
         logFs('write', { path: check.resolved, size: buf.length, encoding });
         return jsonResponse(res, 200, { success: true, size: buf.length, path: check.resolved });
+      }
+
+      // 浏览目录（工作目录选择用）：只读、只列目录，不受 checkPath 沙箱约束；
+      // 供侧边栏内置目录浏览器使用，远端代理同样可用（不依赖系统原生弹窗）。
+      if (pathname === '/api/fs/browse') {
+        const verdict = browseRateLimiter.consume(extId);
+        if (!verdict.allowed) {
+          const wait = Math.max(1, Math.ceil(verdict.retryAfterMs / 1000));
+          return jsonResponse(res, 429, {
+            success: false,
+            error: 'rate_limited',
+            message: t('error.tooFrequent', { wait }),
+          });
+        }
+        try {
+          const result = await buildBrowsePayload({
+            rawPath: typeof body.path === 'string' ? body.path : '',
+          });
+          logFs('browse', {
+            path: result.path || '(roots)',
+            entryCount: result.entries.length,
+            truncated: result.truncated,
+          });
+          return jsonResponse(res, 200, result);
+        } catch (err) {
+          if (err instanceof BrowseError) {
+            return jsonResponse(res, err.httpStatus, { success: false, error: err.code, message: t(err.messageKey) });
+          }
+          logError('fs', 'browse_failed', { error: err && err.message ? err.message : String(err) });
+          return jsonResponse(res, 500, { success: false, error: t('error.browseFailed') });
+        }
       }
 
       // 列出目录
