@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>L0 顶层 · iframe 多层嵌套 + Shadow DOM 交叉</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 16px; color: #222; }
+    h1 { font-size: 18px; }
+    .region { border: 1px solid #ddd; border-radius: 8px; padding: 10px; margin: 10px 0; }
+    .tag { font-size: 12px; color: #888; }
+    [contenteditable] { min-height: 40px; border: 1px dashed #bbb; border-radius: 6px; padding: 8px; background: #fafafa; }
+    iframe { border: 1px solid #bcd; border-radius: 6px; background: #fff; }
+    .shadow-host { display: block; border: 1px solid #e0c; border-radius: 8px; padding: 8px; background: #fff6ff; }
+    #check-btn { padding: 6px 12px; border-radius: 6px; border: 1px solid #333; background: #111; color: #fff; cursor: pointer; }
+    #check-out { white-space: pre-wrap; font-family: monospace; font-size: 12px; margin-top: 8px; padding: 8px; border-radius: 6px; background: #f4f4f4; min-height: 40px; }
+    .sel { user-select: text; }
+  </style>
+</head>
+<body>
+  <h1>L0 顶层页</h1>
+  <p class="tag">本层包含：可选中文本、Jira 式 contenteditable、Shadow host（内部含 contenteditable + iframe→L1）、以及直接子 iframe→L1。</p>
+
+  <button id="check-btn">本帧污染检查</button>
+  <pre id="check-out">（在此帧选中文字触发划词后，点击检查；每个嵌套层各自带检查按钮）</pre>
+
+  <div class="region">
+    <div class="tag">① 可选中文本（顶层文档）</div>
+    <p class="sel">这是顶层页面里可以自由选中触发划词的示例句子，选中后应看到工具条由顶层渲染。</p>
+  </div>
+
+  <div class="region">
+    <div class="tag">② contenteditable 编辑区（模拟 Jira 描述）</div>
+    <div contenteditable="true" data-label="L0-编辑区②">在这里编辑描述文字…</div>
+  </div>
+
+  <div class="region">
+    <div class="tag">③ Shadow host —— 影子根内含 contenteditable + iframe→L1</div>
+    <div class="shadow-host" data-shadow="sh-l0"></div>
+    <template id="sh-l0">
+      <div style="padding:4px">
+        <p class="sel" style="color:#a0a">Shadow 内的可选中文本：选中这段测试划词。</p>
+        <div contenteditable="true" data-label="L0-Shadow编辑区③"
+             style="min-height:36px;border:1px dashed #e6a;background:#fff;padding:6px;border-radius:6px">
+          Shadow 里的编辑区…
+        </div>
+        <p style="font-size:12px;color:#888">Shadow 内嵌 iframe → L1：</p>
+        <iframe src="nested-shadow-iframe-l1.html" width="520" height="360" title="shadow->L1"></iframe>
+      </div>
+    </template>
+  </div>
+
+  <div class="region">
+    <div class="tag">④ 直接子 iframe → L1</div>
+    <iframe src="nested-shadow-iframe-l1.html" width="520" height="360" title="direct->L1"></iframe>
+  </div>
+
+  <script src="nested-shadow-checker.js"></script>
+  <script>document.addEventListener('DOMContentLoaded', function(){ window.AIShadowNest.init(); });</script>
+</body>
+</html>

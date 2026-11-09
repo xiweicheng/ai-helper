@@ -222,9 +222,27 @@ logger.debug('[SelectionToolbar] moduleload isTopFrame:', isTopFrame, 'top===win
 let lastSentIframeText = '';              // 防止iframe重复发送相同选区
 let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区数据 { text, x, y }
 
-// frameset 页面没有 document.body，降级挂载到 document.documentElement
+// 浮层专用挂载容器：挂到 documentElement（<body> 的父级），确保浮层节点绝不落入任何
+// 可编辑子树——无论是 iframe 型富文本编辑器（其 designMode body 即编辑区，content script
+// 因 all_frames + match_origin_as_fallback 会注入其中），还是顶层文档里的 contenteditable。
+// 否则宿主保存时会连同工具条文字一起被序列化进正文（Jira 描述/备注污染 bug 的根因）。
+// display:contents 不生成盒子，fixed/popover 子节点仍按视口定位并进入 top layer。
+function getOverlayHost() {
+  let host = document.getElementById('aih-overlay-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'aih-overlay-host';
+    host.setAttribute('data-aih', '');
+    host.setAttribute('contenteditable', 'false');
+    host.style.display = 'contents';
+    (document.documentElement || document.body).appendChild(host);
+  }
+  return host;
+}
+
+// 追加到专用 host 末尾，保留“移动到末尾=置顶”的原有 z-order 语义（frameset 无 body 亦可用）
 function appendToDoc(el) {
-  (document.body || document.documentElement).appendChild(el);
+  getOverlayHost().appendChild(el);
 }
 
 // ==================== 浮层 top layer 管理 ====================
@@ -233,9 +251,10 @@ function appendToDoc(el) {
 // 仍被遮挡时探测出遮挡源临时隐藏、我方全部收起后还原。
 // 不支持 Popover API 的老 Chromium 回退为 body 挂载 + 内联 display（既有行为）。
 
-/** 标记为我方浮层节点，遮挡探测据此豁免 */
+/** 标记为我方浮层节点：遮挡探测据此豁免；contenteditable=false 向富文本声明非编辑区 */
 function markAih(el) {
   el.setAttribute('data-aih', '');
+  el.setAttribute('contenteditable', 'false');
 }
 
 function openFloat(el, displayValue) {
@@ -1889,6 +1908,7 @@ function showCopyToast(text) {
   const toast = document.createElement('div');
   toast.id = 'aih-copy-toast';
   toast.setAttribute('data-aih', '');
+  toast.setAttribute('contenteditable', 'false');
   toast.textContent = text || t('selToolbar.copied');
   toast.style.cssText = `
     position: fixed;
@@ -2264,6 +2284,8 @@ if (isExtensionValid()) {
 // 语言切换时刷新工具栏缓存并重建 DOM（内置工具名称随语言变化）
 subscribe(() => {
   refreshToolbarCache();
+  // 仅渲染帧（顶层）重建浮层 DOM；子帧本就未创建，避免在此重新注入编辑器 iframe
+  if (!isTopFrame) return;
   // 重建工具栏 DOM 以反映新语言的工具名称
   if (toolbarEl) {
     toolbarEl.remove();
@@ -2283,8 +2305,14 @@ subscribe(() => {
 // ==================== 导出的启动/停止函数 ====================
 export function initSelectionToolbar() {
   injectStyles();
-  createToolbar();
-  createResultPanel();
+  // 浮层 DOM 只在渲染帧（顶层）创建：子 iframe 仅检测选区并上报给顶层帧渲染，
+  // 自身那份工具条从不显示、也无任何路径引用（各 showToolbar 调用点均有 isTopFrame
+  // 门控，hideToolbar/hideResultPanel/IFRAME_CLICK_DISMISS 均对空值做了保护），无需创建；
+  // 若在编辑器 iframe 里创建，仍会被宿主保存时误序列化进正文。
+  if (isTopFrame) {
+    createToolbar();
+    createResultPanel();
+  }
   loadToggleState();
   loadThemeState();
 
