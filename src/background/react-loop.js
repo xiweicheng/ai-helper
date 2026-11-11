@@ -2911,7 +2911,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           // 2. action 级确认（合并工具的特定 action，如 manage_tab 的 close）
           // 3. 内网访问确认：fetch_url / manage_tab(open) 的目标被闸门拒绝时，询问本次是否放行
           const toolLevelConfirm = CONFIRMATION_REQUIRED_TOOLS.has(toolName);
-          const actionLevelConfirm = CONFIRMATION_ACTION_MAP[toolName]?.includes(toolArgs.action);
+          const actionLevelConfirm = CONFIRMATION_ACTION_MAP[toolName]?.includes(String(toolArgs.action || '').toLowerCase());
           const needsConfirmation = (toolLevelConfirm || actionLevelConfirm) && reactConfig.toolConfirmationEnabled;
           let networkTarget = await detectNetworkGateTarget(toolName, toolArgs);
           // 与敏感操作统一口径：目标模式无人值守（autoApprove 已授予）下，敏感操作本来就是

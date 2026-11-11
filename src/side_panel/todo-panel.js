@@ -30,6 +30,7 @@ import {
   clearCompletedTodos,
   importTodos,
   getTodoGroups,
+  loadTodos,
   subscribeTodos,
 } from './todo-manager.js';
 import { downloadTodoExport, pickTodoImportFile, readTodoImportFile } from './todo-io.js';
@@ -390,6 +391,10 @@ export function initTodoPanel() {
   }, true);
 
   subscribeTodos(() => render());
+  // AI 工具（后台）直接写 IndexedDB，绕过了本面板的内存缓存：收到广播后回读一次
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'TODO_CHANGED') loadTodos().catch(() => {});
+  });
   // 语言切换：骨架上的 data-i18n 由 applyI18n 改，列表/进度/状态提示是 JS 拼的 → 自己重渲一次
   subscribe(() => {
     applyI18n(containerEl);

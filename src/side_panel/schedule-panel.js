@@ -663,6 +663,11 @@ export function initSchedulePanel() {
     }
   });
 
+  // AI 工具（后台）增删改定时任务：面板未感知到变化，收到广播后刷新
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'SCHEDULED_TASKS_CHANGED') refreshTaskList().catch(() => {});
+  });
+
   updateScheduleInputs();
   setPanelOpen(false);
   // 初始同步一次：覆盖侧边栏在任务执行中（重新）加载、错过开始广播的场景

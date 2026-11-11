@@ -727,6 +727,8 @@ export default {
     agent_search: '在代理机器上搜索文件或文件内容',
     agent_skill: '加载或运行 Skill（run=工作流，load=Agent Skill）',
     manage_agent: '查看或切换已配对的 AI 代理',
+    manage_todo: '新增、查询、修改或删除待办',
+    manage_schedule: '新增、查询、修改或删除定时任务',
     exec_log: '提取执行日志，分析成功路径与失败教训',
     clarify_question: '向用户提问澄清，提供选项供选择',
     plan_task: '将复杂任务规划拆解为子任务',

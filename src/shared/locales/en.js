@@ -727,6 +727,8 @@ export default {
     agent_search: 'Search files or content on agent machine',
     agent_skill: 'Load or run a Skill (run=Workflow, load=Agent Skill)',
     manage_agent: 'List or switch paired AI agents',
+    manage_todo: 'Create, list, update or delete todos',
+    manage_schedule: 'Create, list, update or delete scheduled tasks',
     exec_log: 'Extract execution logs to analyze successful paths and failure lessons',
     clarify_question: 'Ask user a clarifying question with options',
     plan_task: 'Plan and decompose complex task into subtasks',

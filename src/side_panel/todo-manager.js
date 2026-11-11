@@ -77,6 +77,8 @@ export async function loadTodos() {
     logger.error('[Todo] load todos failed:', e);
     state.todos = [];
   }
+  // 数据可能被其他上下文（后台 AI 工具）改过：载入后必须通知订阅者，否则徽标/列表停留在旧值
+  emitChange();
 }
 
 /** 两段式分组结果（待办 / 已完成） */

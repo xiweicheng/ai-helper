@@ -125,6 +125,74 @@ export const AI_TOOLS = [
       }
     }
   },
+  {
+    id: 'manage_todo',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    confirmationActions: ['delete'],
+    type: 'function',
+    function: {
+      name: 'manage_todo',
+      description: 'Create, list, update or delete items in the user\'s To-do panel. Call it whenever the user asks to add, check, complete, reprioritize, reschedule or remove a personal todo. For update/delete you must first obtain the id via action=list. This tool does NOT remind the user; if a reminder/timed run is needed, also create a scheduled task with manage_schedule.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['create', 'list', 'update', 'delete'], description: 'create: add one todo; list: query todos; update: change fields or status; delete: remove one todo' },
+          id: { type: 'string', description: 'Required for update/delete: todo id returned by action=list' },
+          title: { type: 'string', description: 'Required for create: todo title' },
+          note: { type: 'string', description: 'Optional note/description' },
+          priority: { type: 'string', enum: ['high', 'medium', 'low'], description: 'Priority; omit to leave unset' },
+          dueAt: { type: 'string', description: 'Deadline as absolute local time like "2026-11-12 18:00" (or ISO string / epoch ms). Never pass relative wording; compute the absolute date yourself from the current time' },
+          link: { type: 'string', description: 'Related URL (http/https)' },
+          status: { type: 'string', enum: ['pending', 'doing', 'done'], description: 'For update: new status (done = mark completed)' },
+          scope: { type: 'string', enum: ['active', 'done', 'all'], description: 'For list: which group to return, default active' },
+          limit: { type: 'integer', description: 'For list: max items to return, default 50' }
+        },
+        required: ['action']
+      }
+    }
+  },
+  {
+    id: 'manage_schedule',
+    category: 'ai_collaboration',
+    execution: 'background',
+    parallelizable: false,
+    requiresConfirmation: false,
+    confirmationActions: ['delete'],
+    type: 'function',
+    function: {
+      name: 'manage_schedule',
+      description: 'Create, list, update, enable/disable, delete or run-now the user\'s scheduled tasks. A scheduled task automatically runs the given prompt in the background and writes the result into a chat session. For update/toggle/delete/run you must first obtain the id via action=list.',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['create', 'list', 'update', 'toggle', 'delete', 'run'], description: 'create: add a task; list: query tasks; update: change fields; toggle: enable/disable; delete: remove; run: execute immediately' },
+          id: { type: 'string', description: 'Required for update/toggle/delete/run: task id returned by action=list' },
+          name: { type: 'string', description: 'Required for create: short task name' },
+          prompt: { type: 'string', description: 'Required for create: instruction executed on every run' },
+          description: { type: 'string', description: 'Optional task description' },
+          schedule: {
+            type: 'object',
+            description: 'Required for create: when to run',
+            properties: {
+              type: { type: 'string', enum: ['once', 'interval', 'cron'], description: 'once: single run; interval: repeat every N; cron: 5-field cron expression' },
+              value: { type: 'string', description: 'once+absolute: "2026-11-12 09:00" (local time); once+relative: interval like "30m"; interval: "30m"/"2h"/"1d"; cron: e.g. "0 9 * * *"' },
+              onceMode: { type: 'string', enum: ['absolute', 'relative'], description: 'Only for type=once, default absolute' }
+            },
+            required: ['type', 'value']
+          },
+          contextUrl: { type: 'string', description: 'Optional page URL whose content is attached to each run' },
+          contextMode: { type: 'string', enum: ['fetch', 'url_only'], description: 'fetch: read page text; url_only: pass URL only' },
+          maxRuns: { type: 'integer', description: 'For interval tasks: stop after this many runs' },
+          endAt: { type: 'string', description: 'For interval tasks: stop after this absolute local time, e.g. "2026-12-31 23:59"' },
+          enabled: { type: 'boolean', description: 'Default true; false creates/disables a paused task' }
+        },
+        required: ['action']
+      }
+    }
+  },
 ];
 
 // M-new-1：doneCriteria 子任务达标断言的 schema。默认**不**随 AI_TOOLS 静态下发

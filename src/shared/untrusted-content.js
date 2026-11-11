@@ -50,6 +50,8 @@ export const KNOWN_SAFE_TOOLS = new Set([
   'notify', 'qrcode', 'download_file',
   // 协作（用户输入/模型自产）
   'plan_task', 'clarify_question', 'preview_ui', 'dispatch_task', 'take_note',
+  // 待办/定时任务（本地库操作状态 + 用户自己录入的标题，不含外部页面原文）
+  'manage_todo', 'manage_schedule',
   // Agent 管理（操作状态）
   'agent_trash', 'agent_skill', 'manage_agent',
   // RAG 管理（操作状态/用户域元数据）

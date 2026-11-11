@@ -22,6 +22,7 @@ import { logger } from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
 import { RAG_TOOLS } from './tools/rag-tools.js';
 import { executeSnapshotQuery, shouldRouteRefTool, routeSingleRefTool, routeFillForm } from './tools/snapshot-orchestrator.js';
+import { executeManageTodo, executeManageSchedule } from './tools/productivity-actions.js';
 import { notifyInteractionRequired, clearInteractionNotification } from './notifier.js';
 import { requestToolConfirmation, hasLoopApproval, hasGoalUnattended, consumeNetworkAccessGrant } from './react-loop.js';
 
@@ -2319,6 +2320,8 @@ const TOOL_HANDLERS = {
   exec_log: executeExtractExecutionLog,
   query_elements: executeSnapshotQuery,
   read_image: executeReadImage,
+  manage_todo: executeManageTodo,
+  manage_schedule: executeManageSchedule,
 };
 
 // 从 RAW_TOOLS 自动派生 BG_HANDLERS（仅包含 execution: 'background' 且有 handler 的工具）
