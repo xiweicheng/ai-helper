@@ -162,6 +162,180 @@ export function handleMouseOut(event) {
   }
 }
 
+// ==================== 目录与正文章节联动（滚动高亮 + 目录自动跟滚） ====================
+
+/** 当前目录的滚动联动清理函数 */
+let tocScrollSpyCleanup = null;
+/** 把当前激活目录项滚入目录可视区（仅在目录展开时生效） */
+let tocScrollActiveIntoView = null;
+
+/** 查找元素的可滚动祖先（找不到返回 null） */
+function findScrollParent(el) {
+  let node = el.parentElement;
+  while (node && node !== document.body && node !== document.documentElement) {
+    const style = getComputedStyle(node);
+    const oy = style.overflowY;
+    if ((oy === 'auto' || oy === 'scroll' || oy === 'overlay') && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * 绑定「正文滚动 → 目录高亮」联动
+ * @param {HTMLElement} tocContainer 目录容器
+ * @param {HTMLElement} contentRoot 正文根节点（消息 / 预览 Markdown）
+ * @param {HTMLElement[]} headings 正文标题集合
+ * @param {HTMLElement} panel 目录面板
+ */
+function bindTocScrollSpy(tocContainer, contentRoot, headings, panel) {
+  unbindTocScrollSpy();
+  if (headings.length === 0) return;
+
+  const scrollEl = findScrollParent(contentRoot);
+  const tocContent = tocContainer.querySelector('.message-toc-content');
+  const items = Array.from(tocContainer.querySelectorAll('.message-toc-item'));
+  const itemById = new Map(items.map((it) => [it.dataset.target, it]));
+
+  let rafId = 0;
+  let activeId = null;
+  let activeIndex = -1;
+
+  /** 目录项滚入目录可视区（居中），避免高亮项被裁在面板外 */
+  const ensureItemVisible = (item) => {
+    if (!tocContent) return;
+    const itemRect = item.getBoundingClientRect();
+    const listRect = tocContent.getBoundingClientRect();
+    if (itemRect.top < listRect.top || itemRect.bottom > listRect.bottom) {
+      tocContent.scrollTop += itemRect.top - listRect.top - (listRect.height - itemRect.height) / 2;
+    }
+  };
+
+  /** 正文可视区（找不到滚动祖先时回退到窗口视口，并裁剪到窗口范围内） */
+  const getViewport = () => {
+    const winTop = 0;
+    const winBottom = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!scrollEl) return { top: winTop, bottom: winBottom };
+    const rect = scrollEl.getBoundingClientRect();
+    return {
+      top: Math.max(rect.top, winTop),
+      bottom: Math.min(rect.top + scrollEl.clientHeight, winBottom),
+    };
+  };
+  const isScrollAtBottom = () => {
+    if (scrollEl) {
+      return scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 2;
+    }
+    const doc = document.documentElement;
+    return window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+  };
+  const isScrollAtTop = () => {
+    if (scrollEl) return scrollEl.scrollTop <= 2;
+    return window.scrollY <= 2;
+  };
+
+  const update = () => {
+    rafId = 0;
+    if (!tocContainer.isConnected) return;
+
+    // 判定规则：
+    // 1）基准章节 = 最后一个已越过可视区顶部的标题（正在阅读的章节）
+    // 2）下一个章节的标题一旦进入可视区上部 75%，就提前切到下一章节，
+    //    避免「标题已经明显出现在视野里，目录却还停在上一个章节」的滞后感
+    // 3）已切到下一章节后，要等它的标题完全移出可视区才回退，防止边界处来回抖动
+    const view = getViewport();
+    const viewTop = view.top;
+    const viewBottom = view.bottom;
+    const viewHeight = Math.max(viewBottom - viewTop, 1);
+
+    const tops = headings.map((heading) => heading.getBoundingClientRect().top);
+
+    let anchorIndex = 0;
+    for (let i = 0; i < tops.length; i++) {
+      if (tops[i] <= viewTop) {
+        anchorIndex = i;
+      } else {
+        break;
+      }
+    }
+
+    const advanceLine = viewTop + viewHeight * 0.75;
+    let targetIndex = anchorIndex;
+    const nextIndex = anchorIndex + 1;
+    if (nextIndex < tops.length) {
+      const nextTop = tops[nextIndex];
+      if (activeIndex === nextIndex) {
+        if (nextTop <= viewBottom) targetIndex = nextIndex;
+      } else if (nextTop <= advanceLine) {
+        targetIndex = nextIndex;
+      }
+    }
+
+    // 顶部 / 底部边界：直接落到第一个 / 最后一个章节
+    if (isScrollAtTop()) {
+      targetIndex = 0;
+    } else if (isScrollAtBottom()) {
+      targetIndex = headings.length - 1;
+    }
+
+    const current = headings[targetIndex];
+    if (!current || current.id === activeId) return;
+
+    activeIndex = targetIndex;
+    activeId = current.id;
+    items.forEach((item) => item.classList.toggle('active', item.dataset.target === activeId));
+    // 目录展开时才跟随滚动，折叠态只记录高亮
+    const activeItem = itemById.get(activeId);
+    if (activeItem && panel.classList.contains('expanded')) {
+      ensureItemVisible(activeItem);
+    }
+  };
+
+  const schedule = () => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(update);
+  };
+
+  // scroll 事件不冒泡，用捕获阶段统一兜住任意滚动容器（含滚动条拖动、程序化平滑滚动），
+  // 避免因滚动祖先判断偏差导致高亮停留在旧章节
+  document.addEventListener('scroll', schedule, { capture: true, passive: true });
+  window.addEventListener('resize', schedule, { passive: true });
+  // 兜底：标题进出可视区 / 布局高度变化时也会触发，覆盖未派发 scroll 的场景
+  const io = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver(schedule, { threshold: [0, 0.25, 0.5, 0.75, 1] })
+    : null;
+  if (io) headings.forEach((heading) => io.observe(heading));
+
+  update();
+
+  tocScrollActiveIntoView = () => {
+    // 展开瞬间先按当前滚动位置校准一次，再滚动高亮项
+    update();
+    if (!activeId) return;
+    const item = itemById.get(activeId);
+    if (item) ensureItemVisible(item);
+  };
+
+  tocScrollSpyCleanup = () => {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+    document.removeEventListener('scroll', schedule, { capture: true });
+    window.removeEventListener('resize', schedule);
+    if (io) io.disconnect();
+  };
+}
+
+/** 解绑正文滚动联动 */
+function unbindTocScrollSpy() {
+  if (tocScrollSpyCleanup) {
+    tocScrollSpyCleanup();
+    tocScrollSpyCleanup = null;
+  }
+  tocScrollActiveIntoView = null;
+}
+
 /**
  * 显示目录
  */
@@ -261,6 +435,7 @@ export function showMessageToc(messageDiv, headings) {
     if (tocLocked) {
       panel.classList.add('expanded', 'locked');
       clampPanelToViewport(panel);
+      requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
     } else {
       panel.classList.remove('locked');
     }
@@ -281,6 +456,8 @@ export function showMessageToc(messageDiv, headings) {
   toggle.addEventListener('mouseenter', () => {
     panel.classList.add('expanded');
     clampPanelToViewport(panel);
+    // 展开后把当前章节高亮项滚入目录可视区
+    requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
   });
   
   // 点击切换展开/收起
@@ -288,6 +465,7 @@ export function showMessageToc(messageDiv, headings) {
     const expanded = panel.classList.toggle('expanded');
     if (expanded) {
       clampPanelToViewport(panel);
+      requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
     } else {
       releasePanelClamp(panel);
     }
@@ -296,6 +474,8 @@ export function showMessageToc(messageDiv, headings) {
   // 鼠标进入目录面板时保持展开
   panel.addEventListener('mouseenter', () => {
     panel.classList.add('expanded');
+    // 进入面板时按当前滚动位置重新校准高亮
+    requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
   });
   
   // 点击目录项滚动定位
@@ -319,7 +499,10 @@ export function showMessageToc(messageDiv, headings) {
       // panel.classList.remove('expanded');
     });
   });
-  
+
+  // 正文滚动 → 目录章节高亮联动
+  bindTocScrollSpy(container, messageDiv, headingsArray, panel);
+
   // 默认折叠，用户需要点击按钮展开
 }
 
@@ -332,7 +515,10 @@ export function hideMessageToc() {
     clearTimeout(state.tocHideTimer);
     state.tocHideTimer = null;
   }
-  
+
+  // 解绑正文滚动联动，避免残留监听
+  unbindTocScrollSpy();
+
   if (state.messageTocContainer) {
     state.messageTocContainer.remove();
     state.messageTocContainer = null;

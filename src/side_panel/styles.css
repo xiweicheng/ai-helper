@@ -12800,6 +12800,18 @@ body {
   color: var(--text-primary);
 }
 
+/* 当前可视区章节：与正文滚动联动高亮 */
+.message-toc-item.active {
+  background: rgba(var(--brand-rgb), 0.12);
+  color: var(--brand-600);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--brand-500);
+}
+
+.message-toc-item.active .toc-anchor {
+  color: var(--brand-500);
+}
+
 .message-toc-item.level-2 {
   padding-left: 22px;
 }
