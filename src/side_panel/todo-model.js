@@ -387,14 +387,15 @@ function oneLine(text) {
  * 单条目那一行：批量清单与单条组合文本共用，避免两处格式漂移
  * 已完成 → [x]；待处理 / 处理中 → [ ]（处理中加 ⏳）
  */
-function itemLine(todo, now) {
+function itemLine(todo, now, withCheckbox = true) {
   const url = normalizeLink(todo.link).url;
   const link = url ? ` [${linkLabel(todo)}](${url})` : '';
   if (todo.status === TODO_STATUS.DONE) {
     const stamp = Number.isFinite(todo.completedAt)
       ? `（${t('todoTime.doneStamp', { date: formatTodoDate(todo.completedAt, now) })}）`
       : '';
-    return `- [x] ${oneLine(todo.title)}${stamp}${link}`;
+    const box = withCheckbox ? '- [x] ' : '';
+    return `${box}${oneLine(todo.title)}${stamp}${link}`;
   }
   const flag = todo.status === TODO_STATUS.DOING ? '⏳ ' : '';
   const due = Number.isFinite(todo.dueAt)
@@ -404,7 +405,8 @@ function itemLine(todo, now) {
   const prio = todo.priority === TODO_PRIORITY.HIGH
     ? `（${t('todoDigest.highPriority')}）`
     : '';
-  return `- [ ] ${flag}${oneLine(todo.title)}${prio}${due}${link}`;
+  const box = withCheckbox ? '- [ ] ' : '';
+  return `${box}${flag}${oneLine(todo.title)}${prio}${due}${link}`;
 }
 
 /** 备注行：缩进挂在条目下（没有备注返回空串） */
@@ -419,14 +421,14 @@ function noteLine(todo) {
  * 标题、状态、优先级、截止、备注、链接一次带全：拖到输入框后能直接追问 AI
  * 做规划，不用再回面板里把信息找一遍。
  * @param {Object} todo
- * @param {{now?: number}} [options]
+ * @param {{now?: number, plain?: boolean}} [options] plain 为 true 时去掉行首的 Markdown 勾选框前缀
  * @returns {string} 无标题时返回空串
  */
 export function buildItemDigest(todo, options = {}) {
   const item = normalizeTodo(todo);
   if (!item.title) return '';
   const now = options.now || Date.now();
-  const lines = [itemLine(item, now)];
+  const lines = [itemLine(item, now, !options.plain)];
   const note = noteLine(item);
   if (note) lines.push(note);
   return lines.join('\n');

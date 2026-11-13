@@ -1595,9 +1595,9 @@ function fillInputItem(id) {
   showToast(t('todo.filledToast'), 'success');
 }
 
-/** 复制一条的组合文本（与填入 / 拖拽同一份口径） */
+/** 复制一条的组合文本（与填入 / 拖拽同一份口径，但不带 Markdown 勾选框前缀） */
 function copyItem(id) {
-  const digest = itemDigest(id);
+  const digest = itemDigest(id, { plain: true });
   if (!digest) {
     showToast(t('todo.emptyDigestToast'), 'info');
     return;

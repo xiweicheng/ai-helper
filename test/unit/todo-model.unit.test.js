@@ -495,6 +495,13 @@ describe('单条组合文本（填入输入框 / 拖拽 / 复制共用）', () =
     expect(buildItemDigest(null, { now: NOW })).toBe('');
   });
 
+  test('plain 模式去掉 Markdown 勾选框前缀，只留待办内容', () => {
+    expect(buildItemDigest(todo({ title: '写方案' }), { now: NOW, plain: true }))
+      .toBe('写方案');
+    expect(buildItemDigest(todo({ title: '搭环境', status: TODO_STATUS.DONE, completedAt: new Date(2026, 9, 28).getTime() }), { now: NOW, plain: true }))
+      .toBe('搭环境（10月28日 完成）');
+  });
+
   test('与批量清单首行口径一致：两处格式不许漂移', () => {
     const pending = todo({ title: '写方案', status: TODO_STATUS.DOING, priority: TODO_PRIORITY.HIGH, order: 0 });
     const done = todo({ title: '搭环境', status: TODO_STATUS.DONE, completedAt: NOW, order: 1 });
