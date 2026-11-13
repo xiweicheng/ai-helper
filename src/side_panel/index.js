@@ -112,6 +112,13 @@ registerTranslations('zh', {
     welcomeSubtitle: '输入您的问题，AI 助手将为您解答',
     sendBtnStop: '停止生成',
     sendBtnSend: '发送',
+    defaultPromptImage: '请看看这张图片，描述其中的内容',
+    defaultPromptFile: '请阅读我附上的文件，并总结要点',
+    defaultPromptAttachments: '请查看我附上的图片和文件，并总结要点',
+    defaultPromptKnowledge: '请根据我引用的知识库内容进行总结和回答',
+    defaultPromptPage: '请总结这个网页的主要内容',
+    defaultPromptSelection: '请基于我提供的内容继续',
+    defaultPromptContext: '请根据我提供的上下文继续',
     imageNotEnabled: '未启用图片识别，图片已作为文件附件处理',
     screenshotFailed: '截图失败，请重试',
     auditCategoryAuth: '认证',
@@ -188,6 +195,13 @@ registerTranslations('en', {
     welcomeSubtitle: 'Enter your question and the AI assistant will help you',
     sendBtnStop: 'Stop generating',
     sendBtnSend: 'Send',
+    defaultPromptImage: 'Please look at the attached image and describe what you see',
+    defaultPromptFile: 'Please read the attached file and summarize the key points',
+    defaultPromptAttachments: 'Please review the attached image and file and summarize the key points',
+    defaultPromptKnowledge: 'Please answer based on the knowledge base content I referenced',
+    defaultPromptPage: 'Please summarize the main content of this page',
+    defaultPromptSelection: 'Please continue based on the content I provided',
+    defaultPromptContext: 'Please continue based on the context I provided',
     imageNotEnabled: 'Image recognition not enabled, image attached as file',
     screenshotFailed: 'Screenshot failed, please retry',
     auditCategoryAuth: 'Auth',
@@ -2971,9 +2985,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const QUEUE_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11"/><path d="M3 12h11"/><path d="M3 18h7"/><path d="M17.5 10v8"/><path d="M14.5 15.5L17.5 18.5l3-3"/></svg>';
   const stopCompanionBtn = document.getElementById('stopCompanionBtn');
 
-  /** 第三态：生成中 + 输入框有草稿 -> 主按钮的语义是「加入队列」（单一真相源） */
+  /** 第三态：生成中 + 输入框有草稿或挂了附件/上下文 -> 主按钮的语义是「加入队列」（单一真相源） */
   function isQueueMode() {
-    const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
+    const hasDraft = !!(userInput && userInput.value && userInput.value.trim()) || currentInputHasContext();
     return state.isGenerating && hasDraft;
   }
 
@@ -3013,9 +3027,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendMessage();
       return;
     }
-    const hasDraft = !!(userInput && userInput.value && userInput.value.trim());
+    const hasDraft = !!(userInput && userInput.value && userInput.value.trim()) || currentInputHasContext();
     if (hasDraft) {
-      // 生成中带内容：入队，内容不再被静默吞掉
+      // 生成中带内容（文字或附件/上下文）：入队，内容不再被静默吞掉
       void enqueueFromInput();
     } else {
       cancelStreamingTask(sendBtn);
@@ -3105,6 +3119,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 监听生成状态变化与草稿变化，自动切换按钮形态
   document.addEventListener('generating-state-changed', updateSendBtnState);
   userInput.addEventListener('input', updateSendBtnState);
+  // 图片/文件增删不触发 input 事件，必须单独同步按钮形态
+  document.addEventListener('input-attachments-changed', updateSendBtnState);
   // 语音草稿是程序写入的，不派发 input 事件（口述里出现 / @ $ 会误触选择器），
   // 所以它单独发一个信号：否则生成中用语音补一句，按钮仍是「停止」，点下去会中断生成
   document.addEventListener('voice-draft-written', updateSendBtnState);

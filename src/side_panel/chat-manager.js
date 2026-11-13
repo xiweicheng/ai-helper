@@ -19,7 +19,7 @@ import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
-import { enqueueFromInput } from './queue-runner.js';
+import { enqueueFromInput, resolveDefaultPrompt } from './queue-runner.js';
 import { prepareGoalForSend, summarizeGoalAttachments } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
@@ -1048,7 +1048,10 @@ export async function sendMessage(opts = {}) {
   const activeCompactionForSend = isActive ? state.activeCompaction : (sess.contextCompaction || null);
 
   // 队列接力复用同一发送管线：文本由调用方给定，其余（上下文装配、气泡、历史落盘）完全一致
-  const text = String(opts.text != null ? opts.text : (userInput?.value || '')).trim();
+  const rawText = String(opts.text != null ? opts.text : (userInput?.value || '')).trim();
+  // 只有图片/文件/引用等上下文、没有正文时用默认提示词补位：
+  // 「粘了图却必须再打一句话才能发」不是合理的门槛，让模型从默认指令开始处理即可。
+  const text = rawText || resolveDefaultPrompt(inputCtx);
   if (!text) return { ok: false, reason: 'empty' };
   // 真要发送了：语音输入必须当场收尾（Enter / 发送按钮 / 一键发送都走这里）。
   // 采集还在跑的话，后续 partial/final 会继续往输入框写，而输入框马上被清空 ——
@@ -1249,7 +1252,8 @@ export async function sendMessage(opts = {}) {
     addMessage('user', buildUserContent(text, inputCtx.attachedImages), true, [], null, false, finalText, userMsgId, attachedFilesSnapshot, false, userMsgTimestamp);
     state.messageHistory.push(userMsgEntry);
     saveChatHistory();
-    addToInputHistory(text);
+    // 默认提示词是系统补的，不进输入历史（否则按 ↑ 会翻出一句用户没写过的话）
+    if (rawText) addToInputHistory(rawText);
     state.inputHistoryIndex = -1;
   } else {
     history.push(userMsgEntry);

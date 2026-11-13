@@ -442,6 +442,8 @@ export function compressAndAttachImage(blob) {
  * 从 chat-manager 上下文渲染图片预览
  */
 export function renderImagePreviewsFromChat() {
+  // 附件变化通知入口层刷新发送按钮形态（生成中“发送”会变成“加入队列”）
+  document.dispatchEvent(new CustomEvent('input-attachments-changed'));
   const previewBar = document.getElementById('imagePreviewBar');
   if (!previewBar) return;
 

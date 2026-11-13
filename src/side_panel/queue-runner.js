@@ -101,6 +101,32 @@ export function currentInputHasContext() {
   return hasContext(captureContext());
 }
 
+/**
+ * 输入区只有附件/上下文、没有任何正文时的默认提示词。
+ * 粘了图/引了资料就能直接发出去，不该强求用户再补一句话；
+ * 这里按挂载的类型给一条最贴近的指令，让模型知道该对这份内容做什么。
+ * @param {Object} snapshot captureContext() 的形状
+ * @returns {string} 空字符串表示没有任何可用上下文
+ */
+export function resolveDefaultPrompt(snapshot) {
+  const snap = snapshot || {};
+  const hasImages = (snap.attachedImages || []).length > 0;
+  const hasFiles = (snap.attachedFiles || []).length > 0;
+  if (hasImages && hasFiles) return t('sidePanel.defaultPromptAttachments');
+  if (hasImages) return t('sidePanel.defaultPromptImage');
+  if (hasFiles) return t('sidePanel.defaultPromptFile');
+  if ((snap.knowledgeRefs || []).length > 0) return t('sidePanel.defaultPromptKnowledge');
+  if (snap.selectedPage) return t('sidePanel.defaultPromptPage');
+  if ((snap.quotedContextText && snap.quotedContextText.trim())
+    || (snap.selectedContextText && snap.selectedContextText.trim())) {
+    return t('sidePanel.defaultPromptSelection');
+  }
+  if ((snap.selectedSkills || []).length > 0 || (snap.selectedMcpServices || []).length > 0) {
+    return t('sidePanel.defaultPromptContext');
+  }
+  return '';
+}
+
 /** 入队时把上下文从输入区取走（清空 state 与对应指示器），避免下一条消息重复携带 */
 function detachContextFromInput() {
   const snapshot = captureContext();
@@ -243,7 +269,10 @@ export async function releaseAttachments(itemId) {
  */
 export async function enqueueFromInput({ autoDrain = true } = {}) {
   const userInput = document.getElementById('userInput');
-  const text = (userInput?.value || '').trim();
+  const rawText = (userInput?.value || '').trim();
+  // 只有图片/文件/引用等上下文时同样可以入队：用默认提示词补位，
+  // 否则「粘了图按 Enter」会被当成空内容静默丢掉。
+  const text = rawText || resolveDefaultPrompt(captureContext());
   if (!text) return { ok: false, error: 'empty' };
   // 入队同样是对输入框内容的一次「消费」：先把语音采集收尾，否则清空后
   // 还在飞的 partial/final 会继续往输入框里写字（等于把下一句说进了空气）。

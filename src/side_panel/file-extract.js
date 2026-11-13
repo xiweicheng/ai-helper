@@ -449,6 +449,8 @@ export function clearFiles() {
  * 渲染文件预览栏
  */
 export function renderFilePreviews() {
+  // 附件变化通知入口层刷新发送按钮形态（生成中“发送”会变成“加入队列”）
+  document.dispatchEvent(new CustomEvent('input-attachments-changed'));
   const previewBar = document.getElementById('filePreviewBar');
   if (!previewBar) return;
 

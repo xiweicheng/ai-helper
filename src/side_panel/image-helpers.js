@@ -107,6 +107,8 @@ export function updateFileInputVisibility() {
  * 渲染图片预览缩略图
  */
 export function renderImagePreviews() {
+  // 附件变化通知入口层刷新发送按钮形态（生成中“发送”会变成“加入队列”）
+  document.dispatchEvent(new CustomEvent('input-attachments-changed'));
   const previewBar = document.getElementById('imagePreviewBar');
   if (!previewBar) return;
 
