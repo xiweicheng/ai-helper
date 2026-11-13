@@ -7,6 +7,7 @@ import { t } from '../shared/i18n.js';
 import {
   buildMessageJumpGroups,
   findActiveGroupIndex,
+  findNearestGroupIndex,
   resolveJumpTarget,
   renderQuestionListHtml,
 } from './utils.js';
@@ -36,6 +37,18 @@ export function initMessageJumpNav() {
   function navViewportTop() {
     const chatContainer = document.getElementById('chatContainer');
     return chatContainer ? chatContainer.getBoundingClientRect().top : 0;
+  }
+
+  /**
+   * 列表高亮用的「当前组」：就近原则（视口内的提问优先，否则取上下最近的一条）。
+   * 不能沿用 findActiveGroupIndex 的 -1 语义——滚到会话底部时末组提问已被顶出
+   * 视口，-1 会让列表停在顶端且没有任何选中项，用户还得自己滚列表找位置。
+   */
+  function findCurrentGroupIndex(groups) {
+    const chatContainer = document.getElementById('chatContainer');
+    if (!chatContainer) return -1;
+    const rect = chatContainer.getBoundingClientRect();
+    return findNearestGroupIndex(groups, rect.top, rect.bottom);
   }
 
   // ========== ▲▼ 跳转与边界反馈 ==========
@@ -130,7 +143,7 @@ export function initMessageJumpNav() {
       buildQuestionList();
       return;
     }
-    paintActiveQuestion(findActiveGroupIndex(navJumpGroups, navViewportTop()), navJumpGroups.length);
+    paintActiveQuestion(findCurrentGroupIndex(navJumpGroups), navJumpGroups.length);
   }
 
   // 构建问答组列表：悬停/聚焦把手时右侧展开，点击条目定位到对应提问
@@ -141,7 +154,7 @@ export function initMessageJumpNav() {
       chatNavQuestionPanel.innerHTML = '';
       return false;
     }
-    const activeIndex = findActiveGroupIndex(navJumpGroups, navViewportTop());
+    const activeIndex = findCurrentGroupIndex(navJumpGroups);
     const searchWasFocused = document.activeElement === chatNavQuestionPanel.querySelector('[data-role="nav-search"]');
     chatNavQuestionPanel.innerHTML = renderQuestionListHtml(navJumpGroups, activeIndex, isNavPinned, navQuery);
     chatNavQuestionPanel.querySelector('.chat-nav-pin').addEventListener('click', (e) => {

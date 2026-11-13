@@ -14,6 +14,7 @@ import { dirname, join } from 'path';
 import {
   buildMessageJumpGroups,
   findActiveGroupIndex,
+  findNearestGroupIndex,
   resolveJumpTarget,
   formatQuestionPreview,
   renderQuestionListHtml,
@@ -123,6 +124,38 @@ describe('findActiveGroupIndex：以视口顶边判定当前组', () => {
 
   it('空分组返回 -1', () => {
     expect(findActiveGroupIndex([], 0, 10)).toBe(-1);
+  });
+});
+
+describe('findNearestGroupIndex：问题列表按就近原则联动内容区', () => {
+  const group = (top, bottom) => ({ start: msgEl('message user', { top, bottom }) });
+
+  it('视口内出现提问时取最靠上的那条', () => {
+    // 视口 [0, 600]：第 2、3 组提问都在视口里，取靠上的第 2 组
+    const groups = [group(-300, -240), group(80, 140), group(420, 480)];
+    expect(findNearestGroupIndex(groups, 0, 600)).toBe(1);
+  });
+
+  it('视口内没有提问时取上方最近的一条（滚到会话底部不再回落到 -1）', () => {
+    // 末组提问已被顶出视口：findActiveGroupIndex 会返回 -1，这里必须仍给出末组
+    const groups = [group(-2000, -1940), group(-900, -840), group(-193, -133)];
+    expect(findActiveGroupIndex(groups, 0, 600)).toBe(-1);
+    expect(findNearestGroupIndex(groups, 0, 600)).toBe(2);
+  });
+
+  it('视口内没有提问时上下比较距离，取更近的一条', () => {
+    // 上方那条底边距视口顶 400px，下方那条顶边距视口底 60px → 取下方
+    const groups = [group(-600, -400), group(660, 720)];
+    expect(findNearestGroupIndex(groups, 0, 600)).toBe(1);
+  });
+
+  it('提问被顶边切掉一半仍算视口内（与 findActiveGroupIndex 同阈值口径）', () => {
+    const groups = [group(-40, -30), group(-5, 55)];
+    expect(findNearestGroupIndex(groups, 0, 600)).toBe(1);
+  });
+
+  it('空分组返回 -1', () => {
+    expect(findNearestGroupIndex([], 0, 600)).toBe(-1);
   });
 });
 

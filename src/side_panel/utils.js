@@ -1180,6 +1180,39 @@ export function findActiveGroupIndex(groups, viewportTop, threshold = 10) {
 }
 
 /**
+ * 就近原则定位当前组（问题列表与内容区联动用）。
+ *
+ * 与 findActiveGroupIndex 的区别：那边回答「视口顶边落在哪一组的内容里」，
+ * 适合 ▲▼ 计算上/下一条；这里回答「离当前可视区最近的提问是哪一个」，用于列表高亮：
+ * 1) 视口内出现提问时取最靠上的那条——用户正在看的内容就属于这组；
+ * 2) 视口内一条提问都没有（典型：长回答滚到中段，提问早被顶出屏幕）时，
+ *    取上下方向离视口最近的那条，而不是回落到 -1 让列表停在顶端。
+ * @param {Array} groups - buildMessageJumpGroups 的结果
+ * @param {number} viewportTop - 可视区顶边（聊天容器 rect.top）
+ * @param {number} viewportBottom - 可视区底边（聊天容器 rect.bottom）
+ * @param {number} threshold - 顶边容差，与 findActiveGroupIndex 同口径
+ * @returns {number} 组下标；无分组时返回 -1
+ */
+export function findNearestGroupIndex(groups, viewportTop, viewportBottom, threshold = 10) {
+  if (!Array.isArray(groups) || groups.length === 0) return -1;
+  let nearest = -1;
+  let nearestDistance = Infinity;
+  for (let i = 0; i < groups.length; i++) {
+    const anchor = groups[i].userElement || groups[i].start;
+    const rect = anchor.getBoundingClientRect();
+    // 视口内：按文档顺序取第一条即可，它是最靠上、也是用户最先看到的提问
+    if (rect.bottom > viewportTop + threshold && rect.top < viewportBottom) return i;
+    // 视口外：上方按底边算距离、下方按顶边算距离，取最近的一条
+    const distance = rect.bottom <= viewportTop ? viewportTop - rect.bottom : rect.top - viewportBottom;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = i;
+    }
+  }
+  return nearest;
+}
+
+/**
  * 计算上一条/下一条目标组下标。
  * @param {number} groupCount
  * @param {number} activeIndex - findActiveGroupIndex 的结果，-1 表示当前无可见组
