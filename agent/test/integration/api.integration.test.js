@@ -650,6 +650,26 @@ describe('9. Skill', () => {
     assert.ok(res.data.skills !== undefined || res.data.success !== undefined);
   });
 
+  test('GET /api/skill/export 缺少 name → 400', async () => {
+    const res = await get('/api/skill/export');
+    assert.equal(res.status, 400);
+  });
+
+  test('GET /api/skill/export 返回可下载的 Agent Skill ZIP', async (t) => {
+    const list = await get('/api/skill/list');
+    const skill = list.data.skills?.find(item => item.type === 'agent');
+    if (!skill) {
+      t.skip('没有可导出的 Agent Skill');
+      return;
+    }
+    const res = await get(`/api/skill/export?name=${encodeURIComponent(skill.name)}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.data.success, true);
+    assert.ok(res.data.fileName.endsWith('.zip'));
+    const zipBuffer = Buffer.from(res.data.zipData, 'base64');
+    assert.equal(zipBuffer.subarray(0, 2).toString(), 'PK');
+  });
+
   test('GET /api/skill/agent-prompts', async () => {
     const res = await get('/api/skill/agent-prompts');
     // 即使没有 agent skill，也应返回 success

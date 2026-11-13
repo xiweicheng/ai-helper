@@ -6,6 +6,7 @@ import { inflateRawSync } from 'zlib';
 import { randomBytes } from 'crypto';
 import { tmpdir } from 'os';
 import { lookup as dnsLookup } from 'dns/promises';
+import { ZipArchive } from 'archiver';
 import https from 'https';
 import http from 'http';
 import { t as translate } from '../i18n.js';
@@ -471,6 +472,25 @@ function extractZipPureJs(zipBuffer, destDir) {
     mkdirSync(dirname(destPath), { recursive: true });
     writeFileSync(destPath, fileData);
   }
+}
+
+/**
+ * 将 Markdown Skill 目录打包为 ZIP，保留顶层技能目录与原始文件内容
+ * @param {string} skillDir - 技能根目录
+ * @returns {Promise<Buffer>} ZIP 文件 Buffer
+ */
+export async function exportMarkdownSkillToZip(skillDir) {
+  return new Promise((resolve, reject) => {
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    const chunks = [];
+
+    archive.on('data', chunk => chunks.push(chunk));
+    archive.on('end', () => resolve(Buffer.concat(chunks)));
+    archive.on('error', reject);
+
+    archive.directory(skillDir, basename(skillDir));
+    archive.finalize();
+  });
 }
 
 /**

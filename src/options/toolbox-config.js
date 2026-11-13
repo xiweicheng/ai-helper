@@ -14,7 +14,7 @@ import {
 import {
   loadSkills, renderSkills, deleteSkill, toggleSkill, runSkill,
   parseSkillParams, showSkillParamsDialog, showSkillRunResult,
-  reloadSkills, showAgentSkillEditor, getAgentSkillMarkdown, showImportDialog,
+  reloadSkills, showAgentSkillEditor, getAgentSkillMarkdown, exportAgentSkill, showImportDialog,
   initSkillFilter
 } from './toolbox-skills.js';
 import logger from '../shared/logger.js';
@@ -536,6 +536,8 @@ export function initToolbox() {
             const result = await runSkill(skillName);
             showSkillRunResult(skillName, skillInfo, result);
           }
+        } else if (action === 'export-agent-skill') {
+          await exportAgentSkill(skillName, btn);
         } else if (action === 'edit-agent-skill') {
           try {
             const data = await getAgentSkillMarkdown(skillName);

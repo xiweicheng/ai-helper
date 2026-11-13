@@ -19,7 +19,7 @@ import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { playCompletionFeedback, playFailureFeedback } from './completion-feedback.js';
 import { markSessionHostTab, getPanelWindowId, setSessionHostTab } from './panel-context.js';
 import { notifyGenerationEnded } from './generation-lifecycle.js';
-import { enqueueFromInput, resolveDefaultPrompt } from './queue-runner.js';
+import { enqueueFromInput, resolveDefaultPrompt, hasUnreadyFiles } from './queue-runner.js';
 import { prepareGoalForSend, summarizeGoalAttachments } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
@@ -1053,6 +1053,13 @@ export async function sendMessage(opts = {}) {
   // 「粘了图却必须再打一句话才能发」不是合理的门槛，让模型从默认指令开始处理即可。
   const text = rawText || resolveDefaultPrompt(inputCtx);
   if (!text) return { ok: false, reason: 'empty' };
+  // 文件还在解析：正文由 processFile 异步回写，此时发送只能拿到 status!=done 的条目，
+  // 会得到一条"请阅读我附上的文件"却没有任何文件内容的消息（入队路径同样有这道门）。
+  // 只拦输入区来源的发送：队列载荷里的文件在入队时已校验过，不能被面板的临时上传误伤。
+  if (isActive && ctxFromInput && hasUnreadyFiles()) {
+    showToast(t('queue.filesStillExtracting'), 'warning', 4000);
+    return { ok: false, reason: 'files_extracting' };
+  }
   // 真要发送了：语音输入必须当场收尾（Enter / 发送按钮 / 一键发送都走这里）。
   // 采集还在跑的话，后续 partial/final 会继续往输入框写，而输入框马上被清空 ——
   // 用户会看到刚发出去的消息后面又冒出一段字。
@@ -1173,7 +1180,7 @@ export async function sendMessage(opts = {}) {
       : null;
     let kbPayload = null;
     try {
-      kbPayload = await buildKnowledgeContextText(text, refsSnapshot);
+      kbPayload = await buildKnowledgeContextText(rawText || t('sidePanel.defaultKnowledgeQuery'), refsSnapshot);
     } catch (err) {
       logger.warn('[SidePanel] knowledge search failed:', err);
     }

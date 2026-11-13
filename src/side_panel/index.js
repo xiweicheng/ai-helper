@@ -116,6 +116,7 @@ registerTranslations('zh', {
     defaultPromptFile: '请阅读我附上的文件，并总结要点',
     defaultPromptAttachments: '请查看我附上的图片和文件，并总结要点',
     defaultPromptKnowledge: '请根据我引用的知识库内容进行总结和回答',
+    defaultKnowledgeQuery: '核心内容 要点 总结',
     defaultPromptPage: '请总结这个网页的主要内容',
     defaultPromptSelection: '请基于我提供的内容继续',
     defaultPromptContext: '请根据我提供的上下文继续',
@@ -199,6 +200,7 @@ registerTranslations('en', {
     defaultPromptFile: 'Please read the attached file and summarize the key points',
     defaultPromptAttachments: 'Please review the attached image and file and summarize the key points',
     defaultPromptKnowledge: 'Please answer based on the knowledge base content I referenced',
+    defaultKnowledgeQuery: 'key points summary',
     defaultPromptPage: 'Please summarize the main content of this page',
     defaultPromptSelection: 'Please continue based on the content I provided',
     defaultPromptContext: 'Please continue based on the context I provided',
@@ -3027,8 +3029,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       sendMessage();
       return;
     }
-    const hasDraft = !!(userInput && userInput.value && userInput.value.trim()) || currentInputHasContext();
-    if (hasDraft) {
+    if (isQueueMode()) {
       // 生成中带内容（文字或附件/上下文）：入队，内容不再被静默吞掉
       void enqueueFromInput();
     } else {

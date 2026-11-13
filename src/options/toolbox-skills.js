@@ -160,6 +160,7 @@ export function renderSkills(skills) {
           </div>` : ''}
           <div class="skill-card-actions">
             ${canEdit ? `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="edit-agent-skill">${t('toolbox.editSkillMd')}</button>` : `<button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="view-agent-skill">${t('toolbox.viewDetails')}</button>`}
+            <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="export-agent-skill">${t('toolbox.exportSkill')}</button>
             <button class="toolbox-btn toolbox-btn-secondary" data-skill-name="${escapeHtml(s.name)}" data-action="toggle-skill">${s.enabled === false ? t('toolbox.enable') : t('toolbox.disable')}</button>
             ${canDelete ? `<button class="toolbox-btn toolbox-btn-danger" data-skill-name="${escapeHtml(s.name)}" data-action="delete-skill">${t('common.delete')}</button>` : ''}
           </div>
@@ -450,6 +451,52 @@ export async function importAgentSkill(skillData) {
  */
 export async function getAgentSkillMarkdown(name) {
   return await agentApi('GET', `/api/skill/markdown?name=${encodeURIComponent(name)}`);
+}
+
+/**
+ * 导出 Agent Skill 为 ZIP 并下载
+ */
+export async function exportAgentSkill(name, button) {
+  if (button?.disabled) return false;
+  const originalText = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = t('toolbox.exportingSkill');
+  }
+
+  try {
+    const result = await agentApi('GET', `/api/skill/export?name=${encodeURIComponent(name)}`);
+    if (!result?.success || !result.zipData) {
+      throw new Error(result?.error || t('toolbox.skillOperationFailedShort'));
+    }
+
+    const binary = atob(result.zipData);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = result.fileName || `${name}.zip`;
+    document.body.appendChild(link);
+    try {
+      link.click();
+    } finally {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    showToast(t('toolbox.skillExported', { name }), 'success');
+    return true;
+  } catch (err) {
+    showToast(t('toolbox.skillExportFailed', { error: err.message }), 'error');
+    return false;
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
 
 /**

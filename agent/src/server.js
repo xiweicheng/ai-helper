@@ -67,7 +67,7 @@ import {
 } from './skill/registry.js';
 import { saveMarkdownSkill, importMarkdownSkillFromZip, importMarkdownSkillFromUrl, setSkillLoaderLang } from './skill/loader.js';
 import { setSkillExecutorLang } from './skill/executor.js';
-import { setMarkdownLoaderLang } from './skill/markdown-loader.js';
+import { exportMarkdownSkillToZip, setMarkdownLoaderLang } from './skill/markdown-loader.js';
 import { setMcpClientLang } from './mcp/client.js';
 import { getRequestI18n, t, parseAcceptLanguage } from './i18n.js';
 import { pickDirectoryNative, cancelPickDirectory } from './directory-picker.js';
@@ -2418,6 +2418,29 @@ export function startServer() {
       if (!skillName) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
       const result = getAgentSkillPrompt(skillName);
       return jsonResponse(res, result.success ? 200 : 404, result);
+    }
+
+    // 导出 Agent Skill ZIP（base64 编码，包含 SKILL.md 与全部资源）
+    if (req.method === 'GET' && pathname === '/api/skill/export') {
+      const name = url.searchParams.get('name');
+      if (!name) return jsonResponse(res, 400, { success: false, error: t('error.missingName') });
+      const result = getSkill(name);
+      if (!result.success) return jsonResponse(res, 404, result);
+      const skill = result.skill;
+      if (skill.type !== 'agent') {
+        return jsonResponse(res, 400, { success: false, error: t('error.notAgentSkill') });
+      }
+      try {
+        const zipBuffer = await exportMarkdownSkillToZip(skill.dirPath);
+        const skillDirName = basename(skill.dirPath);
+        return jsonResponse(res, 200, {
+          success: true,
+          fileName: `${skillDirName}.zip`,
+          zipData: zipBuffer.toString('base64')
+        });
+      } catch (err) {
+        return jsonResponse(res, 500, { success: false, error: t('error.packFailed', { message: err.message }) });
+      }
     }
 
     // Agent Skill 的 SKILL.md 内容
