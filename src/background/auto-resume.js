@@ -83,6 +83,18 @@ export function decideAutoResume(checkpoints, activeSessionIds = new Set(), maxA
   return { targets, justExhausted };
 }
 
+/**
+ * 该 checkpoint 是否还有机会被自动续跑接走（纯函数）。
+ * 与 decideAutoResume 口径一致：终态 / 会话仍在执行 / 次数已满 —— 都不会再有续跑来收尾。
+ * 供定时任务启动对账判断：残留的 running 是该交给续跑，还是当场回写失败。
+ */
+export function willAutoResumeCheckpoint(cp, activeSessionIds = new Set(), maxAttempts = AUTO_RESUME_MAX_ATTEMPTS) {
+  if (!cp || !cp.sessionId) return false;
+  if (TERMINAL_REASONS.has(cp.interruptedReason)) return false;
+  if (activeSessionIds.has(cp.sessionId)) return false;
+  return (cp.autoResumeAttempts || 0) < maxAttempts;
+}
+
 // 引用计数：与心跳同模式，多任务并发共享一个闹钟（决策按会话维度扫描，无需每会话一个）
 let refCount = 0;
 let watching = false;

@@ -164,7 +164,7 @@ export const AI_TOOLS = [
     type: 'function',
     function: {
       name: 'manage_schedule',
-      description: 'Create, list, update, enable/disable, delete or run-now the user\'s scheduled tasks. A scheduled task automatically runs the given prompt in the background and writes the result into a chat session. For update/toggle/delete/run you must first obtain the id via action=list.',
+      description: 'Create, list, update, enable/disable, delete or run-now the user\'s scheduled tasks. A scheduled task automatically runs the given prompt in the background and writes the question + result into a chat session. Choose where results go with sessionTarget: "current" (default, same conversation as this chat) or "dedicated" (a separate session created on first run). For update/toggle/delete/run you must first obtain the id via action=list.',
       parameters: {
         type: 'object',
         properties: {
@@ -173,6 +173,8 @@ export const AI_TOOLS = [
           name: { type: 'string', description: 'Required for create: short task name' },
           prompt: { type: 'string', description: 'Required for create: instruction executed on every run' },
           description: { type: 'string', description: 'Optional task description' },
+          sessionTarget: { type: 'string', enum: ['current', 'dedicated'], description: 'Where run results are written. current (default): this same conversation, so each run appends a new Q&A here; dedicated: a separate session created and bound on the first run, keeping this conversation clean. Ask the user which they prefer if unclear.' },
+          sessionId: { type: 'string', description: 'Optional: bind the task to an explicit existing session id (overrides sessionTarget).' },
           schedule: {
             type: 'object',
             description: 'Required for create: when to run',

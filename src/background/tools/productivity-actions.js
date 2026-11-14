@@ -51,6 +51,7 @@ registerTranslations('zh', {
     taskNotFound: '未找到 id 为 "{id}" 的定时任务',
     toggleNeedsEnabled: 'toggle 需要 enabled（true 启用 / false 停用）',
     runStarted: '任务已开始执行，结果会写入对应会话',
+    invalidSessionTarget: 'sessionTarget 只能是 current / dedicated',
   },
 });
 
@@ -79,6 +80,7 @@ registerTranslations('en', {
     taskNotFound: 'Scheduled task "{id}" not found',
     toggleNeedsEnabled: 'toggle requires enabled (true/false)',
     runStarted: 'Task started; the result will be written to its session',
+    invalidSessionTarget: 'sessionTarget must be current or dedicated',
   },
 });
 
@@ -350,9 +352,12 @@ function sendSchedulerCommand(message) {
  * @param {{action: string, id?: string, name?: string, prompt?: string,
  *   schedule?: {type: string, value: string, onceMode?: string}, description?: string,
  *   contextUrl?: string, contextMode?: string, sessionId?: string,
+ *   sessionTarget?: 'current'|'dedicated',
  *   maxRuns?: number, endAt?: string|number, enabled?: boolean}} args
+ * @param {string|null} toolCallId
+ * @param {string|null} currentSessionId 发起本次工具调用的会话（AI 基于当前会话建任务时用它）
  */
-export async function executeManageSchedule(args = {}) {
+export async function executeManageSchedule(args = {}, toolCallId = null, currentSessionId = null) {
   const action = String(args.action || '').trim().toLowerCase();
   const id = String(args.id || '').trim();
 
@@ -362,6 +367,16 @@ export async function executeManageSchedule(args = {}) {
     if (action === 'create') {
       const normalized = normalizeSchedule(args.schedule);
       if (normalized.error) return fail(normalized.error);
+      // 会话归属：显式 sessionId 优先 > sessionTarget > 默认「当前会话」。
+      // current 让执行结果回到用户下指令的这个会话；dedicated 由调度器首次执行时另建专属会话。
+      const target = args.sessionTarget ? String(args.sessionTarget).trim().toLowerCase() : '';
+      if (target && target !== 'current' && target !== 'dedicated') {
+        return fail(t('productivityTools.invalidSessionTarget'));
+      }
+      let boundSessionId = args.sessionId ? String(args.sessionId) : null;
+      if (!boundSessionId) {
+        boundSessionId = target === 'dedicated' ? null : (currentSessionId || null);
+      }
       const task = {
         name: String(args.name || '').trim(),
         description: String(args.description || '').trim(),
@@ -369,7 +384,7 @@ export async function executeManageSchedule(args = {}) {
         schedule: normalized.schedule,
         contextUrl: args.contextUrl ? String(args.contextUrl) : null,
         contextMode: args.contextMode === 'url_only' ? 'url_only' : 'fetch',
-        sessionId: args.sessionId ? String(args.sessionId) : null,
+        sessionId: boundSessionId,
         maxRuns: args.maxRuns,
         endAt: toTimestamp(args.endAt),
         enabled: args.enabled !== false,
@@ -386,6 +401,15 @@ export async function executeManageSchedule(args = {}) {
       if (!existing) return fail(t('productivityTools.taskNotFound', { id }));
       const normalized = args.schedule ? normalizeSchedule(args.schedule) : { schedule: existing.schedule };
       if (normalized.error) return fail(normalized.error);
+      // 换绑会话：显式 sessionId 优先；sessionTarget=dedicated 表示下次执行另起专属会话
+      const target = args.sessionTarget ? String(args.sessionTarget).trim().toLowerCase() : '';
+      if (target && target !== 'current' && target !== 'dedicated') {
+        return fail(t('productivityTools.invalidSessionTarget'));
+      }
+      let boundSessionId = existing.sessionId;
+      if (args.sessionId !== undefined) boundSessionId = args.sessionId ? String(args.sessionId) : null;
+      else if (target === 'dedicated') boundSessionId = null;
+      else if (target === 'current') boundSessionId = currentSessionId || existing.sessionId;
       // handleScheduledTaskCommand 的 update 是整表覆盖，必须先与现有值合并再提交
       const task = {
         id,
@@ -395,7 +419,7 @@ export async function executeManageSchedule(args = {}) {
         schedule: normalized.schedule,
         contextUrl: args.contextUrl !== undefined ? (args.contextUrl ? String(args.contextUrl) : null) : existing.contextUrl,
         contextMode: args.contextMode || existing.contextMode || 'fetch',
-        sessionId: args.sessionId !== undefined ? (args.sessionId ? String(args.sessionId) : null) : existing.sessionId,
+        sessionId: boundSessionId,
         maxRuns: args.maxRuns !== undefined ? args.maxRuns : existing.maxRuns,
         endAt: args.endAt !== undefined ? toTimestamp(args.endAt) : existing.endAt,
         enabled: args.enabled !== undefined ? args.enabled !== false : existing.enabled !== false,

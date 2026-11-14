@@ -142,17 +142,22 @@ describe('接线：自动续跑透传新 callId + SW 登记/下发', () => {
     expect(guard).toMatch(/callId\s*&&/);
   });
 
-  test('定时任务调用 reactLoop 时显式关掉可重连登记（scheduler 侧传入）', () => {
-    // 两个执行入口（有工具走 reactLoop、无工具走 callApiNonStream）都会登记活跃 callId，
-    // 定时任务必须在自己这一侧申明“无人消费”，不能靠 callId 前缀在注册表里猜
-    expect(SCHEDULER_SRC).toMatch(/reattachable:\s*false/);
-    const constIdx = SCHEDULER_SRC.indexOf('reattachable: false');
+  test('定时任务显式打开可重连登记，并在结束时广播终态（与普通会话同构）', () => {
+    // 定时任务必须和普通会话一样被面板 reattach 接上实时输出：
+    // 1) 调度侧显式传 reattachable: true，不能靠 callId 前缀在注册表里猜；
+    // 2) 成功/失败都要广播 API_COMPLETE / API_ERROR，镜像才能收尾，否则永久「生成中」。
+    const constIdx = SCHEDULER_SRC.indexOf('reattachable: true');
+    expect(constIdx).toBeGreaterThan(-1);
+
     const loopIdx = SCHEDULER_SRC.indexOf('await reactLoop(');
     expect(loopIdx).toBeGreaterThan(constIdx); // 先定义后使用
-    expect(SCHEDULER_SRC.slice(loopIdx, loopIdx + 400)).toMatch(/noReattach/);
+    expect(SCHEDULER_SRC.slice(loopIdx, loopIdx + 400)).toMatch(/reattachOptions/);
 
     const nonStreamIdx = SCHEDULER_SRC.indexOf('await callApiNonStream(');
     expect(nonStreamIdx).toBeGreaterThan(constIdx);
-    expect(SCHEDULER_SRC.slice(nonStreamIdx, nonStreamIdx + 300)).toMatch(/noReattach/);
+    expect(SCHEDULER_SRC.slice(nonStreamIdx, nonStreamIdx + 300)).toMatch(/reattachOptions/);
+
+    expect(SCHEDULER_SRC).toMatch(/type:\s*'API_COMPLETE'[\s\S]{0,200}sessionId/);
+    expect(SCHEDULER_SRC).toMatch(/type:\s*'API_ERROR'[\s\S]{0,200}sessionId/);
   });
 });

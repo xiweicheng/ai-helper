@@ -2166,10 +2166,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (message.type === 'SCHEDULED_SESSION_UPDATED') {
       // 定时任务在后台执行完成（可能新建了专属会话并写入消息），刷新会话标签与内容展示
       const sid = message.sessionId;
+      // phase=started：本轮用户问题刚落库，任务还在跑。只刷新内容，不能标「已完成待查看」，
+      // 否则任务刚起步用户就看到完成标记，点进去回答还不存在。
+      const started = message.phase === 'started';
       if (sid === state.activeSessionId) {
-        loadChatHistory().catch(() => {});
+        // 会话正在本地流式输出（用户自己的一轮，或已挂上的定时任务镜像）时绝不能重建 DOM：
+        // 重载会把流式元素换成一份静态历史，正在追加的内容会写进脱离文档的节点（表现为卡住/像被取消）
+        const busyHere = state.generatingSessionIds.has(sid) || state.pendingCallApiSessionIds.has(sid);
+        if (!busyHere) loadChatHistory().catch(() => {});
+        // phase=started：任务此刻其实还在后台跑。重载会冲掉流式元素，
+        // 立刻按 callId 重新挂上镜像，会话里就和普通会话一样显示「执行中」气泡
+        if (started) syncReattachForSession(sid);
       } else if (sid) {
-        markSessionCompleted(sid).catch(() => {});
+        if (!started) markSessionCompleted(sid).catch(() => {});
         // 该会话此前被切走时可能已缓存旧 DOM，后台已写入新消息，
         // 必须失效缓存，否则切回时命中旧缓存导致看不到执行结果
         document.dispatchEvent(new CustomEvent('session-cache-invalidate', { detail: { sessionId: sid } }));

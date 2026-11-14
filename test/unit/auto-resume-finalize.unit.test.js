@@ -90,7 +90,10 @@ describe('接线守卫：闹钟续跑不能只 await 不广播', () => {
     // 注意不能直接找 registerAutoResumeAlarmHandler：它先出现在 import 行
     const start = INDEX_SRC.indexOf('registerAutoResumeAlarmHandler(async');
     expect(start).toBeGreaterThan(-1);
-    return INDEX_SRC.slice(start, start + 2400);
+    // 按注册调用的结束边界切片，不要用固定长度：接入新逻辑加几行就会把 catch 分支截断
+    const end = INDEX_SRC.indexOf('\n});', start);
+    expect(end).toBeGreaterThan(start);
+    return INDEX_SRC.slice(start, end + 4);
   };
 
   test('续跑结果被接住并交给 finalizeAutoResume（成功路径）', () => {

@@ -273,6 +273,10 @@ export async function _checkForAbandonedCheckpoint() {
 
   try {
     const resp = await chrome.runtime.sendMessage({ type: 'GET_CHECKPOINT', sessionId });
+    // 后台判定会话正在执行（定时任务 / 自动续跑 / 其他实例发起的调用）：
+    // 此时 checkpoint 是执行中的正常产物，不能提示「任务被中断」——
+    // 否则用户一打开就在跑的任务里看到中断卡片，点「继续执行」还会双跑。
+    if (resp?.running) return;
     if (resp?.exists) {
       logger.debug('[SidePanel] found abandoned  checkpoint,auto addrestorehint card');
 

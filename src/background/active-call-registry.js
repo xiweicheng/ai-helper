@@ -21,9 +21,9 @@ const activeCallIds = new Map(); // sessionId → callId
  * @param {string|null} sessionId
  * @param {string|null} callId
  * @param {{reattachable?: boolean}} [options] reattachable=false 表示这次运行的产物
- *   没有任何面板消费者（如定时任务：跑完只写库 + 发 SCHEDULED_TASK_RUN_STATE，
- *   从不广播 API_COMPLETE / API_ERROR）。登记了它，面板 reattach 会建镜像并永久停在
- *   「生成中」——气泡挂着、pending 不清、归档/继续执行全被挡。
+ *   没有任何面板消费者（跑完不广播 API_COMPLETE / API_ERROR）。登记了它，面板 reattach
+ *   会建镜像并永久停在「生成中」——气泡挂着、pending 不清、归档/继续执行全被挡。
+ *   定时任务必须显式传 reattachable=true，并在结束时广播终态，才能复用普通会话的镜像。
  */
 export function setActiveCall(sessionId, callId, options = {}) {
   if (!sessionId || !callId) return;

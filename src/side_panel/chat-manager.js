@@ -1069,6 +1069,17 @@ export async function sendMessage(opts = {}) {
   // 生成中的早退保留：入队路径不经过这里，防的是其它调用方绕过状态检查
   if (state.generatingSessionIds.has(mySessionId)) return { ok: false, reason: 'generating' };
 
+  // 该会话可能正在被后台的定时任务驱动，而面板镜像还没挂上（任务刚起步、或面板刚打开）。
+  // 此时上面的本地判断是空的，直接删 checkpoint 再起新循环会把后台任务顶掉——
+  // 现场表现就是「发了一条消息，定时任务像被取消了」。发送前以后台真实运行态为准再拦一次。
+  try {
+    const runState = await chrome.runtime.sendMessage({ type: 'QUERY_SESSION_RUNNING', sessionId: mySessionId });
+    const runningInBackground = runState?.running === true
+      || (Array.isArray(runState?.activeSessionIds) && runState.activeSessionIds.includes(mySessionId))
+      || !!(runState?.activeCallIds && runState.activeCallIds[mySessionId]);
+    if (runningInBackground) return { ok: false, reason: 'generating' };
+  } catch { /* 查询失败按原逻辑继续发送 */ }
+
   // 清除旧的恢复卡片和后台 checkpoint
   // 新任务开始意味着用户放弃之前的中断恢复
   _clearResumableFlagsForSession(mySessionId);

@@ -1435,7 +1435,8 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     // 登记本轮的活跃 callId（含自动续跑的新 callId）供面板 reattach 查询。
     // 只登记顶层任务：子任务与父任务共用 sessionId + callId，子任务退出时
     // 的 finally 不能把父任务仍在使用的登记清掉。
-    // options.reattachable=false 供「没有面板消费者」的入口（定时任务）关掉登记。
+    // options.reattachable=false 供「没有面板消费者」的入口关掉登记；
+    // 定时任务显式传 true，这样它和普通会话一样能被面板 reattach 接上实时输出。
     if (!taskContext) setActiveCall(sessionId, callId, options);
   }
 
@@ -4688,7 +4689,8 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
   // 简单路径（工具关闭 / 无可用工具）也要登记活跃 callId：面板中途关掉再打开时
   // QUERY_SESSION_RUNNING 才能报出「该听哪个 callId」，reattach 才接得上实时流。
   // 与 ReAct 主循环同构；clear 带期望值，避免同会话下一次调用被本轮迟到的 finally 误删。
-  // options.reattachable=false 供「没有面板消费者」的入口（定时任务）关掉登记。
+  // options.reattachable=false 供「没有面板消费者」的入口关掉登记；
+  // 定时任务显式传 true，与 ReAct 主循环同构。
   const trackActiveCall = !!(sessionId && callId) && options?.reattachable !== false;
   if (trackActiveCall) setActiveCall(sessionId, callId);
   const releaseActiveCall = () => {

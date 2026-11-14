@@ -66,6 +66,14 @@ registerTranslations('zh', {
     runHistoryLabel: '运行历史',
     runHistoryEmpty: '暂无运行记录',
     runCountLabel: '运行历史 ({count})',
+    filterAll: '全部',
+    filterEnabled: '启用中',
+    filterDisabled: '已停用',
+    sortLabel: '排序',
+    sortCreated: '创建时间',
+    sortLastRun: '最近执行',
+    sortUpdated: '更新时间',
+    emptyFiltered: '没有符合筛选条件的任务',
   },
 });
 
@@ -128,6 +136,14 @@ registerTranslations('en', {
     runHistoryLabel: 'Run history',
     runHistoryEmpty: 'No runs yet',
     runCountLabel: 'Run history ({count})',
+    filterAll: 'All',
+    filterEnabled: 'Enabled',
+    filterDisabled: 'Disabled',
+    sortLabel: 'Sort',
+    sortCreated: 'Created',
+    sortLastRun: 'Last run',
+    sortUpdated: 'Updated',
+    emptyFiltered: 'No tasks match the filter',
   },
 });
 
@@ -232,6 +248,14 @@ export function initSchedulePanel() {
       .schedule-panel-header button { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
       .schedule-panel-header .new-btn { color: var(--text-inverse); background: var(--info-500); }
       .schedule-panel-header .close-btn { color: var(--text-tertiary); }
+      .sched-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+      .sched-filter-group { display: flex; gap: 2px; background: var(--bg-subtle); border-radius: 6px; padding: 2px; }
+      .sched-filter-btn { border: none; background: transparent; color: var(--text-secondary); font-size: 11px; padding: 3px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+      .sched-filter-btn:hover { color: var(--text-primary); }
+      .sched-filter-btn.active { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(var(--overlay-rgb), 0.12); }
+      .sched-sort-wrap { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+      .sched-sort-wrap label { font-size: 11px; color: var(--text-tertiary); }
+      .sched-sort { border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary); font-size: 11px; border-radius: 6px; padding: 3px 4px; cursor: pointer; }
       .schedule-panel-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
       .sched-item { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 12px; }
       .sched-item .row1 { display: flex; align-items: center; gap: 8px; }
@@ -295,6 +319,21 @@ export function initSchedulePanel() {
         <span class="schedule-panel-count" id="schedulePanelCount"></span>
         <button class="new-btn" id="scheduleNewTask">${t('schedPanel.newTask')}</button>
         <button class="close-btn" id="schedulePanelClose" title="${t('schedPanel.close')}">✕</button>
+      </div>
+      <div class="sched-toolbar">
+        <div class="sched-filter-group" id="schedFilterGroup">
+          <button type="button" class="sched-filter-btn active" data-filter="all">${t('schedPanel.filterAll')}</button>
+          <button type="button" class="sched-filter-btn" data-filter="enabled">${t('schedPanel.filterEnabled')}</button>
+          <button type="button" class="sched-filter-btn" data-filter="disabled">${t('schedPanel.filterDisabled')}</button>
+        </div>
+        <div class="sched-sort-wrap">
+          <label for="schedSortSelect">${t('schedPanel.sortLabel')}</label>
+          <select class="sched-sort" id="schedSortSelect">
+            <option value="created">${t('schedPanel.sortCreated')}</option>
+            <option value="lastRun">${t('schedPanel.sortLastRun')}</option>
+            <option value="updated">${t('schedPanel.sortUpdated')}</option>
+          </select>
+        </div>
       </div>
       <div class="schedule-panel-list" id="schedulePanelList"></div>
     </div>
@@ -382,6 +421,72 @@ export function initSchedulePanel() {
 
   let editingTask = null;
 
+  // 面板视图偏好：筛选（全部/启用/停用）+ 排序字段，记住上次选择
+  const VIEW_PREF_KEY = 'schedPanelView';
+  let viewFilter = 'all';
+  let viewSort = 'created';
+  // 最近一次加载的任务列表：切换筛选/排序时只重渲染，不重新请求
+  let latestTasks = [];
+  const filterGroup = document.getElementById('schedFilterGroup');
+  const sortSelect = document.getElementById('schedSortSelect');
+
+  function toMs(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const parsed = Date.parse(value || '');
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  // 三种排序都按倒序：最新的在最上面。改动一个任务会刷新 updatedAt，
+  // 因此「更新时间」能把刚编辑/刚跑完的任务顶到前面。
+  function sortTimeOf(task) {
+    if (viewSort === 'lastRun') {
+      // 从未执行过的任务没有 lastRunAt，回落到创建时间，避免全部沉到底部
+      return toMs(task.lastRunAt) || toMs(task.createdAt);
+    }
+    if (viewSort === 'updated') return toMs(task.updatedAt) || toMs(task.createdAt);
+    return toMs(task.createdAt);
+  }
+
+  function syncViewControls() {
+    filterGroup.querySelectorAll('.sched-filter-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.filter === viewFilter);
+    });
+    sortSelect.value = viewSort;
+  }
+
+  function saveViewPref() {
+    try {
+      // chrome.storage.local.set 返回 Promise，同步 try/catch 抓不到 rejection
+      Promise.resolve(chrome.storage.local.set({ [VIEW_PREF_KEY]: { filter: viewFilter, sort: viewSort } }))
+        .catch(() => { /* 存储不可用时仅本次生效 */ });
+    } catch { /* 存储不可用时仅本次生效 */ }
+  }
+
+  filterGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sched-filter-btn');
+    if (!btn || btn.dataset.filter === viewFilter) return;
+    viewFilter = btn.dataset.filter;
+    syncViewControls();
+    saveViewPref();
+    renderTasks(latestTasks);
+  });
+
+  sortSelect.addEventListener('change', () => {
+    viewSort = sortSelect.value;
+    saveViewPref();
+    renderTasks(latestTasks);
+  });
+
+  (async () => {
+    try {
+      const stored = (await chrome.storage.local.get(VIEW_PREF_KEY))?.[VIEW_PREF_KEY];
+      if (stored?.filter === 'enabled' || stored?.filter === 'disabled' || stored?.filter === 'all') viewFilter = stored.filter;
+      if (stored?.sort === 'lastRun' || stored?.sort === 'updated' || stored?.sort === 'created') viewSort = stored.sort;
+    } catch { /* 用默认值 */ }
+    syncViewControls();
+    if (latestTasks.length) renderTasks(latestTasks);
+  })();
+
   function updateScheduleInputs() {
     const type = typeSel.value;
     const onceMode = onceModeSel.value;
@@ -445,8 +550,6 @@ export function initSchedulePanel() {
     try {
       const res = await send({ type: 'SCHEDULED_TASK_LIST' });
       const tasks = res?.tasks || [];
-      const countEl = document.getElementById('schedulePanelCount');
-      if (countEl) countEl.textContent = tasks.length > 0 ? `(${tasks.length})` : '';
       renderTasks(tasks);
       // 以任务列表中的运行状态为准同步入口图标（覆盖侧边栏晚于任务启动的场景）
       runningTaskIds.clear();
@@ -472,11 +575,35 @@ export function initSchedulePanel() {
   }
 
   function renderTasks(tasks) {
-    if (!tasks.length) {
+    latestTasks = Array.isArray(tasks) ? tasks : [];
+    const filtered = latestTasks.filter((task) => {
+      if (viewFilter === 'enabled') return task.enabled !== false;
+      if (viewFilter === 'disabled') return task.enabled === false;
+      return true;
+    });
+    // 排序：时间倒序（新的在上面）；同时间按创建时间兜底，保证顺序稳定
+    const shown = filtered.slice().sort((a, b) => {
+      const diff = sortTimeOf(b) - sortTimeOf(a);
+      if (diff !== 0) return diff;
+      return toMs(b.createdAt) - toMs(a.createdAt);
+    });
+
+    const countEl = document.getElementById('schedulePanelCount');
+    if (countEl) {
+      if (!latestTasks.length) countEl.textContent = '';
+      else if (viewFilter === 'all') countEl.textContent = `(${latestTasks.length})`;
+      else countEl.textContent = `(${shown.length}/${latestTasks.length})`;
+    }
+
+    if (!latestTasks.length) {
       listEl.innerHTML = `<div class="sched-empty">${t('schedPanel.empty')}</div>`;
       return;
     }
-    listEl.innerHTML = tasks.map((task) => {
+    if (!shown.length) {
+      listEl.innerHTML = `<div class="sched-empty">${t('schedPanel.emptyFiltered')}</div>`;
+      return;
+    }
+    listEl.innerHTML = shown.map((task) => {
       const runCount = task.runHistory?.length || 0;
       const historyBtn = runCount > 0
         ? `<button class="sched-history-btn" data-act="history">${t('schedPanel.runCountLabel', { count: runCount })}</button>`

@@ -8,7 +8,7 @@ import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheck
 import { goalIsRunning } from '../shared/goal.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
-import { rehydrateAlarms, handleScheduledTaskCommand } from './scheduler.js';
+import { rehydrateAlarms, handleScheduledTaskCommand, finishScheduledRunFromResume, isScheduledSessionRunning } from './scheduler.js';
 import { restoreDetachWindowId } from './detach-window.js';
 import { initNotifier, notifyTaskFeedback, notifyPanelDetached, notifyAutoResumeExhausted, shouldNotifyPanelDetached } from './notifier.js';
 import { initPanelVisibility, isPanelVisibleToUser } from './panel-visibility.js';
@@ -78,6 +78,12 @@ registerAutoResumeAlarmHandler(async () => {
   for (const cp of justExhausted) {
     logger.warn(`[Background] auto-resume exhausted for session ${cp.sessionId} (${AUTO_RESUME_MAX_ATTEMPTS} attempts), manual intervention required`);
     notifyAutoResumeExhausted({ sessionId: cp.sessionId, count: AUTO_RESUME_MAX_ATTEMPTS });
+    // 次数已耗尽：这个 checkpoint 不会再有续跑来收尾。定时任务必须当场回写失败，
+    // 否则 lastStatus 永远停在 running（入口一直转圈、GET_CHECKPOINT.running 永远为 true）。
+    await finishScheduledRunFromResume(cp.sessionId, {
+      success: false,
+      error: t('sched.autoResumeExhausted', { count: AUTO_RESUME_MAX_ATTEMPTS }),
+    });
   }
   for (const { checkpoint, nextAttempts } of targets) {
     // 每次续跑都生成新的 callId：checkpoint 里那个属于已经被回收的面板实例，沿用会让
@@ -106,6 +112,8 @@ registerAutoResumeAlarmHandler(async () => {
           budgetEnded: result.budgetEnded === true,
           exhaustedBy: result.exhaustedBy || null,
         });
+        // 定时任务跑到一半被回收：续跑已补上回答，任务侧状态不能永远停在 running
+        await finishScheduledRunFromResume(checkpoint.sessionId, { success: true });
       }
     } catch (e) {
       logger.warn(`[Background] auto-resume failed for session ${checkpoint.sessionId}:`, e?.message || e);
@@ -116,6 +124,7 @@ registerAutoResumeAlarmHandler(async () => {
         error: e?.message || t('bg.resumeFailed'),
         executionLog: truncateLogForMessage(e?.executionLog || []),
       });
+      await finishScheduledRunFromResume(checkpoint.sessionId, { success: false, error: e?.message || t('bg.resumeFailed') });
     }
   }
 });
@@ -1162,16 +1171,24 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   if (message.type === 'GET_CHECKPOINT') {
     const { sessionId } = message;
     if (!sessionId) {
-      sendResponse({ exists: false });
+      sendResponse({ exists: false, running: false });
       return false;
     }
-    getReactCheckpoint(sessionId).then(cp => {
+    // running=true 表示会话此刻真在跑（面板发起的调用 / 自动续跑 / 定时任务）。
+    // 面板自己只认本地发起的调用，后台/别的实例发起的只能由后台统一判定，
+    // 否则执行期间打开会话会被误判成「任务被中断」并弹出「继续执行」卡片。
+    isScheduledSessionRunning(sessionId).then(async (scheduledRunning) => {
+      const running = scheduledRunning
+        || activeReactLoops.has(sessionId)
+        || !!getActiveCallMap()[sessionId];
+      const cp = await getReactCheckpoint(sessionId);
       if (!cp) {
-        sendResponse({ exists: false });
+        sendResponse({ exists: false, running });
         return;
       }
       sendResponse({
         exists: true,
+        running,
         checkpoint: {
           iteration: cp.iteration,
           interruptedReason: cp.interruptedReason,
@@ -1182,7 +1199,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
       });
     }).catch(err => {
       logger.warn('[Background] GET_CHECKPOINT query failed:', err);
-      sendResponse({ exists: false });
+      sendResponse({ exists: false, running: false });
     });
     return true;  // 异步响应
   }
@@ -1208,12 +1225,15 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
   // （面板刚打开时自身的 generatingSessionIds 是空的，与后台真实状态可能不一致，必须以后台为准）
   if (message.type === 'QUERY_SESSION_RUNNING') {
     const { sessionId } = message;
+    // 会话 → 当前活跃 callId：面板 reattach 用它在正确的 callId 上重新挂监听，
+    // 否则 STREAM_* 会被 myCallId 过滤丢弃（任务在后台跑、会话区却无输出）
+    const activeCallIds = getActiveCallMap();
     sendResponse({
-      running: !!(sessionId && activeReactLoops.has(sessionId)),
+      // running 要覆盖「没有 tool 的 callApiNonStream 调用」（只有 call 登记、没有 ReAct 循环），
+      // 否则面板/队列会以为会话空闲，撞上后台正在跑的任务
+      running: !!(sessionId && (activeReactLoops.has(sessionId) || activeCallIds[sessionId])),
       activeSessionIds: Array.from(activeReactLoops),
-      // 会话 → 当前活跃 callId：面板 reattach 用它在正确的 callId 上重新挂监听，
-      // 否则 STREAM_* 会被 myCallId 过滤丢弃（任务在后台跑、会话区却无输出）
-      activeCallIds: getActiveCallMap(),
+      activeCallIds,
     });
     return false;
   }
