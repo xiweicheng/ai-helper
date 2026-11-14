@@ -5226,10 +5226,12 @@ async function executeAgentSearchContent(args, toolCallId, sessionId = null) {
   if (!pattern) return { success: false, error: t('toolExec.missingPattern'), tool_call_id: toolCallId };
 
   const ctxLines = Math.max(0, Math.min(Number(contextLines) || 0, 5));
+  // 兼容模型偶尔传字符串 "true"/"false" 的情况，避免 "false" 被当成真值
+  const isCaseSensitive = caseSensitive === true || caseSensitive === 'true' || caseSensitive === 1;
   const excludeList = Array.isArray(excludeGlobs) ? excludeGlobs : (typeof excludeGlobs === 'string' ? [excludeGlobs] : []);
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
-    caseSensitive || false, recursive !== false, maxResults || 100,
+    isCaseSensitive, recursive !== false, maxResults || 100,
     ctxLines,
     sessionId,
     excludeList
