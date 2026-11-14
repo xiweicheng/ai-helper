@@ -2155,6 +2155,8 @@ async function previewFile(filePath, fileName) {
   // 清除旧的自定义数据
   delete previewArea.dataset.previewType;
   delete previewArea.dataset.previewSheets;
+  delete previewArea.dataset.previewMode;
+  delete previewArea.dataset.htmlText;
 
   // 根据文件类型选择不同策略
   const previewType = getPreviewType(fileName);
@@ -2187,6 +2189,7 @@ async function previewFile(filePath, fileName) {
     if (ext === 'md' || ext === 'markdown') {
       mdToggleBtn.style.display = '';
       previewArea.dataset.markdownText = text;
+      previewArea.dataset.previewMode = 'markdown';
       previewContent.classList.add('markdown-rendered');
       mdToggleBtn.classList.add('active');
       mdToggleBtn.title = t('workspace.switchToSourcePreview');
@@ -2205,6 +2208,25 @@ async function previewFile(filePath, fileName) {
       updateCopyBtnTooltip(true);
       return;
     }
+
+    // HTML 文件：默认进入渲染预览模式
+    if (ext === 'html' || ext === 'htm') {
+      mdToggleBtn.style.display = '';
+      previewArea.dataset.htmlText = text;
+      previewArea.dataset.previewMode = 'html';
+      previewContent.classList.add('markdown-rendered');
+      mdToggleBtn.classList.add('active');
+      mdToggleBtn.title = t('workspace.switchToSourcePreview');
+      updateMdToggleIcon(mdToggleBtn, true);
+      copyBtn.style.display = '';
+      downloadBtn.style.display = 'none';
+      openBrowserBtn.style.display = '';
+      lineCountEl.textContent = '';
+      renderHtmlPreview(previewContent, text);
+      updateCopyBtnTooltip(true);
+      return;
+    }
+
     // 普通文本/代码
     const lang = getLanguageClass(fileName);
     const lines = text.split('\n');
@@ -3901,11 +3923,11 @@ async function copyPreviewContent(event) {
     // Ctrl/Cmd + 点击：复制富文本 HTML
     await copyWorkspaceRichText();
   } else {
-    // 普通点击：复制 Markdown 文本
-    const markdownText = previewArea.dataset.markdownText || '';
-    if (markdownText) {
+    // 普通点击：复制源码文本
+    const cachedText = previewArea.dataset.markdownText || previewArea.dataset.htmlText || '';
+    if (cachedText) {
       try {
-        await navigator.clipboard.writeText(markdownText);
+        await navigator.clipboard.writeText(cachedText);
         showToast(t('workspace.copiedToClipboard'), 'success');
       } catch {
         showToast(t('workspace.copyFailedManual'), 'error');
@@ -4072,6 +4094,47 @@ function updateMdToggleIcon(btn, isActive) {
   if (sourceIcon) sourceIcon.style.display = isActive ? '' : 'none';
 }
 
+/**
+ * 包裹 HTML 用于 srcdoc iframe 预览
+ * - 完整 HTML 文档：注入滚动修复样式 + 资源加载失败占位脚本
+ * - HTML 片段：包裹为标准文档结构
+ */
+function wrapHtmlForPreview(html) {
+  const placeholderScript = `<script>(function(){var s=document.createElement('style');s.textContent='.aih-broken-resp{display:inline-flex;align-items:center;justify-content:center;min-width:60px;min-height:40px;background:#f0f0f0;border:1px dashed #ccc;border-radius:4px;color:#999;font-size:12px;padding:4px 8px;}';document.head.appendChild(s);function mark(el){if(el.dataset.aihBroken)return;el.dataset.aihBroken='1';var ph=document.createElement('span');ph.className='aih-broken-resp';ph.textContent='\u8d44\u6e90\u672a\u52a0\u8f7d';if(el.tagName==='IMG'){el.style.display='none';el.parentNode&&el.parentNode.insertBefore(ph,el.nextSibling);}else if(el.tagName==='LINK'){el.parentNode&&el.parentNode.insertBefore(ph,el.nextSibling);}}document.querySelectorAll('img').forEach(function(img){if(img.complete&&img.naturalWidth===0)mark(img);img.addEventListener('error',function(){mark(img);});});document.addEventListener('error',function(e){var t=e.target;if(t&&(t.tagName==='IMG'||t.tagName==='LINK'||t.tagName==='SCRIPT'))mark(t);},true);})();</script>`;
+  const trimmed = html.trim();
+  if (/^\s*<!DOCTYPE\s/i.test(trimmed) || /^\s*<html[\s>]/i.test(trimmed)) {
+    const scrollFix = '<style>html,body{overflow:auto!important;height:auto!important;}</style>';
+    if (/<\/body>/i.test(trimmed)) {
+      let result = trimmed.replace(/<\/head>/i, scrollFix + '</head>');
+      result = result.replace(/<\/body>/i, placeholderScript + '</body>');
+      return result;
+    } else if (/<\/head>/i.test(trimmed)) {
+      return trimmed.replace(/<\/head>/i, scrollFix + placeholderScript + '</head>');
+    } else if (/<body[\s>]/i.test(trimmed)) {
+      return trimmed.replace(/<body([\s>])/i, '<body$1' + scrollFix + placeholderScript);
+    }
+    return trimmed;
+  }
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;overflow:auto;">${trimmed}${placeholderScript}</body>
+</html>`;
+}
+
+/**
+ * 在预览容器中渲染 HTML iframe（sandboxed srcdoc 模式）
+ */
+function renderHtmlPreview(previewContent, htmlText) {
+  const wrappedHtml = wrapHtmlForPreview(htmlText);
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups');
+  iframe.setAttribute('srcdoc', wrappedHtml);
+  iframe.className = 'workspace-html-preview-frame';
+  previewContent.innerHTML = '';
+  previewContent.appendChild(iframe);
+}
+
 function togglePreviewFullscreen() {
   const previewArea = document.getElementById('workspacePreviewArea');
   const panel = document.getElementById('workspacePanel');
@@ -4101,46 +4164,84 @@ function toggleMarkdownPreview() {
   const copyBtn = document.getElementById('workspacePreviewCopyBtn');
   const downloadBtn = document.getElementById('workspacePreviewDownloadBtn');
   const exportMenu = document.getElementById('workspacePreviewExportMenu');
+  const openBrowserBtn = document.getElementById('workspacePreviewOpenBrowserBtn');
+  const mode = previewArea.dataset.previewMode || 'markdown';
 
   // 渲染态↔源码态切换会重建正文：先收起旧目录，否则悬停入口指向的标题已随
   // innerHTML 重建摘除，点击目录会跳到不存在的位置
   hideMessageToc();
   const isRendered = previewContent.classList.toggle('markdown-rendered');
-  const markdownText = previewArea.dataset.markdownText || '';
 
-  if (isRendered) {
-    // 渲染模式
-    btn.classList.add('active');
-    btn.title = t('workspace.switchToSourcePreview');
-    updateMdToggleIcon(btn, true);
-    // 渲染模式下显示导出菜单和复制按钮（支持 Ctrl+Click 富文本复制），隐藏下载按钮
-    copyBtn.style.display = '';
-    if (downloadBtn) downloadBtn.style.display = 'none';
-    if (exportMenu) exportMenu.style.display = '';
-    previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
-    renderMermaidChartsInContainer(previewContent);
-    bindCodeCopyButtonsInContainer(previewContent);
-    addTableToolbarEvents();
-    lineCountEl.textContent = '';
-  } else {
-    // 源码模式
-    btn.classList.remove('active');
-    btn.title = t('workspace.switchToRenderPreview');
-    updateMdToggleIcon(btn, false);
-    // 源码模式下显示复制和下载按钮，隐藏导出菜单
-    copyBtn.style.display = '';
-    if (downloadBtn) downloadBtn.style.display = '';
-    if (exportMenu) exportMenu.style.display = 'none';
-    const fileName = previewArea.dataset.previewName || '';
-    const lang = getLanguageClass(fileName);
-    const lines = (markdownText || '').split('\n');
-    lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
-    let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
-    for (let i = 0; i < lines.length; i++) {
-      numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
+  if (mode === 'html') {
+    const htmlText = previewArea.dataset.htmlText || '';
+    if (isRendered) {
+      // HTML 渲染模式
+      btn.classList.add('active');
+      btn.title = t('workspace.switchToSourcePreview');
+      updateMdToggleIcon(btn, true);
+      copyBtn.style.display = '';
+      if (downloadBtn) downloadBtn.style.display = 'none';
+      if (exportMenu) exportMenu.style.display = 'none';
+      if (openBrowserBtn) openBrowserBtn.style.display = '';
+      lineCountEl.textContent = '';
+      renderHtmlPreview(previewContent, htmlText);
+    } else {
+      // HTML 源码模式
+      btn.classList.remove('active');
+      btn.title = t('workspace.switchToRenderPreview');
+      updateMdToggleIcon(btn, false);
+      copyBtn.style.display = '';
+      if (downloadBtn) downloadBtn.style.display = '';
+      if (exportMenu) exportMenu.style.display = 'none';
+      if (openBrowserBtn) openBrowserBtn.style.display = 'none';
+      const fileName = previewArea.dataset.previewName || '';
+      const lang = getLanguageClass(fileName);
+      const lines = htmlText.split('\n');
+      lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
+      let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+      for (let i = 0; i < lines.length; i++) {
+        numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
+      }
+      numberedHtml += '</tbody></table>';
+      previewContent.innerHTML = numberedHtml;
     }
-    numberedHtml += '</tbody></table>';
-    previewContent.innerHTML = numberedHtml;
+  } else {
+    // Markdown 模式
+    const markdownText = previewArea.dataset.markdownText || '';
+    if (isRendered) {
+      // 渲染模式
+      btn.classList.add('active');
+      btn.title = t('workspace.switchToSourcePreview');
+      updateMdToggleIcon(btn, true);
+      // 渲染模式下显示导出菜单和复制按钮（支持 Ctrl+Click 富文本复制），隐藏下载按钮
+      copyBtn.style.display = '';
+      if (downloadBtn) downloadBtn.style.display = 'none';
+      if (exportMenu) exportMenu.style.display = '';
+      previewContent.innerHTML = `<div class="markdown-body workspace-preview-markdown">${formatMarkdown(markdownText)}</div>`;
+      renderMermaidChartsInContainer(previewContent);
+      bindCodeCopyButtonsInContainer(previewContent);
+      addTableToolbarEvents();
+      lineCountEl.textContent = '';
+    } else {
+      // 源码模式
+      btn.classList.remove('active');
+      btn.title = t('workspace.switchToRenderPreview');
+      updateMdToggleIcon(btn, false);
+      // 源码模式下显示复制和下载按钮，隐藏导出菜单
+      copyBtn.style.display = '';
+      if (downloadBtn) downloadBtn.style.display = '';
+      if (exportMenu) exportMenu.style.display = 'none';
+      const fileName = previewArea.dataset.previewName || '';
+      const lang = getLanguageClass(fileName);
+      const lines = (markdownText || '').split('\n');
+      lineCountEl.textContent = t('workspace.lineCount', { count: lines.length });
+      let numberedHtml = '<table class="workspace-preview-code-table"><tbody>';
+      for (let i = 0; i < lines.length; i++) {
+        numberedHtml += `<tr><td class="line-num">${i + 1}</td><td class="line-content"><code class="${lang}">${escapeHtml(lines[i])}</code></td></tr>`;
+      }
+      numberedHtml += '</tbody></table>';
+      previewContent.innerHTML = numberedHtml;
+    }
   }
 
   // 更新复制按钮 tooltip
@@ -4260,6 +4361,8 @@ export async function closePreview(force = false) {
   previewContent.classList.remove('xlsx-mode');
   previewContent.classList.remove('markdown-rendered');
   delete previewArea.dataset.markdownText;
+  delete previewArea.dataset.htmlText;
+  delete previewArea.dataset.previewMode;
   const mdToggleBtn = document.getElementById('workspacePreviewMdToggleBtn');
   if (mdToggleBtn) {
     mdToggleBtn.classList.remove('active');

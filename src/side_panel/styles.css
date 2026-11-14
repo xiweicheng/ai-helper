@@ -15107,6 +15107,16 @@ body {
   color: var(--text-primary);
 }
 
+/* HTML 文件 iframe 预览 */
+.workspace-html-preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  border: none;
+  background: #fff;
+  border-radius: 4px;
+}
+
 .workspace-preview-overlay.fullscreen {
   position: fixed;
   top: 0;
