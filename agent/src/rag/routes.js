@@ -12,6 +12,7 @@
 //   DELETE /api/rag/collections/{id}             删除知识库
 //   POST   /api/rag/collections/{id}/toggle      切换启用/停用（停用：LLM 自主检索/导入排除，@ 手动引用仍可用）
 //   GET    /api/rag/collections/{id}/stats       文档数/分块数统计
+//   GET    /api/rag/collections/{id}/export      导出可恢复 ZIP 备份（原件 + 全文 + 元数据）
 //   POST   /api/rag/collections/{id}/ingest      导入文档（text/file/url；同步执行）
 //   GET    /api/rag/collections/{id}/ingest/status 导入进度快照（供导入弹窗轮询）
 //   GET    /api/rag/collections/{id}/documents   文档列表
@@ -248,7 +249,7 @@ export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {})
 
   // /api/rag/collections/{id}[/{sub}[/{docId}[/download]]]
   const collectionMatch = pathname.match(
-    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search|toggle)(?:\/([^/]+)(?:\/(download))?)?)?$/
+    /^\/api\/rag\/collections\/([^/]+)(?:\/(stats|ingest|documents|search|toggle|export)(?:\/([^/]+)(?:\/(download))?)?)?$/
   );
 
   if (collectionMatch) {
@@ -289,6 +290,48 @@ export async function ragRouter(req, res, pathname, url, t, body = {}, ctx = {})
     // GET /api/rag/collections/{id}/stats
     if (method === 'GET' && sub === 'stats') {
       return handle(res, async () => ({ stats: await manager.getStats(collectionId) }));
+    }
+
+    // GET /api/rag/collections/{id}/export - 流式 ZIP；准备阶段失败仍返回 JSON 错误
+    if (method === 'GET' && sub === 'export' && !docId) {
+      let exported;
+      try {
+        exported = await manager.createCollectionExport(collectionId);
+      } catch (err) {
+        if (!(err instanceof RagError)) console.error('[RAG] export error:', err);
+        const { error, code } = translateRagError(err, t);
+        return jsonResponse(res, 400, { success: false, error, code });
+      }
+
+      try {
+        res.writeHead(200, {
+          ...corsHeaders(res),
+          'Access-Control-Expose-Headers': 'Content-Disposition',
+          ...attachmentHeaders('application/zip', exported.fileName),
+        });
+        exported.archive.on('error', (err) => {
+          console.error('[RAG] export stream failed:', err);
+          res.destroy(); // 头部已发出，只能中断下载，不能再改写 JSON 错误
+        });
+        // 客户端取消时停止读取原件，同时触发 archive close 释放知识库操作锁
+        res.once('close', () => {
+          if (!res.writableEnded) exported.archive.destroy();
+        });
+        exported.archive.pipe(res);
+        await exported.archive.finalize();
+      } catch (err) {
+        // 响应头可能已发出：此时只能中断连接，不能二次写 JSON
+        console.error('[RAG] export failed:', err);
+        exported.release();
+        exported.archive.destroy();
+        if (!res.headersSent) {
+          const { error, code } = translateRagError(err, t);
+          jsonResponse(res, 400, { success: false, error, code });
+        } else if (!res.writableEnded) {
+          res.destroy();
+        }
+      }
+      return;
     }
 
     // POST /api/rag/collections/{id}/ingest - 导入文档（同步执行；执行期间进度经 /ingest/status 旁路轮询）

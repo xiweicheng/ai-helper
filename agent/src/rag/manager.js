@@ -27,6 +27,7 @@ import { checkPath } from '../security.js';
 import { fetchUrlGuarded, decodeBytes } from './url-guard.js';
 import { loadConfig } from '../config.js';
 import { encodeSecret, decodeSecret } from '../crypto-lite.js';
+import { buildCollectionExport } from './export.js';
 
 // 知识库 ID 格式校验（防路径穿越）
 const COLLECTION_ID_RE = /^kb_[a-z0-9]+$/;
@@ -1135,6 +1136,36 @@ export class RagManager {
   // ==================== 文档管理 ====================
 
   /**
+   * 创建可恢复 ZIP 备份。导出期间与导入/重建/删除互斥，避免读到半完成状态。
+   * 流结束、关闭或出错时释放锁；调用方必须消费并 finalize 返回的 archive，
+   * 若在消费前失败，必须调用返回的 release() 兜底，避免知识库被长期锁住。
+   */
+  async createCollectionExport(collectionId) {
+    const collection = await this.getCollection(collectionId);
+    this._assertIdle(collectionId);
+    this._activeOps.add(collectionId);
+
+    let exported;
+    try {
+      exported = await buildCollectionExport(this, collection);
+    } catch (err) {
+      this._activeOps.delete(collectionId);
+      throw err;
+    }
+
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this._activeOps.delete(collectionId);
+    };
+    exported.archive.once('end', release);
+    exported.archive.once('close', release);
+    exported.archive.once('error', release);
+    return { ...exported, release };
+  }
+
+  /**
    * 列出知识库中的所有文档（以 documents/*.json 备份为准：带来原件信息，且不必扫全量分块）
    * 备份目录缺失/为空时回退到分块元数据聚合（兼容无备份的老数据）
    */
@@ -1194,6 +1225,38 @@ export class RagManager {
       }
     }
     return [...docs.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+
+  /**
+   * 枚举文档备份文件（导出用）
+   * 与 listDocuments 的区别：无法解析的备份不被静默忽略，而是作为 unreadable 返回，
+   * 由灾备包记录缺失项——导出链路最忌讳"看起来成功但少了数据"。
+   * @returns {Promise<{documents: Array<{id: string, backup: object}>, unreadable: Array<{documentId: string, file: string}>}>}
+   */
+  async scanDocumentBackups(collectionId) {
+    await this.getCollection(collectionId); // 校验存在性
+
+    const docsDir = join(RAG_ROOT, collectionId, 'documents');
+    let files;
+    try {
+      files = await readdir(docsDir);
+    } catch {
+      return { documents: [], unreadable: [] };
+    }
+
+    const documents = [];
+    const unreadable = [];
+    for (const file of files.sort()) {
+      if (!file.endsWith('.json')) continue;
+      const fallbackId = file.slice(0, -'.json'.length);
+      try {
+        const backup = JSON.parse(await readFile(join(docsDir, file), 'utf-8'));
+        documents.push({ id: backup.id || fallbackId, backup });
+      } catch {
+        unreadable.push({ documentId: fallbackId, file });
+      }
+    }
+    return { documents, unreadable };
   }
 
   /**

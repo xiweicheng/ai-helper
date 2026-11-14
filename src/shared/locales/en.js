@@ -243,6 +243,7 @@ export default {
   // Detach/attach window
   detach: {
     taskRunning: 'Task is running, please wait until it finishes',
+    attachFailed: 'Failed to attach back to the side panel. Open a web page and try again.',
   },
 
   // Session management
@@ -1469,6 +1470,10 @@ export default {
     actionIngest: 'Import',
     actionSearch: 'Test Search',
     actionDocs: 'Docs',
+    actionExport: 'Export',
+    exporting: 'Exporting...',
+    exportSuccess: 'Knowledge base "{name}" backup exported',
+    exportFailed: 'Knowledge base export failed: {error}',
     actionDelete: 'Delete',
     actionEnable: 'Enable',
     actionDisable: 'Disable',
@@ -1594,6 +1599,9 @@ export default {
     docViewSource: 'Source',
     docViewTruncated: 'Text is long; showing the first {limit} of {total} characters. Download the full text instead.',
     docViewEmpty: '(no text content)',
+    docToc: 'Outline',
+    docFullscreen: 'Fullscreen',
+    docExitFullscreen: 'Exit Fullscreen',
     docCharCount: '{count} chars',
     docDownloadOriginal: 'Download Original',
     docDownloadText: 'Download Text',

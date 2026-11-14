@@ -243,6 +243,7 @@ export default {
   // 脱离/回归窗口
   detach: {
     taskRunning: '任务执行中，请等待完成后再操作',
+    attachFailed: '回归侧边栏失败，请先打开一个网页后重试',
   },
 
   // 会话管理
@@ -1469,6 +1470,10 @@ export default {
     actionIngest: '导入',
     actionSearch: '检索测试',
     actionDocs: '文档',
+    actionExport: '导出',
+    exporting: '正在导出...',
+    exportSuccess: '知识库「{name}」备份已导出',
+    exportFailed: '知识库导出失败: {error}',
     actionDelete: '删除',
     actionEnable: '启用',
     actionDisable: '停用',
@@ -1594,6 +1599,9 @@ export default {
     docViewSource: '源码',
     docViewTruncated: '文本较长，仅显示前 {limit} 个字符（共 {total} 字符），可下载全文。',
     docViewEmpty: '（无文本内容）',
+    docToc: '目录',
+    docFullscreen: '全屏',
+    docExitFullscreen: '退出全屏',
     docCharCount: '{count} 字符',
     docDownloadOriginal: '下载原件',
     docDownloadText: '下载文本',

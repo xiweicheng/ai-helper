@@ -4950,6 +4950,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 // / cropImage / handlePageScreenshotResult）已拆分到 image-helpers.js
 
 // ==================== 脱离/回归侧边栏 ====================
+
+/**
+ * 解析回归侧边栏的目标 tab。
+ *
+ * 弹窗窗口里的面板页没有「宿主 tab」这个概念（它自己的 tab 属于弹窗窗口，
+ * 随弹窗一起销毁），所以必须在发消息前把目标 tab 定好：
+ * 1. 优先脱离时落库的宿主 tab —— 用户期望就是回到原来那个页面旁边；
+ * 2. 宿主 tab 已被关掉时，退化为最近聚焦的普通浏览器窗口的活跃 tab。
+ * @returns {Promise<number|null>} 可承载侧边栏的 tabId；找不到时为 null
+ */
+async function resolveAttachTargetTabId() {
+  try {
+    const stored = await chrome.storage.local.get('_detachOriginTabId');
+    const originTabId = stored?._detachOriginTabId;
+    if (typeof originTabId === 'number') {
+      try {
+        const tab = await chrome.tabs.get(originTabId);
+        if (tab?.id != null) return tab.id;
+      } catch { /* 宿主 tab 已关闭，走兜底 */ }
+    }
+  } catch { /* storage 不可用，走兜底 */ }
+  try {
+    const wins = await chrome.windows.getAll({ populate: true });
+    // 排除弹窗窗口本身（type='popup'）：往它自己的 tab 上开侧边栏没有意义
+    const candidates = (wins || []).filter((w) => w.type === 'normal');
+    const win = candidates.find((w) => w.focused) || candidates[0];
+    return (win?.tabs || []).find((tab) => tab.active)?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   const isPopup = new URLSearchParams(window.location.search).has('popup');
   const detachBtn = document.getElementById('detachBtn');
@@ -5005,13 +5037,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       try {
-        // 获取当前弹窗的 windowId
+        // 弹窗页先解析出目标 tab，再由 background 在用户手势内同步 open()：
+        // 手势不能跨 background 侧的异步查询，否则会被 Chrome 拒掉
         const winId = (await chrome.windows.getCurrent()).id;
-        await chrome.runtime.sendMessage({ type: 'ATTACH_SIDEPANEL', windowId: winId });
-        // 关闭弹窗（background 会处理 remove，但以防万一）
-        try { window.close(); } catch (e) { /* 忽略 */ }
+        const targetTabId = await resolveAttachTargetTabId();
+        if (targetTabId == null) {
+          showToast(t('detach.attachFailed'), 'error');
+          return;
+        }
+        const resp = await chrome.runtime.sendMessage({ type: 'ATTACH_SIDEPANEL', windowId: winId, tabId: targetTabId });
+        if (resp?.success) {
+          // 关闭弹窗（background 会 remove，这里兜底）
+          try { window.close(); } catch (e) { /* 忽略 */ }
+        } else {
+          // 侧边栏没打开就保留独立窗口，避免“两边都没有”
+          logger.warn('[SidePanel] attach rejected:', resp?.error);
+          showToast(t('detach.attachFailed'), 'error');
+        }
       } catch (e) {
         logger.warn('[SidePanel] attach failed:', e?.message);
+        showToast(t('detach.attachFailed'), 'error');
       }
     });
   }

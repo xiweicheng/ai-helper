@@ -1792,6 +1792,37 @@ textarea {
   color: var(--text-primary);
 }
 
+/* 标题栏右侧按钮组（全屏 + 关闭） */
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.modal-fs-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+.modal-fs-btn:hover {
+  background: var(--border-subtle);
+  color: var(--text-primary);
+}
+.modal-fs-btn.active {
+  color: var(--brand-500);
+  background: var(--brand-soft-bg);
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -3819,6 +3850,7 @@ textarea {
 
 /* Markdown 预览（查看原文弹窗）：沿用源码框的容器外观，正文按阅读排版 */
 .kb-doc-markdown {
+  position: relative;
   padding: 12px 14px;
   max-height: 46vh;
   overflow: auto;
@@ -3909,6 +3941,134 @@ textarea {
 }
 .kb-doc-markdown img { max-width: 100%; height: auto; }
 .kb-doc-markdown del { color: var(--text-tertiary); }
+
+/* 查看原文：内容区（预览模式带目录时为左右布局） */
+.kb-doc-content {
+  display: block;
+}
+.kb-doc-content.kb-doc-with-toc {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.kb-doc-content.kb-doc-with-toc .kb-doc-markdown {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 目录侧栏 */
+.kb-doc-toc {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  max-height: 46vh;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  transition: flex-basis 0.2s ease, opacity 0.2s ease;
+}
+.kb-doc-toc.kb-doc-toc-collapsed {
+  flex-basis: 0;
+  opacity: 0;
+  border: none;
+  pointer-events: none;
+}
+.kb-doc-toc-head {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex: none;
+}
+.kb-doc-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.kb-doc-toc-item a {
+  display: block;
+  padding: 4px 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.5;
+  border-left: 2px solid transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.kb-doc-toc-item a:hover {
+  color: var(--brand-500);
+  background: var(--bg-subtle);
+}
+.kb-doc-toc-item.active a {
+  color: var(--brand-500);
+  border-left-color: var(--brand-500);
+  background: var(--brand-soft-bg);
+  font-weight: 600;
+}
+/* 按层级缩进 */
+.kb-doc-toc-item[data-level="1"] a { padding-left: 12px; }
+.kb-doc-toc-item[data-level="2"] a { padding-left: 22px; }
+.kb-doc-toc-item[data-level="3"] a { padding-left: 32px; }
+.kb-doc-toc-item[data-level="4"] a { padding-left: 42px; }
+.kb-doc-toc-item[data-level="5"] a { padding-left: 52px; }
+.kb-doc-toc-item[data-level="6"] a { padding-left: 62px; }
+
+/* 全屏模式：弹窗撑满整个视口 */
+.modal-content.kb-doc-fs {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border-radius: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.modal-content.kb-doc-fs .modal-header {
+  flex: none;
+}
+.modal-content.kb-doc-fs .kb-modal-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* 全屏下让 #kbDocTextView 撑满 body */
+.modal-content.kb-doc-fs #kbDocTextView {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.modal-content.kb-doc-fs .kb-doc-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.modal-content.kb-doc-fs .kb-doc-content.kb-doc-with-toc {
+  flex-direction: row;
+}
+/* 全屏下正文占满剩余高度 */
+.modal-content.kb-doc-fs .kb-doc-markdown,
+.modal-content.kb-doc-fs .kb-doc-textview {
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+}
+.modal-content.kb-doc-fs .kb-doc-toc {
+  max-height: none;
+  height: 100%;
+}
 
 /* 检索测试弹窗 */
 .kb-search-scope {

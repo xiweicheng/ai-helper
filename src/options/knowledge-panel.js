@@ -327,6 +327,7 @@ function renderCard(c) {
         <button class="kb-action-btn" type="button" data-action="ingest">${escapeHtml(t('knowledge.actionIngest'))}</button>
         <button class="kb-action-btn" type="button" data-action="search">${escapeHtml(t('knowledge.actionSearch'))}</button>
         <button class="kb-action-btn" type="button" data-action="docs">${escapeHtml(t('knowledge.actionDocs'))}</button>
+        <button class="kb-action-btn" type="button" data-action="export">${escapeHtml(t('knowledge.actionExport'))}</button>
         <button class="kb-action-btn" type="button" data-action="toggle">${escapeHtml(disabled ? t('knowledge.actionEnable') : t('knowledge.actionDisable'))}</button>
         <button class="kb-action-btn kb-action-danger" type="button" data-action="delete">${escapeHtml(t('knowledge.actionDelete'))}</button>
       </div>
@@ -372,6 +373,8 @@ async function onListClick(e) {
     showSearchDialog(collection);
   } else if (action === 'docs') {
     showDocsDialog(collection);
+  } else if (action === 'export') {
+    await handleExportCollection(btn, collection);
   } else if (action === 'toggle') {
     await handleToggleCollection(collection);
   } else if (action === 'delete') {
@@ -1256,6 +1259,7 @@ async function showDocTextDialog(c, docId) {
     confirmText: null,
     cancelText: t('common.close'),
     wide: true,
+    fullscreen: true,
   });
   const body = modal.overlay.querySelector('#kbDocTextView');
 
@@ -1292,6 +1296,7 @@ function renderDocText(body, c, doc) {
           <button class="kb-doc-act" type="button" data-doc-mode="preview">${escapeHtml(t('knowledge.docViewPreview'))}</button>
           <button class="kb-doc-act" type="button" data-doc-mode="source">${escapeHtml(t('knowledge.docViewSource'))}</button>
         </div>
+        <button class="kb-doc-act" type="button" data-doc-toc-toggle title="${escapeHtml(t('knowledge.docToc'))}">${escapeHtml(t('knowledge.docToc'))}</button>
         <button class="kb-doc-act" type="button" data-doc-copy>${escapeHtml(t('knowledge.docViewCopy'))}</button>
         <button class="kb-doc-act" type="button" data-doc-download="text">${escapeHtml(t('knowledge.docDownloadText'))}</button>
       </div>
@@ -1302,13 +1307,119 @@ function renderDocText(body, c, doc) {
 
   const content = body.querySelector('.kb-doc-content');
   const modeBtns = body.querySelectorAll('[data-doc-mode]');
+  const tocToggleBtn = body.querySelector('[data-doc-toc-toggle]');
+
+  let tocVisible = true;          // 目录是否展开
+
+  /** 安全的 CSS 转义（jsdom 等环境可能没有 CSS.escape） */
+  const cssEscape = (s) => {
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(s);
+    return String(s).replace(/([^a-zA-Z0-9_\u4e00-\u9fa5-])/g, '\\$1');
+  };
+
+  /** 给标题生成稳定 id（重渲染时也能复用） */
+  const slugify = (s, idx) => {
+    const base = String(s || '').trim().toLowerCase()
+      .replace(/[\s]+/g, '-')
+      .replace(/[^\w\u4e00-\u9fa5-]/g, '')
+      .slice(0, 40) || `heading-${idx}`;
+    return `kb-h-${base}-${idx}`;
+  };
+
+  /** 从已渲染的 Markdown 中提取标题，生成目录数据并给标题补 id */
+  const collectHeadings = (mdEl) => {
+    const headings = mdEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    const items = [];
+    headings.forEach((h, i) => {
+      const id = h.id || slugify(h.textContent, i);
+      h.id = id;
+      items.push({ id, text: h.textContent.trim(), level: Number(h.tagName[1]) });
+    });
+    return items;
+  };
+
+  /** 渲染目录侧栏；headings 为空时不显示 */
+  const renderToc = (mdEl) => {
+    const items = collectHeadings(mdEl);
+    if (!items.length) {
+      tocToggleBtn.style.display = 'none';
+      const oldToc = content.querySelector('.kb-doc-toc');
+      if (oldToc) oldToc.remove();
+      content.classList.remove('kb-doc-with-toc');
+      return;
+    }
+    tocToggleBtn.style.display = '';
+
+    let toc = content.querySelector('.kb-doc-toc');
+    if (!toc) {
+      toc = document.createElement('nav');
+      toc.className = 'kb-doc-toc';
+      content.insertBefore(toc, mdEl);
+      content.classList.add('kb-doc-with-toc');
+    }
+    toc.innerHTML = `
+      <div class="kb-doc-toc-head">
+        <span class="kb-doc-toc-title">${escapeHtml(t('knowledge.docToc'))}</span>
+      </div>
+      <ol class="kb-doc-toc-list">
+        ${items.map(it => `
+          <li class="kb-doc-toc-item" data-level="${it.level}" data-id="${escapeHtml(it.id)}">
+            <a href="#${escapeHtml(it.id)}" title="${escapeHtml(it.text)}">${escapeHtml(it.text)}</a>
+          </li>`).join('')}
+      </ol>`;
+
+    // 点击目录项：滚动到对应标题
+    toc.querySelectorAll('.kb-doc-toc-item').forEach(li => {
+      li.querySelector('a').addEventListener('click', (e) => {
+        e.preventDefault();
+        const target = mdEl.querySelector(`#${cssEscape(li.dataset.id)}`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setActiveToc(li.dataset.id);
+      });
+    });
+
+    setupScrollSpy(mdEl, items);
+    if (!tocVisible) toc.classList.add('kb-doc-toc-collapsed');
+  };
+
+  /** 滚动联动：高亮当前可视区标题对应的目录项 */
+  const setupScrollSpy = (mdEl, items) => {
+    if (!items.length) return;
+    const setFromScroll = () => {
+      const scrollTop = mdEl.scrollTop;
+      const offsetTop = 8;
+      let active = items[0]?.id;
+      for (const it of items) {
+        const el = mdEl.querySelector(`#${cssEscape(it.id)}`);
+        if (el && el.offsetTop - offsetTop <= scrollTop) active = it.id;
+        else break;
+      }
+      setActiveToc(active);
+    };
+    mdEl.addEventListener('scroll', setFromScroll, { passive: true });
+    setFromScroll();
+  };
+
+  const setActiveToc = (id) => {
+    const toc = content.querySelector('.kb-doc-toc');
+    if (!toc) return;
+    toc.querySelectorAll('.kb-doc-toc-item').forEach(li => {
+      li.classList.toggle('active', li.dataset.id === id);
+    });
+    // 把激活项滚到目录可视区
+    const active = toc.querySelector('.kb-doc-toc-item.active');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  };
 
   // 源码模式保留原文（可复制）；预览模式交给 marked 渲染 + DOMPurify 清洗
   const paint = (mode) => {
     if (mode === 'preview' && text) {
       content.innerHTML = renderMarkdownPreview(text);
+      const mdEl = content.querySelector('.kb-doc-markdown');
+      if (mdEl) renderToc(mdEl);
     } else {
       content.innerHTML = `<pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
+      tocToggleBtn.style.display = 'none';
     }
     modeBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.docMode === mode));
   };
@@ -1316,6 +1427,13 @@ function renderDocText(body, c, doc) {
 
   modeBtns.forEach((btn) => {
     btn.addEventListener('click', () => paint(btn.dataset.docMode));
+  });
+
+  // 目录展开/收起
+  tocToggleBtn?.addEventListener('click', () => {
+    const toc = content.querySelector('.kb-doc-toc');
+    if (!toc) return;
+    tocVisible = !toc.classList.toggle('kb-doc-toc-collapsed');
   });
 
   body.querySelector('[data-doc-copy]')?.addEventListener('click', async () => {
@@ -1394,6 +1512,48 @@ function renderMarkdownPreview(text) {
   });
   // 弹窗里的外链不该把配置页顶走
   return `<div class="kb-doc-markdown">${html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ')}</div>`;
+}
+
+/** 下载单库可恢复 ZIP（Agent 流式生成，前端仅在浏览器下载阶段接收 Blob） */
+async function downloadCollectionExport(c) {
+  const url = `${state.agentBaseUrl}/api/rag/collections/${encodeURIComponent(c.id)}/export`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${state.agentToken}` },
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => null);
+    throw new Error(data?.error || `HTTP ${resp.status}`);
+  }
+
+  const blob = await resp.blob();
+  const fileName = parseDownloadName(
+    resp.headers.get('Content-Disposition'),
+    `${c.name || c.id}-backup.zip`,
+  );
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+}
+
+async function handleExportCollection(btn, c) {
+  if (btn.disabled) return;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = t('knowledge.exporting');
+  try {
+    await downloadCollectionExport(c);
+    showToast(t('knowledge.exportSuccess', { name: c.name }), 'success');
+  } catch (err) {
+    showToast(t('knowledge.exportFailed', { error: err.message }), 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
 /**
@@ -1559,18 +1719,25 @@ function renderSearchResults(container, result) {
 
 /**
  * 创建弹窗（返回 { overlay, close }）
- * @param {{title: string, bodyHtml: string, confirmText?: string|null, cancelText?: string, onConfirm?: Function, wide?: boolean, closeOnOverlay?: boolean}} opts
+ * @param {{title: string, bodyHtml: string, confirmText?: string|null, cancelText?: string, onConfirm?: Function, wide?: boolean, closeOnOverlay?: boolean, fullscreen?: boolean}} opts
  *        confirmText 为 null 时隐藏确认按钮（纯查看型弹窗）
  *        closeOnOverlay 为 false 时点击遮罩空白区不关闭（默认 true；编辑/新建知识库传 false 防误触丢失表单）
+ *        fullscreen 为 true 时在标题栏右侧（关闭按钮左侧）增加视口级全屏切换按钮（仅 CSS 撑满可视区，不触发浏览器全屏 API）
  */
-function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide, closeOnOverlay = true }) {
+function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide, closeOnOverlay = true, fullscreen = false }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
+  // 进入全屏（四角向外展开）/ 退出全屏（四角向内收拢），复用同一套 SVG 风格
+  const FS_ENTER_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+  const FS_EXIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></svg>';
   overlay.innerHTML = `
     <div class="modal-content kb-modal${wide ? ' kb-modal-wide' : ''}">
       <div class="modal-header">
         <h3>${escapeHtml(title)}</h3>
-        <button class="modal-close-btn" type="button">✕</button>
+        <div class="modal-header-actions">
+          ${fullscreen ? `<button class="modal-fs-btn" type="button" title="${escapeHtml(t('knowledge.docFullscreen'))}">${FS_ENTER_ICON}</button>` : ''}
+          <button class="modal-close-btn" type="button">✕</button>
+        </div>
       </div>
       <div class="kb-modal-body">${bodyHtml}</div>
       <div class="modal-actions">
@@ -1580,7 +1747,13 @@ function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide
     </div>`;
   document.body.appendChild(overlay);
 
-  const close = () => overlay.remove();
+  const content = overlay.querySelector('.modal-content');
+  let fsCleanup = null;
+
+  const close = () => {
+    try { fsCleanup?.(); } catch { /* ignore */ }
+    overlay.remove();
+  };
   overlay.querySelector('.modal-close-btn').addEventListener('click', close);
   overlay.querySelector('[data-modal-cancel]').addEventListener('click', close);
   overlay.querySelector('[data-modal-confirm]')?.addEventListener('click', (e) => e.stopPropagation());
@@ -1588,6 +1761,31 @@ function createModal({ title, bodyHtml, confirmText, cancelText, onConfirm, wide
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) close();
     });
+  }
+
+  // 视口级全屏：仅切换 CSS 类，让 .modal-content 撑满 .modal-overlay（即当前窗口可视区）
+  if (fullscreen) {
+    const fsBtn = overlay.querySelector('.modal-fs-btn');
+    const syncFsIcon = (on) => {
+      fsBtn.innerHTML = on ? FS_EXIT_ICON : FS_ENTER_ICON;
+      fsBtn.classList.toggle('active', on);
+      fsBtn.title = on ? t('knowledge.docExitFullscreen') : t('knowledge.docFullscreen');
+    };
+    const toggleFs = () => {
+      syncFsIcon(content.classList.toggle('kb-doc-fs'));
+    };
+    fsBtn.addEventListener('click', toggleFs);
+    const onKey = (e) => {
+      if (e.key === 'Escape' && content.classList.contains('kb-doc-fs')) {
+        e.preventDefault();
+        toggleFs();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    fsCleanup = () => {
+      document.removeEventListener('keydown', onKey);
+      content.classList.remove('kb-doc-fs');
+    };
   }
 
   const confirmBtn = overlay.querySelector('[data-modal-confirm]');

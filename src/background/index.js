@@ -1951,6 +1951,9 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     // 弹窗宽度参考侧边栏当前宽度（由侧边栏页面传入），clamp 到合理范围
     const popupWidth = Math.min(Math.max(message.width || 480, 320), 900);
     const popupHeight = 720;
+    // 记下宿主 tab：弹窗窗口自身没有 tab 归属，回归时再问「当前活跃 tab」会拿到
+    // 正在销毁的弹窗 tab 或别的窗口，只能靠这里落库的宿主 tab 回到原处
+    const originTabId = sender.tab?.id ?? null;
     (async () => {
       try {
         // 以当前浏览器窗口为基准计算居中位置
@@ -1966,16 +1969,28 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
         const newWin = await chrome.windows.create({
           url: chrome.runtime.getURL('side_panel.html') + '?popup=1',
           type: 'popup',
+          focused: true,
           width: popupWidth,
           height: popupHeight,
           left,
           top,
         });
-        // 记录弹窗 windowId，供后续回归使用（全局变量 + storage 双写）
+        // 新窗口创建后不一定置顶（macOS 上实测会落在浏览器窗口下面，用户要手动切窗口
+        // 才能看到）：显式再聚焦一次
+        await chrome.windows.update(newWin.id, { focused: true }).catch(() => {});
+        // 记录弹窗 windowId + 宿主 tab，供后续回归使用（全局变量 + storage 双写）
         _detachWindowId = newWin.id;
-        await chrome.storage.local.set({ _detachWindowId: newWin.id }).catch(() => {});
+        await chrome.storage.local.set({ _detachWindowId: newWin.id, _detachOriginTabId: originTabId }).catch(() => {});
         logger.debug('[Background] sidePanel detached, windowId:', newWin.id);
         sendResponse({ success: true, windowId: newWin.id });
+        // 顺序坑：侧边栏页收到 success 后才 window.close()，侧边栏关闭这个动作会把宿主
+        // 浏览器窗口重新提回前台，把刚建好的弹窗盖住（用户看到的就是弹窗“嗖”一下被挡）。
+        // 关闭动作在响应之后才发生，所以这里在响应后补两次聚焦，让弹窗最终停在最前。
+        for (const delay of [250, 900]) {
+          setTimeout(() => {
+            chrome.windows.update(newWin.id, { focused: true }).catch(() => { /* 弹窗已关闭 */ });
+          }, delay);
+        }
       } catch (e) {
         logger.warn('[Background] detach sidePanel failed:', e?.message);
         sendResponse({ success: false, error: e?.message });
@@ -1986,24 +2001,39 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
 
   // 回归侧边栏
   if (message.type === 'ATTACH_SIDEPANEL') {
-    // 清除全局变量和 storage
-    _detachWindowId = null;
-    // 关闭弹窗窗口
-    if (message.windowId) {
-      chrome.windows.remove(message.windowId).catch(() => {});
+    const popupWindowId = message.windowId ?? null;
+    // 目标 tab 由弹窗页先解析好（宿主 tab 优先）后随消息带过来：本处必须同步 open()，
+    // 一旦在这里 await（如 chrome.tabs.query 回调）就丢了用户手势，sidePanel.open()
+    // 会以 "may only be called in response to a user gesture" 被拒 → 点了没反应
+    const targetTabId = typeof message.tabId === 'number' ? message.tabId : null;
+    if (targetTabId == null) {
+      sendResponse({ success: false, error: 'no-target-tab' });
+      return false;
     }
-    chrome.storage.local.remove('_detachWindowId').catch(() => {});
-    // 获取当前活动标签页后打开侧边栏
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        bindSidePanelToTab(tabs[0].id);
-        chrome.sidePanel?.open?.({ tabId: tabs[0].id }).catch(err => {
-          logger.warn('[Background] open sidePanel after attach failed:', err?.message);
-        });
-      }
+    if (!chrome.sidePanel?.open) {
+      sendResponse({ success: false, error: 'sidePanel.open unavailable' });
+      return false;
+    }
+    let openResult;
+    try {
+      bindSidePanelToTab(targetTabId);
+      openResult = chrome.sidePanel.open({ tabId: targetTabId });
+    } catch (e) {
+      logger.warn('[Background] open sidePanel after attach failed:', e?.message);
+      sendResponse({ success: false, error: e?.message });
+      return false;
+    }
+    Promise.resolve(openResult).then(() => {
+      // 只有侧边栏真的打开了才关弹窗、清状态：失败时保留独立窗口，避免两边都没有
+      _detachWindowId = null;
+      chrome.storage.local.remove(['_detachWindowId', '_detachOriginTabId']).catch(() => {});
+      if (popupWindowId != null) chrome.windows.remove(popupWindowId).catch(() => {});
+      sendResponse({ success: true });
+    }).catch((err) => {
+      logger.warn('[Background] open sidePanel after attach failed:', err?.message);
+      sendResponse({ success: false, error: err?.message });
     });
-    sendResponse({ success: true });
-    return false;
+    return true; // 异步响应
   }
 
   // 选中文本工具栏操作

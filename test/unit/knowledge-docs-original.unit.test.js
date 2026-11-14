@@ -163,6 +163,15 @@ beforeEach(async () => {
   };
   globalThis.fetch = vi.fn(async (url, opts) => {
     fetchCalls.push({ url, opts });
+    if (String(url).endsWith('/export')) {
+      return new Response('zip-bytes', {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="knowledge.zip"; filename*=UTF-8\'\'%E7%9F%A5%E8%AF%86%E5%BA%93%E4%B8%80-%E5%A4%87%E4%BB%BD.zip',
+        },
+      });
+    }
     return new Response('original-bytes', {
       status: 200,
       headers: {
@@ -287,5 +296,24 @@ describe('下载原件', () => {
     await vi.waitFor(() => expect(anchorClicks).toHaveLength(1));
     expect(anchorClicks[0].download).toBe('季度报告.pdf');
     expect(anchorClicks[0].href).toBe('blob:mock-download');
+  });
+});
+
+describe('导出知识库备份', () => {
+  test('卡片入口带 Authorization 下载 ZIP，并在完成后恢复按钮', async () => {
+    const button = document.querySelector('.kb-card[data-kb-id="kb-1"] [data-action="export"]');
+    expect(button).toBeTruthy();
+    button.click();
+    expect(button.disabled).toBe(true);
+
+    await vi.waitFor(() => expect(fetchCalls).toHaveLength(1));
+    const { url, opts } = fetchCalls[0];
+    expect(url).toBe('http://127.0.0.1:6767/api/rag/collections/kb-1/export');
+    expect(opts.headers.Authorization).toBe('Bearer test-token');
+
+    await vi.waitFor(() => expect(anchorClicks).toHaveLength(1));
+    expect(anchorClicks[0].download).toBe('知识库一-备份.zip');
+    expect(anchorClicks[0].href).toBe('blob:mock-download');
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
   });
 });
