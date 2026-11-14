@@ -83,7 +83,7 @@ export const AGENT_TOOLS = [
     type: 'function',
     function: {
       name: 'agent_search',
-      description: 'Search files or file content on the agent machine. file: find files by name pattern; content: search text/regex inside files',
+      description: 'Search files or file content on the agent machine. Prefer this tool over agent_exec shell commands (find/grep/ls) for any file or content lookup: it uses fast engines (fd/ripgrep) automatically when installed. file: find files by name pattern; content: search text/regex inside files. Fall back to agent_exec only when this tool cannot express the query (pipelines, aggregation, custom ignore rules)',
       parameters: {
         type: 'object',
         properties: {

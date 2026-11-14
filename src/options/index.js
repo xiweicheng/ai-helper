@@ -2006,6 +2006,14 @@ function initAgentConfig() {
       const archInfo = data.arch ? ` (${data.arch})` : '';
       rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailSystem')}</span><span class="detail-value">${escHtml(data.platform)}${archInfo}</span></div>`);
     }
+    if (data.searchTools) {
+      const mark = (ok) => (ok === true ? '✅' : ok === false ? '❌' : '…');
+      const value = t('agentConfig.detailSearchToolsValue', {
+        fd: mark(data.searchTools.fd),
+        rg: mark(data.searchTools.rg)
+      });
+      rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailSearchTools')}</span><span class="detail-value">${value}</span></div>`);
+    }
     if (data.hostname) {
       rows.push(`<div class="detail-row"><span class="detail-label">${t('agentConfig.detailHostname')}</span><span class="detail-value">${escHtml(data.hostname)}</span></div>`);
     }

@@ -975,6 +975,8 @@ export default {
     unknownCommand: '(unknown command)',
     detailVersion: 'Version',
     detailSystem: 'System',
+    detailSearchTools: 'Search engines',
+    detailSearchToolsValue: 'File search fd {fd} &nbsp; Content search rg {rg}',
     detailHostname: 'Hostname',
     detailHomeDir: 'Home directory',
     detailRunningProcesses: 'Running processes',

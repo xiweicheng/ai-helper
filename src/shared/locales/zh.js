@@ -975,6 +975,8 @@ export default {
     unknownCommand: '(未知命令)',
     detailVersion: '版本',
     detailSystem: '系统',
+    detailSearchTools: '检索引擎',
+    detailSearchToolsValue: '文件检索 fd {fd} &nbsp; 内容检索 rg {rg}',
     detailHostname: '主机名',
     detailHomeDir: '用户目录',
     detailRunningProcesses: '运行中进程',
