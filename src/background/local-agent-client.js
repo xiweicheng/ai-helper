@@ -571,15 +571,15 @@ async function downloadFile(filePath, scope = null) {
 /**
  * 按文件名模式搜索文件
  */
-async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200, scope = null) {
-  return agentRequest('/api/fs/search_files', { path: rootPath, pattern, recursive, maxResults }, 'POST', 60000, scope);
+async function searchFiles(rootPath, pattern = '*', recursive = true, maxResults = 200, scope = null, excludeGlobs = []) {
+  return agentRequest('/api/fs/search_files', { path: rootPath, pattern, recursive, maxResults, excludeGlobs }, 'POST', 60000, scope);
 }
 
 /**
  * 搜索文件内容
  */
-async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, scope = null) {
-  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines }, 'POST', 60000, scope);
+async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 0, scope = null, excludeGlobs = []) {
+  return agentRequest('/api/fs/search_content', { path: rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines, excludeGlobs }, 'POST', 60000, scope);
 }
 
 /**

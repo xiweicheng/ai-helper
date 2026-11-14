@@ -89,12 +89,13 @@ export const AGENT_TOOLS = [
         properties: {
           searchType: { type: 'string', enum: ['file', 'content'], description: 'file: find files by name; content: search inside files' },
           path: { type: 'string' },
-          pattern: { type: 'string' },
-          recursive: { type: 'boolean' },
-          filePattern: { type: 'string' },
-          caseSensitive: { type: 'boolean' },
-          maxResults: { type: 'integer' },
-          contextLines: { type: 'integer' }
+          pattern: { type: 'string', description: 'file: name glob (e.g. "*.js", default "*"); content: text or regex' },
+          recursive: { type: 'boolean', description: 'default true; false searches only the direct children of path' },
+          filePattern: { type: 'string', description: 'content only: limit searched files by glob, e.g. "*.ts"' },
+          caseSensitive: { type: 'boolean', description: 'default false' },
+          maxResults: { type: 'integer', description: 'total result cap (file default 200, content default 100); results are sorted newest-first for file searches' },
+          contextLines: { type: 'integer', description: 'content only: surrounding context lines per match, 0-5 (default 0)' },
+          excludeGlobs: { type: 'array', items: { type: 'string' }, description: 'optional globs to skip, e.g. ["*.min.js","dist/**"]. Prefer this over shelling out for one-off exclusions' }
         },
         required: ['searchType', 'path']
       }

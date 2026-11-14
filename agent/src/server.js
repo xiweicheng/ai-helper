@@ -157,6 +157,32 @@ const PID_FILE = join(homedir(), '.ai-helper-agent', 'agent.pid');
 const DEFAULT_MAX_SIZE = 50 * 1024 * 1024; // 文件默认大小限制（read/list 等读取操作）
 const MAX_UPLOAD_SIZE = 200 * 1024 * 1024; // 流式上传最大 200MB（与 MAX_BODY_SIZE 一致，流式无 base64 膨胀，实际可传 200MB 原文件）
 
+/**
+ * 规范化调用方传入的排除 glob：仅接受字符串数组，限制数量与单条长度
+ * @param {*} raw
+ * @returns {string[]}
+ */
+function sanitizeExcludeGlobs(raw) {
+  // 兼容调用方误传单个字符串的情况
+  const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? [raw] : []);
+  return list
+    .filter(g => typeof g === 'string' && g.trim())
+    .map(g => g.trim().slice(0, 200))
+    .slice(0, 20);
+}
+
+/**
+ * 规范化 maxResults：非数字/非正数回退默认值，并限制上限
+ * @param {*} raw
+ * @param {number} fallback
+ * @returns {number}
+ */
+function normalizeMaxResults(raw, fallback) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(Math.floor(n), MAX_SEARCH_RESULTS);
+}
+
 function detectShell() {
   const platform = os.platform();
   const envShell = process.env.SHELL || process.env.COMSPEC || '';
@@ -1394,7 +1420,8 @@ export function startServer() {
 
       // 搜索文件（按文件名模式）
       if (pathname === '/api/fs/search_files') {
-        const maxResults = Math.min(body.maxResults || 200, MAX_SEARCH_RESULTS);
+        const maxResults = normalizeMaxResults(body.maxResults, 200);
+        const excludeGlobs = sanitizeExcludeGlobs(body.excludeGlobs);
         try {
           const result = await searchFiles(
             body.path || '.',
@@ -1402,7 +1429,8 @@ export function startServer() {
             body.recursive !== false,
             maxResults,
             t,
-            scope
+            scope,
+            excludeGlobs
           );
           if (result.success) {
             logFs('search_files', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });
@@ -1418,7 +1446,9 @@ export function startServer() {
 
       // 搜索文件内容
       if (pathname === '/api/fs/search_content') {
-        const maxResults = Math.min(body.maxResults || 100, MAX_SEARCH_RESULTS);
+        const maxResults = normalizeMaxResults(body.maxResults, 100);
+        const contextLines = Math.max(0, Math.min(Number(body.contextLines) || 0, 5));
+        const excludeGlobs = sanitizeExcludeGlobs(body.excludeGlobs);
         try {
           const result = await searchContent(
             body.path || '.',
@@ -1427,9 +1457,10 @@ export function startServer() {
             body.caseSensitive || false,
             body.recursive !== false,
             maxResults,
-            body.contextLines !== undefined ? body.contextLines : 2,
+            contextLines,
             t,
-            scope
+            scope,
+            excludeGlobs
           );
           if (result.success) {
             logFs('search_content', { path: result.path, pattern: body.pattern, total: result.total, engine: result.engine });

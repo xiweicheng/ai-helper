@@ -201,6 +201,7 @@ registerTranslations('zh', {
     engineLabelRipgrep: ' (引擎: ripgrep)',
     fileListLimitHint: '\n\n... (仅显示前 {count} 条)',
     matchListLimitHint: '\n\n... (仅显示前 {count} 条)',
+    searchTruncatedHint: '\n\n[结果已达 maxResults 上限被截断：可细化 pattern、加 excludeGlobs 或缩小 path 后重试]',
     additionalParamsDesc: '其他 {count} 个参数已省略: {names}',
     captureDownloadAction: '操作模式：download=下载截图',
     captureDownloadDesc: '页面截图并下载到本地',
@@ -431,6 +432,7 @@ registerTranslations('en', {
     engineLabelRipgrep: ' (engine: ripgrep)',
     fileListLimitHint: '\n\n... (showing first {count} only)',
     matchListLimitHint: '\n\n... (showing first {count} only)',
+    searchTruncatedHint: '\n\n[Truncated at the maxResults cap: refine pattern, add excludeGlobs, or narrow path and retry]',
     additionalParamsDesc: '{count} additional parameters omitted: {names}',
     captureDownloadAction: 'Action mode: download=download screenshot',
     captureDownloadDesc: 'Take a page screenshot and download it locally',
@@ -5181,19 +5183,22 @@ function formatAgentExecResult(result, command, cwd, toolCallId) {
  * Agent 文件名搜索
  */
 async function executeAgentSearchFiles(args, toolCallId, sessionId = null) {
-  const { path, pattern, recursive, maxResults } = args;
+  const { path, pattern, recursive, maxResults, excludeGlobs } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
+  const excludeList = Array.isArray(excludeGlobs) ? excludeGlobs : (typeof excludeGlobs === 'string' ? [excludeGlobs] : []);
   
-  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200, sessionId);
+  const result = await AgentClient.searchFiles(path, pattern || '*', recursive !== false, maxResults || 200, sessionId, excludeList);
   if (result.success) {
     const engineLabel = result.engine === 'fd' ? t('toolExec.engineLabelFd') : t('toolExec.engineLabelNodejs');
     const fileList = result.results.slice(0, 50).map(r => `${r.path} (${r.size} bytes)`).join('\n');
+    const truncatedHint = result.truncated ? t('toolExec.searchTruncatedHint') : '';
     return {
       success: true,
       results: result.results,
       total: result.total,
       engine: result.engine,
-      message: t('toolExec.agentSearchFilesResult', { total: result.total, engineLabel }) + '\n\n' + fileList + (result.total > 50 ? t('toolExec.fileListLimitHint', { count: 50 }) : ''),
+      truncated: !!result.truncated,
+      message: t('toolExec.agentSearchFilesResult', { total: result.total, engineLabel }) + '\n\n' + fileList + (result.total > 50 ? t('toolExec.fileListLimitHint', { count: 50 }) : '') + truncatedHint,
       tool_call_id: toolCallId
     };
   }
@@ -5201,28 +5206,45 @@ async function executeAgentSearchFiles(args, toolCallId, sessionId = null) {
 }
 
 /**
+ * 把一条匹配结果格式化为「定位头 + 上下文行」
+ */
+function formatSearchMatch(r) {
+  const header = `${r.file}:${r.line}`;
+  if (!Array.isArray(r.context) || r.context.length === 0) {
+    return `${header}\n${r.content}`;
+  }
+  const lines = r.context.map(c => `  ${c.line}${c.isMatch ? '>' : '|'} ${c.content}`).join('\n');
+  return `${header}\n${lines}`;
+}
+
+/**
  * Agent 文件内容搜索
  */
 async function executeAgentSearchContent(args, toolCallId, sessionId = null) {
-  const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines } = args;
+  const { path, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines, excludeGlobs } = args;
   if (!path) return { success: false, error: t('toolExec.missingPathParam'), tool_call_id: toolCallId };
   if (!pattern) return { success: false, error: t('toolExec.missingPattern'), tool_call_id: toolCallId };
 
+  const ctxLines = Math.max(0, Math.min(Number(contextLines) || 0, 5));
+  const excludeList = Array.isArray(excludeGlobs) ? excludeGlobs : (typeof excludeGlobs === 'string' ? [excludeGlobs] : []);
   const result = await AgentClient.searchContent(
     path, pattern, filePattern || null,
     caseSensitive || false, recursive !== false, maxResults || 100,
-    contextLines !== undefined ? contextLines : 2,
-    sessionId
+    ctxLines,
+    sessionId,
+    excludeList
   );
   if (result.success) {
     const engineLabel = result.engine === 'rg' ? t('toolExec.engineLabelRipgrep') : t('toolExec.engineLabelNodejs');
-    const matchList = result.results.slice(0, 30).map(r => `${r.file}:${r.line}\n${r.content}`).join('\n\n');
+    const matchList = result.results.slice(0, 30).map(formatSearchMatch).join('\n\n');
+    const truncatedHint = result.truncated ? t('toolExec.searchTruncatedHint') : '';
     return {
       success: true,
       results: result.results,
       total: result.total,
       engine: result.engine,
-      message: t('toolExec.agentSearchContentResult', { total: result.total, engineLabel }) + '\n\n' + matchList + (result.total > 30 ? t('toolExec.matchListLimitHint', { count: 30 }) : ''),
+      truncated: !!result.truncated,
+      message: t('toolExec.agentSearchContentResult', { total: result.total, engineLabel }) + '\n\n' + matchList + (result.total > 30 ? t('toolExec.matchListLimitHint', { count: 30 }) : '') + truncatedHint,
       tool_call_id: toolCallId
     };
   }

@@ -2,7 +2,7 @@
 import { spawn } from 'child_process';
 import { readdir, stat, readFile } from 'fs/promises';
 import { statSync } from 'fs';
-import { join, basename, extname, resolve, isAbsolute } from 'path';
+import { join, basename, extname, resolve, isAbsolute, relative, sep } from 'path';
 import { checkPath } from './security.js';
 import { t as translate } from './i18n.js';
 
@@ -89,6 +89,23 @@ const DEFAULT_IGNORE_DIRS = new Set([
 ]);
 
 /**
+ * 命中任一排除 glob 时返回 true（用于回退实现，fd/rg 由原生参数处理）
+ * 支持目录型 glob（`dist/**`）与路径型 glob（`src/*.js`），与 fd/rg 语义对齐
+ */
+function isExcludedPath(relPath, name, excludeGlobs) {
+  if (!Array.isArray(excludeGlobs)) return false;
+  const normalized = relPath.split(sep).join('/');
+  return excludeGlobs.some((glob) => {
+    const stripped = glob.replace(/\/\*\*$/, '');
+    if (stripped !== glob) {
+      // 目录型 glob：命中目录自身或其下任意层级
+      return normalized === stripped || normalized.startsWith(`${stripped}/`);
+    }
+    return matchGlob(name, glob) || matchGlob(normalized, glob);
+  });
+}
+
+/**
  * 文件名模式匹配（支持 glob：*.js, test*.ts, ** / *.js 等）
  */
 function matchGlob(filename, pattern) {
@@ -106,12 +123,16 @@ function matchGlob(filename, pattern) {
 /**
  * 使用 fd 搜索文件和目录（快速）
  */
-function searchWithFd(rootPath, filePattern, recursive, maxResults) {
+function searchWithFd(rootPath, filePattern, recursive, maxResults, excludeGlobs = []) {
   return new Promise((resolve) => {
     const args = ['--glob', filePattern, '--type', 'f', '--type', 'd', '--max-results', String(maxResults)];
     // 排除默认忽略的目录
     for (const dir of DEFAULT_IGNORE_DIRS) {
       args.push('--exclude', dir);
+    }
+    // 调用方指定的排除 glob（fd 按名字匹配，目录型 glob 需去掉尾部 /**）
+    for (const glob of excludeGlobs) {
+      args.push('--exclude', glob.replace(/\/\*\*$/, ''));
     }
     if (!recursive) args.push('--max-depth', '1');
     args.push(rootPath);
@@ -161,7 +182,7 @@ function yieldEventLoop() {
 /**
  * Node.js 原生递归搜索文件和目录（回退方案，异步 + 分片防止阻塞事件循环）
  */
-async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
+async function searchFilesNative(rootPath, filePattern, recursive, maxResults, excludeGlobs = []) {
   const results = [];
 
   async function walk(dir, depth) {
@@ -182,6 +203,7 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
+        if (isExcludedPath(relative(rootPath, fullPath), entry.name, excludeGlobs)) continue;
         // 目录也参与搜索匹配
         if (matchGlob(entry.name, filePattern)) {
           try {
@@ -193,6 +215,7 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
         }
         await walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
+        if (isExcludedPath(relative(rootPath, fullPath), entry.name, excludeGlobs)) continue;
         if (matchGlob(entry.name, filePattern)) {
           try {
             const s = await stat(fullPath);
@@ -216,9 +239,10 @@ async function searchFilesNative(rootPath, filePattern, recursive, maxResults) {
  * @param {boolean} recursive - 是否递归
  * @param {number} maxResults - 最大结果数
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
+ * @param {string[]} [excludeGlobs] - 排除的 glob 列表
  * @returns {Array<{path, name, size, mtime}>}
  */
-export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200, tFn, ctx = {}) {
+export async function searchFiles(rootPath, filePattern = '*', recursive = true, maxResults = 200, tFn, ctx = {}, excludeGlobs = []) {
   const pathCheck = await checkPath(rootPath, tFn, ctx);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
@@ -236,17 +260,24 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
     return { success: false, error: tr('search.pathNotDir', undefined, tFn) };
   }
 
-  let results;
+  // 按 mtime 倒序需要先在更大的集合里取，否则 fd 的预截断会让“最新文件”被随机排除
+  const fetchLimit = Math.min(Math.max(maxResults * 5, 500), 5000);
+  let raw;
   if (fdAvailable) {
-    results = await searchWithFd(resolved, filePattern, recursive, maxResults);
+    raw = await searchWithFd(resolved, filePattern, recursive, fetchLimit, excludeGlobs);
   } else {
-    results = await searchFilesNative(resolved, filePattern, recursive, maxResults);
+    raw = await searchFilesNative(resolved, filePattern, recursive, fetchLimit, excludeGlobs);
   }
+  raw.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+
+  const truncated = raw.length > maxResults;
+  const results = truncated ? raw.slice(0, maxResults) : raw;
 
   return {
     success: true,
     results,
     total: results.length,
+    truncated,
     engine: fdAvailable ? 'fd' : 'nodejs',
     path: resolved,
     pattern: filePattern
@@ -256,13 +287,17 @@ export async function searchFiles(rootPath, filePattern = '*', recursive = true,
 /**
  * 使用 rg 搜索文件内容（快速）
  */
-function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines) {
+function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines, excludeGlobs = []) {
   return new Promise((resolve) => {
     const args = [
-      '--no-heading', '--line-number',
-      '--max-count', String(maxResults),
-      '-C', String(contextLines)
+      // --json 输出结构化事件，避免从文本行里区分「匹配行 / 上下文行」时的歧义
+      '--json',
+      // --max-count 是「每个文件」的上限；总量在调用方统一截断
+      '--max-count', String(maxResults + 1)
     ];
+    if (contextLines > 0) {
+      args.push('-C', String(contextLines));
+    }
     // 大小写不敏感时添加 -i（与 searchContentNative 的 caseSensitive 语义对齐）
     if (!caseSensitive) {
       args.push('-i');
@@ -274,7 +309,21 @@ function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recu
     if (filePattern) {
       args.push('--glob', filePattern);
     }
-    args.push(pattern, rootPath);
+    // 默认忽略目录与 fd / Node 回退保持一致，不单纯依赖 .gitignore
+    for (const dir of DEFAULT_IGNORE_DIRS) {
+      args.push('--glob', `!**/${dir}`);
+      args.push('--glob', `!**/${dir}/**`);
+    }
+    // 调用方指定的排除 glob：同时覆盖 `dist/**` 与 `dist` 两种写法
+    for (const glob of excludeGlobs) {
+      args.push('--glob', `!${glob}`);
+      const stripped = glob.replace(/\/\*\*$/, '');
+      if (stripped !== glob) {
+        args.push('--glob', `!**/${stripped}/**`);
+      }
+    }
+    // -e 显式指定模式，避免以 "-" 开头的 pattern 被当成命令行参数
+    args.push('-e', pattern, rootPath);
 
     const proc = spawn('rg', args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const stdout = [];
@@ -293,9 +342,9 @@ function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recu
       if (timedOut) return;
       // 不再按退出码过滤：Windows 下 rg 可能返回退出码 2（错误）但仍带有效匹配结果，
       // 原逻辑 `code !== 0 && code !== 1` 会把这种情况的输出一并丢弃，导致有匹配却返回 0 条。
-      // 只要 stdout 有内容就解析；stdout 为空时 parseRgOutput 自然返回 []。
+      // 只要 stdout 有内容就解析；stdout 为空时 parseRgJsonOutput 自然返回 []。
       const output = Buffer.concat(stdout).toString('utf-8').trim();
-      resolve(parseRgOutput(output, contextLines));
+      resolve(parseRgJsonOutput(output, contextLines));
     });
 
     proc.on('error', () => { clearTimeout(timeout); resolve([]); });
@@ -303,37 +352,59 @@ function searchContentWithRg(rootPath, pattern, filePattern, caseSensitive, recu
 }
 
 /**
- * 解析 rg 输出格式：file:line:content
- * 上下文行格式：file-line:content
- * 注：Windows 路径含 `:` 可能导致解析偏差，建议在 WSL/Mac/Linux 中使用
+ * 解析 rg --json 输出（每行一个事件）：
+ *   match / context 事件都带 path、line_number、lines.text
+ * 先按文件收集行内容，再以命中的行号为基准取上下文窗口，
+ * 避免把内容里的 `:数字:` 误判成新的匹配行。
+ * 上下文结构与 Node.js 回退一致：context: [{ line, content, isMatch }]
  */
-function parseRgOutput(output, contextLines) {
+function parseRgJsonOutput(output, contextLines) {
   if (!output) return [];
-  const lines = output.split('\n');
-  const results = [];
 
-  for (const line of lines) {
-    // 匹配行分隔符（rg 用 -- 分隔不同文件的匹配）
-    if (line === '--') continue;
+  const linesByFile = new Map(); // file -> Map<line, { content, isMatch }>
+  const matches = [];
 
-    // 匹配文件名:行号:内容（非贪婪匹配文件名）
-    const match = line.match(/^(.+?):(\d+):(.*)$/);
-    if (match) {
-      results.push({
-        file: match[1],
-        line: parseInt(match[2], 10),
-        content: match[3]
-      });
+  for (const raw of output.split('\n')) {
+    if (!raw) continue;
+    let evt;
+    try {
+      evt = JSON.parse(raw);
+    } catch {
+      continue;
     }
+    if (!evt || (evt.type !== 'match' && evt.type !== 'context')) continue;
+
+    const data = evt.data || {};
+    const file = data.path && data.path.text;
+    const line = data.line_number;
+    if (!file || !line) continue;
+
+    const content = ((data.lines && data.lines.text) || '').replace(/\n$/, '');
+    if (!linesByFile.has(file)) linesByFile.set(file, new Map());
+    linesByFile.get(file).set(line, { content, isMatch: evt.type === 'match' });
+
+    if (evt.type === 'match') matches.push({ file, line });
   }
 
-  return results;
+  return matches.map(({ file, line }) => {
+    const map = linesByFile.get(file);
+    const item = { file, line, content: map.get(line).content };
+    if (contextLines > 0) {
+      const ctx = [];
+      for (let l = line - contextLines; l <= line + contextLines; l++) {
+        const entry = map.get(l);
+        if (entry) ctx.push({ line: l, content: entry.content, isMatch: l === line });
+      }
+      item.context = ctx;
+    }
+    return item;
+  });
 }
 
 /**
  * Node.js 原生搜索文件内容（回退方案，异步 + 分片防止阻塞事件循环）
  */
-async function searchContentNative(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines) {
+async function searchContentNative(rootPath, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines, excludeGlobs = []) {
   const results = [];
   const searchPattern = caseSensitive ? pattern : pattern.toLowerCase();
 
@@ -354,10 +425,12 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
       if (entry.isDirectory()) {
         if (DEFAULT_IGNORE_DIRS.has(entry.name)) continue;
         if (entry.name.startsWith('.')) continue;
+        if (isExcludedPath(relative(rootPath, fullPath), entry.name, excludeGlobs)) continue;
         // 非递归搜索：跳过子目录，仅搜索当前目录下的文件
         if (!recursive) continue;
         await walk(fullPath);
       } else if (entry.isFile()) {
+        if (isExcludedPath(relative(rootPath, fullPath), entry.name, excludeGlobs)) continue;
         if (filePattern && !matchGlob(entry.name, filePattern)) continue;
         // 跳过压缩和映射文件
         if (entry.name.endsWith('.min.js')) continue;
@@ -374,18 +447,21 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
             if (results.length >= maxResults) break;
             const line = caseSensitive ? fileLines[i] : fileLines[i].toLowerCase();
             if (line.includes(searchPattern)) {
-              const ctx = [];
-              const start = Math.max(0, i - contextLines);
-              const end = Math.min(fileLines.length - 1, i + contextLines);
-              for (let j = start; j <= end; j++) {
-                ctx.push({ line: j + 1, content: fileLines[j], isMatch: j === i });
-              }
-              results.push({
+              const item = {
                 file: fullPath,
                 line: i + 1,
-                content: fileLines[i],
-                context: ctx
-              });
+                content: fileLines[i]
+              };
+              if (contextLines > 0) {
+                const ctx = [];
+                const start = Math.max(0, i - contextLines);
+                const end = Math.min(fileLines.length - 1, i + contextLines);
+                for (let j = start; j <= end; j++) {
+                  ctx.push({ line: j + 1, content: fileLines[j], isMatch: j === i });
+                }
+                item.context = ctx;
+              }
+              results.push(item);
             }
           }
         } catch {}
@@ -405,11 +481,12 @@ async function searchContentNative(rootPath, pattern, filePattern, caseSensitive
  * @param {boolean} caseSensitive - 是否大小写敏感
  * @param {boolean} recursive - 是否递归搜索子目录
  * @param {number} maxResults - 最大结果数
- * @param {number} contextLines - 上下文行数
+ * @param {number} contextLines - 上下文行数（0-5）
  * @param {Function} [tFn] - 可选的翻译函数（由 server.js 传入）
- * @returns {{ success: boolean, results: Array, total: number, engine: string }}
+ * @param {string[]} [excludeGlobs] - 排除的 glob 列表
+ * @returns {{ success: boolean, results: Array, total: number, truncated: boolean, engine: string }}
  */
-export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 2, tFn, ctx = {}) {
+export async function searchContent(rootPath, pattern, filePattern = null, caseSensitive = false, recursive = true, maxResults = 100, contextLines = 0, tFn, ctx = {}, excludeGlobs = []) {
   const pathCheck = await checkPath(rootPath, tFn, ctx);
   if (!pathCheck.allowed) {
     return { success: false, error: pathCheck.reason };
@@ -426,17 +503,24 @@ export async function searchContent(rootPath, pattern, filePattern = null, caseS
     return { success: false, error: tr('search.emptyPattern', undefined, tFn) };
   }
 
-  let results;
+  const ctxLines = Math.max(0, Math.min(Number(contextLines) || 0, 5));
+
+  let raw;
   if (rgAvailable) {
-    results = await searchContentWithRg(resolved, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines);
+    raw = await searchContentWithRg(resolved, pattern, filePattern, caseSensitive, recursive, maxResults + 1, ctxLines, excludeGlobs);
   } else {
-    results = await searchContentNative(resolved, pattern, filePattern, caseSensitive, recursive, maxResults, contextLines);
+    raw = await searchContentNative(resolved, pattern, filePattern, caseSensitive, recursive, maxResults + 1, ctxLines, excludeGlobs);
   }
+
+  // 统一按总量截断（rg 的 --max-count 只是单文件上限）
+  const truncated = raw.length > maxResults;
+  const results = truncated ? raw.slice(0, maxResults) : raw;
 
   return {
     success: true,
     results,
     total: results.length,
+    truncated,
     engine: rgAvailable ? 'rg' : 'nodejs',
     path: resolved,
     pattern

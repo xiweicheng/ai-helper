@@ -141,8 +141,8 @@ describe('路径判定汇聚点：四条链路都把 ctx 透传到底', () => {
 
   test('fs / exec / search 的 HTTP 入口仍传 scope（防回退）', () => {
     const s = src('server.js');
-    assert.match(s, /searchFiles\([\s\S]*?\bt,\s*scope\s*\)/);
-    assert.match(s, /searchContent\([\s\S]*?\bt,\s*scope\s*\)/);
+    assert.match(s, /searchFiles\([\s\S]*?\bt,\s*scope(?:,\s*excludeGlobs)?\s*\)/);
+    assert.match(s, /searchContent\([\s\S]*?\bt,\s*scope(?:,\s*excludeGlobs)?\s*\)/);
     assert.match(s, /resolveExecCwd\(cwd, scope, t\)/);
   });
 });
