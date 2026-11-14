@@ -102,6 +102,7 @@ registerTranslations('zh', {
     chatSearchError: '搜索对话记录时出错: {error}',
     notificationFailed: '通知创建失败: {error}',
     notificationSent: '通知已发送',
+    notificationSentFallback: '通知已发送（自定义图标 "{icon}" 无效或加载失败，已回退默认图标: {error}）',
     tabClosed: '已关闭当前标签页',
     tabClosedWithId: '已关闭标签页 {tabId}',
     tabUnavailable: '标签页不可用',
@@ -333,6 +334,7 @@ registerTranslations('en', {
     chatSearchError: 'Error searching chat records: {error}',
     notificationFailed: 'Notification creation failed: {error}',
     notificationSent: 'Notification sent',
+    notificationSentFallback: 'Notification sent (custom icon "{icon}" was invalid or failed to load, fell back to default icon: {error})',
     tabClosed: 'Current tab closed',
     tabClosedWithId: 'Tab {tabId} closed',
     tabUnavailable: 'Tab unavailable',
@@ -3066,35 +3068,99 @@ export function executeShowNotification(args, toolCallId) {
   
   console.log('[Background] exec browser notification:', args, 'toolCallId:', toolCallId);
   
-  return new Promise((resolve) => {
-    // 使用 chrome.notifications API 创建通知
-    const notificationOptions = {
-      type: 'basic',
-      title: title,
-      message: message,
-      iconUrl: icon || 'icons/icon128.png',
-      silent: silent === true || silent === 'true',
-      requireInteraction: requireInteraction === true || requireInteraction === 'true'
-    };
-    
-    chrome.notifications.create(notificationOptions, (notificationId) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Background] create notification failed:', chrome.runtime.lastError.message);
-        resolve(makeResult(false, t('toolExec.notificationFailed', { error: chrome.runtime.lastError.message })));
-        return;
-      }
-      
-      console.log('[Background] notification created,ID:', notificationId);
-      
-      // 播放提示音 - 发送消息到 side_panel 播放
-      if (playSound) {
-        chrome.runtime.sendMessage({
+  // 安全：通知图标由浏览器进程代取，不经过扩展自身的 SSRF 闸门（decideNetworkAccess），
+  // 若允许模型传入远端 http(s)/file/blob URL 会形成内网探测与本地文件读取旁路。
+  // 因此仅接受两类自包含/本地来源：扩展内相对路径（解析为 chrome-extension 绝对 URL）
+  // 与限长的 data:image；其余（远端 URL、file:/blob: 等带 scheme 的串、SVG）一律判为无效，
+  // 直接回退默认图标，从根本上避免坏图标和网络副作用。
+  const DATA_IMAGE_MAX = 64 * 1024;
+  const resolveIconUrl = (raw) => {
+    if (!raw || typeof raw !== 'string') return null;
+    const s = raw.trim();
+    if (!s) return null;
+    // 仅接受自包含的 data:image（无网络请求），并限长防止超长串
+    if (/^data:image\//i.test(s)) return s.length <= DATA_IMAGE_MAX ? s : null;
+    // 拒绝任何带 scheme 的 URL（http/https/file/blob/chrome-extension 等）
+    if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return null;
+    // 拒绝 SVG（通知图标官方禁止，仓库存在 .svg 资源易被误传）
+    if (/\.svg(\?|#|$)/i.test(s)) return null;
+    // 扩展内相对路径 → 解析为绝对 URL；去掉前导斜杠避免 getURL('/x') 产出 '//x'
+    try {
+      return chrome.runtime.getURL(s.replace(/^\/+/, ''));
+    } catch {
+      return null;
+    }
+  };
+
+  // 默认图标始终用 getURL 解析为绝对 URL
+  let defaultIconUrl = 'icons/icon128.png';
+  try {
+    defaultIconUrl = chrome.runtime.getURL('icons/icon128.png') || defaultIconUrl;
+  } catch {
+    // getURL 抛异常意味着 chrome.runtime 已异常，下方 create 会同步抛错使 Promise reject，
+    // 保留相对路径仅作可读性兜底，不会静默产出一条错误通知。
+  }
+
+  const customIconUrl = resolveIconUrl(icon);
+  // 有有效自定义图标才走“自定义 + 失败回退”链路；否则直接用默认图标
+  const usingCustom = !!customIconUrl && customIconUrl !== defaultIconUrl;
+  const iconUrl = usingCustom ? customIconUrl : defaultIconUrl;
+
+  const buildOptions = (url) => ({
+    type: 'basic',
+    title: title,
+    message: message,
+    iconUrl: url,
+    silent: silent === true || silent === 'true',
+    requireInteraction: requireInteraction === true || requireInteraction === 'true'
+  });
+
+  // fallbackError 非空表示自定义图标失败后已回退默认图标，需在结果里可机读地告知模型
+  const finish = (notificationId, resolveFn, fallbackError) => {
+    console.log('[Background] notification created,ID:', notificationId);
+    // 播放提示音 - 发送消息到 side_panel 播放（MV3 下无接收方会 reject，.catch 避免未处理拒绝）
+    if (playSound) {
+      try {
+        const p = chrome.runtime.sendMessage({
           type: 'PLAY_NOTIFICATION_SOUND',
           soundType: soundType
         });
+        p?.catch?.(() => {});
+      } catch {
+        // 同步抛错（无接收方）时忽略，不影响通知结果
       }
-      
-      resolve(makeResult(true, t('toolExec.notificationSent')));
+    }
+    const resultMsg = fallbackError
+      ? t('toolExec.notificationSentFallback', { icon: String(icon ?? '').slice(0, 80), error: fallbackError })
+      : t('toolExec.notificationSent');
+    resolveFn(makeResult(true, resultMsg));
+  };
+
+  return new Promise((resolve) => {
+    chrome.notifications.create(buildOptions(iconUrl), (notificationId) => {
+      const err = chrome.runtime.lastError;
+      if (!err) {
+        finish(notificationId, resolve);
+        return;
+      }
+      // 用了自定义图标且创建失败：此时通知并未被创建（无副作用），无条件换默认图标重试一次。
+      // 不以本地化的错误文案做门栓（否则中文 UI 下整个修复会失效）。
+      if (usingCustom) {
+        console.warn('[Background] custom icon create failed, retrying with default icon:', err.message);
+        chrome.notifications.create(buildOptions(defaultIconUrl), (retryId) => {
+          if (chrome.runtime.lastError) {
+            // 合并首（自定义图标）与重试（默认图标）两次错误，避免真实首因被静默改写
+            const merged = `${err.message}; retry with default icon: ${chrome.runtime.lastError.message}`;
+            console.error('[Background] create notification failed:', merged);
+            resolve(makeResult(false, t('toolExec.notificationFailed', { error: merged })));
+            return;
+          }
+          finish(retryId, resolve, err.message);
+        });
+        return;
+      }
+      console.error('[Background] create notification failed:', err.message);
+      resolve(makeResult(false, t('toolExec.notificationFailed', { error: err.message })));
     });
   });
 }

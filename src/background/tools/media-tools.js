@@ -16,7 +16,7 @@ export const MEDIA_TOOLS = [
         properties: {
           title: { type: 'string' },
           message: { type: 'string' },
-          icon: { type: 'string' },
+          icon: { type: 'string', description: 'Optional notification icon: a PNG/JPG path inside the extension (e.g. "icons/icon128.png") or a self-contained "data:image/..." URL. Remote URLs (http/https), file:/blob: and SVG are not allowed; omit to use the default icon.' },
           silent: { type: 'boolean' },
           requireInteraction: { type: 'boolean' },
           playSound: { type: 'boolean' },
