@@ -1394,6 +1394,16 @@ export default {
   memoryEntries: {
     title: 'Memory Entries',
     refreshBtn: 'Refresh',
+    exportBtn: 'Export',
+    importBtn: 'Import',
+    exportEmpty: 'No memory entries to export',
+    exportDone: 'Exported {count} memories to {file}',
+    importParseFail: 'Import failed: the file is not valid JSON',
+    importFormatFail: 'Import failed: unrecognized format, please choose a memory export or archive file',
+    importConfirm: 'Append {add} memories and skip {skipped} (duplicates or invalid). Existing memories are not overwritten, but imported entries cannot be undone in bulk. Continue?',
+    importNone: 'No new memories to import ({skipped} skipped)',
+    importDone: 'Import finished: {added} added, {skipped} skipped',
+    importPartialFail: 'Import finished: {added} added, {failed} failed, {skipped} skipped',
     searchPlaceholder: 'Search content or tags…',
     filterAll: 'All types',
     filterFact: 'Facts',
@@ -1433,8 +1443,9 @@ export default {
     deleteFail: 'Delete failed: {error}',
     candidatesHint: '{count} low-value memories are suggested for removal (value below 10)',
     compactBtn: 'Compact now',
-    compactConfirm: 'Compacting deletes {count} memories with value below {threshold}. This cannot be undone. Continue?',
-    compactDone: 'Compact done: removed {facts} facts and {summaries} summaries',
+    compactConfirm: 'Compacting archives {count} memories with value below {threshold}, then removes them from the memory store. Archive files can be used for recovery. Continue?',
+    compactDone: 'Compact done: archived {facts} facts and {summaries} summaries',
+    compactArchived: 'Archived {count} evicted memories to {dir}; you can restore them from there when needed',
     compactFail: 'Compact failed: {error}'
   },
 

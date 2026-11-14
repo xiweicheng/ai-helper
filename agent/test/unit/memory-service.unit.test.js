@@ -6,10 +6,11 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryService } from '../../src/memory/service.js';
+import { archiveFilePath } from '../../src/memory/archive.js';
 import { createVectorStoreFacade } from '../../src/memory/vectors.js';
 
 const T = (key, params) => `${key}:${JSON.stringify(params ?? {})}`;
@@ -30,7 +31,7 @@ function withService(fn) {
     tierResolver: () => 'none',
     embedderFactory: () => { throw new Error('A 档夹具不得创建 embedding provider'); }
   });
-  return Promise.resolve(fn(svc)).finally(() => rmSync(dir, { recursive: true, force: true }));
+  return Promise.resolve(fn(svc, { dir })).finally(() => rmSync(dir, { recursive: true, force: true }));
 }
 
 describe('store', () => {
@@ -285,6 +286,47 @@ describe('manage', () => {
     assert.equal(data.facts.length, 1);
     assert.equal(data.facts[0].content, '高');
     assert.ok(data.stats.lastReviewAt);
+  }));
+
+  it('compact 淘汰前先归档：被淘汰条目可从 archive JSONL 找回', () => withService(async (svc, { dir }) => {
+    const low = await svc.store({ action: 'add', type: 'fact', content: '低价值', importance: 1, tags: ['t'] }, T);
+    await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
+    const r = await svc.manage({ action: 'compact' }, T);
+    assert.equal(r.success, true);
+    assert.equal(r.archived, 1);
+    assert.equal(r.archiveDir, join(dir, 'archive'));
+
+    const file = archiveFilePath(r.archiveDir);
+    assert.equal(existsSync(file), true);
+    const lines = readFileSync(file, 'utf8').trim().split('\n');
+    assert.equal(lines.length, 1);
+    const rec = JSON.parse(lines[0]);
+    assert.equal(rec.id, low.memory.id);
+    assert.equal(rec.content, '低价值');
+    assert.deepEqual(rec.tags, ['t']);
+    assert.equal(rec.archiveReason, 'compact');
+    assert.ok(rec.archiveValue < 10);
+    assert.ok(rec.archivedAt);
+  }));
+
+  it('归档写失败时中止压缩：不删任何记忆（fail-closed）', () => withService(async (svc, { dir }) => {
+    await svc.store({ action: 'add', type: 'fact', content: '低价值', importance: 1 }, T);
+    // 用同名文件占住归档目录路径 → mkdir 抛 ENOTDIR/EEXIST，模拟归档不可写
+    writeFileSync(join(dir, 'archive'), 'occupied', 'utf8');
+    const r = await svc.manage({ action: 'compact' }, T);
+    assert.equal(r.success, false);
+    assert.match(r.error, /memory\.archiveFailed/);
+    const data = await svc.readAll();
+    assert.equal(data.facts.length, 1, '归档失败不得物理删除');
+    assert.equal(data.facts[0].content, '低价值');
+  }));
+
+  it('没有淘汰项时 compact 不创建归档文件', () => withService(async (svc, { dir }) => {
+    await svc.store({ action: 'add', type: 'fact', content: '高价值', importance: 10 }, T);
+    const r = await svc.manage({ action: 'compact' }, T);
+    assert.equal(r.success, true);
+    assert.equal(r.archived, 0);
+    assert.equal(existsSync(join(dir, 'archive')), false);
   }));
 
   it('compact 同步清除已删记忆的 session 召回缓存', () => withService(async (svc) => {

@@ -5,8 +5,9 @@
 // store/recall/manage 按 action 分发；文案经调用方传入的请求语言 t 闭包渲染。
 
 import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { MEMORY_DIR } from '../config.js';
+import { appendArchive, pruneArchive } from './archive.js';
 import { calcMemoryValue, selectMemoriesForInjection } from './injection.js';
 import { extractMemoryTerms, keywordScore, buildDocFreqFilter, memorySearchText, KEYWORD_MIN_UNITS } from './tokens.js';
 import { getMemoryEmbeddingConfig, toEmbeddingProviderConfig } from './embedding-config.js';
@@ -142,6 +143,9 @@ function byKeywordRank(a, b) {
  */
 export function createMemoryService({
   filePath = join(MEMORY_DIR, 'global-memory.json'),
+  // 归档目录默认与真源文件同级的 archive/：测试只要注入 filePath 就自动隔离，
+  // 不会有人忘了传 archiveDir 就把淘汰记录写进用户真实目录
+  archiveDir = join(dirname(filePath), 'archive'),
   vectorsFilePath,
   embeddingConfigProvider = getMemoryEmbeddingConfig,
   embedderFactory = (cfg) => createEmbeddingProvider(cfg),
@@ -815,48 +819,72 @@ export function createMemoryService({
       }
 
       if (action === 'compact') {
-        // 压缩：移除低价值记忆
+        // 压缩：先归档低价值记忆，再从真源移除。淘汰不等于物理删除——
+        // 归档写不进去就整轮中止（fail-closed），宁可这轮不压缩，也不能让用户失去找回的可能。
         const threshold = 10;
+        const keptFacts = [];
+        const keptSummaries = [];
+        const removed = [];
         let removedFacts = 0;
         let removedSummaries = 0;
 
-        const compactRemoved = [];
-        memoryData.facts = memoryData.facts.filter(m => {
+        for (const m of memoryData.facts) {
           const value = calcMemoryValue(m, now);
           if (value < threshold) {
+            removed.push({ memory: m, value });
             removedFacts++;
-            compactRemoved.push(m.id);
-            return false;
+          } else {
+            keptFacts.push(m);
           }
-          return true;
-        });
-
-        memoryData.summaries = memoryData.summaries.filter(m => {
+        }
+        for (const m of memoryData.summaries) {
           const value = calcMemoryValue(m, now);
           if (value < threshold) {
+            removed.push({ memory: m, value });
             removedSummaries++;
-            compactRemoved.push(m.id);
-            return false;
+          } else {
+            keptSummaries.push(m);
           }
-          return true;
-        });
+        }
 
-        memoryData.stats.lastReviewAt = new Date().toISOString();
+        if (removed.length) {
+          try {
+            await appendArchive(removed, { dir: archiveDir, reason: 'compact', now });
+          } catch (err) {
+            return { success: false, error: t('memory.archiveFailed', { error: err.message }) };
+          }
+          memoryData.facts = keptFacts;
+          memoryData.summaries = keptSummaries;
+        }
+
+        memoryData.stats.lastReviewAt = new Date(now).toISOString();
 
         const writeResult = await writeMemoryFile(memoryData);
         if (!writeResult.success) return { success: false, error: t('memory.writeFailed', { error: writeResult.error }) };
 
         // 已淘汰记忆从会话召回缓存中移除，避免后续会话永久占位
-        for (const id of compactRemoved) removeFromRecalledCache(id);
+        const removedIds = removed.map(r => r.memory.id);
+        for (const id of removedIds) removeFromRecalledCache(id);
 
         // 淘汰项的向量一并摘除：派生缓存可以整删重建，但不能指向已被压缩掉的条目
-        if (compactRemoved.length) await vectors.dropVectors(compactRemoved);
+        if (removedIds.length) await vectors.dropVectors(removedIds);
+
+        // 归档总量控制放在数据安全落盘之后；清旧文件失败只告警，不影响本轮结果
+        if (removed.length) {
+          try {
+            await pruneArchive({ dir: archiveDir });
+          } catch (err) {
+            console.warn('[Memory] archive prune failed:', err.message);
+          }
+        }
 
         return {
           success: true,
-          message: t('memory.compactDone', { facts: removedFacts, summaries: removedSummaries, threshold, totalFacts: memoryData.stats.totalFacts, totalSummaries: memoryData.stats.totalSummaries }),
+          message: t('memory.compactDone', { facts: removedFacts, summaries: removedSummaries, threshold, totalFacts: memoryData.stats.totalFacts, totalSummaries: memoryData.stats.totalSummaries, archiveDir }),
           removedFacts,
           removedSummaries,
+          archived: removed.length,
+          archiveDir,
           stats: memoryData.stats
         };
       }

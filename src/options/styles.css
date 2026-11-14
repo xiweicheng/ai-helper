@@ -4178,6 +4178,9 @@ textarea {
 .memory-entries-head label { margin-bottom: 0; }
 .memory-entries-count { font-size: 12px; color: var(--text-tertiary); }
 .memory-entries-head .toolbox-add-btn { margin-left: auto; }
+/* 右侧按钮组整体右对齐：组内按钮各自 margin-left:auto 会把空白均分到按钮之间 */
+.memory-entries-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.memory-entries-head .memory-entries-actions .toolbox-add-btn { margin-left: 0; }
 .memory-entries-filter { display: flex; gap: 8px; margin-bottom: 10px; }
 /* 宽字符不撑破弹性行：搜索框 flex 增长但 min-width 必须归零（历史挤压陷阱） */
 .memory-entries-filter input[type="text"] { flex: 1; min-width: 0; margin-bottom: 0; }

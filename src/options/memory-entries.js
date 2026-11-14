@@ -6,6 +6,9 @@
 // 与向量配置面板（memory-panel.js）同走 agentApi 直连，不新增 SW 消息、不动扩展端转发层。
 
 import { agentApi, escapeHtml, showToast, showCustomConfirm, getAgentConnection } from './toolbox-shared.js';
+import {
+  diffMemoryImport, downloadMemoryExport, parseMemoryImportText, pickMemoryImportFile,
+} from './memory-io.js';
 import { t, subscribe } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
 
@@ -128,6 +131,10 @@ function renderList() {
     return;
   }
   listEl.innerHTML = shown.map(entryItemHtml).join('');
+  // 导入/压缩期间列表会被重建，新生成的行内按钮不会继承 disabled，这里按忙碌态补上
+  if (entriesBusy) {
+    listEl.querySelectorAll('.memory-entry-actions button').forEach((b) => { b.disabled = true; });
+  }
 }
 
 function renderCandidates() {
@@ -142,13 +149,15 @@ function renderCandidates() {
   box.innerHTML = `
     <span class="memory-entries-candidates-text">${escapeHtml(t('memoryEntries.candidatesHint', { count: candidates.length }))}</span>
     <button type="button" class="memory-entries-compact-btn">${escapeHtml(t('memoryEntries.compactBtn'))}</button>`;
+  const compactBtn = box.querySelector('.memory-entries-compact-btn');
+  if (compactBtn && entriesBusy) compactBtn.disabled = true;
 }
 
 // ==================== 数据加载 ====================
 
 async function loadEntries() {
   const listEl = $('memoryEntriesList');
-  if (!listEl) return;
+  if (!listEl) return false;
   renderStatus({ key: 'memoryEntries.loading' });
   listEl.innerHTML = '';
   try {
@@ -156,20 +165,22 @@ async function loadEntries() {
     // 404 = 旧代理没有 manage 端点：必须说「版本不支持」而不是转圈或泛化失败（同状态卡事故教训）
     if (res && res.httpStatus === 404) {
       renderStatus({ key: 'memoryEntries.unsupported' });
-      return;
+      return false;
     }
     if (!res || res.success !== true) {
       renderStatus({ key: 'memoryEntries.loadFail', params: { error: (res && res.error) || 'unknown' } });
-      return;
+      return false;
     }
     allEntries = Array.isArray(res.scored) ? res.scored : [];
     candidates = Array.isArray(res.candidates) ? res.candidates : [];
     renderStatus('');
     renderCandidates();
     renderList();
+    return true;
   } catch (err) {
     logger.warn('[MemoryEntries] load failed:', err.message);
     renderStatus({ key: 'memoryEntries.loadFail', params: { error: err.message } });
+    return false;
   }
 }
 
@@ -192,7 +203,10 @@ export async function refreshMemoryEntries() {
 
 function setWriteBusy(on) {
   entriesBusy = on;
-  ['memoryEntriesRefreshBtn'].forEach((id) => { const el = $(id); if (el) el.disabled = on; });
+  ['memoryEntriesRefreshBtn', 'memoryEntriesExportBtn', 'memoryEntriesImportBtn'].forEach((id) => {
+    const el = $(id);
+    if (el) el.disabled = on;
+  });
   const compact = document.querySelector('.memory-entries-compact-btn');
   if (compact) compact.disabled = on;
   document.querySelectorAll('.memory-entry-actions button').forEach((b) => { b.disabled = on; });
@@ -225,6 +239,8 @@ async function onDelete(m) {
 }
 
 async function onCompact() {
+  // 列表重建后按钮会重新变成可点，忙碌判断必须放在弹确认框之前
+  if (entriesBusy) return;
   const ok = await showCustomConfirm(t('memoryEntries.compactConfirm', { count: candidates.length, threshold: 10 }));
   if (!ok) return;
   if (entriesBusy) return;
@@ -235,10 +251,108 @@ async function onCompact() {
     showToast(t('memoryEntries.compactDone', {
       facts: res.removedFacts ?? 0, summaries: res.removedSummaries ?? 0,
     }), 'info');
+    // 淘汰是归档而不是删除：把归档位置告诉用户，出问题能按这个路径找回
+    if (res.archived && res.archiveDir) {
+      showToast(t('memoryEntries.compactArchived', { count: res.archived, dir: res.archiveDir }), 'info');
+    }
     await loadEntries();
   } catch (err) {
     logger.warn('[MemoryEntries] compact failed:', err.message);
     showToast(t('memoryEntries.compactFail', { error: err.message }), 'error');
+  } finally {
+    setWriteBusy(false);
+  }
+}
+
+// ==================== 导入 / 导出 ====================
+
+/**
+ * 导出当前全量记忆（与筛选/排序无关，备份必须整库）。
+ * 先重拉一次 review：导出的是「此刻」的库，页面上的列表可能是几分钟前的快照。
+ */
+async function onExport() {
+  if (entriesBusy) return;
+  setWriteBusy(true);
+  try {
+    if (!await loadEntries()) return;   // 失败态已由 loadEntries 渲染，不再叠一条 toast
+    if (!allEntries.length) {
+      showToast(t('memoryEntries.exportEmpty'), 'info');
+      return;
+    }
+    const filename = downloadMemoryExport(allEntries);
+    showToast(t('memoryEntries.exportDone', { count: allEntries.length, file: filename }), 'info');
+  } finally {
+    setWriteBusy(false);
+  }
+}
+
+/** store add 的请求体：只发有效字段，title 仅摘要需要（agent 端只对 summary 落 title） */
+function importEntryBody(entry) {
+  const body = { action: 'add', type: entry.type, content: entry.content, tags: entry.tags };
+  if (entry.importance !== undefined) body.importance = entry.importance;
+  if (entry.category) body.category = entry.category;
+  if (entry.title) body.title = entry.title;
+  return body;
+}
+
+/**
+ * 导入：追加还原，绝不覆盖。逐条走既有 store(add)，因此注入拦截、类型校验、
+ * 内容去重、向量懒补全部复用 agent 端同一套逻辑，扩展端不另造写入路径。
+ * 串行而非并发：store 是「读整个文件-改-写回」，并发只会在 agent 端互斥锁上排队。
+ */
+async function onImport() {
+  if (entriesBusy) return;
+  const file = await pickMemoryImportFile();
+  if (!file) return;
+
+  let parsed;
+  try {
+    parsed = parseMemoryImportText(await file.text());
+  } catch (err) {
+    logger.warn('[MemoryEntries] import parse failed:', err.message);
+    showToast(t('memoryEntries.importParseFail'), 'error');
+    return;
+  }
+  if (!parsed.ok) {
+    showToast(t('memoryEntries.importFormatFail'), 'error');
+    return;
+  }
+  // 归档是 append-only JSONL，崩溃可能留下半行；这些行解析不出来，也要算进“跳过”
+  const corruptedLines = parsed.invalidLines || 0;
+
+  setWriteBusy(true);
+  try {
+    // 去重必须基于最新库：用页面上的旧快照会漏判「另一处刚写入的同内容条目」
+    if (!await loadEntries()) return;
+    const diff = diffMemoryImport(allEntries, parsed.entries);
+    const skipped = diff.skipped + corruptedLines;
+    if (!diff.accepted.length) {
+      showToast(t('memoryEntries.importNone', { skipped }), 'info');
+      return;
+    }
+    const ok = await showCustomConfirm(t('memoryEntries.importConfirm', {
+      add: diff.accepted.length, skipped,
+    }));
+    if (!ok) return;
+
+    let added = 0;
+    let failed = 0;
+    for (const entry of diff.accepted) {
+      try {
+        const res = await agentApi('POST', '/api/memory/store', importEntryBody(entry));
+        if (res && res.success === true) added += 1;
+        else failed += 1;
+      } catch (err) {
+        logger.warn('[MemoryEntries] import store failed:', err.message);
+        failed += 1;
+      }
+    }
+    await loadEntries();
+    if (failed) {
+      showToast(t('memoryEntries.importPartialFail', { added, failed, skipped }), 'error');
+    } else {
+      showToast(t('memoryEntries.importDone', { added, skipped }), 'info');
+    }
   } finally {
     setWriteBusy(false);
   }
@@ -321,6 +435,8 @@ export function initMemoryEntries() {
   initialized = true;
 
   $('memoryEntriesRefreshBtn')?.addEventListener('click', () => refreshMemoryEntries());
+  $('memoryEntriesExportBtn')?.addEventListener('click', onExport);
+  $('memoryEntriesImportBtn')?.addEventListener('click', onImport);
   $('memoryEntriesSearch')?.addEventListener('input', () => renderList());
   $('memoryEntriesTypeFilter')?.addEventListener('change', () => renderList());
   $('memoryEntriesSort')?.addEventListener('change', () => renderList());

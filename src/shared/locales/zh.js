@@ -1394,6 +1394,16 @@ export default {
   memoryEntries: {
     title: '记忆条目',
     refreshBtn: '刷新',
+    exportBtn: '导出',
+    importBtn: '导入',
+    exportEmpty: '还没有可导出的记忆条目',
+    exportDone: '已导出 {count} 条记忆到 {file}',
+    importParseFail: '导入失败：文件不是合法的 JSON',
+    importFormatFail: '导入失败：文件格式不正确，请选择记忆导出文件或淘汰归档文件',
+    importConfirm: '将追加导入 {add} 条记忆，跳过 {skipped} 条（已存在或格式不符）。导入不覆盖现有记忆，但导入后的条目无法批量撤销。确定继续？',
+    importNone: '没有可导入的新记忆（跳过 {skipped} 条）',
+    importDone: '导入完成：新增 {added} 条，跳过 {skipped} 条',
+    importPartialFail: '导入完成：新增 {added} 条，失败 {failed} 条，跳过 {skipped} 条',
     searchPlaceholder: '搜索内容或标签…',
     filterAll: '全部类型',
     filterFact: '事实',
@@ -1433,8 +1443,9 @@ export default {
     deleteFail: '删除失败：{error}',
     candidatesHint: '{count} 条低价值记忆建议淘汰（价值分低于 10）',
     compactBtn: '一键压缩',
-    compactConfirm: '将删除 {count} 条价值分低于 {threshold} 的记忆，删除后不可恢复。确定压缩？',
-    compactDone: '压缩完成：删除事实 {facts} 条、摘要 {summaries} 条',
+    compactConfirm: '将归档 {count} 条价值分低于 {threshold} 的记忆，再从记忆库中移除；归档文件可在需要时用于找回。确定压缩？',
+    compactDone: '压缩完成：归档事实 {facts} 条、摘要 {summaries} 条',
+    compactArchived: '已归档 {count} 条淘汰记忆到 {dir}，需要时可从该目录找回',
     compactFail: '压缩失败：{error}'
   },
 

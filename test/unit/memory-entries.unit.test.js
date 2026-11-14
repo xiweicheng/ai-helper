@@ -342,7 +342,7 @@ describe('记忆条目区：结构与文案', () => {
   const html = read('options.html');
 
   test('options.html 条目区所需 id 逐个存在', () => {
-    for (const id of ['memoryEntriesRefreshBtn', 'memoryEntriesSearch', 'memoryEntriesTypeFilter',
+    for (const id of ['memoryEntriesRefreshBtn', 'memoryEntriesExportBtn', 'memoryEntriesImportBtn', 'memoryEntriesSearch', 'memoryEntriesTypeFilter',
       'memoryEntriesSort', 'memoryEntriesCount', 'memoryEntriesCandidates', 'memoryEntriesStatus', 'memoryEntriesList']) {
       expect(html, `options.html 缺 id=${id}`).toContain(`id="${id}"`);
     }
