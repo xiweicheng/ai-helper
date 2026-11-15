@@ -8,8 +8,9 @@
 
 > 之前每个版本都需手动登录 Chrome Web Store DevConsole 与 Microsoft Edge Partner Center 上传 zip，现可用脚本一次性自动化。
 
-- **`scripts/publish-store.mjs`**（新增）：调用 Chrome Web Store API 与 Edge Add-ons API，直传 `ai-helper@<version>.zip` 并发布；支持 `--chrome` / `--edge` / `--both` 选择目标，`--dry-run` 仅校验凭据与产物，`--setup` 打印 Google Cloud Console 与 Azure AD/Partner Center 配置引导。zip 缺失时自动补跑 `npm run package`；Edge 侧轮询到审核完成/失败后输出结论。
+- **`scripts/publish-store.mjs`**（新增）：调用 Chrome Web Store API 与 Edge Add-ons API，直传 `ai-helper@<version>.zip` 并发布；支持 `--chrome` / `--edge` / `--both` 选择目标，`--dry-run` 仅校验凭据与产物，`--setup` 打印 Google Cloud Console 与 Azure AD/Partner Center 配置引导。zip 缺失时自动补跑 `npm run package`；Edge 侧轮询到审核完成/失败后输出结论。国内开发机默认直连不通 Google/Microsoft，脚本自动探测 macOS 系统代理并改走 curl 发送 HTTP（Node 内置 fetch 不识别 HTTPS_PROXY）。
 - **`package.json`**：新增 `npm run publish:store` 命令。
+- **`scripts/get-chrome-refresh-token.mjs`**（新增）：一次性换取 Chrome Web Store `refresh_token` 的辅助脚本。本机起临时 HTTP server 承接 Google loopback 回调，浏览器完成 OAuth 后自动将 token 写回 `.env.store`；同样自动探测系统代理 + curl 换 token。
 - **`.gitignore`**：忽略 `.env.store`，凭据只本地存放。
 
 ## 2026-11-08

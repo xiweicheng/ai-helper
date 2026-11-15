@@ -21,6 +21,7 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -146,22 +147,69 @@ function findZip() {
   return zipPath;
 }
 
-// ─── 通用 HTTP 辅助 ───
+// ─── 通用 HTTP 辅助 (走 curl 以兼容 macOS 系统代理) ───
+
+// Node 内置 fetch 不识别 HTTPS_PROXY，国内开发机默认直连会卡 Google/Microsoft
+// 统一改走 curl，并自动探测 macOS 系统代理
+function detectSystemProxy() {
+  if (process.platform !== 'darwin') return null;
+  try {
+    const out = execFileSync('scutil', ['--proxy'], { encoding: 'utf-8' });
+    const httpsOn = /HTTPSEnable\s*:\s*1/.test(out);
+    const host = out.match(/HTTPSProxy\s*:\s*(\S+)/)?.[1];
+    const port = out.match(/HTTPSPort\s*:\s*(\d+)/)?.[1];
+    if (httpsOn && host && port) return `http://${host}:${port}`;
+  } catch { /* 无代理 */ }
+  return null;
+}
+const PROXY = detectSystemProxy();
 
 async function fetchJson(url, options = {}, label) {
-  let res;
+  const method = options.method ?? 'GET';
+  const headers = options.headers ?? {};
+  const body = options.body;
+  const args = ['-sS', '--max-time', '120', '-o', '-', '-w', '\n__HTTP_STATUS__%{http_code}', '-X', method];
+  if (PROXY) args.push('-x', PROXY);
+  for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
+
+  // body 形式适配
+  if (body instanceof Uint8Array || Buffer.isBuffer?.(body)) {
+    // 二进制上传 (Chrome zip)——写临时文件走 --data-binary @file
+    const tmp = path.join(os.tmpdir(), `ai-helper-upload-${Date.now()}.bin`);
+    fs.writeFileSync(tmp, body);
+    args.push('--data-binary', `@${tmp}`);
+  } else if (body instanceof URLSearchParams) {
+    args.push('--data', body.toString());
+  } else if (typeof FormData !== 'undefined' && body instanceof FormData) {
+    // multipart: curl -F name=value / -F name=@file
+    for (const [k, v] of body.entries()) {
+      if (typeof v === 'string') args.push('-F', `${k}=${v}`);
+      else {
+        const tmp = path.join(os.tmpdir(), `ai-helper-multipart-${Date.now()}-${k}.bin`);
+        fs.writeFileSync(tmp, Buffer.from(v instanceof Blob ? await v.arrayBuffer() : v));
+        args.push('-F', `${k}=@${tmp};filename=${v.name ?? 'file'}`);
+      }
+    }
+  } else if (body === undefined && (method === 'POST' || method === 'PATCH' || method === 'PUT')) {
+    args.push('--data', '');
+  }
+  args.push(url);
+
+  let stdout;
   try {
-    res = await fetch(url, options);
+    stdout = execFileSync('curl', args, { encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 });
   } catch (e) {
-    throw new Error(`${label}: 网络请求失败 — ${e.message}`);
+    throw new Error(`${label}: curl 失败 — ${e.message}`);
   }
-  const text = await res.text();
-  let body;
-  try { body = JSON.parse(text); } catch { body = { raw: text }; }
-  if (!res.ok) {
-    throw new Error(`${label}: HTTP ${res.status} ${JSON.stringify(body).slice(0, 500)}`);
+  const idx = stdout.lastIndexOf('\n__HTTP_STATUS__');
+  const text = idx >= 0 ? stdout.slice(0, idx) : stdout;
+  const status = idx >= 0 ? Number(stdout.slice(idx + '\n__HTTP_STATUS__'.length)) : 0;
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+  if (status < 200 || status >= 300) {
+    throw new Error(`${label}: HTTP ${status} ${JSON.stringify(parsed).slice(0, 500)}`);
   }
-  return body;
+  return parsed;
 }
 
 async function pollUntil(isDone, describe, { intervalMs = 10000, timeoutMs = 5 * 60 * 1000 } = {}) {
@@ -241,7 +289,7 @@ async function publishChrome(zipPath, dryRun) {
   info('发布到线上…');
   const pub = await fetchJson(`${CHROME_BASE}/items/${id}/publish?publishTarget=default`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Length': '0' },
+    headers: { Authorization: `Bearer ${token}` },
   }, 'Chrome 发布');
   if (pub.success === false) {
     throw new Error(`Chrome 发布被拒: ${JSON.stringify(pub.statusDetail ?? pub).slice(0, 400)}`);
@@ -305,7 +353,7 @@ async function publishEdge(zipPath, dryRun) {
   info('发布提交…');
   await fetchJson(`${EDGE_BASE}/products/${productId}/submissions/${submissionId}/publish`, {
     method: 'PATCH',
-    headers: { ...headers, 'Content-Length': '0' },
+    headers,
   }, 'Edge 发布');
 
   // 3. 轮询提交状态直到终审完成或明确失败
