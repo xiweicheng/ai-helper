@@ -13,11 +13,11 @@
  *
  * 凭据从项目根目录 .env.store 读取（已加入 .gitignore，不会被提交）:
  *   CHROME_EXTENSION_ID / CHROME_CLIENT_ID / CHROME_CLIENT_SECRET / CHROME_REFRESH_TOKEN
- *   EDGE_PRODUCT_ID / EDGE_TENANT_ID / EDGE_CLIENT_ID / EDGE_CLIENT_SECRET
+ *   EDGE_PRODUCT_ID / EDGE_CLIENT_ID / EDGE_API_KEY
  *
  * API 参考:
  *   Chrome Web Store API: https://developer.chrome.com/docs/webstore/api
- *   Edge Add-ons API:     https://learn.microsoft.com/en-us/microsoft-edge/extensions/api/submit-extensions-new
+ *   Edge Add-ons API:     https://learn.microsoft.com/en-us/microsoft-edge/extensions/update/api/using-addons-api
  */
 
 import fs from 'fs';
@@ -59,10 +59,7 @@ ${C.cyan}═══════════════════════�
   CHROME_CLIENT_SECRET=
   CHROME_REFRESH_TOKEN=
 
-  EDGE_PRODUCT_ID=
-  EDGE_TENANT_ID=
-  EDGE_CLIENT_ID=
-  EDGE_CLIENT_SECRET=${C.nc}
+  EDGE_PRODUCT_ID= / EDGE_CLIENT_ID= / EDGE_API_KEY=${C.nc}
 
 ${C.green}── 一、Chrome Web Store（Google Cloud Console）────────────────${C.nc}
 
@@ -84,24 +81,23 @@ ${C.green}── 一、Chrome Web Store（Google Cloud Console）─────
     首次发布需先在 https://chrome.google.com/webstore/devconsole
     手动创建扩展条目并上传一次包，之后即可全自动。
 
-${C.green}── 二、Microsoft Edge Add-ons（Azure 门户 + Partner Center）───${C.nc}
+${C.green}── 二、Microsoft Edge Add-ons（Partner Center Publish API）────${C.nc}
 
- 1. 打开 https://portal.azure.com/ 「App registrations」→ New registration，
-    账户类型选「Personal Microsoft accounts only」，得到
-    ${C.yellow}APPLICATION (CLIENT) ID${C.nc} → 填入 EDGE_CLIENT_ID。
- 2. 该应用「Certificates & secrets」→ New client secret，
-    复制 ${C.yellow}VALUE${C.nc} → 填入 EDGE_CLIENT_SECRET。
- 3. 「API permissions」→ Add a permission → Microsoft Edge Add-ons Developer ID API，
-    勾选 ${C.yellow}read_and_write${C.nc}（委托权限无需管理员同意）。
- 4. EDGE_TENANT_ID 填 ${C.yellow}common${C.nc}（个人/工作账户均可），
-    或在「Overview」查看自己的目录（tenant）ID。
- 5. 在 https://partner.microsoft.com/dashboard/microsoftedge/
-    注册发布者账户，创建扩展条目并完成一次手动提交（含首次的测试信息），
-    条目 URL 中的 GUID 即 ${C.yellow}EDGE_PRODUCT_ID${C.nc}。
-    之后本脚本即可自动上传新版本并发布，无需再手工填写。
+ 1. 打开 https://partner.microsoft.com/dashboard/microsoftedge/
+    登录用于发布 Edge 扩展的账户。
+ 2. 左侧 Microsoft Edge 程序 → ${C.yellow}Publish API${C.nc}。
+ 3. 若有 “enable the new experience” 提示 → 点 ${C.yellow}Enable${C.nc}（切到 v1.1）。
+ 4. 点 ${C.yellow}Create API credentials${C.nc}（可需几分钟），页面生成：
+    - ${C.yellow}Client ID${C.nc} → 填入 EDGE_CLIENT_ID
+    - ${C.yellow}API Key${C.nc}（仅创建后当场可见一次）→ 填入 EDGE_API_KEY
+ 5. EDGE_PRODUCT_ID 为商店后台该扩展条目 URL 中的 GUID
+    （Partner Center → Microsoft Edge → Overview → 选中扩展 → Extension identity）。
+ 6. 首次发布需先在 Partner Center 手动创建条目并完成一次提交（含测试信息），
+    之后本脚本即可自动上传新版本并发布。
 
-${C.dim}注：Edge 首次提交时的「测试信息」（演示账号/测试说明）只能在
-    Partner Center 网页后台填写，API 会沿用条目上已有的信息。${C.nc}
+${C.dim}注：Edge v1.1 API 使用 API Key 直接鉴权，无需 Azure 应用注册也无需 OAuth
+    换取 token。首次提交时的“测试信息”只能在 Partner Center 网页后台填写，
+    API 会沿用条目上已有的信息。${C.nc}
 `;
 
 // ─── 凭据读取 ───
@@ -164,22 +160,26 @@ function detectSystemProxy() {
 }
 const PROXY = detectSystemProxy();
 
-async function fetchJson(url, options = {}, label) {
+// 底层 curl 调用, 返回 { status, headers, text }。headers 为小写键。
+async function curlExec(url, options = {}, label) {
   const method = options.method ?? 'GET';
   const headers = options.headers ?? {};
   const body = options.body;
-  const args = ['-sS', '--max-time', '120', '-o', '-', '-w', '\n__HTTP_STATUS__%{http_code}', '-X', method];
+  const headerTmp = path.join(os.tmpdir(), `ai-helper-hdr-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  const args = ['-sS', '--max-time', '120', '-o', '-', '-D', headerTmp, '-w', '\n__HTTP_STATUS__%{http_code}', '-X', method];
   if (PROXY) args.push('-x', PROXY);
   for (const [k, v] of Object.entries(headers)) args.push('-H', `${k}: ${v}`);
 
   // body 形式适配
   if (body instanceof Uint8Array || Buffer.isBuffer?.(body)) {
-    // 二进制上传 (Chrome zip)——写临时文件走 --data-binary @file
+    // 二进制上传 (zip)——写临时文件走 --data-binary @file
     const tmp = path.join(os.tmpdir(), `ai-helper-upload-${Date.now()}.bin`);
     fs.writeFileSync(tmp, body);
     args.push('--data-binary', `@${tmp}`);
   } else if (body instanceof URLSearchParams) {
     args.push('--data', body.toString());
+  } else if (typeof body === 'string') {
+    args.push('--data', body);
   } else if (typeof FormData !== 'undefined' && body instanceof FormData) {
     // multipart: curl -F name=value / -F name=@file
     for (const [k, v] of body.entries()) {
@@ -199,11 +199,26 @@ async function fetchJson(url, options = {}, label) {
   try {
     stdout = execFileSync('curl', args, { encoding: 'utf-8', maxBuffer: 32 * 1024 * 1024 });
   } catch (e) {
+    try { fs.unlinkSync(headerTmp); } catch { /* ignore */ }
     throw new Error(`${label}: curl 失败 — ${e.message}`);
   }
   const idx = stdout.lastIndexOf('\n__HTTP_STATUS__');
   const text = idx >= 0 ? stdout.slice(0, idx) : stdout;
   const status = idx >= 0 ? Number(stdout.slice(idx + '\n__HTTP_STATUS__'.length)) : 0;
+  // 解析响应头 (先读再删)
+  const respHeaders = {};
+  try {
+    for (const line of fs.readFileSync(headerTmp, 'utf-8').split(/\r?\n/)) {
+      const m = line.match(/^([^:]+):\s*(.*)$/);
+      if (m) respHeaders[m[1].toLowerCase()] = m[2].trim();
+    }
+  } catch { /* ignore */ }
+  try { fs.unlinkSync(headerTmp); } catch { /* ignore */ }
+  return { status, headers: respHeaders, text };
+}
+
+async function fetchJson(url, options = {}, label) {
+  const { status, text } = await curlExec(url, options, label);
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
   if (status < 200 || status >= 300) {
@@ -303,83 +318,85 @@ async function publishChrome(zipPath, dryRun) {
   console.log(`   https://chromewebstore.google.com/detail/${id}`);
 }
 
-// ─── Microsoft Edge Add-ons ───
+// ─── Microsoft Edge Add-ons (Update REST API v1.1: API Key 直连, 无 OAuth) ───
 
 const EDGE_BASE = 'https://api.addons.microsoftedge.microsoft.com/v1';
-const EDGE_SCOPE = 'https://api.addons.microsoftedge.microsoft.com/.default';
 
-async function getEdgeToken() {
-  const body = new URLSearchParams({
-    client_id: env.EDGE_CLIENT_ID,
-    client_secret: env.EDGE_CLIENT_SECRET,
-    scope: EDGE_SCOPE,
-    grant_type: 'client_credentials',
-  });
-  const json = await fetchJson(`https://login.microsoftonline.com/${env.EDGE_TENANT_ID}/oauth2/v2.0/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  }, 'Edge OAuth');
-  return json.access_token;
+function edgeHeaders() {
+  return {
+    Authorization: `ApiKey ${env.EDGE_API_KEY}`,
+    'X-ClientID': env.EDGE_CLIENT_ID,
+  };
+}
+
+// Location 头直接就是 operationID GUID; 兼容旧式 .../operations/<id> URL
+function parseOperationId(location) {
+  if (!location) throw new Error('Edge 未返回 Location 头, 无法取得 operationID');
+  const m = location.match(/operations\/([^/]+)\/?$/);
+  return m ? m[1] : location.trim();
 }
 
 async function publishEdge(zipPath, dryRun) {
   console.log(`\n${C.cyan}▶ Microsoft Edge Add-ons${C.nc}`);
-  requireKeys('Edge Add-ons', [
-    'EDGE_PRODUCT_ID', 'EDGE_TENANT_ID', 'EDGE_CLIENT_ID', 'EDGE_CLIENT_SECRET',
-  ]);
+  requireKeys('Edge Add-ons', ['EDGE_PRODUCT_ID', 'EDGE_CLIENT_ID', 'EDGE_API_KEY']);
   const productId = env.EDGE_PRODUCT_ID;
   ok(`Product ID: ${productId}`);
   if (dryRun) { ok('[dry-run] 凭据齐全，跳过上传与发布'); return; }
+  const headers = edgeHeaders();
 
-  const token = await getEdgeToken();
-  ok('access_token 获取成功');
-  const headers = { Authorization: `Bearer ${token}` };
-
-  // 1. 创建提交并上传包（multipart: file + data）
+  // 1. 上传包到现有草稿提交 (Content-Type: application/zip, body 为二进制)
   info('上传新版本压缩包…');
-  const form = new FormData();
-  form.append('file', new Blob([fs.readFileSync(zipPath)], {
-    type: 'application/x-zip-compressed',
-  }), path.basename(zipPath));
-  form.append('data', new Blob([JSON.stringify({ productId, listType: 'Live' })], {
-    type: 'application/json',
-  }));
-  const submission = await fetchJson(`${EDGE_BASE}/products/${productId}/submissions`, {
+  const up = await curlExec(`${EDGE_BASE}/products/${productId}/submissions/draft/package`, {
     method: 'POST',
-    headers,
-    body: form,
-  }, 'Edge 上传提交');
-  const submissionId = submission.id ?? submission.submissionId;
-  if (!submissionId) throw new Error(`Edge 未返回 submission ID: ${JSON.stringify(submission).slice(0, 300)}`);
-  ok(`提交已创建（submission: ${submissionId}）`);
+    headers: { ...headers, 'Content-Type': 'application/zip' },
+    body: fs.readFileSync(zipPath),
+  }, 'Edge 上传');
+  if (up.status !== 202) {
+    throw new Error(`Edge 上传预期 202, 实际 HTTP ${up.status}: ${up.text.slice(0, 400)}`);
+  }
+  const uploadOpId = parseOperationId(up.headers.location);
+  ok(`包上传已受理 (operation: ${uploadOpId})`);
 
-  // 2. 发布该提交
-  info('发布提交…');
-  await fetchJson(`${EDGE_BASE}/products/${productId}/submissions/${submissionId}/publish`, {
-    method: 'PATCH',
-    headers,
-  }, 'Edge 发布');
-
-  // 3. 轮询提交状态直到终审完成或明确失败
+  // 2. 轮询包上传状态
   await pollUntil(
     async () => {
-      const sub = await fetchJson(
-        `${EDGE_BASE}/products/${productId}/submissions/${submissionId}`,
-        { headers }, 'Edge 状态查询');
-      const review = sub.currentStatus?.review?.reviewStatus;
-      const pub = sub.currentStatus?.publish?.publishStatus;
-      if (review === 'Fail' || pub === 'Fail') {
-        throw new Error(`Edge 审核未通过，请查看: ${sub.submissionLinks?.partnerCenterLink ?? 'Partner Center 后台'}`);
-      }
-      if (review === 'Complete' && pub === 'Succeeded') return true;
-      info(`Edge 状态: review=${review ?? '?'} publish=${pub ?? '?'}`);
-      return false;
+      const s = await fetchJson(
+        `${EDGE_BASE}/products/${productId}/submissions/draft/package/operations/${uploadOpId}`,
+        { headers }, 'Edge 上传状态');
+      if (s.status === 'Failed') throw new Error(`Edge 包上传失败: ${JSON.stringify(s).slice(0, 400)}`);
+      return s.status === 'Succeeded';
     },
-    () => {},
-    { intervalMs: 60000, timeoutMs: 15 * 60 * 1000 },
+    () => info('等待 Edge 包校验…'),
+    { intervalMs: 15000, timeoutMs: 5 * 60 * 1000 },
   );
-  ok('Edge Add-ons 审核通过并已上线 ✓');
+  ok('包校验通过');
+
+  // 3. 发布当前草稿提交 (body 为审核备注 JSON)
+  info('发布提交…');
+  const pub = await curlExec(`${EDGE_BASE}/products/${productId}/submissions`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes: 'Automated publish via publish-store.mjs' }),
+  }, 'Edge 发布');
+  if (pub.status !== 202) {
+    throw new Error(`Edge 发布预期 202, 实际 HTTP ${pub.status}: ${pub.text.slice(0, 400)}`);
+  }
+  const publishOpId = parseOperationId(pub.headers.location);
+  ok(`发布请求已受理 (operation: ${publishOpId})`);
+
+  // 4. 轮询发布状态
+  await pollUntil(
+    async () => {
+      const s = await fetchJson(
+        `${EDGE_BASE}/products/${productId}/submissions/operations/${publishOpId}`,
+        { headers }, 'Edge 发布状态');
+      if (s.status === 'Failed') throw new Error(`Edge 发布失败: ${JSON.stringify(s).slice(0, 400)}`);
+      return s.status === 'Succeeded';
+    },
+    () => info('等待 Edge 发布完成…'),
+    { intervalMs: 30000, timeoutMs: 15 * 60 * 1000 },
+  );
+  ok('Edge Add-ons 发布完成 ✓');
   console.log(`   https://microsoftedge.microsoft.com/addons/detail/${productId}`);
 }
 

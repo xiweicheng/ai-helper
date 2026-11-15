@@ -13,6 +13,17 @@
 - **`scripts/get-chrome-refresh-token.mjs`**（新增）：一次性换取 Chrome Web Store `refresh_token` 的辅助脚本。本机起临时 HTTP server 承接 Google loopback 回调，浏览器完成 OAuth 后自动将 token 写回 `.env.store`；同样自动探测系统代理 + curl 换 token。
 - **`.gitignore`**：忽略 `.env.store`，凭据只本地存放。
 
+### 修正：Edge 改用 v1.1 API Key 直连（无需 Azure 应用注册）
+
+> 微软自 2024-09 起将 Edge Add-ons 更新 API 迁移到 v1.1：不再走 Azure AD 应用注册 + OAuth 换 token，改为在 Partner Center「Publish API」直接生成 Client ID + API Key，请求头带 `Authorization: ApiKey` 与 `X-ClientID` 即可。已按新方式重写并真实发布验证通过。
+
+- **`scripts/publish-store.mjs`**：Edge 发布逻辑重写为 v1.1 —— 删除 `getEdgeToken`，改为 `POST /products/{id}/submissions/draft/package`（`Content-Type: application/zip` 二进制上传）→ 轮询 `.../operations/{opId}` → `POST /products/{id}/submissions`（发布）→ 轮询发布状态。operationID 从 `202 Accepted` 的 `Location` 响应头获取。
+- 抽出底层 `curlExec`（返回 `{status, headers, text}`），`fetchJson` 改为基于它包装；修复 CRLF 行尾回车符导致响应头正则失配（改用 `split(/\r?\n/)`）。
+- Chrome 侧：上传返回 `uploadState=FAILURE` 时立即中止并展开 `itemError`（如 `PKG_INVALID_VERSION_NUMBER`）；状态查询 `projection` 参数由 `PRIVATE` 改小写 `private`。
+- `.env.store`：Edge 字段由 `EDGE_TENANT_ID`/`EDGE_CLIENT_SECRET` 更换为 `EDGE_CLIENT_ID`/`EDGE_API_KEY`；`--setup` 引导改为 Partner Center 路径。
+
+**验证**：`--edge` 真实发布 2.8.6 → 上传受理、包校验通过、发布受理、发布完成全绿（exit 0）；`--chrome`/`--edge --dry-run` 通过；`node --check` 通过。
+
 ## 2026-11-08
 
 ### 代理端更新：兼容区间锁定 + 自动检测新版本
