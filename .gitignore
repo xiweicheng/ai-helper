@@ -8,6 +8,7 @@ release/
 *.log
 .env
 .env.local
+.env.store
 
 .DS_Store
 Thumbs.db

@@ -2,6 +2,16 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-11-15
+
+### 新增：扩展商店一键发布脚本
+
+> 之前每个版本都需手动登录 Chrome Web Store DevConsole 与 Microsoft Edge Partner Center 上传 zip，现可用脚本一次性自动化。
+
+- **`scripts/publish-store.mjs`**（新增）：调用 Chrome Web Store API 与 Edge Add-ons API，直传 `ai-helper@<version>.zip` 并发布；支持 `--chrome` / `--edge` / `--both` 选择目标，`--dry-run` 仅校验凭据与产物，`--setup` 打印 Google Cloud Console 与 Azure AD/Partner Center 配置引导。zip 缺失时自动补跑 `npm run package`；Edge 侧轮询到审核完成/失败后输出结论。
+- **`package.json`**：新增 `npm run publish:store` 命令。
+- **`.gitignore`**：忽略 `.env.store`，凭据只本地存放。
+
 ## 2026-11-08
 
 ### 代理端更新：兼容区间锁定 + 自动检测新版本
