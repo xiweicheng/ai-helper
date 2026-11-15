@@ -265,12 +265,17 @@ async function publishChrome(zipPath, dryRun) {
   if (upload.kind && upload.kind !== 'chromewebstore#item') {
     warn(`上传响应格式异常: ${JSON.stringify(upload).slice(0, 200)}`);
   }
+  // 上传失败时立即中止, 把 Google 返回的 itemError 展开打印
+  if (upload.uploadState === 'FAILURE' || (upload.itemError && upload.itemError.length)) {
+    const errs = (upload.itemError ?? []).map((e) => `    - ${e.error_code}: ${e.error_detail}`).join('\n');
+    throw new Error(`Chrome 拒收包 (uploadState=${upload.uploadState}):\n${errs || JSON.stringify(upload).slice(0, 400)}`);
+  }
   ok(`上传完成（状态: ${upload.uploadState ?? '未知'}）`);
 
   // 等待商店侧完成包校验
   await pollUntil(
     async () => {
-      const item = await fetchJson(`${CHROME_BASE}/items/${id}?projection=PRIVATE`, {
+      const item = await fetchJson(`${CHROME_BASE}/items/${id}?projection=private`, {
         headers: { Authorization: `Bearer ${token}` },
       }, 'Chrome 状态查询');
       const state = item.provisioned?.status?.[0]?.statusDetail?.[0] ?? item.status?.[0];
