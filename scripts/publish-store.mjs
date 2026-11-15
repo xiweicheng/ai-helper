@@ -74,7 +74,7 @@ ${C.green}── 一、Chrome Web Store（Google Cloud Console）─────
  4. 「OAuth consent screen」配置为 External 模式（自用无需发布验证）。
  5. 用下方命令做一次交互式授权，拿到 ${C.yellow}REFRESH_TOKEN${C.nc} 填入 CHROME_REFRESH_TOKEN：
 
-      npx chrome-web-store-upload refreshToken \\\\
+      npx chrome-web-store-upload refreshToken \\
         --extensionId=<扩展ID> --clientId=<CLIENT_ID> --clientSecret=<CLIENT_SECRET>
 
     （或访问 https://developers.google.com/oauthplayground 选择
