@@ -85,31 +85,75 @@ export function formatTime(mtime) {
 }
 
 /**
+ * 取文件扩展名（小写）
+ * - 隐藏文件（如 .gitignore）与无后缀文件（如 Makefile）都视为无扩展名
+ */
+export function getFileExtension(name) {
+  const base = String(name || '').split(/[\\/]/).pop() || '';
+  const idx = base.lastIndexOf('.');
+  if (idx <= 0) return '';
+  return base.slice(idx + 1).toLowerCase();
+}
+
+/**
+ * 已知的纯文本/代码扩展名：可直接按文本预览，无需再做二进制内容探测
+ */
+const KNOWN_TEXT_EXTS = new Set([
+  'txt', 'md', 'markdown', 'json', 'js', 'mjs', 'cjs', 'ts', 'jsx', 'tsx',
+  'html', 'htm', 'css', 'scss', 'less', 'xml', 'yaml', 'yml',
+  'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php',
+  'sql', 'sh', 'bash', 'zsh', 'cfg', 'ini', 'toml', 'conf',
+  'log', 'csv', 'tsv', 'env', 'vue', 'svelte', 'astro', 'rtf', 'svg',
+]);
+
+/**
+ * 明确无法以文本方式预览的二进制扩展名（压缩包/可执行文件/二进制文档/字体/数据库等）
+ * 未列在此处的后缀（如 .bat/.vbs/.gitignore）一律按文本尝试预览
+ */
+const BINARY_EXTS = new Set([
+  // 压缩包/安装包
+  'zip', 'rar', '7z', 'gz', 'tgz', 'bz2', 'xz', 'tar', 'jar', 'war', 'apk', 'ipa', 'crx', 'xpi',
+  // 可执行文件/库/字节码
+  'exe', 'dll', 'so', 'dylib', 'bin', 'dmg', 'pkg', 'msi', 'deb', 'rpm', 'class', 'pyc', 'o', 'obj', 'wasm',
+  // 旧版二进制 Office 文档（xls 由服务端表格预览支持，不在此列）
+  'doc', 'ppt', 'docm',
+  // 浏览器无法原生播放的音视频
+  'avi', 'mkv', 'flv', 'wmv', 'mpg', 'mpeg', 'rmvb', 'rm', '3gp', 'wma', 'amr', 'aiff', 'mid', 'midi',
+  // 其他二进制图片
+  'tif', 'tiff', 'heic', 'heif', 'psd', 'ai', 'sketch', 'fig', 'xd',
+  // 字体/数据库
+  'ttf', 'otf', 'woff', 'woff2', 'eot', 'db', 'sqlite', 'sqlite3', 'mdb',
+]);
+
+/**
  * 判断文件是否支持预览
+ * 采用「二进制黑名单」策略：除明确为二进制的后缀外都可尝试预览
  */
 export function supportsPreview(name) {
-  const ext = (name.split('.').pop() || '').toLowerCase();
-  const previewExts = new Set([
-    // 文本/代码
-    'txt', 'md', 'json', 'js', 'mjs', 'ts', 'jsx', 'tsx',
-    'html', 'htm', 'css', 'scss', 'less', 'xml', 'yaml', 'yml',
-    'py', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'rb', 'php',
-    'sql', 'sh', 'bash', 'zsh', 'cfg', 'ini', 'toml', 'conf',
-    'log', 'csv', 'tsv', 'env', 'vue', 'svelte', 'astro', 'rtf', 'svg',
-    // 文档
-    'pdf', 'docx',
-    // 演示文稿
-    'pptx',
-    // 表格
-    'xlsx', 'xls',
-    // 图片
-    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
-    // 视频（浏览器原生可播放）
-    'mp4', 'webm', 'ogg', 'm4v', 'mov',
-    // 音频（浏览器原生可播放）
-    'mp3', 'wav', 'm4a', 'aac', 'flac', 'opus',
-  ]);
-  return previewExts.has(ext);
+  return !BINARY_EXTS.has(getFileExtension(name));
+}
+
+/**
+ * 是否为已知的纯文本文件（用于跳过二进制内容探测，避免误伤 GBK 等编码的文本）
+ */
+export function isKnownTextFile(name) {
+  return KNOWN_TEXT_EXTS.has(getFileExtension(name));
+}
+
+/**
+ * 文本预览前的内容探测：命中 NUL 或较高比例控制字符时判定为二进制，避免渲染乱码
+ */
+export function looksLikeBinaryText(text) {
+  if (!text) return false;
+  const sample = text.slice(0, 8000);
+  if (sample.includes('\u0000')) return true;
+  let control = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const code = sample.charCodeAt(i);
+    // 允许 \t(9) \n(10) \r(13)，其余 C0 控制字符计入
+    if ((code < 9) || (code > 13 && code < 32)) control++;
+  }
+  return control / sample.length > 0.01;
 }
 
 /**
@@ -117,7 +161,7 @@ export function supportsPreview(name) {
  * @returns {'text'|'pdf'|'docx'|'xlsx'|'pptx'|'image'|'video'|'audio'|'unknown'}
  */
 export function getPreviewType(name) {
-  const ext = (name.split('.').pop() || '').toLowerCase();
+  const ext = getFileExtension(name);
   if (ext === 'pdf') return 'pdf';
   if (ext === 'docx') return 'docx';
   if (ext === 'xlsx' || ext === 'xls') return 'xlsx';

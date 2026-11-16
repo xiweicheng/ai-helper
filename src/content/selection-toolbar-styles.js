@@ -68,6 +68,23 @@ export function buildToolbarVars(resolved) {
 // 自己的背景/内边距/边框。仅在基础规则里补一句 overflow:visible 抵消 UA 的 auto。
 const TOOLBAR_RULES = `
 
+    /* 图标呈现自持：工具栏/结果面板所有 svg 图标都带 .aih-ic（实心图标再带 .aih-ic-solid）。
+       浮层挂在宿主页面 DOM 上，宿主若定义 svg { fill: ... } 之类的规则，CSS 声明优先级高于
+       <svg> 上的 fill/stroke 演示属性，会把描边图标填成实心色块，故在此强制还原。 */
+    svg.aih-ic,
+    svg.aih-ic * {
+      fill: none !important;
+      stroke: currentColor !important;
+      stroke-width: 2 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+    }
+    svg.aih-ic.aih-ic-solid,
+    svg.aih-ic.aih-ic-solid * {
+      fill: currentColor !important;
+      stroke: none !important;
+    }
+
     #aih-selection-toolbar {
       position: fixed;
       z-index: 2147483647;

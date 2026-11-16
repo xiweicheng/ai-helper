@@ -10,6 +10,7 @@ import {
   renameFs, createDir, moveFs, deleteFs, getFileInfo,
   getFileIcon, formatFileSize, formatTime,
   supportsPreview, getPreviewType, getMimeType,
+  isKnownTextFile, looksLikeBinaryText,
   switchWorkspace, removeAllowedPath, pickDirectory, cancelPickDirectory, browseDirs
 } from './workspace-manager.js';
 import { createWorkdirBrowserView } from './workdir-browser.js';
@@ -65,6 +66,7 @@ registerTranslations('zh', {
     agentNotConnected: 'Agent 未连接',
     agentNotConnectedUpload: 'Agent 未连接，无法上传',
     unsupportedFileType: '不支持的文件类型',
+    binaryFileNoPreview: '疑似二进制文件，不支持文本预览，请直接下载',
     unknownError: '未知错误',
     // 复制提示
     copiedFileName: '已复制文件名: {name}',
@@ -320,6 +322,7 @@ registerTranslations('en', {
     agentNotConnected: 'Agent not connected',
     agentNotConnectedUpload: 'Agent not connected, unable to upload',
     unsupportedFileType: 'Unsupported file type',
+    binaryFileNoPreview: 'Looks like a binary file. Text preview is not supported. Please download directly.',
     unknownError: 'Unknown error',
     // Copy messages
     copiedFileName: 'Copied file name: {name}',
@@ -2173,16 +2176,27 @@ async function previewFile(filePath, fileName) {
       previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.fileTooLargeNoPreview', { size: formatFileSize(fileSize) })}</div>`;
       return;
     }
-    // 文本文件显示编辑按钮
-    editBtn.style.display = '';
-    fullscreenBtn.style.display = '';
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     const result = await readFileContent(filePath);
     if (!result.success) {
       previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.previewFailed', { error: escapeHtml(result.error || t('workspace.unknownError')) })}</div>`;
       return;
     }
+    // 拿不到 size（如产物列表）时，用服务端返回的真实大小再拦一次
+    const actualSize = result.size || 0;
+    if (actualSize > PREVIEW_MAX_TEXT) {
+      previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.fileTooLargeNoPreview', { size: formatFileSize(actualSize) })}</div>`;
+      return;
+    }
     const text = result.content || '';
+    // 未知后缀按文本尝试预览：内容像二进制就拦掉，避免渲染乱码
+    if (!isKnownTextFile(fileName) && looksLikeBinaryText(text)) {
+      previewContent.innerHTML = `<div class="workspace-panel-error">${t('workspace.binaryFileNoPreview')}</div>`;
+      return;
+    }
+    // 文本文件显示编辑按钮
+    editBtn.style.display = '';
+    fullscreenBtn.style.display = '';
     // 存储原文用于编辑模式
     previewArea.dataset.origContent = text;
 
