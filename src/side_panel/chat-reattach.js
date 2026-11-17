@@ -35,6 +35,7 @@ import {
   mountStreamingElement,
   scrollStreamingToBottom,
   applyStreamSnapshot,
+  renderStreamingContentFull,
 } from './chat-streaming.js';
 import { addCodeCopyButtons } from './markdown-render.js';
 import { readStreamSnapshot } from './stream-snapshot.js';
@@ -174,7 +175,7 @@ export function createSessionStreamMirror({
         renderer.chunk?.(buffered);
         return true;
       case 'STREAM_TOOL_CALL':
-        renderer.toolCalls?.(message.toolCalls || []);
+        renderer.toolCalls?.(message.toolCalls || [], buffered);
         return true;
       case 'STREAM_TOOL_RESULT':
         // 工具执行结果：不接就只剩「工具卡片永远转圈」
@@ -310,7 +311,7 @@ function _queryRunning(timeoutMs = 0) {
 /** 生产渲染器：复用 chat-streaming 的既有函数，不另造一套 DOM */
 function _buildRenderer(sessionId, el) {
   // 命令流式输出按 execId 保活（对应 callApi 闭包里的 _agentStreams）：
-  // AGENT_STREAM 每条只带一段增量，必须自己攒完整段再整块写进 <code>。
+  // AGENT_STREAM 每条只带一段增量，直接追加为文本节点（完整内容保留、不做整块重写）。
   // 挂在渲染器上随镜像一起生灭，不留全局脏映射。
   const agentStreams = new Map();
   return {
@@ -331,7 +332,9 @@ function _buildRenderer(sessionId, el) {
       // 整段换回脱落期的 DOM：innerHTML 一盖，事件重挂（停止按钮/卡片折叠）
       applyStreamSnapshot(el, html);
     },
-    toolCalls(tcs) {
+    toolCalls(tcs, full) {
+      // 边界兜底：与 callApi 主链路同口径，先补齐正文再插卡片
+      if (typeof full === 'string' && full) renderStreamingContentFull(el, full);
       appendToolCallItems(el, tcs);
     },
     toolResult(result) {
@@ -346,19 +349,31 @@ function _buildRenderer(sessionId, el) {
           ? el.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
           : null;
         const outputDiv = createAgentStreamOutput(card, el.querySelector('.stream-content'));
-        entry = { element: outputDiv, stdout: '', stderr: '' };
+        entry = { element: outputDiv, codeEl: outputDiv.querySelector('code'), stderrSeparator: null };
         agentStreams.set(message.execId, entry);
         addCodeCopyButtons();
       }
-      const codeEl = entry.element.querySelector('code');
+      const codeEl = entry.codeEl;
       if (!codeEl) return;
-      if (message.streamType === 'stderr') {
-        entry.stderr += message.data || '';
-      } else {
-        entry.stdout += message.data || '';
+      // 与主监听路径一致：增量追加文本节点，完整内容保留
+      const data = message.data || '';
+      if (data) {
+        const textNode = document.createTextNode(data);
+        if (message.streamType === 'stderr') {
+          if (!entry.stderrSeparator) {
+            const separator = document.createTextNode('\n');
+            codeEl.appendChild(separator);
+            entry.stderrSeparator = separator;
+          }
+          codeEl.appendChild(textNode);
+        } else if (entry.stderrSeparator) {
+          codeEl.insertBefore(textNode, entry.stderrSeparator);
+        } else {
+          codeEl.appendChild(textNode);
+        }
       }
-      codeEl.textContent = entry.stdout + (entry.stderr ? '\n' + entry.stderr : '');
-      codeEl.parentElement.scrollTop = codeEl.parentElement.scrollHeight;
+      const preEl = codeEl.parentElement;
+      if (preEl) preEl.scrollTop = preEl.scrollHeight;
     },
     agentStreamDone(message) {
       const entry = agentStreams.get(message.execId);

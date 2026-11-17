@@ -95,7 +95,12 @@ describe('createSessionStreamMirror 单会话流式镜像', () => {
     const { mirror, renderer } = make();
     const toolCalls = [{ id: 't1', function: { name: 'agent_exec', arguments: '{"command":"ls"}' } }];
     mirror.handleMessage({ type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1', toolCalls });
-    expect(renderer.toolCalls).toHaveBeenCalledWith(toolCalls);
+    expect(renderer.toolCalls).toHaveBeenCalledWith(toolCalls, '');
+
+    // 边界兜底：插入卡片时把已累积正文一并交给渲染器（先补齐正文再插卡片）
+    mirror.handleMessage({ type: 'STREAM_CHUNK', sessionId: 's1', callId: 'auto_1', delta: '正文' });
+    mirror.handleMessage({ type: 'STREAM_TOOL_CALL', sessionId: 's1', callId: 'auto_1', toolCalls });
+    expect(renderer.toolCalls).toHaveBeenLastCalledWith(toolCalls, '正文');
 
     const result = { toolCallId: 't1', toolName: 'agent_exec', success: true, content: 'ok' };
     expect(mirror.handleMessage({ type: 'STREAM_TOOL_RESULT', sessionId: 's1', callId: 'auto_1', result })).toBe(true);

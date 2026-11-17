@@ -7,7 +7,7 @@
 
 import state from './state.js';
 import { escapeHtml, formatDuration, formatTokenCount, aggregateTokenUsage, showTokenPopup } from './utils.js';
-import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, applyFilePathLinks, stripArtifactMarkers } from './markdown-render.js';
+import { formatMessageContent, formatMarkdown, addCodeCopyButtons, renderMessageMermaid, applyFilePathLinks, stripArtifactMarkers } from './markdown-render.js';
 import { ICON_IMAGE_24 } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { copyAssistantMessage, quoteAndAsk } from './chat-copy.js';
@@ -962,6 +962,234 @@ export function reconnectStreamingElement(sessionId) {
 }
 
 /**
+ * ===== 流式增量渲染 =====
+ * 已经完成的段落只渲染一次并留在 DOM 里，后续每个 chunk 只重渲染「最后一个未闭合的段落」。
+ * 这样做既保留 30ms 的更新节奏和完整内容，又避免每次都对全文做 Markdown 解析 + sanitize + innerHTML。
+ * 每个轮次边界（工具调用 / 取消）都会调用 renderStreamingContentFull 做全文兜底，
+ * 保证最终 DOM 与整段重渲染完全一致；历史消息与会话切回走的是各自既有路径。
+ */
+const _liteRenderStates = new WeakMap();
+const LITE_RENDER_LOOKAHEAD_LINES = 5;
+
+/** 找到/创建「本轮思考内容」容器，选择规则与旧实现逐条一致 */
+function _ensureThinkingContent(element) {
+  const contentDiv = element.querySelector('.stream-content');
+  if (!contentDiv) return null;
+
+  const visibleThinking = contentDiv.querySelector('.thinking-indicator:not(.hidden)')
+    || element.querySelector('.thinking-indicator:not(.hidden)');
+
+  if (visibleThinking) {
+    if (contentDiv.contains(visibleThinking)) {
+      const prevSibling = visibleThinking.previousElementSibling;
+      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
+        return prevSibling;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.className = 'thinking-content';
+      contentDiv.insertBefore(wrapper, visibleThinking);
+      return wrapper;
+    }
+
+    const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
+    if (thinkingContents.length === 0) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'thinking-content';
+      contentDiv.appendChild(wrapper);
+      return wrapper;
+    }
+    const lastContent = thinkingContents[thinkingContents.length - 1];
+    const nextSibling = lastContent.nextElementSibling;
+    if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
+      return lastContent;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'thinking-content';
+    contentDiv.appendChild(wrapper);
+    return wrapper;
+  }
+
+  const badges = contentDiv.querySelectorAll('.thinking-badge');
+  if (badges.length > 0) {
+    const lastBadge = badges[badges.length - 1];
+    const contentAfter = lastBadge.nextElementSibling;
+    if (contentAfter && contentAfter.classList.contains('thinking-content')) {
+      return contentAfter;
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'thinking-content';
+    lastBadge.after(wrapper);
+    return wrapper;
+  }
+
+  // 与旧实现一致：既无 badge 也无指示器时新建容器
+  const wrapper = document.createElement('div');
+  wrapper.className = 'thinking-content';
+  contentDiv.appendChild(wrapper);
+  return wrapper;
+}
+
+/**
+ * 块延续行判定：列表 / 引用 / 表格 / 缩进代码块 / 块级 HTML / 链接引用定义。
+ * 在这些位置切块会改变 Markdown 语义，因此不能作为增量渲染的切点。
+ */
+function _isBlockContinuation(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^(```|~~~)/.test(trimmed)) return true;
+  if (/^([-*+]|\d+[.)])\s/.test(trimmed)) return true;
+  if (/^>/.test(trimmed)) return true;
+  if (/^\|/.test(trimmed)) return true;
+  if (/^\s{2,}\S/.test(line)) return true;
+  // 块级 HTML（<details>/<div>/<table>…）与链接引用定义（[1]: url）都是「跨空行」的块：
+  // 从中间切开会让两半各自解析 —— HTML 半截被当正文、引用定义与使用处分离导致链接失效
+  if (trimmed.startsWith('<')) return true;
+  if (/^\[[^\]]+\]:/.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * 从 start 之后找最后一个可安全切块的位置：
+ * 空行、不在代码围栏内、且前后都不是块延续行。找不到就返回 start（只重渲尾部）。
+ * start 必须是 0 或上一次的 cut —— 这两处都在代码围栏之外，所以围栏状态从「关闭」起算。
+ */
+function _findStableCut(content, start) {
+  let pos = start;
+  let open = false;
+  let cut = start;
+  let prevNonEmptyLine = '';
+
+  while (pos <= content.length) {
+    const nl = content.indexOf('\n', pos);
+    const lineEnd = nl === -1 ? content.length : nl;
+    const line = content.slice(pos, lineEnd);
+    const trimmed = line.trim();
+    const isFenceLine = trimmed.startsWith('```') || trimmed.startsWith('~~~');
+
+    if (isFenceLine) open = !open;
+
+    if (!open && !isFenceLine && trimmed === '') {
+      // 向后看下一行非空内容（最多看几行，避免极端内容的重复扫描）
+      let nextLine = '';
+      let q = nl === -1 ? content.length : nl + 1;
+      for (let i = 0; i < LITE_RENDER_LOOKAHEAD_LINES && q < content.length; i++) {
+        const n2 = content.indexOf('\n', q);
+        const e2 = n2 === -1 ? content.length : n2;
+        const l2 = content.slice(q, e2);
+        if (l2.trim()) {
+          nextLine = l2;
+          break;
+        }
+        q = e2 + 1;
+        if (n2 === -1) break;
+      }
+      if (nextLine && !_isBlockContinuation(nextLine) && !_isBlockContinuation(prevNonEmptyLine)) {
+        cut = nl + 1;
+      }
+    }
+
+    if (trimmed) prevNonEmptyLine = line;
+    if (nl === -1) break;
+    pos = nl + 1;
+  }
+
+  return cut;
+}
+
+function _htmlToFragment(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  return template.content;
+}
+
+/**
+ * 把容器重建为「稳定前缀 + 尾部」两段结构：
+ * 前缀一次渲染后不再动，尾部留给后续 chunk 反复重渲。
+ * 首帧同样走这里（而不是整段渲染后把已渲染位置记成 content.length）：
+ * 首帧经常停在半个代码块 / 半个段落里，从那里续写会把代码当成普通段落另起一段，
+ * 也会把一个段落拆成两段。按稳定切点建结构后，两种情况都不会发生。
+ * 容器里已有的旧节点（快照回填等）一并清掉，顺带收敛成单个 .markdown-body，
+ * 与旧实现的 DOM 结构保持一致。
+ */
+function _rebuildLiteContent(container, content) {
+  container.innerHTML = '';
+  const body = document.createElement('div');
+  body.className = 'markdown-body';
+  container.appendChild(body);
+
+  const cut = _findStableCut(content, 0);
+  if (cut > 0) {
+    body.appendChild(_htmlToFragment(formatMarkdown(content.slice(0, cut))));
+  }
+
+  let firstTailNode = null;
+  const tail = content.slice(cut);
+  if (tail) {
+    const fragment = _htmlToFragment(formatMarkdown(tail));
+    firstTailNode = fragment.firstChild;
+    body.appendChild(fragment);
+  }
+
+  _liteRenderStates.set(container, { content, renderedChars: cut, firstTailNode, body });
+}
+
+function _renderLiteContent(container, fullContent) {
+  const content = fullContent || '';
+  const st = _liteRenderStates.get(container);
+
+  // 首次渲染 / 内容被整体替换（反思修订、新一轮、快照回填）→ 重建
+  if (!st || !content.startsWith(st.content)) {
+    _rebuildLiteContent(container, content);
+    return;
+  }
+
+  // 正文容器被外部换掉（快照回填 innerHTML）→ 旧状态里的尾部节点已脱离文档，必须重建
+  const body = st.body;
+  if (!body || body.parentNode !== container) {
+    _rebuildLiteContent(container, content);
+    return;
+  }
+
+  // 1. 移除上一次的尾部（只动尾部，已完成的段落保持不动）
+  let node = st.firstTailNode;
+  while (node) {
+    const next = node.nextSibling;
+    node.remove();
+    node = next;
+  }
+  st.firstTailNode = null;
+
+  // 2. 把新完成的段落一次性渲染进来
+  const cut = _findStableCut(content, st.renderedChars);
+  if (cut > st.renderedChars) {
+    body.appendChild(_htmlToFragment(formatMarkdown(content.slice(st.renderedChars, cut))));
+    st.renderedChars = cut;
+  }
+
+  // 3. 只重渲染最后一个未完成的段落
+  const tail = content.slice(st.renderedChars);
+  if (tail) {
+    const fragment = _htmlToFragment(formatMarkdown(tail));
+    st.firstTailNode = fragment.firstChild;
+    body.appendChild(fragment);
+  }
+
+  st.content = content;
+}
+
+/**
+ * 全文兜底渲染：轮次边界（工具调用 / 取消）调用。
+ * 走与增量渲染同一套「稳定前缀 + 尾部」结构，既保证已累积内容一字不漏地渲染出来，
+ * 也保证边界之后如果还有增量（同级轮次/反思续写），仍然可以安全地增量续写。
+ */
+export function renderStreamingContentFull(element, content) {
+  if (!element || !content) return;
+  const container = _ensureThinkingContent(element);
+  if (!container) return;
+  _rebuildLiteContent(container, content);
+}
+
+/**
  * 更新流式消息内容（增量渲染 Markdown）
  * 流式输出过程中思考指示器保持可见，仅在一轮思考完成后才隐藏并显示思考结果badge
  * 支持多轮 ReAct 迭代：每轮追加独立的思考标记
@@ -982,68 +1210,10 @@ export function updateStreamingMessage(element, fullContent) {
       thinkingLabel.textContent = t('chatStream.outputting');
       delete thinkingLabel.dataset.retrying;
     }
-    
-    // 当前正在思考中/输出中
-    if (contentDiv.contains(visibleThinking)) {
-      // 思考指示器在 stream-content 内：在指示器前面创建/更新 thinking-content
-      const prevSibling = visibleThinking.previousElementSibling;
-      if (prevSibling && prevSibling.classList.contains('thinking-content')) {
-        prevSibling.innerHTML = formatMessageContent(fullContent);
-      } else {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'thinking-content';
-        wrapper.innerHTML = formatMessageContent(fullContent);
-        contentDiv.insertBefore(wrapper, visibleThinking);
-      }
-    } else {
-      // 思考指示器在 message-content 中（第一轮迭代）：
-      // 如果 stream-content 中没有 thinking-content，创建新的；否则更新最后一个
-      // 注意：这里不能简单地更新最后一个，因为可能有多个轮次的思考内容
-      const thinkingContents = contentDiv.querySelectorAll('.thinking-content');
-      if (thinkingContents.length === 0) {
-        // 没有任何思考内容，创建新的
-        const wrapper = document.createElement('div');
-        wrapper.className = 'thinking-content';
-        wrapper.innerHTML = formatMessageContent(fullContent);
-        contentDiv.appendChild(wrapper);
-      } else {
-        // 检查最后一个 thinking-content 是否是当前轮的（前面没有 thinking-badge）
-        const lastContent = thinkingContents[thinkingContents.length - 1];
-        const nextSibling = lastContent.nextElementSibling;
-        if (!nextSibling || !nextSibling.classList.contains('thinking-badge')) {
-          // 最后一个 thinking-content 是当前轮的，更新它
-          lastContent.innerHTML = formatMessageContent(fullContent);
-        } else {
-          // 最后一个 thinking-content 已经是上一轮的（后面有 badge），创建新的
-          const wrapper = document.createElement('div');
-          wrapper.className = 'thinking-content';
-          wrapper.innerHTML = formatMessageContent(fullContent);
-          contentDiv.appendChild(wrapper);
-        }
-      }
-    }
-  } else {
-    // 思考已完成（无可见指示器）：在最后一个 thinking-badge 后更新内容
-    const badges = contentDiv.querySelectorAll('.thinking-badge');
-    if (badges.length > 0) {
-      const lastBadge = badges[badges.length - 1];
-      let contentAfter = lastBadge.nextElementSibling;
-      if (contentAfter && contentAfter.classList.contains('thinking-content')) {
-        contentAfter.innerHTML = formatMessageContent(fullContent);
-      } else {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'thinking-content';
-        wrapper.innerHTML = formatMessageContent(fullContent);
-        lastBadge.after(wrapper);
-      }
-    } else {
-      // 没有 badge，也没有 thinking-indicator，直接创建 thinking-content
-      const wrapper = document.createElement('div');
-      wrapper.className = 'thinking-content';
-      wrapper.innerHTML = formatMessageContent(fullContent);
-      contentDiv.appendChild(wrapper);
-    }
   }
+
+  const container = _ensureThinkingContent(element);
+  if (container) _renderLiteContent(container, fullContent);
   
   snapshotStreamingBubble(element);
 

@@ -84,6 +84,7 @@ import {
   notifyNonStreamContentArrived,
   autoScrollToBottom,
   scrollStreamingToBottom,
+  renderStreamingContentFull,
 } from './chat-streaming.js';
 // 重导出保持对外接口不变（其他模块可能通过 chat-manager 导入）
 export { reconnectStreamingElement, cancelStreamingTask };
@@ -3696,12 +3697,14 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     setPendingPreselectLog(null);
     setProcessStartTime(0);
     let _streamedContent = '';
-    let _agentStreams = {};  // execId -> { element, stdout, stderr }
+    let _agentStreams = {};  // execId -> { element, codeEl, stderrSeparator }（增量追加，不存整段字符串）
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
       // 如果存在流式输出元素，清理思考中占位
       if (_se()) {
+        // 边界兜底：取消时把已累积内容补齐为最终形态，防止增量渲染留下半截尾部
+        renderStreamingContentFull(_se(), _streamedContent);
         finalizeCancelledStream(_se());
       }
       cleanupCallApi();
@@ -4183,6 +4186,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           setProcessStartTime(Date.now());
         }
         if (_se() && message.toolCalls?.length > 0) {
+          // 边界兜底：工具卡片插入前把正文补齐为最终形态，避免增量渲染的残留尾部
+          // 与卡片顺序错位（例如最后一段仍在 Markdown 块内时被截断）
+          renderStreamingContentFull(_se(), message.thinkingContent || _streamedContent);
           appendToolCallItems(_se(), message.toolCalls);
         }
         return false;
@@ -4206,20 +4212,35 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               ? se.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
               : null;
             const outputDiv = createAgentStreamOutput(card, se.querySelector('.stream-content'));
-            agentEntry = { element: outputDiv, stdout: '', stderr: '' };
+            agentEntry = { element: outputDiv, codeEl: outputDiv.querySelector('code'), stderrSeparator: null };
             _agentStreams[message.execId] = agentEntry;
             addCodeCopyButtons();
           }
           
-          const codeEl = agentEntry.element.querySelector('code');
+          const codeEl = agentEntry.codeEl;
           if (codeEl) {
-            if (message.streamType === 'stderr') {
-              agentEntry.stderr += message.data;
-            } else {
-              agentEntry.stdout += message.data;
+            // 增量追加文本节点：完整内容一点不少，但不再每来一段就重写整块 textContent
+            const data = message.data || '';
+            if (data) {
+              const textNode = document.createTextNode(data);
+              if (message.streamType === 'stderr') {
+                // 与旧实现一致：stderr 首次出现时在 stdout 之后补一个换行，
+                // 且 stderr 整段始终排在 stdout 之后
+                if (!agentEntry.stderrSeparator) {
+                  const separator = document.createTextNode('\n');
+                  codeEl.appendChild(separator);
+                  agentEntry.stderrSeparator = separator;
+                }
+                codeEl.appendChild(textNode);
+              } else if (agentEntry.stderrSeparator) {
+                // 后续 stdout 追加到分隔符之前，等价于旧实现里的 stdout + '\n' + stderr
+                codeEl.insertBefore(textNode, agentEntry.stderrSeparator);
+              } else {
+                codeEl.appendChild(textNode);
+              }
             }
-            codeEl.textContent = agentEntry.stdout + (agentEntry.stderr ? '\n' + agentEntry.stderr : '');
-            codeEl.parentElement.scrollTop = codeEl.parentElement.scrollHeight;
+            const preEl = codeEl.parentElement;
+            if (preEl) preEl.scrollTop = preEl.scrollHeight;
           }
         }
         return false;
