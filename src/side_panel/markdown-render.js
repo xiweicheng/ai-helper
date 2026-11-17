@@ -652,6 +652,7 @@ export function downloadTableAsExcel(tableBlock) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
     logger.debug('[SidePanel] Excel download successful');
   } catch (error) {

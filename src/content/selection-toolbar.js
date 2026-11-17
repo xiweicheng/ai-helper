@@ -205,6 +205,9 @@ let streamRenderToken = 0;    // 渲染令牌：STREAM_DONE/新会话时递增�
 let currentTokenUsage = null; // 当前结果面板的 Token 消耗数据（点击标签弹明细用）
 let tokenPopupOpen = false;   // Token 明细弹窗是否打开
 let shadowSelectionListeners = new Set(); // Shadow DOM 选择监听器集合
+let shadowSelectionObserver = null;        // 维持 shadow root selectionchange 覆盖的 MutationObserver（仅在功能开启时创建）
+let shadowRescanTimer = null;              // 合并高频 DOM 变更的重扫节流句柄
+let toggleGeneration = 0;                   // 开关读取代号：使 loadToggleState 异步回写不覆盖更新的 onChanged 结果
 let isTopFrame = window.top === window;   // 是否为顶层 frame
 
 // frameset 页面：顶层有 frameset 元素，直接子 frame 成为工具栏宿主
@@ -2217,11 +2220,54 @@ function blockCurrentDomain() {
 function loadToggleState() {
   if (!isExtensionValid()) return;
   
+  const gen = ++toggleGeneration;
   chrome.storage.local.get(['enableSelectionToolbar', 'blockedDomains'], (result) => {
+    // 发出与回包之间若发生过 onChanged，则本快照已陈旧，直接丢弃，避免旧值回写开开关并重建 observer
+    if (gen !== toggleGeneration) return;
     enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? !!result.enableSelectionToolbar : true;
     blockedDomains = result.blockedDomains || [];
     logger.debug('[SelectionToolbar] toggle state:', enableSelectionToolbar ? 'enabled' : 'disabled', 'blocked domains:', blockedDomains.length);
+    // shadow 监听覆盖依赖异步读取的真实开关：开启时才建立 observer 与初次挂载，
+    // 关闭时完全不挂 shadow 监听（与 onSelectionChange 首行 return 的现有行为等价，无功能损失）
+    if (enableSelectionToolbar) startShadowSelectionObserver();
+    else stopShadowSelectionObserver();
   });
+}
+
+// 重扫整棵 DOM，为各 shadow root 补挂 selectionchange 监听器（成本高，需节流）
+function rescanShadowSelectionListeners() {
+  removeSelectionListeners(shadowSelectionListeners);
+  shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
+}
+
+// 仅在功能开启时创建 observer；关闭时不挂任何 shadow 监听
+function startShadowSelectionObserver() {
+  if (!isTopFrame || !isExtensionValid() || shadowSelectionObserver) return;
+  rescanShadowSelectionListeners();
+  const observer = new MutationObserver(() => {
+    // 合并高频 DOM 变更，避免自动化任务时每批变更都全树重扫导致主线程卡顿与 GC 抖动。
+    // 仍是「全量重扫」，只是时间上合并；对「新插入的子树」最终会补挂覆盖（既有元素后挂 shadowRoot 两种实现都不覆盖）。
+    if (shadowRescanTimer) return;
+    shadowRescanTimer = setTimeout(() => {
+      shadowRescanTimer = null;
+      if (enableSelectionToolbar) rescanShadowSelectionListeners();
+    }, 300);
+  });
+  // 先 observe 成功才登记到模块变量：避免 frameset 无 body 时抛错留下「非空但未观察」的僵尸句柄，
+  // 被下方幂等守卫永久拒绝重试；回退到 documentElement 与 getOverlayHost 的既有防御一致。
+  try {
+    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  } catch {
+    return;
+  }
+  shadowSelectionObserver = observer;
+}
+
+// 停止 observer：断开并清理已挂的 shadow 监听（重扫句柄一并清除）
+function stopShadowSelectionObserver() {
+  if (shadowRescanTimer) { clearTimeout(shadowRescanTimer); shadowRescanTimer = null; }
+  if (shadowSelectionObserver) { shadowSelectionObserver.disconnect(); shadowSelectionObserver = null; }
+  removeSelectionListeners(shadowSelectionListeners);
 }
 
 // ==================== 主题跟随（独立开关 selectionToolbarFollowTheme）====================
@@ -2257,8 +2303,12 @@ if (isExtensionValid()) {
     if (!isExtensionValid()) return;
     
     if (areaName === 'local' && changes.enableSelectionToolbar) {
+      toggleGeneration++; // 作废可能仍在飞行中的 loadToggleState 回包
       enableSelectionToolbar = !!(changes.enableSelectionToolbar.newValue);
-      if (!enableSelectionToolbar) {
+      if (enableSelectionToolbar) {
+        startShadowSelectionObserver();
+      } else {
+        stopShadowSelectionObserver();
         hideToolbar();
         hideResultPanel();
         currentSelectedText = '';
@@ -2266,6 +2316,7 @@ if (isExtensionValid()) {
     }
     
     if (areaName === 'local' && changes.blockedDomains) {
+      toggleGeneration++; // 同样作废陈旧回包（get 回包会一并写 blockedDomains）
       blockedDomains = changes.blockedDomains.newValue || [];
     }
     
@@ -2390,15 +2441,9 @@ export function initSelectionToolbar() {
     }
   });
   
-  if (isTopFrame) {
-    shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
-    
-    const mutationObserver = new MutationObserver(() => {
-      removeSelectionListeners(shadowSelectionListeners);
-      shadowSelectionListeners = attachSelectionListeners(onSelectionChange);
-    });
-    mutationObserver.observe(document.body, { childList: true, subtree: true });
-  }
+  // shadow 选区监听与 MutationObserver 的建立/拆除完全交由 loadToggleState 的
+  // storage.get 回调（读到真实开关后 start/stop）与 storage.onChanged 驱动，
+  // 此处不再重复同步 start，避免实际关闭时多一次「建→全树扫描→立即拆」的浪费。
   
   logger.debug('[SelectionToolbar] initialization complete', isTopFrame ? '(toplayerframe)' : '(subframe)');
 }
@@ -2410,7 +2455,7 @@ export function destroySelectionToolbar() {
   window.removeEventListener('scroll', onScrollOrResize, true);
   window.removeEventListener('resize', onResize);
   
-  removeSelectionListeners(shadowSelectionListeners);
+  stopShadowSelectionObserver();
   
   hideToolbar();
   hideResultPanel();
