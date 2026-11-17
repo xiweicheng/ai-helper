@@ -3645,6 +3645,15 @@ textarea {
 }
 
 /* 文档列表弹窗 */
+/* 搜索 / 来源筛选栏固定在滚动区顶部，文档很多时翻列表仍可随时过滤 */
+.kb-modal-body > .toolbox-filter-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 0;
+  padding: 2px 0 8px;
+  background: var(--bg-surface);
+}
 .kb-doc-list {
   display: flex;
   flex-direction: column;
@@ -3917,12 +3926,16 @@ textarea {
   border-left: 3px solid var(--border-default);
   color: var(--text-secondary);
 }
-.kb-doc-markdown table {
-  display: block;
-  width: max-content;
-  max-width: 100%;
-  overflow: auto;
+/* 表格：外层包裹负责横向滚动，表头最后一列悬浮工具栏（复制 Markdown / 下载 Excel / 导出图片） */
+.kb-doc-markdown .table-container-wrapper {
+  position: relative;
   margin: 10px 0;
+  overflow-x: auto;
+}
+.kb-doc-markdown table {
+  width: max-content;
+  max-width: none;
+  margin: 0;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -3934,6 +3947,158 @@ textarea {
 }
 .kb-doc-markdown th { background: var(--bg-sunken); font-weight: 600; }
 .kb-doc-markdown tr:nth-child(2n) td { background: var(--bg-surface); }
+.kb-doc-markdown .table-header-cell-wrapper { position: relative; padding-right: 36px !important; }
+.kb-doc-markdown .table-toolbar {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+.kb-doc-markdown .table-container-wrapper:hover .table-toolbar,
+.kb-doc-markdown .table-header-cell-wrapper:hover .table-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.kb-doc-markdown .table-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.65);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(var(--overlay-rgb), 0.1);
+}
+.kb-doc-markdown .table-toolbar-btn:hover {
+  background: var(--bg-surface);
+  color: var(--brand-500);
+}
+.kb-doc-markdown .table-toolbar-btn svg { width: 13px; height: 13px; }
+
+/* 代码块：右上角悬浮复制按钮 */
+.kb-doc-markdown .code-block-container {
+  position: relative;
+  margin: 10px 0;
+}
+.kb-doc-markdown .code-block-container pre { margin: 0; }
+.kb-doc-markdown .code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.85);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+.kb-doc-markdown .code-block-container:hover .code-copy-btn { opacity: 1; }
+.kb-doc-markdown .code-copy-btn:hover { background: var(--bg-surface); color: var(--brand-500); }
+.kb-doc-markdown .code-copy-btn.copied { color: var(--success-500); }
+.kb-doc-markdown .code-copy-btn svg { width: 15px; height: 15px; pointer-events: none; }
+
+/* Mermaid 图表：悬停显示缩放 / 复制 / 下载 / 源码控件 */
+.kb-doc-markdown .mermaid {
+  position: relative;
+  margin: 10px 0;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+}
+.kb-doc-markdown .mermaid:active { cursor: grabbing; }
+.kb-doc-markdown .mermaid svg { max-width: 100%; height: auto; user-select: none; }
+.kb-doc-markdown .mermaid-svg-wrapper {
+  display: inline-block;
+  width: 100%;
+  transform-origin: center center;
+  transition: transform 0.2s ease;
+}
+.kb-doc-markdown .mermaid .mermaid-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+}
+.kb-doc-markdown .mermaid:hover .mermaid-controls { opacity: 1; pointer-events: auto; }
+.kb-doc-markdown .mermaid .mermaid-controls button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.85);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: bold;
+  line-height: 1;
+  box-shadow: 0 2px 6px var(--shadow-sm);
+  transition: all 0.2s;
+}
+.kb-doc-markdown .mermaid .mermaid-controls button:hover { background: var(--bg-surface); }
+.kb-doc-markdown .mermaid .mermaid-controls button svg { width: 14px; height: 14px; }
+.kb-doc-markdown .mermaid-source-view {
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+.kb-doc-markdown .mermaid-source-view .source-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(var(--surface-rgb), 0.85);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.2s;
+}
+.kb-doc-markdown .mermaid-source-view .source-copy-btn:hover { background: var(--bg-surface); color: var(--brand-500); }
+.kb-doc-markdown .mermaid-source-view .source-copy-btn.copied { color: var(--success-500); }
+.kb-doc-markdown .mermaid-source-view .source-copy-btn svg { width: 15px; height: 15px; }
+
 .kb-doc-markdown hr {
   margin: 14px 0;
   border: none;

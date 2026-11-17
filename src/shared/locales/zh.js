@@ -1588,6 +1588,8 @@ export default {
     // 文档列表
     docsTitle: '「{name}」的文档',
     docsEmpty: '还没有导入任何文档',
+    docSearchPlaceholder: '搜索文档名称或来源...',
+    docSearchEmpty: '没有匹配的文档',
     docChunkCount: '{count} 分块',
     docDeleteConfirmTitle: '删除文档',
     docDeleteConfirm: '确定删除文档「{name}」吗？该文档的所有分块将从知识库中移除。',

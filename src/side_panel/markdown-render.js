@@ -1281,9 +1281,9 @@ function setupCodeCtrlClick() {
     // 必须按下 Ctrl（Windows/Linux）或 Cmd（Mac），且必须是左键点击（排除右键/Ctrl+Click）
     if ((!e.ctrlKey && !e.metaKey) || e.button !== 0) return;
 
-    // 作用域：仅聊天消息区与全屏查看覆盖层（节点迁移后消息不在 #chatContainer 内）。
+    // 作用域：仅聊天消息区、全屏查看覆盖层与知识库文档预览（节点迁移后消息不在 #chatContainer 内）。
     // 工作目录预览有各自的 Ctrl+单击处理，不在此列，避免重复复制/双 toast。
-    if (!e.target.closest?.('#chatContainer, .message-fullscreen-body')) return;
+    if (!e.target.closest?.('#chatContainer, .message-fullscreen-body, .kb-doc-markdown')) return;
 
     // 点击目标是 <code> 元素，或代码块容器内的任意位置
     let codeEl = e.target.closest('code');

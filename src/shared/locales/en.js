@@ -1588,6 +1588,8 @@ export default {
     // Document list
     docsTitle: 'Documents in "{name}"',
     docsEmpty: 'No documents imported yet',
+    docSearchPlaceholder: 'Search document name or source...',
+    docSearchEmpty: 'No matching documents',
     docChunkCount: '{count} chunks',
     docDeleteConfirmTitle: 'Delete Document',
     docDeleteConfirm: 'Delete document "{name}"? All its chunks will be removed from the knowledge base.',

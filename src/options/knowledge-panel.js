@@ -8,7 +8,8 @@ import { agentApi, escapeHtml, showToast, showCustomConfirm, state } from './too
 import { loadRagStatus, refreshRagSection, initRagEvents, setRagAvailabilityChangeHandler } from './toolbox-rag.js';
 import { t } from '../shared/i18n.js';
 import logger from '../shared/logger.js';
-import DOMPurify from 'dompurify';
+// Markdown 渲染与对话面板共用同一套实现（代码块复制、表格复制/下载/导出图片、Mermaid 图表）
+import { formatMarkdown, renderMermaidCharts, addCodeCopyButtons, addTableToolbarEvents } from '../side_panel/markdown-render.js';
 
 // 单文件大小上限（agent 端 body 上限 200MB，base64 膨胀 33%，前端限 50MB 已足够覆盖文档场景）
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -1134,15 +1135,102 @@ function readFileBase64(file) {
 // ==================== 文档管理 ====================
 
 function showDocsDialog(c) {
+  const DOC_SOURCE_FILTERS = ['all', 'file', 'url', 'text'];
+  const sourceFilterLabel = (src) => {
+    if (src === 'file') return t('knowledge.docSourceFile');
+    if (src === 'url') return t('knowledge.docSourceUrl');
+    if (src === 'text') return t('knowledge.docSourceText');
+    return t('toolbox.filterAll');
+  };
+
   const modal = createModal({
     title: t('knowledge.docsTitle', { name: c.name }),
-    bodyHtml: `<div id="kbDocsBody">${renderLoading()}</div>`,
+    bodyHtml: `
+      <div class="toolbox-filter-bar">
+        <div class="toolbox-search-wrapper">
+          <input type="text" class="toolbox-search-input" id="kbDocSearchInput"
+            placeholder="${escapeHtml(t('knowledge.docSearchPlaceholder'))}">
+          <button class="toolbox-search-clear" id="kbDocSearchClear" type="button" title="${escapeHtml(t('common.clear'))}">✕</button>
+        </div>
+        <div class="toolbox-filter-tabs">
+          ${DOC_SOURCE_FILTERS.map(src => `
+            <button class="toolbox-filter-tab${src === 'all' ? ' active' : ''}" type="button"
+              data-doc-source="${src}">${escapeHtml(sourceFilterLabel(src))}</button>`).join('')}
+        </div>
+      </div>
+      <div id="kbDocsBody">${renderLoading()}</div>`,
     confirmText: null,
     cancelText: t('common.close'),
     wide: true,
   });
 
   const body = modal.overlay.querySelector('#kbDocsBody');
+  const searchInput = modal.overlay.querySelector('#kbDocSearchInput');
+  const searchClear = modal.overlay.querySelector('#kbDocSearchClear');
+
+  let docs = [];
+  let filterText = '';
+  let filterSource = 'all';
+  let debounceTimer = null;
+
+  /** 按「名称 / 原件名 / 来源 URL」+ 来源类型过滤后渲染列表 */
+  const renderDocs = () => {
+    if (docs.length === 0) {
+      body.innerHTML = `<div class="kb-status" style="color:var(--text-tertiary);">${escapeHtml(t('knowledge.docsEmpty'))}</div>`;
+      return;
+    }
+
+    const keyword = filterText.trim().toLowerCase();
+    const filtered = docs.filter((d) => {
+      if (filterSource !== 'all' && (d.source || 'unknown') !== filterSource) return false;
+      if (!keyword) return true;
+      const haystack = [d.name, d.original?.name, d.originUrl].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(keyword);
+    });
+
+    if (filtered.length === 0) {
+      body.innerHTML = `<div class="kb-status" style="color:var(--text-tertiary);">${escapeHtml(t('knowledge.docSearchEmpty'))}</div>`;
+      return;
+    }
+
+    body.innerHTML = `<div class="kb-doc-list">${filtered.map(renderDocRow).join('')}</div>`;
+  };
+
+  const load = async () => {
+    body.innerHTML = renderLoading();
+    try {
+      const res = await agentApi('GET', `/api/rag/collections/${encodeURIComponent(c.id)}/documents`);
+      if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
+      docs = res.documents || [];
+      renderDocs();
+    } catch (err) {
+      body.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
+    }
+  };
+
+  // 搜索过滤（防抖 200ms，与知识库 / MCP 列表一致）
+  searchInput.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      filterText = searchInput.value;
+      renderDocs();
+    }, 200);
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    filterText = '';
+    renderDocs();
+    searchInput.focus();
+  });
+
+  // 来源筛选
+  modal.overlay.querySelectorAll('[data-doc-source]').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      modal.overlay.querySelectorAll('[data-doc-source]').forEach((t2) => t2.classList.toggle('active', t2 === tab));
+      filterSource = tab.dataset.docSource;
+      renderDocs();
+    });
+  });
 
   // 行内动作（事件委托，重渲染后仍有效）：查看文本 / 下载原件 / 删除
   body.addEventListener('click', async (e) => {
@@ -1177,14 +1265,14 @@ function showDocsDialog(c) {
       );
       if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
       showToast(t('knowledge.docDeleteSuccess'), 'success');
-      await refreshDocsList(body, c);
+      await load();
       loadAndRenderList(); // 后台刷新卡片计数
     } catch (err) {
       showToast(t('knowledge.opFailed', { error: err.message }), 'error');
     }
   });
 
-  refreshDocsList(body, c);
+  load();
 }
 
 /** 来源徽标：file / url / text（旧备份可能为 unknown，不展示徽标） */
@@ -1208,45 +1296,30 @@ function buildDocMeta(doc) {
   return parts.join(' · ');
 }
 
-async function refreshDocsList(body, c) {
-  body.innerHTML = renderLoading();
-  try {
-    const res = await agentApi('GET', `/api/rag/collections/${encodeURIComponent(c.id)}/documents`);
-    if (!res || res.success !== true) throw new Error(res?.error || 'unknown error');
-    const docs = res.documents || [];
-
-    if (docs.length === 0) {
-      body.innerHTML = `<div class="kb-status" style="color:var(--text-tertiary);">${escapeHtml(t('knowledge.docsEmpty'))}</div>`;
-      return;
-    }
-
-    body.innerHTML = `<div class="kb-doc-list">${docs.map(d => {
-      const badge = docSourceBadge(d.source);
-      const hasOriginal = Boolean(d.original);
-      // 无原件时禁用下载并说明原因（text 文档本就没有原件，提示改为“仅文本”语义）
-      const downloadHint = hasOriginal
-        ? t('knowledge.docDownloadOriginal')
-        : (d.source === 'text' ? t('knowledge.docNoOriginalText') : t('knowledge.docOriginalMissing'));
-      return `
-      <div class="kb-doc-row" data-doc-id="${escapeHtml(d.id)}">
-        <div class="kb-doc-info">
-          <div class="kb-doc-title">
-            <span class="kb-doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
-            ${badge ? `<span class="kb-doc-badge ${badge.cls}">${escapeHtml(t(`knowledge.${badge.key}`))}</span>` : ''}
-          </div>
-          <div class="kb-doc-meta">${escapeHtml(buildDocMeta(d))}${d.original && d.original.name && d.original.name !== d.name ? ` · ${escapeHtml(t('knowledge.docOriginalName', { name: d.original.name }))}` : ''}</div>
-        </div>
-        <div class="kb-doc-actions">
-          <button class="kb-doc-act" type="button" data-doc-view title="${escapeHtml(t('knowledge.docViewTitle'))}">${escapeHtml(t('knowledge.docView'))}</button>
-          <button class="kb-doc-act" type="button" data-doc-download="original" title="${escapeHtml(downloadHint)}"
-            ${hasOriginal ? '' : 'disabled'}>${escapeHtml(t('knowledge.docDownloadOriginal'))}</button>
-          <button class="kb-doc-del" type="button" data-doc-delete title="${escapeHtml(t('knowledge.actionDelete'))}">✕</button>
-        </div>
-      </div>`;
-    }).join('')}</div>`;
-  } catch (err) {
-    body.innerHTML = `<div class="kb-status" style="color:var(--danger-strong);">${escapeHtml(t('knowledge.loadFailed', { error: err.message }))}</div>`;
-  }
+/** 单行文档条目（查看原文 / 下载原件 / 删除） */
+function renderDocRow(d) {
+  const badge = docSourceBadge(d.source);
+  const hasOriginal = Boolean(d.original);
+  // 无原件时禁用下载并说明原因（text 文档本就没有原件，提示改为“仅文本”语义）
+  const downloadHint = hasOriginal
+    ? t('knowledge.docDownloadOriginal')
+    : (d.source === 'text' ? t('knowledge.docNoOriginalText') : t('knowledge.docOriginalMissing'));
+  return `
+  <div class="kb-doc-row" data-doc-id="${escapeHtml(d.id)}">
+    <div class="kb-doc-info">
+      <div class="kb-doc-title">
+        <span class="kb-doc-name" title="${escapeHtml(d.name)}">${escapeHtml(d.name)}</span>
+        ${badge ? `<span class="kb-doc-badge ${badge.cls}">${escapeHtml(t(`knowledge.${badge.key}`))}</span>` : ''}
+      </div>
+      <div class="kb-doc-meta">${escapeHtml(buildDocMeta(d))}${d.original && d.original.name && d.original.name !== d.name ? ` · ${escapeHtml(t('knowledge.docOriginalName', { name: d.original.name }))}` : ''}</div>
+    </div>
+    <div class="kb-doc-actions">
+      <button class="kb-doc-act" type="button" data-doc-view title="${escapeHtml(t('knowledge.docViewTitle'))}">${escapeHtml(t('knowledge.docView'))}</button>
+      <button class="kb-doc-act" type="button" data-doc-download="original" title="${escapeHtml(downloadHint)}"
+        ${hasOriginal ? '' : 'disabled'}>${escapeHtml(t('knowledge.docDownloadOriginal'))}</button>
+      <button class="kb-doc-del" type="button" data-doc-delete title="${escapeHtml(t('knowledge.actionDelete'))}">✕</button>
+    </div>
+  </div>`;
 }
 
 /**
@@ -1411,12 +1484,18 @@ function renderDocText(body, c, doc) {
     if (active) active.scrollIntoView({ block: 'nearest' });
   };
 
-  // 源码模式保留原文（可复制）；预览模式交给 marked 渲染 + DOMPurify 清洗
+  // 源码模式保留原文（可复制）；预览模式与对话面板共用同一套 Markdown 渲染
   const paint = (mode) => {
     if (mode === 'preview' && text) {
       content.innerHTML = renderMarkdownPreview(text);
       const mdEl = content.querySelector('.kb-doc-markdown');
-      if (mdEl) renderToc(mdEl);
+      if (mdEl) {
+        renderToc(mdEl);
+        // 代码块复制、表格工具栏（复制 / 下载 Excel / 导出图片）、Mermaid 图表
+        addCodeCopyButtons();
+        addTableToolbarEvents();
+        renderMermaidCharts();
+      }
     } else {
       content.innerHTML = `<pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
       tocToggleBtn.style.display = 'none';
@@ -1499,17 +1578,10 @@ function looksLikeMarkdown(text) {
   return WEAK_MARKDOWN_SIGNALS.reduce((hit, re) => hit + (re.test(text) ? 1 : 0), 0) >= 2;
 }
 
-/** Markdown → 安全 HTML（marked 缺失时降级为原文，不影响阅读与复制） */
+/** Markdown → 安全 HTML（与对话面板同一套渲染：代码复制、表格工具栏、Mermaid） */
 function renderMarkdownPreview(text) {
-  if (typeof marked === 'undefined') {
-    return `<pre class="kb-doc-textview">${escapeHtml(text || t('knowledge.docViewEmpty'))}</pre>`;
-  }
-  marked.setOptions({ breaks: true, gfm: true });
-  const html = DOMPurify.sanitize(marked.parse(text), {
-    FORBID_TAGS: ['style', 'iframe', 'script', 'object', 'embed', 'svg', 'form'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur', 'onchange', 'oninput', 'onkeydown', 'onkeyup', 'onkeypress'],
-    ADD_ATTR: ['target'],
-  });
+  // formatMarkdown 内部已用 DOMPurify 清洗，并在 marked 缺失时降级为原文
+  const html = formatMarkdown(text || '');
   // 弹窗里的外链不该把配置页顶走
   return `<div class="kb-doc-markdown">${html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ')}</div>`;
 }
