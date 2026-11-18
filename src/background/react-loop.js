@@ -3856,6 +3856,21 @@ export async function dispatchSubtasksParallel(items, maxParallel, executeOne, b
 }
 
 /**
+ * 子任务状态更新是否必须发送（纯函数，可单测）。
+ * 关键点：日志无变化但状态发生变化时必须发 —— 终态（success/failed/rolledback）
+ * 往往就发生在最后一条日志已按 processing 发过之后，若因空 delta 直接丢弃，
+ * 前端子任务行会永久停在「执行中 / 准备中」。
+ * @param {string|undefined} prevStatus 上次已发送的状态
+ * @param {string} status 本次状态
+ * @param {number} deltaCount 本次增量日志条数
+ * @returns {boolean}
+ */
+export function shouldSendSubtaskStatusUpdate(prevStatus, status, deltaCount) {
+  if (deltaCount > 0) return true;
+  return prevStatus !== status;
+}
+
+/**
  * 执行子任务序列
  * 支持顺序执行、并行执行和依赖拓扑执行策略
  * 支持失败策略、重试机制和回滚机制
@@ -3872,6 +3887,8 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
   
   const results = [];
   const completedSubtasks = []; // 记录已成功完成的子任务，用于回滚
+  // 各子任务上次已发送的状态：日志无变化时仍要放行状态跃迁（见 shouldSendSubtaskStatusUpdate）
+  const lastSentSubtaskStatus = new Map();
 
   /**
    * 增量发送执行日志状态更新，避免 parentExecutionLog 超过 64MiB 限制
@@ -3887,7 +3904,12 @@ export async function executeSubtasks(subtaskPlan, model, tools, tabId, apiParam
         lastSentLogSnapshot.set(entry.id, { status: entry.status, nodeName: entry.nodeName });
       }
     }
-    if (deltaLog.length === 0) return; // 无变更，跳过发送
+    // 日志无变化不等于无事发生：状态跃迁（尤其终态）必须下发，否则前端子任务行永久停在旧状态
+    const statusKey = extraFields.subtaskIndex != null ? `st:${extraFields.subtaskIndex}` : 'global';
+    if (!shouldSendSubtaskStatusUpdate(lastSentSubtaskStatus.get(statusKey), status, deltaLog.length)) {
+      return;
+    }
+    lastSentSubtaskStatus.set(statusKey, status);
     
     const msg = {
       type: 'EXECUTION_STATUS_UPDATE',

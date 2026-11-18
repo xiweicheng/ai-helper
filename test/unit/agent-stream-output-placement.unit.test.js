@@ -59,9 +59,10 @@ const CHAT_MANAGER_SRC = readFileSync(
 );
 
 let createAgentStreamOutput;
+let attachAgentStreamChunk;
 
 beforeAll(async () => {
-  ({ createAgentStreamOutput } = await import('../../src/side_panel/chat-streaming.js'));
+  ({ createAgentStreamOutput, attachAgentStreamChunk } = await import('../../src/side_panel/chat-streaming.js'));
 });
 
 /**
@@ -142,13 +143,29 @@ describe('切换会话期间命令输出仍挂在工具卡片内（脱离文档�
   });
 });
 
-describe('接线守卫：chat-manager 不再用 isConnected 判定输出挂载位置', () => {
-  test('AGENT_STREAM 分支改走 createAgentStreamOutput', () => {
-    expect(CHAT_MANAGER_SRC).toMatch(/createAgentStreamOutput\(/);
+describe('接线守卫：chat-manager 的输出挂载走统一归位逻辑', () => {
+  test('AGENT_STREAM 分支改走 attachAgentStreamChunk', () => {
+    expect(CHAT_MANAGER_SRC).toMatch(/attachAgentStreamChunk\(/);
     expect(CHAT_MANAGER_SRC).toMatch(/from '\.\/chat-streaming\.js'/);
   });
 
   test('不再出现 !outputDiv.isConnected 的挂载判定（切换会话期间恒为 false）', () => {
     expect(CHAT_MANAGER_SRC).not.toMatch(/!outputDiv\.isConnected/);
+  });
+
+  test('元素脱离文档（切换会话保活态）时，增量输出仍写进工具卡片', () => {
+    const el = buildDetachedStreamingEl('call_5');
+    const store = new Map();
+    attachAgentStreamChunk(store, el, {
+      type: 'AGENT_STREAM',
+      execId: 'exec-5',
+      toolCallId: 'call_5',
+      streamType: 'stdout',
+      data: 'detached-output',
+    });
+
+    const card = el.querySelector('.tool-call-item[data-tool-call-id="call_5"]');
+    expect(card.querySelector('.tool-call-body .agent-stream-output code').textContent).toBe('detached-output');
+    expect(hasOrphanOutput(el.querySelector('.stream-content'))).toBe(false);
   });
 });

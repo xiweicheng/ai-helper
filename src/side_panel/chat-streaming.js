@@ -1426,6 +1426,9 @@ export function appendToolCallItems(element, toolCalls) {
     contentDiv.appendChild(item);
   });
 
+  // 卡片刚渲染出来：把先前因找不到卡片而暂存的命令输出回填进去
+  flushPendingAgentStreams(null, element);
+
   snapshotStreamingBubble(element);
 
   // 滚动到底部（等浏览器完成布局后）
@@ -1482,6 +1485,172 @@ export function createAgentStreamOutput(card, streamContent) {
   return outputDiv;
 }
 
+// ============================================================
+// 命令实时输出（AGENT_STREAM）归位
+//
+// 输出块必须挂在对应的工具卡片里。只在当前流式气泡里找卡片不够稳：
+// 气泡重建（接管还原）、消息乱序（AGENT_STREAM 早于 STREAM_TOOL_CALL）、
+// 上一轮迟到的增量，都会让卡片查不到 —— 旧实现此时退回 .stream-content，
+// 于是对话流底部堆出一串孤立的「执行结果」块（用户实际反馈的图1）。
+// 现在的口径：卡片暂不可得就先把增量暂存（pending），等卡片渲染出来再回填，
+// 既不丢内容，也不产生游离块。
+// ============================================================
+const _agentStreamStores = new WeakMap(); // streamingElement -> Map<execId, entry>
+
+/** 登记流式元素对应的命令输出状态表（供 appendToolCallItems / appendToolResult 回填 pending） */
+export function registerAgentStreamStore(element, store) {
+  if (element && store) _agentStreamStores.set(element, store);
+}
+
+/** CSS 选择器转义：tool call id 含引号/反斜杠时不至于打碎选择器 */
+function _escapeSelectorValue(value) {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(String(value));
+  }
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
+/**
+ * 定位命令输出所属的工具卡片：先查当前气泡，再查整篇文档。
+ * 文档级兜底覆盖「气泡已切换/快照还原后增量迟到」的场景。
+ */
+export function resolveToolCallCard(element, toolCallId) {
+  if (!toolCallId) return null;
+  const selector = `.tool-call-item[data-tool-call-id="${_escapeSelectorValue(toolCallId)}"]`;
+  const local = element && typeof element.querySelector === 'function'
+    ? element.querySelector(selector)
+    : null;
+  if (local) return local;
+  if (typeof document === 'undefined') return null;
+  // 文档级兜底取最后一个：同一 toolCallId 理论上唯一，若有重放副本则优先最新气泡里的卡片
+  const matches = document.querySelectorAll(selector);
+  return matches.length ? matches[matches.length - 1] : null;
+}
+
+/**
+ * 取卡片内已有的命令输出块，没有才新建。
+ * 复用很关键：接管还原（快照回填）后卡片里已经带着之前的输出，
+ * 若再新建一块，就会在同一个卡片里出现两个「执行结果」。
+ */
+function _ensureAgentOutput(card) {
+  const existing = card.querySelector('.agent-stream-output');
+  const existingCode = existing ? existing.querySelector('code') : null;
+  if (existing && existingCode) {
+    return { element: existing, codeEl: existingCode };
+  }
+  const outputDiv = createAgentStreamOutput(card, null);
+  return { element: outputDiv, codeEl: outputDiv.querySelector('code') };
+}
+
+/** 按既有规则把一段输出写进 entry（stdout 始终排在 stderr 之前） */
+function _writeAgentText(entry, streamType, data) {
+  const codeEl = entry.codeEl;
+  if (!codeEl || !data) return;
+  const textNode = document.createTextNode(data);
+  if (streamType === 'stderr') {
+    if (!entry.stderrSeparator) {
+      const separator = document.createTextNode('\n');
+      codeEl.appendChild(separator);
+      entry.stderrSeparator = separator;
+    }
+    codeEl.appendChild(textNode);
+  } else if (entry.stderrSeparator) {
+    // 后续 stdout 追加到分隔符之前，等价于 stdout + '\n' + stderr
+    codeEl.insertBefore(textNode, entry.stderrSeparator);
+  } else {
+    codeEl.appendChild(textNode);
+  }
+}
+
+/**
+ * 处理一条 AGENT_STREAM 增量。
+ * @param {Map|Object} store execId -> entry 的状态表
+ * @param {HTMLElement} element 当前流式气泡
+ * @param {Object} message { execId, toolCallId, streamType, data }
+ * @returns {Object|null} entry
+ */
+export function attachAgentStreamChunk(store, element, message) {
+  if (!store || !message || !message.execId) return null;
+  let entry = typeof store.get === 'function' ? store.get(message.execId) : store[message.execId];
+  if (!entry) {
+    const card = resolveToolCallCard(element, message.toolCallId);
+    if (!card) {
+      if (!message.toolCallId) {
+        // 没有 toolCallId 的旧协议消息：保留 stream-content 兜底，避免兼容性回退
+        const outputDiv = createAgentStreamOutput(null, element ? element.querySelector('.stream-content') : null);
+        entry = {
+          element: outputDiv,
+          codeEl: outputDiv.querySelector('code'),
+          stderrSeparator: null,
+          toolCallId: '',
+          pending: null
+        };
+        addCodeCopyButtons();
+      } else {
+        // 卡片还没渲染出来：只暂存增量，不建 DOM
+        entry = {
+          element: null,
+          codeEl: null,
+          stderrSeparator: null,
+          toolCallId: message.toolCallId,
+          pending: { stdout: '', stderr: '' }
+        };
+      }
+    } else {
+      const { element: outputDiv, codeEl } = _ensureAgentOutput(card);
+      entry = {
+        element: outputDiv,
+        codeEl,
+        stderrSeparator: null,
+        toolCallId: message.toolCallId || '',
+        pending: null
+      };
+      addCodeCopyButtons();
+    }
+    if (typeof store.set === 'function') store.set(message.execId, entry);
+    else store[message.execId] = entry;
+  }
+
+  const data = message.data || '';
+  if (entry.codeEl) {
+    _writeAgentText(entry, message.streamType, data);
+    const preEl = entry.codeEl.parentElement;
+    if (preEl) preEl.scrollTop = preEl.scrollHeight;
+  } else if (entry.pending && data) {
+    if (message.streamType === 'stderr') entry.pending.stderr += data;
+    else entry.pending.stdout += data;
+  }
+  return entry;
+}
+
+/**
+ * 卡片渲染后回填暂存的命令输出。
+ * @param {Map|Object} [store] 省略时按 element 反查登记表
+ * @param {HTMLElement} element 流式气泡
+ */
+export function flushPendingAgentStreams(store, element) {
+  const target = store || (element ? _agentStreamStores.get(element) : null);
+  if (!target) return;
+  const entries = typeof target.values === 'function' ? [...target.values()] : Object.values(target);
+  for (const entry of entries) {
+    if (!entry || entry.codeEl || !entry.pending) continue;
+    const card = resolveToolCallCard(element, entry.toolCallId);
+    if (!card) continue;
+    const { element: outputDiv, codeEl } = _ensureAgentOutput(card);
+    const { stdout, stderr } = entry.pending;
+    entry.element = outputDiv;
+    entry.codeEl = codeEl;
+    entry.stderrSeparator = null;
+    entry.pending = null;
+    // 复用同一套 stderr 规则：stdout 先写，stderr 带分隔符跟在后面
+    if (stdout) _writeAgentText(entry, 'stdout', stdout);
+    if (stderr) _writeAgentText(entry, 'stderr', stderr);
+    const preEl = codeEl.parentElement;
+    if (preEl) preEl.scrollTop = preEl.scrollHeight;
+    addCodeCopyButtons();
+  }
+}
+
 /**
  * 在流式消息的工具卡片中添加执行结果
  * @param {Object} result - { toolCallId, toolName, success, content, truncated, duration }
@@ -1499,6 +1668,9 @@ export function appendToolResult(result, streamingElement) {
   // 标记为已有结果，停止执行中动画；记录状态供思考过程筛选
   card.classList.add('has-result');
   card.dataset.status = result.success ? 'success' : 'failed';
+
+  // 卡片此时确定存在：把暂存的命令输出回填（结果晚于 AGENT_STREAM 到达的乱序场景）
+  flushPendingAgentStreams(null, element);
 
   // 对于极快完成的工具（如 agent_file 仅 7ms），STREAM_TOOL_CALL 和
   // STREAM_TOOL_RESULT 几乎同时到达，浏览器来不及渲染"执行中..."状态。
@@ -1556,8 +1728,11 @@ export function appendToolResult(result, streamingElement) {
     }
     
     // 命令执行类工具：已有流式输出，不再创建下方结果区（状态已移到标题栏）
-    // 但如果执行失败且没有流式输出（如被安全规则拦截），需要展示错误信息
-    if (!isExecCommand || !result.success) {
+    // 失败时也只有「拿不到流式输出」才补一块错误信息（如被安全规则拦截），
+    // 否则卡片里会同时出现两块「执行结果」（实时输出 + 结果区），内容重复。
+    const streamedCode = card.querySelector('.agent-stream-output code');
+    const hasStreamedOutput = !!(streamedCode && streamedCode.textContent.trim());
+    if (!isExecCommand || (!result.success && !hasStreamedOutput)) {
       // 非命令执行工具，或命令执行工具失败时：展示结果内容（不含状态行，状态已在标题栏）
       const contentText = result.content || (result.success ? t('chatStream.noOutput') : t('chatStream.execFailed'));
       const contentPreview = contentText.length > 500

@@ -1,6 +1,6 @@
 // content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
 
-import { deepGetSelection, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
+import { deepGetSelection, deepGetText, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
 import { injectStyles, applyToolbarTheme } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, subscribe } from '../shared/i18n.js';
@@ -51,6 +51,8 @@ registerTranslations('zh', {
     disableOnSiteTitle: '在此网站禁用工具栏',
     dragToMove: '拖拽移动',
     moreTools: '更多工具',
+    contextAware: '结合网页上下文',
+    contextAwareTitle: '回答时参考选中内容所在段落及页面信息',
     copySelectedTitle: '复制选中内容',
     askPlaceholder: '问问...',
     sendTitle: '发送',
@@ -98,6 +100,8 @@ registerTranslations('en', {
     disableOnSiteTitle: 'Disable toolbar on this website',
     dragToMove: 'Drag to move',
     moreTools: 'More tools',
+    contextAware: 'Include page context',
+    contextAwareTitle: 'Use the surrounding paragraph and page info when answering',
     copySelectedTitle: 'Copy selected content',
     askPlaceholder: 'Ask...',
     sendTitle: 'Send',
@@ -153,7 +157,8 @@ const ICONS = {
   gear: `<svg class="aih-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
   refresh: `<svg class="aih-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`,
   block: `<svg class="aih-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
-  eyeOff: `<svg class="aih-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+  eyeOff: `<svg class="aih-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
+  check: `<svg class="aih-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
 };
 
 // ==================== DOM 元素 ====================
@@ -198,6 +203,9 @@ let pendingSelection = null;  // 鼠标拖动选中时暂存，抬起时再显�
 let toolbarTools = null;  // 工具栏工具配置缓存
 let toolbarMaxVisible = 5;  // 直接显示的工具数量（固定为5）
 let toolbarIconOnly = false; // 图标精简模式
+let includePageContext = false; // 划词动作是否结合网页上下文（默认关闭，保持现状）
+let currentSelectionRange = null; // 当前选区的克隆 Range，用于动作触发时按需采集段落上下文
+let currentSelectionContext = ''; // 来自子 frame 的选区上下文（子 frame 内 Range 无法跨帧复用）
 let overflowDropdownEl = null;  // 溢出下拉菜单
 let streamContent = '';       // 流式模式下累积的内容
 let streamRenderPending = false; // 流式 Markdown 渲染的 rAF 节流标记
@@ -224,6 +232,7 @@ logger.debug('[SelectionToolbar] moduleload isTopFrame:', isTopFrame, 'top===win
 
 let lastSentIframeText = '';              // 防止iframe重复发送相同选区
 let pendingIframeSelection = null;       // iframe中等待鼠标抬起的选区数据 { text, x, y }
+let currentSelectionFromIframe = false;  // 当前工具条对应的选区是否来自子 frame
 
 // 浮层专用挂载容器：挂到 documentElement（<body> 的父级），确保浮层节点绝不落入任何
 // 可编辑子树——无论是 iframe 型富文本编辑器（其 designMode body 即编辑区，content script
@@ -494,6 +503,11 @@ function renderOverflowDropdown(overflowTools) {
     </div>`;
   }).join('');
   
+  // 行为选项：是否结合网页上下文（勾选态即时切换，不关闭菜单）
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-context" role="button" tabindex="0" title="${t('selToolbar.contextAwareTitle')}" aria-pressed="${includePageContext ? 'true' : 'false'}">
+    <span class="aih-tb-icon aih-context-check">${includePageContext ? ICONS.check : ''}</span>${t('selToolbar.contextAware')}
+  </div>`;
+  
   itemsHtml += `<div class="aih-dropdown-divider"></div>`;
   itemsHtml += `<div class="aih-dropdown-item aih-dropdown-settings" role="button" tabindex="0" title="${t('selToolbar.settingsTitle')}">
     <span class="aih-tb-icon">${ICONS.gear}</span>${t('selToolbar.settings')}
@@ -538,6 +552,15 @@ function renderOverflowDropdown(overflowTools) {
       hideToolbar();
       hideResultPanel();
       currentSelectedText = '';
+      currentSelectionRange = null;
+      currentSelectionContext = '';
+      return;
+    }
+    
+    if (e.target.closest('.aih-dropdown-context')) {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleIncludePageContext();
       return;
     }
     
@@ -564,6 +587,46 @@ function renderOverflowDropdown(overflowTools) {
   // 富文本宿主页面（如飞书文档）在 mousedown 阶段会清除页面选区触发 selectionchange，
   // 若不加保护会在 click 派发前就把工具栏隐藏，导致按钮点不了；与工具栏同策略保护
   overflowDropdownEl.addEventListener('mousedown', () => { toolbarInteracting = true; });
+}
+
+/** 同步「结合网页上下文」菜单项的勾选态 */
+function updateContextMenuCheck() {
+  if (!overflowDropdownEl) return;
+  const item = overflowDropdownEl.querySelector('.aih-dropdown-context');
+  if (!item) return;
+  item.setAttribute('aria-pressed', includePageContext ? 'true' : 'false');
+  const icon = item.querySelector('.aih-context-check');
+  if (icon) icon.innerHTML = includePageContext ? ICONS.check : '';
+}
+
+/** 通知子 frame 用当前选区重新采集上下文（开关开启后立即生效，含嵌套 iframe） */
+function refreshIframeSelectionContext() {
+  // 携带开关状态：子 frame 的 storage.onChanged 可能晚于本消息到达
+  const msg = { type: 'IFRAME_CONTEXT_REFRESH', enabled: true };
+  try {
+    for (let i = 0; i < window.frames.length; i++) {
+      window.frames[i].postMessage(msg, '*');
+    }
+  } catch {
+    // 跨域 frame 访问失败时忽略
+  }
+}
+
+/** 切换「结合网页上下文」开关并持久化（菜单保持打开） */
+function toggleIncludePageContext() {
+  includePageContext = !includePageContext;
+  if (includePageContext) {
+    // 仅当当前工具条对应 iframe 选区时才需要子 frame 补采，避免唤醒其他 frame 的残留选区
+    if (currentSelectionFromIframe) refreshIframeSelectionContext();
+  } else {
+    currentSelectionContext = '';
+  }
+  try {
+    chrome.storage.local.set({ selectionToolbarIncludeContext: includePageContext }).catch(() => {});
+  } catch {
+    // 扩展上下文失效时静默忽略
+  }
+  updateContextMenuCheck();
 }
 
 // ==================== 工具栏创建 ====================
@@ -838,7 +901,8 @@ function createResultPanel() {
     const action = e.target.closest('[data-action]')?.dataset?.action;
     if (action === 'regenerate-result') {
       if (!lastActionType || !savedActionText) return;
-      sendToAI(lastActionType, savedActionText, lastActionCustomPrompt);
+      sendToAI(lastActionType, savedActionText, lastActionCustomPrompt,
+        lastActionType === 'ai-search' ? null : buildPageContextPayload(savedActionText));
     } else if (action === 'copy-result') {
       // Ctrl/⌘ + 单击：复制富文本；普通单击：复制 Markdown 原文
       if (e.ctrlKey || e.metaKey) {
@@ -1393,12 +1457,18 @@ function onSelectionChange() {
     if (result.text && result.text.length >= 2) {
       // 暂存选区数据，等待 mouseup 时再发送（与顶层 frame 行为一致）
       const pos = getRangeViewportPosition(result.range);
-      pendingIframeSelection = { text: result.text, x: pos.x, y: pos.y };
+      pendingIframeSelection = {
+        text: result.text,
+        x: pos.x,
+        y: pos.y,
+        range: result.range ? result.range.cloneRange() : null   // 子 frame 的上下文只能在本地采集
+      };
       logger.debug('[SelectionToolbar] iframe pendingIframeSelection set');
     } else if (currentSelectedText) {
       // 选区被清除，通知顶层 frame 隐藏工具栏；交互窗口期内不上报（宿主 mousedown 清选区）
       if (!toolbarInteracting) {
         currentSelectedText = '';
+        currentSelectionContext = '';
         lastSentIframeText = '';
         pendingIframeSelection = null;
         try {
@@ -1433,6 +1503,9 @@ function onSelectionChange() {
     if (!isAskMode && !toolbarInteracting) hideToolbar();
     if (!toolbarInteracting) {
       currentSelectedText = '';
+      currentSelectionRange = null;
+      currentSelectionContext = '';
+      currentSelectionFromIframe = false;
       pendingSelection = null;
     }
     return;
@@ -1451,6 +1524,9 @@ function onSelectionChange() {
       if (editable.tagName === 'INPUT' || editable.tagName === 'TEXTAREA') {
         hideToolbar();
         currentSelectedText = '';
+        currentSelectionRange = null;
+        currentSelectionContext = '';
+        currentSelectionFromIframe = false;
         pendingSelection = null;
         return;
       }
@@ -1458,6 +1534,10 @@ function onSelectionChange() {
   }
   
   currentSelectedText = displayText;
+  // 缓存选区副本：动作触发时页面选区可能已折叠，按需从中采集段落上下文
+  currentSelectionRange = range ? range.cloneRange() : null;
+  currentSelectionContext = '';
+  currentSelectionFromIframe = false;
   
   // 不在这里计算位置，等到鼠标抬起时再计算
   // 这样可以确保位置是在选区完全稳定后才计算的
@@ -1507,13 +1587,18 @@ function onMouseUp(e) {
       suppressNextClick = true;
       lastSentIframeText = pendingIframeSelection.text;
       currentSelectedText = pendingIframeSelection.text;
+      currentSelectionRange = null; // 子 frame 选区无法跨帧复用
+      currentSelectionContext = includePageContext
+        ? collectSelectionContext(pendingIframeSelection.range, pendingIframeSelection.text)
+        : '';
       try {
         // 直接发送给父 frame（避免 background 广播到所有 frame）
         window.parent.postMessage({
           type: 'IFRAME_SELECTION',
           text: pendingIframeSelection.text,
           x: pendingIframeSelection.x,
-          y: pendingIframeSelection.y
+          y: pendingIframeSelection.y,
+          context: currentSelectionContext || undefined
         }, '*');
       } catch {
         // postMessage 失败时忽略
@@ -1523,7 +1608,8 @@ function onMouseUp(e) {
           type: 'IFRAME_SELECTION',
           text: pendingIframeSelection.text,
           x: pendingIframeSelection.x,
-          y: pendingIframeSelection.y
+          y: pendingIframeSelection.y,
+          context: currentSelectionContext || undefined
         }).catch(() => {});
       } catch {
         // 扩展上下文失效时静默忽略
@@ -1537,12 +1623,17 @@ function onMouseUp(e) {
         const pos = getRangeViewportPosition(result.range);
         lastSentIframeText = result.text;
         currentSelectedText = result.text;
+        currentSelectionRange = null;
+        currentSelectionContext = includePageContext
+          ? collectSelectionContext(result.range, result.text)
+          : '';
         try {
           window.parent.postMessage({
             type: 'IFRAME_SELECTION',
             text: result.text,
             x: pos.x,
-            y: pos.y
+            y: pos.y,
+            context: currentSelectionContext || undefined
           }, '*');
         } catch {
           // postMessage 失败时忽略
@@ -1552,7 +1643,8 @@ function onMouseUp(e) {
             type: 'IFRAME_SELECTION',
             text: result.text,
             x: pos.x,
-            y: pos.y
+            y: pos.y,
+            context: currentSelectionContext || undefined
           }).catch(() => {});
         } catch {
           // 扩展上下文失效时静默忽略
@@ -1632,7 +1724,8 @@ function onScrollOrResize() {
           type: 'IFRAME_SELECTION',
           text: result.text,
           x: pos.x,
-          y: pos.y
+          y: pos.y,
+          context: currentSelectionContext || undefined
         }, '*');
       } catch {
         // postMessage 失败时忽略
@@ -1642,7 +1735,8 @@ function onScrollOrResize() {
           type: 'IFRAME_SELECTION',
           text: result.text,
           x: pos.x,
-          y: pos.y
+          y: pos.y,
+          context: currentSelectionContext || undefined
         }).catch(() => {});
       } catch {
         // 扩展上下文失效时静默忽略
@@ -1681,6 +1775,134 @@ function onResize() {
 }
 
 // ==================== 操作处理 ====================
+const PAGE_CONTEXT_MAX_CHARS = 3000; // 网页上下文注入上限（约 800~1200 tokens）
+
+/** 归一化空白，避免段落内换行/缩进占用上下文预算 */
+function normalizeContextText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+/** 跨 Shadow DOM 向上取父元素（普通树到顶后通过 host 继续向上） */
+function getParentElement(el) {
+  if (!el) return null;
+  if (el.parentElement) return el.parentElement;
+  try {
+    return el.getRootNode?.()?.host || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 估算选区起点在容器文本中的字符偏移，用于超长文本居中开窗 */
+function estimateSelectionOffset(container, range) {
+  if (!container || !range) return -1;
+  try {
+    const preRange = document.createRange();
+    preRange.selectNodeContents(container);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    return normalizeContextText(preRange.toString()).length;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * 在超长文本中围绕选中内容开窗，避免直接保留文本开头导致上下文与选区无关。
+ * @param {string} text 已归一化的文本
+ * @param {string} needle 已归一化的选中文本
+ * @param {Range} range 选区
+ * @param {Element|null} container 用于定位的容器
+ * @param {number} idxHint 已知的命中位置
+ */
+function centerContextText(text, needle, range, container = null, idxHint = -1) {
+  if (!text) return '';
+  if (text.length <= PAGE_CONTEXT_MAX_CHARS) return text;
+  
+  let idx = -1;
+  if (needle && idxHint >= 0) {
+    // 优先校验偏移附近是否就是当前选区，避免命中页面中重复出现的同一段文字
+    const near = text.indexOf(needle, Math.max(0, idxHint - 200));
+    if (near >= 0 && near <= idxHint + 200) idx = near;
+  }
+  if (idx < 0 && needle) idx = text.indexOf(needle);
+  if (idx < 0 && container) idx = estimateSelectionOffset(container, range);
+  if (idx < 0) return '';
+  
+  const half = Math.max(300, Math.floor((PAGE_CONTEXT_MAX_CHARS - (needle?.length || 0)) / 2));
+  const start = Math.max(0, idx - half);
+  return text.slice(start, start + PAGE_CONTEXT_MAX_CHARS);
+}
+
+/** 从选区向上找最近的、包含选中文本的容器；超长时围绕选中内容开窗，找不到则返回空 */
+function collectSelectionContext(range, selectedText) {
+  if (!range) return '';
+  const needle = normalizeContextText(selectedText);
+  if (!needle) return '';
+  
+  let el = null;
+  try {
+    const node = range.commonAncestorContainer;
+    el = node?.nodeType === Node.TEXT_NODE
+      ? node.parentElement
+      : (node?.nodeType === Node.ELEMENT_NODE ? node : null);
+  } catch {
+    // 选区节点已失效，走整页兜底
+  }
+  
+  let bestShort = '';
+  let oversized = '';
+  let current = el;
+  for (let depth = 0; current && current !== document.body && depth < 5; depth++) {
+    let text = '';
+    try {
+      text = normalizeContextText(current.innerText || current.textContent);
+    } catch {
+      // 跳过读取失败的节点
+    }
+    if (text && text.includes(needle)) {
+      if (text.length <= PAGE_CONTEXT_MAX_CHARS) {
+        // 容器需比选中内容明显更宽，避免只拿到按钮/链接本身的文字
+        if (text.length >= needle.length + 60) return text;
+        if (!bestShort) bestShort = text;
+      } else if (!oversized) {
+        oversized = text; // 记录最近的超长容器
+      }
+    }
+    current = getParentElement(current);
+  }
+  
+  if (oversized) {
+    const centered = centerContextText(oversized, needle, range, el);
+    if (centered) return centered;
+  }
+  if (bestShort) return bestShort;
+  
+  // 整页兜底：只接受能定位到选中文本的情况，避免发送与选区无关的页首内容
+  try {
+    const pageText = normalizeContextText(deepGetText());
+    if (!pageText) return '';
+    const hint = estimateSelectionOffset(document.body, range);
+    return centerContextText(pageText, needle, range, null, hint);
+  } catch {
+    return '';
+  }
+}
+
+/** 按开关构建随动作发送的网页上下文（关闭或采集失败时返回 null，保持现状） */
+function buildPageContextPayload(selectedText) {
+  if (!includePageContext) return null;
+  let context = currentSelectionContext;
+  if (!context && currentSelectionRange) {
+    context = collectSelectionContext(currentSelectionRange, selectedText);
+  }
+  if (!context) return null;
+  return {
+    title: document.title || '',
+    url: window.location.href,
+    text: context,
+  };
+}
+
 function handleAction(action, text) {
   if (!text) return;
   
@@ -1696,7 +1918,8 @@ function handleAction(action, text) {
   
   const BUILTIN_ACTIONS = ['ai-search', 'explain', 'translate', 'summary'];
   if (BUILTIN_ACTIONS.includes(action)) {
-    sendToAI(action, text);
+    // AI 搜索走 Agent（本身可读页面），保持现状；其余内置动作按开关携带上下文
+    sendToAI(action, text, undefined, action === 'ai-search' ? null : buildPageContextPayload(text));
     return;
   }
   
@@ -1704,7 +1927,7 @@ function handleAction(action, text) {
   const tool = toolbarTools.find(t => t.id === action);
   if (tool) {
     lastActionCustomPrompt = tool.systemPrompt || '';
-    sendToAI(action, text, tool.systemPrompt);
+    sendToAI(action, text, tool.systemPrompt, buildPageContextPayload(text));
   }
 }
 
@@ -1945,7 +2168,7 @@ function showCopyToast(text) {
   setTimeout(() => toast.remove(), 1300);
 }
 
-function sendToAI(action, text, customSystemPrompt) {
+function sendToAI(action, text, customSystemPrompt, pageContext = null) {
   if (!isExtensionValid()) {
     logger.warn('[SelectionToolbar] extensiontextexpired,pleaserefreshpage');
     return;
@@ -2015,7 +2238,8 @@ function sendToAI(action, text, customSystemPrompt) {
       action: action,
       text: text,
       prompt: message,
-      systemPrompt: customSystemPrompt || ''
+      systemPrompt: customSystemPrompt || '',
+      pageContext: pageContext || undefined
     }).catch(err => {
       logger.error('[SelectionToolbar] sendmessage failed:', err);
       showResultError(pos.x, pos.y, err.message);
@@ -2036,6 +2260,8 @@ if (isExtensionValid()) {
     logger.debug('[SelectionToolbar] recei to  IFRAME_SELECTION text:', message.text?.substring(0, 30), 'isToolbarVisible:', isToolbarVisible, 'isResultVisible:', isResultVisible);
     
     currentSelectedText = message.text;
+    currentSelectionRange = null; // 子 frame 选区无法跨帧复用
+    currentSelectionContext = typeof message.context === 'string' ? message.context : '';
     
     // 如果宿主 frame 不是顶层窗口（如 frameset 子 frame），将顶层视口坐标转换为当前 frame 视口坐标
     let adjX = message.x;
@@ -2081,6 +2307,8 @@ if (isExtensionValid()) {
     if (isToolbarVisible && !isAskMode) {
       hideToolbar();
       currentSelectedText = '';
+      currentSelectionContext = '';
+      currentSelectionFromIframe = false;
     }
     return;
   }
@@ -2090,6 +2318,9 @@ if (isExtensionValid()) {
     if (isToolbarVisible && toolbarEl && now - lastToolbarShowTime > 300) {
       hideToolbar();
       currentSelectedText = '';
+      currentSelectionRange = null;
+      currentSelectionContext = '';
+      currentSelectionFromIframe = false;
     }
     if (isResultVisible && !isResultLocked) {
       hideResultPanel();
@@ -2221,11 +2452,13 @@ function loadToggleState() {
   if (!isExtensionValid()) return;
   
   const gen = ++toggleGeneration;
-  chrome.storage.local.get(['enableSelectionToolbar', 'blockedDomains'], (result) => {
+  chrome.storage.local.get(['enableSelectionToolbar', 'blockedDomains', 'selectionToolbarIncludeContext'], (result) => {
     // 发出与回包之间若发生过 onChanged，则本快照已陈旧，直接丢弃，避免旧值回写开开关并重建 observer
     if (gen !== toggleGeneration) return;
     enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? !!result.enableSelectionToolbar : true;
     blockedDomains = result.blockedDomains || [];
+    includePageContext = !!result.selectionToolbarIncludeContext;
+    updateContextMenuCheck();
     logger.debug('[SelectionToolbar] toggle state:', enableSelectionToolbar ? 'enabled' : 'disabled', 'blocked domains:', blockedDomains.length);
     // shadow 监听覆盖依赖异步读取的真实开关：开启时才建立 observer 与初次挂载，
     // 关闭时完全不挂 shadow 监听（与 onSelectionChange 首行 return 的现有行为等价，无功能损失）
@@ -2320,6 +2553,12 @@ if (isExtensionValid()) {
       blockedDomains = changes.blockedDomains.newValue || [];
     }
     
+    if (areaName === 'local' && changes.selectionToolbarIncludeContext) {
+      includePageContext = !!changes.selectionToolbarIncludeContext.newValue;
+      if (!includePageContext) currentSelectionContext = '';
+      updateContextMenuCheck();
+    }
+    
     if (areaName === 'local' && changes.toolbarTools) {
       refreshToolbarCache();
     }
@@ -2383,6 +2622,57 @@ export function initSelectionToolbar() {
   
   // 监听来自子 iframe 的消息（选区、点击关闭等）
   window.addEventListener('message', (event) => {
+    // 开关开启后通知各层子 frame 用当前选区重新采集上下文
+    if (event.data?.type === 'IFRAME_CONTEXT_REFRESH') {
+      // 顶层只负责广播；子 frame 仅接受来自父 frame 的刷新，避免页面脚本伪造
+      if (isTopFrame || event.source !== window.parent) return;
+      
+      // 消息携带的状态优先，避免 storage.onChanged 晚于刷新到达导致仍按旧值采集
+      const enabled = typeof event.data.enabled === 'boolean' ? event.data.enabled : includePageContext;
+      includePageContext = enabled;
+      
+      // 继续向下转发，支持嵌套 iframe
+      try {
+        for (let i = 0; i < window.frames.length; i++) {
+          window.frames[i].postMessage({ type: 'IFRAME_CONTEXT_REFRESH', enabled }, '*');
+        }
+      } catch {
+        // 跨域 frame 访问失败时忽略
+      }
+      
+      const result = deepGetSelection();
+      if (!result.text || result.text.length < 2) return;
+      currentSelectedText = result.text;
+      currentSelectionRange = result.range ? result.range.cloneRange() : null;
+      currentSelectionContext = enabled
+        ? collectSelectionContext(result.range, result.text)
+        : '';
+      const pos = getRangeViewportPosition(result.range);
+      try {
+        window.parent.postMessage({
+          type: 'IFRAME_SELECTION',
+          text: result.text,
+          x: pos.x,
+          y: pos.y,
+          context: currentSelectionContext || undefined
+        }, '*');
+      } catch {
+        // postMessage 失败时忽略
+      }
+      try {
+        chrome.runtime.sendMessage({
+          type: 'IFRAME_SELECTION',
+          text: result.text,
+          x: pos.x,
+          y: pos.y,
+          context: currentSelectionContext || undefined
+        }).catch(() => {});
+      } catch {
+        // 扩展上下文失效时静默忽略
+      }
+      return;
+    }
+    
     // 处理来自子 iframe 的选区消息（直接发给父 frame，避免 background 广播到所有 frame）
     if (event.data?.type === 'IFRAME_SELECTION' && isTopFrame) {
       // 结果面板显示时不响应子 frame 选区，避免残留选区状态在后续点击中
@@ -2390,10 +2680,16 @@ export function initSelectionToolbar() {
       // 同时清掉本地残留选区状态，防止关闭面板后被误用
       if (isResultVisible) {
         currentSelectedText = '';
+        currentSelectionRange = null;
+        currentSelectionContext = '';
+        currentSelectionFromIframe = false;
         pendingSelection = null;
         return;
       }
       currentSelectedText = event.data.text;
+      currentSelectionRange = null; // 子 frame 选区无法跨帧复用
+      currentSelectionContext = typeof event.data.context === 'string' ? event.data.context : '';
+      currentSelectionFromIframe = true;
       
       // 将顶层视口坐标转换为当前 frame 视口坐标
       let adjX = event.data.x;

@@ -67,7 +67,8 @@ import {
   appendToolCallItems,
   createCodeBlockHtml,
   appendToolResult,
-  createAgentStreamOutput,
+  attachAgentStreamChunk,
+  registerAgentStreamStore,
   createPreSelectCard,
   finalizeStreamingMessage,
   cancelStreamingTask,
@@ -846,6 +847,20 @@ export function classifySubtaskNodeStats(nodes) {
     else if (n && n.status === 'failed') failed++;
   }
   return { total: list.length, success, failed, other: list.length - success - failed };
+}
+
+/**
+ * 运行中子任务「当前节点」展示文案（纯函数，可单测）。
+ * 找不到 processing 节点不代表没开始跑：节点可能刚好全部落定、下一个还没入日志。
+ * 此时展示「执行中...」而不是「准备中...」——后者会让用户以为任务卡住了。
+ * @param {Object|null|undefined} currentNode
+ * @returns {string} 已转义的展示文案
+ */
+export function resolveRunningNodeLabel(currentNode) {
+  const label = currentNode && currentNode.nodeName
+    ? currentNode.nodeName
+    : t('chatMsg.subtaskExecuting');
+  return escapeHtml(String(label));
 }
 
 /**
@@ -3697,7 +3712,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     setPendingPreselectLog(null);
     setProcessStartTime(0);
     let _streamedContent = '';
-    let _agentStreams = {};  // execId -> { element, codeEl, stderrSeparator }（增量追加，不存整段字符串）
+    let _agentStreams = new Map();  // execId -> entry（增量追加；卡片未就绪时暂存 pending，回填后不再产生游离块）
     
     // 包装取消函数，供停止按钮使用：同时 reject Promise 并清理 listener 和 timeout
     const cancelApi = (errorResult) => {
@@ -3910,7 +3925,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 const nodeTypeIcon = currentNode
                   ? (currentNode.nodeType === 'tool_exec' ? '🔧' : currentNode.nodeType === 'api_call' ? '📡' : currentNode.nodeType === 'reflection' ? '🎯' : currentNode.nodeType === 'preselect' ? '🔍' : '○')
                   : '○';
-                const currentNodeName = currentNode ? escapeHtml(currentNode.nodeName || '') : t('chatMsg.preparing');
+                const currentNodeName = resolveRunningNodeLabel(currentNode);
                 // 提取当前执行工具的参数预览（命令/路径/URL/query 等）
                 const currentNodeCmd = currentNode ? getToolCallPreview(currentNode) : '';
                 const cmdHtml = currentNodeCmd
@@ -4203,45 +4218,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       
       if (message.type === 'AGENT_STREAM') {
         if (_se() && message.execId) {
-          let agentEntry = _agentStreams[message.execId];
-          if (!agentEntry) {
-            const se = _se();
-            // 挂载位置由查找结果决定，不能用 outputDiv.isConnected 判定：
-            // 切换会话期间流式消息元素整体脱离文档，此时保活节点 isConnected 恒为 false
-            const card = message.toolCallId
-              ? se.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
-              : null;
-            const outputDiv = createAgentStreamOutput(card, se.querySelector('.stream-content'));
-            agentEntry = { element: outputDiv, codeEl: outputDiv.querySelector('code'), stderrSeparator: null };
-            _agentStreams[message.execId] = agentEntry;
-            addCodeCopyButtons();
-          }
-          
-          const codeEl = agentEntry.codeEl;
-          if (codeEl) {
-            // 增量追加文本节点：完整内容一点不少，但不再每来一段就重写整块 textContent
-            const data = message.data || '';
-            if (data) {
-              const textNode = document.createTextNode(data);
-              if (message.streamType === 'stderr') {
-                // 与旧实现一致：stderr 首次出现时在 stdout 之后补一个换行，
-                // 且 stderr 整段始终排在 stdout 之后
-                if (!agentEntry.stderrSeparator) {
-                  const separator = document.createTextNode('\n');
-                  codeEl.appendChild(separator);
-                  agentEntry.stderrSeparator = separator;
-                }
-                codeEl.appendChild(textNode);
-              } else if (agentEntry.stderrSeparator) {
-                // 后续 stdout 追加到分隔符之前，等价于旧实现里的 stdout + '\n' + stderr
-                codeEl.insertBefore(textNode, agentEntry.stderrSeparator);
-              } else {
-                codeEl.appendChild(textNode);
-              }
-            }
-            const preEl = codeEl.parentElement;
-            if (preEl) preEl.scrollTop = preEl.scrollHeight;
-          }
+          const se = _se();
+          // 输出归位：卡片在就写进卡片，卡片未就绪先暂存（避免 .stream-content 末尾堆游离「执行结果」块）
+          registerAgentStreamStore(se, _agentStreams);
+          attachAgentStreamChunk(_agentStreams, se, message);
         }
         return false;
       }
@@ -4249,8 +4229,8 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       if (message.type === 'AGENT_STREAM_DONE') {
         // Agent 命令执行结束
         if (message.execId) {
-          const agentEntry = _agentStreams[message.execId];
-          if (agentEntry && message.exitCode !== 0) {
+          const agentEntry = _agentStreams.get(message.execId);
+          if (agentEntry && agentEntry.element && message.exitCode !== 0) {
             agentEntry.element.classList.add('agent-stream-error');
           }
         }

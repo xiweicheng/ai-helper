@@ -23,7 +23,8 @@ import {
   markStreamingRetrying,
   appendToolCallItems,
   appendToolResult,
-  createAgentStreamOutput,
+  attachAgentStreamChunk,
+  registerAgentStreamStore,
   createPreSelectCard,
   finalizeStreamingMessage,
   createStreamingElementAccessor,
@@ -37,7 +38,6 @@ import {
   applyStreamSnapshot,
   renderStreamingContentFull,
 } from './chat-streaming.js';
-import { addCodeCopyButtons } from './markdown-render.js';
 import { readStreamSnapshot } from './stream-snapshot.js';
 import { openPanelObserverPort, closePanelObserverPort } from './panel-observer-port.js';
 // 注意：会话落库（session-manager → 存储层）依赖较重的浏览器侧模块链，改为使用时
@@ -341,43 +341,14 @@ function _buildRenderer(sessionId, el) {
       appendToolResult(result, el);
     },
     agentStream(message) {
-      let entry = agentStreams.get(message.execId);
-      if (!entry) {
-        // 挂载位置由查找结果决定，不能用 outputDiv.isConnected：
-        // 用户切换会话期间整个流式元素都脱离文档，判定会误把输出搬出卡片
-        const card = message.toolCallId
-          ? el.querySelector(`.tool-call-item[data-tool-call-id="${message.toolCallId}"]`)
-          : null;
-        const outputDiv = createAgentStreamOutput(card, el.querySelector('.stream-content'));
-        entry = { element: outputDiv, codeEl: outputDiv.querySelector('code'), stderrSeparator: null };
-        agentStreams.set(message.execId, entry);
-        addCodeCopyButtons();
-      }
-      const codeEl = entry.codeEl;
-      if (!codeEl) return;
-      // 与主监听路径一致：增量追加文本节点，完整内容保留
-      const data = message.data || '';
-      if (data) {
-        const textNode = document.createTextNode(data);
-        if (message.streamType === 'stderr') {
-          if (!entry.stderrSeparator) {
-            const separator = document.createTextNode('\n');
-            codeEl.appendChild(separator);
-            entry.stderrSeparator = separator;
-          }
-          codeEl.appendChild(textNode);
-        } else if (entry.stderrSeparator) {
-          codeEl.insertBefore(textNode, entry.stderrSeparator);
-        } else {
-          codeEl.appendChild(textNode);
-        }
-      }
-      const preEl = codeEl.parentElement;
-      if (preEl) preEl.scrollTop = preEl.scrollHeight;
+      // 与主监听同口径：卡片在就写进卡片；卡片未就绪先暂存，等 appendToolCallItems 回填。
+      // 复用 chat-streaming 的实现，避免两套挂载逻辑各自演化（旧实现会在气泡末尾堆游离块）。
+      registerAgentStreamStore(el, agentStreams);
+      attachAgentStreamChunk(agentStreams, el, message);
     },
     agentStreamDone(message) {
       const entry = agentStreams.get(message.execId);
-      if (entry && message.exitCode !== 0) {
+      if (entry && entry.element && message.exitCode !== 0) {
         entry.element.classList.add('agent-stream-error');
       }
     },

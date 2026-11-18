@@ -233,6 +233,11 @@ const TOOLBAR_RULES = `
       align-items: center;
       flex-shrink: 0;
     }
+    /* 下拉菜单「结合网页上下文」勾选项 */
+    .aih-overflow-dropdown .aih-dropdown-context .aih-context-check {
+      width: 14px;
+      color: var(--tb-brand);
+    }
 
     /* 下拉菜单分隔线 */
     .aih-overflow-dropdown .aih-dropdown-divider {

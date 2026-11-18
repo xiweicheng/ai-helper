@@ -28,6 +28,7 @@ import { generateCompactionSummary } from './context-compactor.js';
 import { persistCompactionSummary } from './compaction-memory.js';
 import logger from '../shared/logger.js';
 import { initI18n, t, registerTranslations } from '../shared/i18n.js';
+import { wrapUntrusted, ensureUntrustedContract, getContractText, sanitizeFakeTags } from '../shared/untrusted-content.js';
 
 // 背景脚本自注册翻译
 registerTranslations('zh', { 
@@ -43,7 +44,17 @@ registerTranslations('zh', {
     requestCancelled: '请求已被用户取消',
     reactCancelled: 'ReAct 循环已被用户取消',
     apiCallFailed: 'API 调用失败',
-  } 
+  },
+  selectionPrompt: {
+    explain: '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
+    translate: '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。',
+    summary: '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。',
+    default: '你正在处理用户在网页上选中的内容，请用简洁的语言回答用户的问题。',
+    contextHeader: '[网页上下文]',
+    contextTitle: '标题',
+    contextUrl: 'URL',
+    contextHint: '当选中内容含义不完整或包含指代时，请结合网页上下文理解其真实含义后再作答；否则仍以选中内容为主。',
+  }
 });
 registerTranslations('en', { 
   bg: { 
@@ -57,11 +68,21 @@ registerTranslations('en', {
     toolPreselect: 'Tool Pre-filter',
     requestCancelled: 'Request was cancelled by user',
     reactCancelled: 'ReAct loop was cancelled by user',
-  } 
+  },
+  selectionPrompt: {
+    explain: 'You are handling content selected by the user on a web page. Explain the selected content concisely in 1-3 sentences, adding one short example only when necessary. Do not write a long explanation.',
+    translate: 'You are handling content selected by the user on a web page. Detect the language automatically: Chinese to English, English to Chinese, and for other languages provide both Chinese and English. Output only the translation, with no extra explanation.',
+    summary: 'You are handling content selected by the user on a web page. Summarize the selected content in 3-5 bullet points, one sentence each, covering only the key information.',
+    default: 'You are handling content selected by the user on a web page. Answer the user\'s question concisely.',
+    contextHeader: '[Page context]',
+    contextTitle: 'Title',
+    contextUrl: 'URL',
+    contextHint: 'When the selected content is ambiguous or contains references, use the page context to understand its actual meaning before answering; otherwise, base the answer mainly on the selected content.',
+  }
 });
 
 // 初始化国际化（读取语言偏好，供 local-agent-client 设置 Accept-Language 头）
-initI18n();
+const i18nReady = initI18n();
 
 // 启动时重建定时任务闹钟（SW 空闲被回收后由 chrome.alarms 唤醒，需从 DB 恢复）
 rehydrateAlarms();
@@ -2058,7 +2079,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
 
   // 选中文本工具栏操作
   if (message.type === 'SELECTION_TOOLBAR_ACTION') {
-    const { prompt, action, text, systemPrompt } = message;
+    const { prompt, action, text, systemPrompt, pageContext } = message;
     const tabId = sender.tab?.id;
     const frameId = sender.frameId;
     
@@ -2080,24 +2101,43 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
     }
     
     // 其他操作（解释、翻译、总结、自定义工具）：直接调用 API
-    const systemPrompts = {
-      'explain': '你正在处理用户在网页上选中的内容。用1-3句简洁解释选中内容，必要时补充一个简短示例。不要展开长篇论述。',
-      'translate': '你正在处理用户在网页上选中的内容。自动检测语言：中文→英文，英文→中文，其他语言→同时给出中英文。只输出翻译结果，不添加额外说明。',
-      'summary': '你正在处理用户在网页上选中的内容。用3-5个要点总结选中内容，每条要点一句话，提炼核心信息即可。'
-    };
-    
-    // 自定义工具使用传入的 systemPrompt，内置工具使用默认的
-    const systemContent = systemPrompt || systemPrompts[action] || '你正在处理用户在网页上选中的内容，请用简洁的语言回答用户的问题。';
-    
-    const messages = [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: prompt }
-    ];
-    
     resetDialogApiCallCount();
     
     getStoredConfig().then(async (config) => {
       try {
+        // 等待语言偏好加载完成，避免 SW 冷启动时提示词/合约回落到默认中文
+        await i18nReady;
+        
+        const systemPrompts = {
+          'explain': t('selectionPrompt.explain'),
+          'translate': t('selectionPrompt.translate'),
+          'summary': t('selectionPrompt.summary')
+        };
+        
+        // 自定义工具使用传入的 systemPrompt，内置工具使用默认的
+        let systemContent = systemPrompt || systemPrompts[action] || t('selectionPrompt.default');
+        let userContent = prompt;
+        
+        // 用户勾选「结合网页上下文」时，前置上下文块；关闭时与原有行为完全一致
+        const contextText = typeof pageContext?.text === 'string' ? pageContext.text.trim() : '';
+        if (contextText) {
+          // 标题/URL 由页面控制，去掉控制字符并清理伪造的 untrusted 标签，避免破坏消息结构
+          const sanitizeHeader = (value) => sanitizeFakeTags(
+            String(value || '').replace(/[\r\n\u0000-\u001f\u007f]+/g, ' ')
+          ).slice(0, 500);
+          const header = `${t('selectionPrompt.contextHeader')}\n${t('selectionPrompt.contextTitle')}: ${sanitizeHeader(pageContext.title)}\n${t('selectionPrompt.contextUrl')}: ${sanitizeHeader(pageContext.url)}\n`;
+          const wrapped = wrapUntrusted('page_content', contextText.slice(0, 8000), `selection_toolbar_${tabId ?? 'unknown'}`);
+          userContent = `${header}${wrapped}\n\n${prompt}`;
+          systemContent += `\n${t('selectionPrompt.contextHint')}`;
+          // 直连 API 链路不经 ReAct 循环，需要在这里显式注入不可信内容合约
+          systemContent = ensureUntrustedContract(systemContent, getContractText());
+        }
+        
+        const messages = [
+          { role: 'system', content: systemContent },
+          { role: 'user', content: userContent }
+        ];
+        
         const useStream = config.streamConfig?.streamEnabled !== false;
 
         if (useStream && tabId) {
