@@ -189,7 +189,8 @@ registerTranslations('zh', {
     commandExecComplete: '命令执行完毕 {exitInfo}',
     execTotalTimeout: '命令执行总超时（{seconds}s），已由扩展端保险层终止',
     execHardTimeout: '命令执行超时（保险上限 {seconds}s）',
-    execTimedByAgent: '命令执行超时（代理端预算 {seconds}s 耗尽，持续静默或超出延长上限）',
+    execTimedByAgent: '命令执行超时（已运行 {seconds}s：静默超过预算，或达到延长上限）',
+    cwdConvergedNotice: '注意：请求的 cwd {requested} 不在本会话目录内，实际执行目录为 {workdir}。',
     collectedOutput: '已收集输出:\n',
     commandExitCodeError: '命令执行失败，exitCode: {code}',
     commandNoExitCodeErrorMsg: '命令执行失败，代理未返回 exitCode',
@@ -421,7 +422,8 @@ registerTranslations('en', {
     commandExecComplete: 'Command execution complete {exitInfo}',
     execTotalTimeout: 'Command total timeout ({seconds}s), terminated by extension-side guard',
     execHardTimeout: 'Command execution timeout (guard limit {seconds}s)',
-    execTimedByAgent: 'Command timed out (agent budget {seconds}s exhausted: silent past grace or extension limit reached)',
+    execTimedByAgent: 'Command timed out after {seconds}s (silent past its budget, or extension limit reached)',
+    cwdConvergedNotice: 'Note: requested cwd {requested} is outside this session directory; the command ran in {workdir}.',
     collectedOutput: 'Collected output:\n',
     commandExitCodeError: 'Command execution failed, exitCode: {code}',
     commandNoExitCodeErrorMsg: 'Command execution failed, agent did not return exitCode',
@@ -4724,18 +4726,19 @@ export function computeExecGuardMs(effectiveTimeout) {
  * - 最终仍由代理端（按会话注册表）复核，这里只是不让模型/陈旧路径把目录带偏
  * @param {string|undefined} cwd
  * @param {string|null} sessionId
- * @returns {Promise<string|undefined>}
+ * @returns {Promise<{cwd: string|undefined, requested: string, dropped: boolean}>}
  */
 async function convergeSessionCwd(cwd, sessionId) {
-  if (!sessionId) return cwd;
+  const requested = typeof cwd === 'string' ? cwd.trim() : '';
+  if (!sessionId) return { cwd, requested, dropped: false };
   let root = '';
   try {
     root = (await getEffectiveWorkdir(sessionId)) || '';
   } catch (err) {
     logger.warn('[AgentExec] resolve session workdir failed:', err?.message || err);
-    return cwd;
+    return { cwd, requested, dropped: false };
   }
-  if (!root) return cwd;
+  if (!root) return { cwd, requested, dropped: false };
   const { cwd: scoped, dropped, original } = resolveScopeCwd(cwd, root);
   if (dropped) {
     logger.warn('[AgentExec] cwd converged to session workdir:', original, '->', scoped);
@@ -4743,13 +4746,26 @@ async function convergeSessionCwd(cwd, sessionId) {
       sessionId, requested: original, workdir: scoped,
     });
   }
-  return scoped;
+  return { cwd: scoped, requested: original || requested, dropped };
 }
 
 export async function executeAgentExecCommand(args, toolCallId, sessionId) {
   const { command, timeoutMs } = args;
   // 执行目录一律收敛到本会话的冻结目录（并行会话之间互不影响）
-  const cwd = await convergeSessionCwd(args.cwd, sessionId);
+  const { cwd, requested: cwdRequested, dropped: cwdDropped } = await convergeSessionCwd(args.cwd, sessionId);
+  // 收敛必须让模型看见：否则模型会把「cwd 不生效」当成参数被忽略，反复重试或按错误目录解释输出
+  const withCwdNotice = (result) => {
+    if (!cwdDropped || !result) return result;
+    const notice = t('toolExec.cwdConvergedNotice', { requested: cwdRequested, workdir: cwd });
+    // 不能凭空给没有 content 的结果补一个「只有提示」的 content：
+    // 上层按 `content ?? JSON.stringify(toolResult)` 取模型可见文本，补了会把命令输出整个盖掉
+    if (result.content) result.content = `${notice}\n\n${result.content}`;
+    if (result.message) result.message = `${notice}\n\n${result.message}`;
+    if (!result.content && !result.message) result.message = notice;
+    result.cwd = cwd;
+    result.cwdConverged = true;
+    return result;
+  };
   if (!command) return { success: false, error: t('toolExec.missingCommand'), tool_call_id: toolCallId };
 
   const config = await getStoredConfig();
@@ -4795,6 +4811,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
     }
 
     const { execId, wsUrl } = initResult;
+    const execStartedAt = Date.now();
     let stdoutCollected = '';
     let stderrCollected = '';
     let exitCode = null;
@@ -5064,7 +5081,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       if (processStarted) {
         sendAgentStreamDone(sessionId, execId, toolCallId, -1);
         appendAuditLog('command_exec', `Command failed: ${command}`, { command, cwd, exitCode: -1, error: errorMessage });
-        return {
+        return withCwdNotice({
           success: false,
           level: 'allow',
           execId,
@@ -5077,12 +5094,12 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
             output: (stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '') + (stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : '')
           }),
           error: errorMessage
-        };
+        });
       }
       console.warn('[AgentExec] exec init failed before process start, fallback to sync mode:', errorMessage);
       // 为同步回退路径也注册取消机制
       let result = await executeWithCancel(sessionId, toolCallId, 
-        AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId)
+        AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId, computeExecGuardMs(effectiveTimeout))
       );
       if (result.cancelled) {
         return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -5094,13 +5111,13 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
           return commandDeniedResult(command, cwd, toolCallId);
         }
         result = await executeWithCancel(sessionId, toolCallId,
-          AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId)
+          AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId, computeExecGuardMs(effectiveTimeout))
         );
         if (result.cancelled) {
           return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
         }
       }
-      return formatAgentExecResult(result.value, command, cwd, toolCallId);
+      return withCwdNotice(formatAgentExecResult(result.value, command, cwd, toolCallId));
     }
 
     appendAuditLog('command_exec', `Execute command: ${command}`, { command, cwd, exitCode });
@@ -5110,7 +5127,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       sendAgentStreamDone(sessionId, execId, toolCallId, 0);
       console.log('[AgentExec] idletimeout,returned partialresult (command possibly stillbackgroundrun )');
       const message = `命令仍在后台运行（已空闲超时，进程未终止）。\n\n执行期间输出:\n${stdoutCollected ? 'stdout:\n\`\`\`\n' + stdoutCollected + '\n\`\`\`' : '(无输出)'}${stderrCollected ? '\nstderr:\n\`\`\`\n' + stderrCollected + '\n\`\`\`' : ''}\n\n⚠️ 注意：此命令为挂起型进程（如服务/守护进程），进程仍在后台运行中。`;
-      return {
+      return withCwdNotice({
         success: true,
         level: 'allow',
         execId,
@@ -5121,15 +5138,17 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
         message,
         hint: '命令为挂起型进程，仍在后台运行',
         tool_call_id: toolCallId
-      };
+      });
     }
     
     // Agent 端超时权威裁决后上报 timedOut → 返回本地化的超时失败结果（预算耗尽/静默被杀）
     if (timedOutByAgent) {
-      const errMsg = t('toolExec.execTimedByAgent', { seconds: Math.round(computeExecMaxTotalMs(effectiveTimeout) / 1000) });
-      appendAuditLog('command_exec', `Command timed out by agent: ${command}`, { command, cwd, exitCode });
+      // 报「实际运行时长」而不是理论最大预算（timeoutMs×6）：后者并不等于真实耗时，会把正常到点杀说成 30s/36s
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - execStartedAt) / 1000));
+      const errMsg = t('toolExec.execTimedByAgent', { seconds: elapsedSeconds });
+      appendAuditLog('command_exec', `Command timed out by agent: ${command}`, { command, cwd, exitCode, elapsedSeconds });
       sendAgentStreamDone(sessionId, execId, toolCallId, exitCode);
-      return {
+      return withCwdNotice({
         success: false,
         level: 'allow',
         execId,
@@ -5142,7 +5161,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
         message: errMsg,
         error: errMsg,
         tool_call_id: toolCallId
-      };
+      });
     }
 
     const hasExitCode = exitCode !== null && exitCode !== undefined;
@@ -5155,7 +5174,7 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
     if (stderrCollected) message += '\n' + t('toolExec.stderrOutput', { stderr: stderrCollected });
     if (killed) message += '\n' + t('toolExec.commandKilledWarning');
     if (!hasExitCode) message += '\n' + t('toolExec.commandNoExitCodeWarning');
-    return {
+    return withCwdNotice({
       success: isSuccess,
       level: 'allow',
       execId,
@@ -5167,11 +5186,11 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       message,
       error: !isSuccess ? (hasExitCode ? t('toolExec.commandExitCodeError', { code: exitCode }) : t('toolExec.commandNoExitCodeErrorMsg')) : undefined,
       tool_call_id: toolCallId
-    };
+    });
   }
 
   let result = await executeWithCancel(sessionId, toolCallId,
-    AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId)
+    AgentClient.execCommandWait(command, cwd, effectiveForce, effectiveTimeout, sessionId, computeExecGuardMs(effectiveTimeout))
   );
   if (result.cancelled) {
     return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
@@ -5183,13 +5202,13 @@ export async function executeAgentExecCommand(args, toolCallId, sessionId) {
       return commandDeniedResult(command, cwd, toolCallId);
     }
     result = await executeWithCancel(sessionId, toolCallId,
-      AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId)
+      AgentClient.execCommandWait(command, cwd, true, effectiveTimeout, sessionId, computeExecGuardMs(effectiveTimeout))
     );
     if (result.cancelled) {
       return { success: false, content: t('toolExec.commandCancelled'), error: t('toolExec.userCancelled'), tool_call_id: toolCallId };
     }
   }
-  return formatAgentExecResult(result.value, command, cwd, toolCallId);
+  return withCwdNotice(formatAgentExecResult(result.value, command, cwd, toolCallId));
 }
 
 /**

@@ -65,6 +65,12 @@ vi.mock('../../src/background/stream-controller.js', () => ({
   sendAgentStream: vi.fn(),
   sendAgentStreamDone: vi.fn(),
 }));
+// cwd 收敛依赖会话冻结目录：默认返回空（等同「无会话目录」），用例内按需覆盖
+const { getEffectiveWorkdirMock } = vi.hoisted(() => ({ getEffectiveWorkdirMock: vi.fn(async () => '') }));
+vi.mock('../../src/shared/workdir-scope.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, getEffectiveWorkdir: (...args) => getEffectiveWorkdirMock(...args) };
+});
 
 let toolExecutor, AgentClient, configModule;
 const baseConfig = { reactConfig: { toolConfirmationEnabled: true, toolTimeout: 600000 }, streamConfig: { streamEnabled: true } };
@@ -154,10 +160,14 @@ describe('agent_exec 两端超时模型', () => {
     const ws = wireWs();
     const p = toolExecutor.executeAgentExecCommand({ command: 'long_task', timeoutMs: 5000 }, 'tc4', 's4');
     await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(5000);
     ws.onmessage({ data: JSON.stringify({ type: 'exit', exitCode: -1, execId: 'e1', killed: true, timedOut: true }) });
     const r = await p;
     expect(r.success).toBe(false);
     expect(r.error).toBeTruthy();
+    // 报实际运行时长（5s），而不是理论最大预算 timeoutMs×6=30s
+    expect(r.error).toContain('5s');
+    expect(r.error).not.toContain('30s');
     expect(AgentClient.execCommandWait).not.toHaveBeenCalled();
   });
 
@@ -168,6 +178,20 @@ describe('agent_exec 两端超时模型', () => {
     expect(r.success).toBe(false);
     expect(r.execId).toBe('e1');
     expect(AgentClient.execCommandWait).not.toHaveBeenCalled();
+  });
+
+  test('cwd 越界被收敛：非流式结果保留输出并带提示，不凭空生成 content', async () => {
+    getEffectiveWorkdirMock.mockResolvedValueOnce('/root/session');
+    configModule.getStoredConfig.mockResolvedValue({ ...baseConfig, streamConfig: { streamEnabled: false } });
+    AgentClient.execCommandWait.mockResolvedValue({ success: true, exitCode: 0, stdout: 'hi\n', stderr: '', execId: 'e9', killed: false });
+    const r = await toolExecutor.executeAgentExecCommand({ command: 'pwd', cwd: '/tmp/outside', timeoutMs: 5000 }, 'tc6', 's6');
+    // cwd 收敛后按会话目录执行，HTTP 上限用 6 倍预算 + 30s 保险
+    expect(AgentClient.execCommandWait).toHaveBeenCalledWith('pwd', '/root/session', false, 5000, 's6', 60000);
+    expect(r.cwdConverged).toBe(true);
+    expect(r.message).toContain('/root/session');
+    // 关键：上层按 content ?? JSON.stringify(toolResult) 取可见文本，补 content 会把输出盖掉
+    expect(r.content).toBeUndefined();
+    expect(r.stdout).toBe('hi\n');
   });
 });
 

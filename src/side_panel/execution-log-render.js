@@ -1135,7 +1135,18 @@ function renderExecutionLogOriginal(sortedLog) {
   return result;
 }
 
+/** 面板隐藏时挂起的最新状态：可见后补渲一次，避免隐藏期间反复重建上千条 DOM */
+let _pendingHiddenStatus = null;
+
 export function updateRealtimeExecutionLogPanel(status) {
+  // 侧边栏收起（hidden）时不重建时间线：长任务期间状态更新很密，隐藏状态下重建
+  // 上千条节点只是在后台空转，还会和页面主线程抢资源。只记下最新状态，可见时补渲。
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    _pendingHiddenStatus = status;
+    return;
+  }
+  // 已经真正渲染过，就不需要再补渲；避免残留状态在下次可见时重复重建一次
+  _pendingHiddenStatus = null;
   const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
   
@@ -1181,6 +1192,17 @@ export function updateRealtimeExecutionLogPanel(status) {
   
   // 自动滚动到底部
   timeline.scrollTop = timeline.scrollHeight;
+}
+
+// 面板重新可见：把隐藏期间挂起的最新状态补渲一次。
+// 隐藏时跳过的只是 DOM 重建，状态对象本身一直在被更新，这里读到的一定是最新快照。
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' || !_pendingHiddenStatus) return;
+    const pending = _pendingHiddenStatus;
+    _pendingHiddenStatus = null;
+    updateRealtimeExecutionLogPanel(pending);
+  });
 }
 
 export function showRealtimeExecutionLogPanel(loadingId) {

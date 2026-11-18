@@ -28,7 +28,9 @@ describe('buildResumeState', () => {
   it('键集合与实现一致：漏写/多写都挂在 RESUME_STATE_KEYS 上', () => {
     expect(Object.keys(buildResumeState({})).sort()).toEqual([...RESUME_STATE_KEYS].sort());
     // 写侧 payload 必须带齐同样的键，否则读侧的默认值会把现场覆盖成空
-    const from = LOOP_SRC.indexOf('executionLog: [...executionLog],');
+    // executionLog 允许先经瘦身副本（slimLogForCheckpoint）再落盘，锚点两种写法都认
+    const startMatch = /executionLog:\s*(?:slimLogForCheckpoint\(executionLog\)|\[\.\.\.executionLog\]),/.exec(LOOP_SRC);
+    const from = startMatch ? startMatch.index : -1;
     const to = LOOP_SRC.indexOf('interruptedReason:', from);
     expect(from).toBeGreaterThan(-1);
     const payload = LOOP_SRC.slice(from, to);

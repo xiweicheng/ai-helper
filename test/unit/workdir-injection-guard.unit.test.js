@@ -105,6 +105,9 @@ describe('请求链路按会话透传', () => {
     expect(code).toMatch(/convergeSessionCwd/);
     expect(code).toMatch(/resolveScopeCwd/);
     expect(code).toMatch(/cwd_converged/);
+    // 收敛结果必须回传给模型（否则是静默改参数，模型无法自纠）
+    expect(code).toMatch(/cwdConvergedNotice/);
+    expect(code).toMatch(/withCwdNotice/);
     // prototypes 产物固定落代理默认目录，不随会话漂移
     expect(code).toMatch(/getAgentDefaultWorkdir/);
   });

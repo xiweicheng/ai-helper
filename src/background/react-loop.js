@@ -1176,6 +1176,46 @@ function trimExecutionLogMemory(executionLog, snapshotMap, limit = EXECUTION_LOG
 }
 
 /**
+ * checkpoint 落盘副本的 observation 上限。
+ * 内存与前端日志保持完整（产物提取依赖 observation 全文），只有写盘副本截断：
+ * 长任务里日志可达上千条、单条上限 50KB，全量落盘会让每轮 checkpoint 变成 MB 级
+ * 序列化 + 磁盘写，CPU/IO 压力会外溢到整个浏览器。恢复后历史日志略微变短是可接受代价。
+ */
+const CHECKPOINT_OBSERVATION_LIMIT = 8000;
+
+/**
+ * 截断结果缓存：日志条目是 append-only 的（observation 一旦写入不再变化），
+ * 每 5s 落盘时对上千条各切一次 8KB 字符串是纯浪费，WeakMap 让稳定态几乎零分配。
+ * 用 source 引用比较兜底「同一 entry 被整体替换」的情况。
+ */
+const _slimEntryCache = new WeakMap();
+
+/**
+ * 生成用于 checkpoint 的日志副本（不修改内存中的条目）
+ * @param {Array} log
+ * @returns {Array}
+ */
+function slimLogForCheckpoint(log) {
+  if (!Array.isArray(log)) return [];
+  return log.map(entry => {
+    const obs = entry && entry.observation;
+    if (typeof obs !== 'string' || obs.length <= CHECKPOINT_OBSERVATION_LIMIT) return entry;
+    const cached = _slimEntryCache.get(entry);
+    if (cached && cached.source === obs) return cached.value;
+    const value = { ...entry, observation: obs.slice(0, CHECKPOINT_OBSERVATION_LIMIT) + '…' };
+    _slimEntryCache.set(entry, { source: obs, value });
+    return value;
+  });
+}
+
+/**
+ * 回读校验计数：每次写完都把整份数据读回来反序列化，成本与 checkpoint 体积同阶，
+ * 在高频落盘时本身就是卡顿来源。只保留「首次 + 每 N 次」抽查，兼顾可观测性与常态开销。
+ */
+let checkpointVerifyCount = 0;
+const CHECKPOINT_VERIFY_EVERY = 20;
+
+/**
  * 序列化 checkpoint 并写入 IndexedDB
  * 失败不阻塞主流程，仅记录日志
  */
@@ -1185,7 +1225,10 @@ async function persistCheckpoint(sessionId, data) {
     const ok = await saveReactCheckpoint({ sessionId, ...data });
     if (ok) {
       logger.debug(`[Background] checkpoint saved (sessionId=${sessionId}, iteration=${data.iteration}, reason=${data.interruptedReason})`);
-      // 验证写入：读回确认 checkpoint 确实落盘（防止 IndexedDB 升级阻塞导致静默失败）
+      checkpointVerifyCount++;
+      const shouldVerify = checkpointVerifyCount === 1 || checkpointVerifyCount % CHECKPOINT_VERIFY_EVERY === 0;
+      if (!shouldVerify) return;
+      // 抽查写入：读回确认 checkpoint 确实落盘（防止 IndexedDB 升级阻塞导致静默失败）
       try {
         const verified = await getReactCheckpoint(sessionId);
         if (!verified) {
@@ -1752,7 +1795,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         if (typeof clean.content === 'function') clean.content = String(clean.content);
         return clean;
       }),
-      executionLog: [...executionLog],
+      executionLog: slimLogForCheckpoint(executionLog),
       iteration,
       globalIteration: { value: globalIteration?.value || iteration },
       subtaskPlan,
@@ -1779,7 +1822,10 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
    * @param {string} reason - 保存原因
    * @param {boolean} force - 是否强制落盘（绕过节流并撤下尾随），用于 catch 块确保中断状态被保存
    */
-  const CHECKPOINT_THROTTLE_MS = 1500;
+  // 落盘间隔：checkpoint 是全量现场（消息 + 日志），1.5s 一次在长任务里等于持续数 MB/s
+  // 的序列化与磁盘写，压力会外溢到浏览器其他页面。5s 一次仍远小于 SW 被回收的暴露窗口，
+  // 且异常/终态路径都会 force 落盘，恢复能力不受影响。
+  const CHECKPOINT_THROTTLE_MS = 5000;
   const checkpointThrottle = createCheckpointThrottle({
     throttleMs: CHECKPOINT_THROTTLE_MS,
     persist: writeCheckpointSnapshot,
@@ -1851,10 +1897,9 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   logger.debug('[Background] reactLoop tasktext:', taskContext ? `subtask ${taskContext.subtaskId || ' no '} (${taskContext.subtaskName || 'maintask'})` : ' no ');
   
   /**
-   * 发送实时执行状态更新消息（200ms 节流，子任务大量执行时防止消息拥塞）
+   * 发送实时执行状态更新消息（固定 200ms 一帧，子任务大量执行时防止消息拥塞）
    */
   let lastStatusSendTime = 0;
-  let lastSentNodeName = '';
   // 跟踪已发送的执行日志条目，用于增量发送避免 64MiB 限制
   const lastSentLogSnapshot = new Map(); // id -> { status, nodeName }
   function sendExecutionStatusUpdate(nodeName, status) {
@@ -1862,17 +1907,20 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       // 内存窗口裁剪：发送前封顶日志，防止长任务期间无限增长
       trimExecutionLogMemory(executionLog, lastSentLogSnapshot);
       const now = Date.now();
-      
+
+      // 节流：固定 200ms 一帧。长任务里节点名几乎每次都在变，旧规则「名字一变就立即发」
+      // 等于没有节流，每秒几十条广播会投递到所有标签页的每个 frame，直接拖慢整台浏览器。
+      // 终态（success/failed/error）必须立即下发，否则前端节点会停在「执行中」。
+      const isTerminal = !!status && status !== 'processing';
+      if (!isTerminal && now - lastStatusSendTime < 200) return;
+      lastStatusSendTime = now;
+
       // 回调通知父任务：传递窗口内的完整日志（父任务需要完整日志进行合并）
+      // 与广播共用同一节流节奏：被合并掉的中间态没有信息量，父任务拿到的仍是全量窗口
       if (typeof onLogUpdate === 'function') {
         onLogUpdate([...executionLog]);
       }
-      
-      // 节流：200ms 内同一节点名不重复发送，但节点名变化时立即发送
-      if (nodeName === lastSentNodeName && now - lastStatusSendTime < 200) return;
-      lastStatusSendTime = now;
-      lastSentNodeName = nodeName;
-      
+
       // 增量发送：只发送新增或变更的条目，避免完整 executionLog 超过 64MiB 限制
       const deltaLog = [];
       for (const entry of executionLog) {

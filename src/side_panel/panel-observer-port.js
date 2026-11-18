@@ -17,8 +17,32 @@ import logger from '../shared/logger.js';
 
 const PORT_PREFIX = 'panel-observer-';
 
+// 与 background 的 _sendControl 共用同一 seq 通道的流式消息类型。
+// 控制消息必须和 chunk 一起转发，否则端口通道上的先后顺序会被广播副本打断。
+const STREAMING_TYPES = new Set([
+  'STREAM_START',
+  'STREAM_CHUNK',
+  'STREAM_TOOL_CALL',
+  'STREAM_DONE',
+]);
+
 /** sessionId -> Port：端口对象必须被引用住，否则会被 GC 掉，SW 侧立刻当成断开 */
 const _ports = new Map();
+
+/**
+ * 观察端口上的消息消费者：background 的流式增量旁路镜像会从这条端口投递过来。
+ * 用 Set 而非单个回调，避免以后接入方互相覆盖；目前只有接管实例注册。
+ */
+const _messageHandlers = new Set();
+
+/**
+ * 注册观察端口消息处理器（幂等：同一函数重复注册只保留一份）。
+ * 端口创建早于/晚于注册都能收到消息——端口上的转发函数每次都会遍历当前集合。
+ * @param {(message: Object) => void} handler
+ */
+export function onPanelObserverMessage(handler) {
+  if (typeof handler === 'function') _messageHandlers.add(handler);
+}
 
 /**
  * 为某会话建立观察端口（幂等：已有则直接复用，不重复连）。
@@ -39,6 +63,37 @@ export function openPanelObserverPort(sessionId) {
   }
 
   _ports.set(sessionId, port);
+  // 流式增量镜像：background 会同时发端口和广播，接收端按 (callId, seq) 去重。
+  // 处理器异常绝不能打断端口本身，否则会连带丢失「面板断开」这条唯一职责。
+  try {
+    port.onMessage.addListener((message) => {
+      // 只转发流式消息：这条端口的主职责仍是「面板断开通知」。控制消息与 chunk 共用
+      // 同一序号通道，必须一起转发，否则端口上的先后顺序会被打断。
+      // 没有消费者时不能 ACK：ACK 的语义是「这条已经被本实例处理」，
+      // 空集合说明接管实例还没挂好处理器，误确认会让 background 提前跳过广播。
+      if (!message || !STREAMING_TYPES.has(message.type) || _messageHandlers.size === 0) return;
+      let consumed = true;
+      for (const handler of _messageHandlers) {
+        try {
+          handler(message);
+        } catch (err) {
+          consumed = false;
+          logger.debug('[PanelObserver] 消息处理异常（忽略）:', err?.message || err);
+        }
+      }
+      // 只有确实被消费才确认：处理失败时必须让 background 继续广播，
+      // 否则后续 chunk 会只走这条已经坏掉的通道。
+      if (consumed && message.seq) {
+        try {
+          port.postMessage({ type: 'STREAM_CHUNK_ACK', sessionId: message.sessionId, callId: message.callId, seq: message.seq });
+        } catch (err) {
+          logger.debug('[PanelObserver] ACK 回发失败（忽略）:', err?.message || err);
+        }
+      }
+    });
+  } catch (err) {
+    logger.debug('[PanelObserver] 消息监听挂不上（忽略）:', err?.message || err);
+  }
   // Chrome 自己拆掉端口（扩展上下文失效等）时把本地引用一起摘掉，否则下次接管
   // 会复用一个已经死掉的端口，SW 那边再也等不到断开。
   try {

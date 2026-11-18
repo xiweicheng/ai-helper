@@ -181,6 +181,16 @@ describe('执行期隔离：改别的会话目录不影响正在执行的会话'
     expect(call.headers['X-AIH-Session-Id']).toBeUndefined();
     expect(call.headers['X-AIH-Workdir']).toBeUndefined();
   });
+
+  test('execCommandWait 把受管预算 timeoutMs 透传给 Agent（含未传 HTTP 上限的调用）', async () => {
+    setBinding('s1', '/proj/a');
+    // 第 6 参是插件端 HTTP 等待上限，不应该混进 body
+    await execCommandWait('sleep 5', undefined, false, 7000, 's1', 72000);
+    expect(lastExec().body.timeoutMs).toBe(7000);
+    // 缺省 requestTimeoutMs 时仍必须带受管预算，否则 Agent 会按 commandTimeout 跑，插件端超时后无人杀进程
+    await execCommandWait('pwd', undefined, false, 9000, 's1');
+    expect(lastExec().body.timeoutMs).toBe(9000);
+  });
 });
 
 describe('非 ASCII 目录：请求头必须编码（评审 P0-1）', () => {

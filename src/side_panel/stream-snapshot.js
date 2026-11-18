@@ -131,6 +131,13 @@ export async function flushStreamSnapshot(sessionId) {
     html = '';
   }
 
+  // 内容指纹去重：工具执行/模型停顿期间气泡内容不变，但定时器仍会每 700ms 把同一份
+  // 最多 300KB 的 HTML 重新序列化写入 storage.session。指纹用「长度 + 首尾片段」即可，
+  // 流式是 append-only，末尾必然变化；每 30s 强制刷新一次，避免 ts 长期不更新被判过期。
+  const sig = `${html.length}|${accumulated.length}|${html.slice(0, 48)}|${html.slice(-48)}|${accumulated.slice(-32)}`;
+  const now = Date.now();
+  if (slot.lastSig === sig && now - (slot.lastWrittenAt || 0) < 30000) return;
+
   await chrome.storage.session.set({
     [keyOf(sessionId)]: {
       sessionId,
@@ -140,6 +147,10 @@ export async function flushStreamSnapshot(sessionId) {
       ts: Date.now(),
     },
   });
+
+  // 写入成功后才记账：失败时保持旧指纹，下次定时器会重试（否则一次失败会哑 30s）
+  slot.lastSig = sig;
+  slot.lastWrittenAt = now;
 }
 
 /**

@@ -319,12 +319,12 @@ describe('agent_exec 灰名单命令真实用户确认（防模型自我批准�
     const p = toolExecutor.executeAgentExecCommand({ command: 'git push -f' }, 'tc4', 's1');
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(AgentClient.execCommandWait).toHaveBeenNthCalledWith(1, 'git push -f', undefined, false, 600000, 's1');
+    expect(AgentClient.execCommandWait).toHaveBeenNthCalledWith(1, 'git push -f', undefined, false, 600000, 's1', 630000);
 
     await respondConfirmation(true);
     const result = await p;
 
-    expect(AgentClient.execCommandWait).toHaveBeenNthCalledWith(2, 'git push -f', undefined, true, 600000, 's1');
+    expect(AgentClient.execCommandWait).toHaveBeenNthCalledWith(2, 'git push -f', undefined, true, 600000, 's1', 630000);
     expect(result.success).toBe(true);
     expect(result.exitCode).toBe(0);
   });

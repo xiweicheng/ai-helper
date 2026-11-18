@@ -503,15 +503,16 @@ function renderOverflowDropdown(overflowTools) {
     </div>`;
   }).join('');
   
-  // 行为选项：是否结合网页上下文（勾选态即时切换，不关闭菜单）
-  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-context" role="button" tabindex="0" title="${t('selToolbar.contextAwareTitle')}" aria-pressed="${includePageContext ? 'true' : 'false'}">
-    <span class="aih-tb-icon aih-context-check">${includePageContext ? ICONS.check : ''}</span>${t('selToolbar.contextAware')}
-  </div>`;
-  
   itemsHtml += `<div class="aih-dropdown-divider"></div>`;
   itemsHtml += `<div class="aih-dropdown-item aih-dropdown-settings" role="button" tabindex="0" title="${t('selToolbar.settingsTitle')}">
     <span class="aih-tb-icon">${ICONS.gear}</span>${t('selToolbar.settings')}
   </div>`;
+  
+  // 配置项：是否结合网页上下文（跟随「设置」，勾选态即时切换，不关闭菜单）
+  itemsHtml += `<div class="aih-dropdown-item aih-dropdown-context" role="button" tabindex="0" title="${t('selToolbar.contextAwareTitle')}" aria-pressed="${includePageContext ? 'true' : 'false'}">
+    <span class="aih-tb-icon aih-context-check">${includePageContext ? ICONS.check : ''}</span>${t('selToolbar.contextAware')}
+  </div>`;
+  
   itemsHtml += `<div class="aih-dropdown-item aih-dropdown-hide" role="button" tabindex="0" title="${t('selToolbar.disableTemporarilyTitle')}">
     <span class="aih-tb-icon">${ICONS.eyeOff}</span>${t('selToolbar.disableTemporarily')}
   </div>`;

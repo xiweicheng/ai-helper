@@ -598,10 +598,20 @@ async function execCommand(command, cwd, force = false, timeoutMs = null, scope 
 
 /**
  * 同步执行命令并等待结果（用于扩展端获取完整输出）
+ * @param {string} command
+ * @param {string} [cwd]
+ * @param {boolean} [force=false]
+ * @param {number} [timeoutMs=600000] - 受管模式基线预算：必须透传给 Agent，否则它会按默认 commandTimeout 跑，
+ *   插件端 HTTP 先超时后进程无人终止（孤儿进程 + 输出丢失）
+ * @param {object} [scope]
+ * @param {number} [requestTimeoutMs] - HTTP 等待上限（应大于 Agent 端可能的延长上限），缺省用 timeoutMs
  * @returns {Promise<Object>} { success, exitCode, stdout, stderr, execId, killed, error? }
  */
-async function execCommandWait(command, cwd, force = false, timeoutMs = 600000, scope = null) {
-  return agentRequest('/api/exec', { command, cwd, wait: true, force }, 'POST', timeoutMs, scope);
+async function execCommandWait(command, cwd, force = false, timeoutMs = 600000, scope = null, requestTimeoutMs = null) {
+  const body = { command, cwd, wait: true, force };
+  if (Number(timeoutMs) > 0) body.timeoutMs = Math.round(Number(timeoutMs));
+  const httpTimeout = Number(requestTimeoutMs) > 0 ? Math.round(Number(requestTimeoutMs)) : timeoutMs;
+  return agentRequest('/api/exec', body, 'POST', httpTimeout, scope);
 }
 
 /**
