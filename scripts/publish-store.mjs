@@ -287,25 +287,8 @@ async function publishChrome(zipPath, dryRun) {
   }
   ok(`上传完成（状态: ${upload.uploadState ?? '未知'}）`);
 
-  // 等待商店侧完成包校验
-  await pollUntil(
-    async () => {
-      const item = await fetchJson(`${CHROME_BASE}/items/${id}?projection=private`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }, 'Chrome 状态查询');
-      const state = item.provisioned?.status?.[0]?.statusDetail?.[0] ?? item.status?.[0];
-      const uploadState = item.uploadState;
-      if (uploadState === 'ACTION_REQUIRED' || uploadState === 'FAILED') {
-        throw new Error(`Chrome 后台要求人工处理（${uploadState}），请前往 devconsole 查看`);
-      }
-      return uploadState === 'PACKAGE_UPLOADED' || state === 'OK' || uploadState === 'NOT_CHECKED_YET';
-    },
-    () => info('等待 Chrome 包校验…'),
-    { intervalMs: 15000, timeoutMs: 3 * 60 * 1000 },
-  );
-  ok('包校验通过');
-
-  // 2. 发布（visible 目标：全量用户）
+  // 注意: Google 已废弃 projection=private/basic，状态以 publish 响应为准；
+  // 包校验失败会由 publish 返回 "Publish condition not met" 拒绝
   info('发布到线上…');
   const pub = await fetchJson(`${CHROME_BASE}/items/${id}/publish?publishTarget=default`, {
     method: 'POST',
@@ -314,7 +297,10 @@ async function publishChrome(zipPath, dryRun) {
   if (pub.success === false) {
     throw new Error(`Chrome 发布被拒: ${JSON.stringify(pub.statusDetail ?? pub).slice(0, 400)}`);
   }
-  ok(`Chrome Web Store 发布请求已接受 ✓（商店生效通常需几分钟到数小时）`);
+  if (Array.isArray(pub.statusDetail) && pub.statusDetail.some((d) => /condition not met/i.test(d))) {
+    throw new Error(`Chrome 发布被拒: ${pub.statusDetail.join('; ')}`);
+  }
+  ok(`Chrome Web Store 发布请求已接受（当前状态: ${pub.status?.join(', ') ?? '未知'}，商店生效通常需几分钟到数小时）`);
   console.log(`   https://chromewebstore.google.com/detail/${id}`);
 }
 
