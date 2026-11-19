@@ -149,23 +149,26 @@ describe('stream-snapshot 面板侧流式气泡快照', () => {
     expect(snap.accumulated).toBe('中文正文');
   });
 
-  test('降级丢掉 HTML 时要留一行日志（工具卡片凭空消失得有个可查的线索）', async () => {
+  test('降级丢掉 HTML 时要留一行日志（工具卡片凭空消失得有个可查的线索，但不打扰告警面板）', async () => {
     const mod = await importModule();
     const { logger } = await import('../../src/shared/logger.js');
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const big = 'x'.repeat(mod.MAX_HTML_BYTES + 1024);
     mod.scheduleStreamSnapshot('s1', 'call_1', () => ({ html: big, accumulated: '正文' }));
     await mod.flushStreamSnapshot('s1');
 
     expect(store.get(KEY('s1')).html).toBe('');
-    expect(warnSpy).toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+    debugSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
-  test('同一轮流式超限只 warn 一次（节流落盘每 700ms 一次，不刷屏）；新一轮重新计', async () => {
+  test('同一轮流式超限只打一行日志（节流落盘每 700ms 一次，不刷屏）；新一轮重新计', async () => {
     const mod = await importModule();
     const { logger } = await import('../../src/shared/logger.js');
-    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
     const big = 'x'.repeat(mod.MAX_HTML_BYTES + 1024);
 
     // 同一轮 call_1：连续多次落盘（模拟长流式里的一次次节流抓拍），只留一行日志
@@ -173,13 +176,13 @@ describe('stream-snapshot 面板侧流式气泡快照', () => {
       mod.scheduleStreamSnapshot('s1', 'call_1', () => ({ html: big, accumulated: '正文' }));
       await mod.flushStreamSnapshot('s1');
     }
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(debugSpy).toHaveBeenCalledTimes(1);
 
     // 新一轮 call_2：重新计，再留一行
     mod.scheduleStreamSnapshot('s1', 'call_2', () => ({ html: big, accumulated: '正文' }));
     await mod.flushStreamSnapshot('s1');
-    expect(warnSpy).toHaveBeenCalledTimes(2);
-    warnSpy.mockRestore();
+    expect(debugSpy).toHaveBeenCalledTimes(2);
+    debugSpy.mockRestore();
   });
 
   test('终态清除后读不到（正常会话不留脏快照）', async () => {

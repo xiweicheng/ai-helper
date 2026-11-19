@@ -245,9 +245,9 @@ function fixBuild() {
   }
 
   if (manifest.web_accessible_resources && manifest.web_accessible_resources[0]) {
+    // 只暴露页面确需读取的资源；background 不应开放给网页访问
     manifest.web_accessible_resources[0].resources = [
-      `assets/content-iife.js`,
-      `assets/${backgroundFile}`
+      `assets/content-iife.js`
     ];
     console.log(`✅ Fixed web_accessible_resources`);
   }

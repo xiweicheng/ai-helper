@@ -1,5 +1,6 @@
 // content/selection-toolbar.js - 选中文本浮动工具栏（豆包风格）
 
+import DOMPurify from 'dompurify';
 import { deepGetSelection, deepGetText, getRangeViewportPosition, attachSelectionListeners, removeSelectionListeners } from './shadow-dom-utils.js';
 import { injectStyles, applyToolbarTheme } from './selection-toolbar-styles.js';
 import logger from '../shared/logger.js';
@@ -498,8 +499,11 @@ function renderOverflowDropdown(overflowTools) {
   let itemsHtml = overflowTools.map(tool => {
     const icon = getToolIcon(tool.id);
     const displayName = tool.builtin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
-    return `<div class="aih-dropdown-item" role="button" tabindex="0" data-action="${tool.id}">
-      <span class="aih-tb-icon">${icon}</span>${displayName}
+    // 工具名/ID 来自用户配置，拼入 HTML 前先转义
+    const safeName = escapeHtml(String(displayName ?? ''));
+    const safeId = escapeHtml(String(tool.id ?? ''));
+    return `<div class="aih-dropdown-item" role="button" tabindex="0" data-action="${safeId}">
+      <span class="aih-tb-icon">${icon}</span>${safeName}
     </div>`;
   }).join('');
   
@@ -662,8 +666,11 @@ async function createToolbar() {
   visibleTools.forEach((tool) => {
     const icon = getToolIcon(tool.id);
     const displayName = tool.builtin ? (getBuiltinToolName(tool.id) || tool.name) : tool.name;
-    buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="${tool.id}" title="${displayName}">
-      <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : displayName}
+    // 工具名/ID 来自用户配置，拼入 HTML 前先转义
+    const safeName = escapeHtml(String(displayName ?? ''));
+    const safeId = escapeHtml(String(tool.id ?? ''));
+    buttonsHtml += `<div class="aih-tb-btn" role="button" tabindex="0" data-action="${safeId}" title="${safeName}">
+      <span class="aih-tb-icon">${icon}</span>${iconMode ? '' : safeName}
     </div>`;
   });
   
@@ -978,7 +985,11 @@ function showResultPanel(x, y, content, suggestions = []) {
   // 保持滚动行为：用户未手动上滚时，吸底展示最新内容
   const scrollEl = resultPanelEl.querySelector('.aih-result-scroll');
   const stickBottom = !scrollEl || scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 24;
-  body.innerHTML = content;
+  // 写入前再次清洗并以 DOM 片段挂载，避免动态字符串进入 innerHTML
+  body.replaceChildren(DOMPurify.sanitize(content, {
+    ...RESULT_HTML_SANITIZE_CONFIG,
+    RETURN_DOM_FRAGMENT: true
+  }));
   if (stickBottom && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
   
   // 渲染推荐追问
@@ -1189,6 +1200,37 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ==================== 不可信内容清洗 ====================
+// AI 响应属于外部数据（并非扩展代码），渲染为 HTML 前必须清洗，
+// 保证远程返回的内容只能作为普通标记展示，不能引入脚本或事件处理器。
+const RESULT_HTML_SANITIZE_CONFIG = {
+  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'link', 'meta', 'base'],
+  FORBID_ATTR: [
+    'onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur',
+    'onchange', 'oninput', 'onkeydown', 'onkeyup', 'onkeypress'
+  ],
+  ADD_ATTR: ['target']
+};
+
+/** 将 Markdown 渲染为经过清洗的安全 HTML */
+function renderMarkdownToSafeHtml(text) {
+  const html = typeof marked !== 'undefined'
+    ? marked.parse(text)
+    : escapeHtml(text).replace(/\n/g, '<br>');
+  return DOMPurify.sanitize(html, RESULT_HTML_SANITIZE_CONFIG);
+}
+
+/** 将 Markdown 渲染为安全 DOM 片段（直接挂载，避免动态字符串进入 innerHTML） */
+function renderMarkdownToSafeFragment(text) {
+  const html = typeof marked !== 'undefined'
+    ? marked.parse(text)
+    : escapeHtml(text).replace(/\n/g, '<br>');
+  return DOMPurify.sanitize(html, {
+    ...RESULT_HTML_SANITIZE_CONFIG,
+    RETURN_DOM_FRAGMENT: true
+  });
+}
+
 // ==================== 流式 Markdown 实时渲染 ====================
 /** rAF 节流：每帧最多渲染一次，避免高频 chunk 造成重复解析 */
 function scheduleStreamRender() {
@@ -1218,18 +1260,21 @@ function renderStreamContent() {
   // 用户未手动上滚时，渲染后自动吸底展示最新内容
   const scrollEl = resultPanelEl.querySelector('.aih-result-scroll');
   const stickBottom = !scrollEl || scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 24;
-  body.innerHTML = '<div class="aih-result-content-stream">' + renderStreamMarkdown(text) + '</div>';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'aih-result-content-stream';
+  wrapper.appendChild(renderStreamFragment(text));
+  body.replaceChildren(wrapper);
   if (stickBottom && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
 }
 
 /** 流式 Markdown 渲染：未闭合的代码围栏临时补全，避免流式中途内容错乱 */
-function renderStreamMarkdown(text) {
+function renderStreamFragment(text) {
   if (typeof marked === 'undefined') {
-    return escapeHtml(text).replace(/\n/g, '<br>');
+    return renderMarkdownToSafeFragment(text);
   }
   const fenceCount = (text.match(/```/g) || []).length;
   const normalized = fenceCount % 2 === 1 ? text + '\n```' : text;
-  return marked.parse(normalized);
+  return renderMarkdownToSafeFragment(normalized);
 }
 
 // ==================== Token 消耗展示 ====================
@@ -1956,9 +2001,7 @@ function copyResultContent() {
 function copyResultRichContent() {
   const text = resultRawContent;
   if (!text) return;
-  const html = typeof marked !== 'undefined'
-    ? marked.parse(text)
-    : escapeHtml(text).replace(/\n/g, '<br>');
+  const html = renderMarkdownToSafeHtml(text);
   // 包裹完整文档与内联样式，保证粘贴到第三方编辑器时列表等元素展示与面板一致
   const htmlDoc = wrapResultHtmlWithStyles(html);
 
@@ -2225,7 +2268,13 @@ function sendToAI(action, text, customSystemPrompt, pageContext = null) {
   }
   const titleSpan = resultPanelEl.querySelector('.aih-result-header span');
   if (titleSpan) {
-    titleSpan.innerHTML = `${ICONS.sparkle} ${panelTitle || t('selToolbar.aiAnswer')}`;
+    // 图标为包内常量，标题文本用 textContent 写入，避免动态字符串进入 innerHTML
+    titleSpan.replaceChildren();
+    const iconEl = document.createElement('span');
+    iconEl.className = 'aih-result-title-icon';
+    iconEl.innerHTML = ICONS.sparkle;
+    titleSpan.appendChild(iconEl);
+    titleSpan.appendChild(document.createTextNode(` ${panelTitle || t('selToolbar.aiAnswer')}`));
   }
   
   const pos = isResultVisible && resultPanelEl
@@ -2375,10 +2424,8 @@ if (isExtensionValid()) {
         .slice(0, 3);
     }
     
-    // 用 marked 解析 Markdown，渲染最终结果
-    const htmlContent = typeof marked !== 'undefined'
-      ? marked.parse(answerContent)
-      : escapeHtml(answerContent).replace(/\n/g, '<br>');
+    // 用 marked 解析 Markdown，清洗后渲染最终结果
+    const htmlContent = renderMarkdownToSafeHtml(answerContent);
     showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
     updateResultTokenUsage(message.usage);
     
@@ -2411,10 +2458,8 @@ if (isExtensionValid()) {
           .slice(0, 3);
       }
       
-      // 使用 marked 解析 Markdown 内容
-      const htmlContent = typeof marked !== 'undefined' 
-        ? marked.parse(answerContent) 
-        : escapeHtml(answerContent).replace(/\n/g, '<br>');
+      // 使用 marked 解析 Markdown 内容，清洗后渲染
+      const htmlContent = renderMarkdownToSafeHtml(answerContent);
       showResultPanel(lastPanelPos.x, lastPanelPos.y, htmlContent, suggestions);
       updateResultTokenUsage(message.usage);
     }

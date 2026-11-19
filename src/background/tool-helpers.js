@@ -406,24 +406,11 @@ export async function sendToContentScriptWithRetry(tabId, message, toolCallId) {
             return;
           }
           const contentFilePath = contentJsFiles[contentFileIdx];
-          const contentUrl = chrome.runtime.getURL(contentFilePath);
+          // 直接注入包内脚本文件（与 tool-executor 一致），不向页面插入 script 标签，
+          // 避免被误判为动态加载外部代码
           chrome.scripting.executeScript({
             target: { tabId: tabId },
-            func: (url) => {
-              return new Promise((resolve) => {
-                if (document.getElementById('__aih_content_script__')) {
-                  resolve(true);
-                  return;
-                }
-                const script = document.createElement('script');
-                script.id = '__aih_content_script__';
-                script.src = url;
-                script.onload = () => resolve(true);
-                script.onerror = () => resolve(false);
-                document.head.appendChild(script);
-              });
-            },
-            args: [contentUrl]
+            files: [contentFilePath]
           })
             .then(() => {
               logger.debug('[Background] Content script inject successful, retrysendmessage');

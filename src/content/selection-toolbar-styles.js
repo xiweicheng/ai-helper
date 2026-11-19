@@ -570,6 +570,11 @@ const TOOLBAR_RULES = `
       margin: 0;
       inset: auto;
       overflow: visible;
+      /* openFloat 传入 flex 做 top-layer 显示，需显式纵向堆叠 header/body，
+         否则 flex 默认横向排列会让标题与明细左右并排 */
+      flex-direction: column;
+      /* popover UA 默认 border: solid 会露出黑框，侧边栏版本无边框，此处对齐 */
+      border: none;
       background: var(--bg-elevated);
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);

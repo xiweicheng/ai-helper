@@ -81,8 +81,8 @@ export function scheduleStreamSnapshot(sessionId, callId, read) {
   _ensureUnloadHooks();
 
   const slot = _slots.get(sessionId) || {};
-  // 新一轮重置超限告警标记：同一轮里 700ms 一次的节流落盘只 warn 一次，不刷屏
-  if (slot.callId !== callId) slot.oversizeWarned = false;
+  // 新一轮重置超限日志标记：同一轮里 700ms 一次的节流落盘只打一行，不刷屏
+  if (slot.callId !== callId) slot.oversizeLogged = false;
   slot.callId = callId;
   slot.read = read;
   if (!slot.timer) {
@@ -116,14 +116,14 @@ export async function flushStreamSnapshot(sessionId) {
   const rawHtml = typeof snapshot.html === 'string' ? snapshot.html : '';
   const accumulated = typeof snapshot.accumulated === 'string' ? snapshot.accumulated : '';
   // 超限降级：HTML 丢了也要保住正文，接管后至少看得到已经输出的文字。
-  // 留一行日志：工具卡片/预筛选卡片凭空消失时得有个可查的线索。
-  // 一轮只留一行：超限后节流落盘还会继续跑整轮流式，每次都 warn 就把控制台刷满了。
+  // 留一行 debug：工具卡片/预筛选卡片凭空消失时得有个可查的线索，但不该占用告警面板。
+  // 一轮只留一行：超限后节流落盘还会继续跑整轮流式，每次都打印就把控制台刷满了。
   let html = rawHtml;
   const htmlBytes = _utf8Size(rawHtml);
   if (htmlBytes > MAX_HTML_BYTES) {
-    if (!slot.oversizeWarned) {
-      slot.oversizeWarned = true;
-      logger.warn(
+    if (!slot.oversizeLogged) {
+      slot.oversizeLogged = true;
+      logger.debug(
         `[StreamSnapshot] 快照 HTML ${htmlBytes} 字节超过上限 ${MAX_HTML_BYTES}，`
         + '本次只存正文（接管后看不到工具卡片等富结构）'
       );
