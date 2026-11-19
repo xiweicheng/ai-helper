@@ -518,6 +518,7 @@ Auto-appears with frosted-glass style when text is selected on any webpage:
 
 - **AI Search**: Opens side panel and initiates search
 - **Quick Actions**: Explain, Translate, Summarize
+- **Include Page Context**: One-tap toggle in the menu (off by default); when on, the answer also references the surrounding paragraph and page info beyond the selected snippet, with state synced across iframes and persisted
 - **Custom Tools**: Add custom prompt tools with drag-to-reorder
 - **Follow-up Input**: Inline input box for direct follow-up
 - **Result Panel**: Draggable, resizable floating panel with Markdown rendering and lock feature
@@ -1135,7 +1136,7 @@ The Options page has 7 tabs: Basic, ReAct, Toolbar, Agent, Toolbox, Knowledge Ba
 4. **Toolbar**: Manage the selection floating toolbar (tool list, ordering, domain blocklist)
 5. **Agent**: Pair with the local agent service
 6. **Toolbox**: Manage MCP servers and Skills
-7. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies)
+7. **Knowledge Base**: Create / import knowledge bases (requires Agent-side RAG dependencies); the document dialog adds a sticky search bar and source filter (file / web / text, by name, original file name and source URL), and previews reuse the chat panel Markdown pipeline (code-block copy, table export, Mermaid)
 8. **Memory**: Configure long-term memory semantic vectors (requires a connected agent)
 9. Start chatting in the side panel
 

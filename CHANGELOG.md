@@ -2,6 +2,58 @@
 
 本文件用于追踪项目的核心变更，方便后续总结与发布。
 
+## 2026-11-19
+
+### 安全：增强内容安全与渲染稳定性
+
+> 划词工具栏与结果面板此前把动态字符串直接拼进 `innerHTML`，存在宿主页面内容注入风险；工具名等字段同理。
+
+- **`src/content/selection-toolbar.js`**：结果 HTML 写入前统一经 `DOMPurify` 清洗（新增 `RESULT_HTML_SANITIZE_CONFIG`），并以 DOM 片段 `replaceChildren` 挂载，避免动态字符串进入 `innerHTML`；工具名 / ID 一律 `escapeHtml`；通知图标为包内常量、标题用 `textContent` 写入。
+- **`src/side_panel/stream-snapshot.js`**：Markdown 渲染收敛为「渲染 → 清洗 → 挂载」的安全管线。
+- **`src/background/tool-helpers.js` / `src/content/selection-toolbar-styles.js`**：精简工具辅助逻辑与样式，超尺寸日志按 callId 只记一次，降低刷屏。
+
+### 修正：发布脚本移除包校验轮询
+
+- **`scripts/publish-store.mjs`**：不再轮询包校验状态，改为直接依据发布接口响应判断结果，缩短发布等待并减少无效轮询。
+
+## 2026-11-18
+
+### 新增：选中文本工具栏「结合网页上下文」
+
+> 划词问答只看选中片段，遇到脱离上下文就答不准的情况（如代词、专有名词）体验差。现可在工具栏菜单内一键开启上下文参考。
+
+- **`src/content/selection-toolbar.js` / `selection-toolbar-styles.js`**：菜单行为区新增「结合网页上下文」勾选开关（默认关闭，勾选即时切换不关菜单）；开启后回答除选中内容外，还采集所在段落及页面信息一并送入；开关状态跨 iframe 同步并持久化到 `selectionToolbarIncludeContext`。
+- **`src/background/index.js` / `react-loop.js` / `src/side_panel/*`**：配套上下文采集接线、修复输出块游离、新增子任务状态更新避免子任务卡死。
+
+### 优化：流式消息端口镜像与广播收敛
+
+- **`src/background/panel-bus.js`（新增）/ `stream-controller.js` / `state.js`**：为同一会话的所有面板实例定向投递流式 chunk（端口镜像）；当所有面板端口确认上一条消息后自动跳过广播，降低主线程压力。
+- **`src/side_panel/stream-dedup.js`（新增）/ `panel-observer-port.js`**：端口与广播重复消息只消费一次；优化 checkpoint 日志截断、执行超时提示与 cwd 收敛通知。
+
+### 性能：流式渲染改为增量模式
+
+- **`src/side_panel/chat-streaming.js` / `chat-reattach.js` / `chat-manager.js`**：稳定前缀 + 尾部重渲，已完成段落只渲染一次，每个 chunk 仅重渲最后一个未闭合段落，消除全文重渲的平方级开销；取消与工具卡片插入前调用 `renderStreamingContentFull` 做边界兜底。新增 `chat-streaming-lite-render` 回归测试。
+
+## 2026-11-17
+
+### 新增：知识库文档列表搜索筛选 + 预览对齐对话面板
+
+- **`src/options/knowledge-panel.js`**：文档弹窗新增吸顶搜索栏与来源筛选（文件 / 网页 / 文本），支持按名称、原件名与来源 URL 过滤。
+- **`src/side_panel/markdown-render.js`**：知识库文档预览复用对话面板渲染管线，支持代码块复制、表格复制 / 下载 Excel / 导出图片、Mermaid 图表。
+
+### 修正：划词 observer 开关驱动 + 节流重扫
+
+> 划词工具栏的 `MutationObserver` 无条件创建并在全树高频重扫，导致 Agent 执行任务时主线程卡顿、内存升高。
+
+- **`src/content/selection-toolbar.js`**：observer 改为 `enableSelectionToolbar` 事件驱动 start/stop；全树重扫合并为 300ms trailing 节流；`destroy` / 重复 init 正确 `disconnect` 修掉句柄泄漏；`observe` 前移并 try/catch 回退 `documentElement`；`loadToggleState` 增加 generation 守卫避免异步回包覆盖更新值；Markdown 导出 CSV 补 `URL.revokeObjectURL`。
+
+## 2026-11-16
+
+### 优化：文件预览逻辑与图标样式
+
+- **`src/side_panel/workspace-manager.js` / `workspace-panel.js`**：新增文件扩展名分类与二进制检测，二进制文件给出预览提示而非乱码渲染。
+- **`src/content/selection-toolbar.js` / `selection-toolbar-styles.js`**：为所有 SVG 图标统一样式类，防止注入宿主页面时样式冲突。
+
 ## 2026-11-15
 
 ### 新增：扩展商店一键发布脚本
