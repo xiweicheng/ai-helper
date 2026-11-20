@@ -329,54 +329,6 @@ export function hasLivePanel(sessionId) {
   return hasKeepalivePort(sessionId) || hasPanelObserverPort(sessionId);
 }
 
-// ========== 流式镜像端口集合（同一会话的所有面板实例） ==========
-//
-// keepalivePorts / observerPorts 是「定向到一个实例」的单值表；流式消息需要覆盖
-// 同一会话的**所有**面板实例（侧边栏 + detach 独立窗口可能同时在线），因此单独
-// 维护集合。流式广播的收敛（端口全部确认后才跳过广播）依赖这里能枚举全部实例，
-// 否则会漏掉其中一个，表现为某块面板的正文不再增长。
-const streamPorts = new Map(); // sessionId → Set<Port>
-
-export function registerStreamPort(sessionId, port) {
-  if (!sessionId || !port) return;
-  let set = streamPorts.get(sessionId);
-  if (!set) {
-    set = new Set();
-    streamPorts.set(sessionId, set);
-  }
-  set.add(port);
-}
-
-export function unregisterStreamPort(sessionId, port) {
-  if (!sessionId) return;
-  const set = streamPorts.get(sessionId);
-  if (!set) return;
-  if (port) set.delete(port);
-  else set.clear();
-  if (set.size === 0) streamPorts.delete(sessionId);
-}
-
-/**
- * 取该会话（含祖先链回退）的全部流式端口
- * @param {string} sessionId
- * @returns {Port[]}
- */
-export function getStreamPorts(sessionId) {
-  if (!sessionId) return [];
-  const merged = [];
-  const seen = new Set();
-  for (const id of getSessionAncestry(sessionId)) {
-    const set = streamPorts.get(id);
-    if (!set) continue;
-    for (const port of set) {
-      if (seen.has(port)) continue;
-      seen.add(port);
-      merged.push(port);
-    }
-  }
-  return merged;
-}
-
 // ========== Side Panel 实例身份（发起实例的窗口与宿主 tab） ==========
 //
 // 桌面通知可见性判定（“发起任务的实例面板是否被用户看到”）的数据源：侧边栏建立

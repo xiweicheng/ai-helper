@@ -39,8 +39,7 @@ import {
   renderStreamingContentFull,
 } from './chat-streaming.js';
 import { readStreamSnapshot } from './stream-snapshot.js';
-import { openPanelObserverPort, closePanelObserverPort, onPanelObserverMessage } from './panel-observer-port.js';
-import { acceptStreamChunk } from './stream-dedup.js';
+import { openPanelObserverPort, closePanelObserverPort } from './panel-observer-port.js';
 // 注意：会话落库（session-manager → 存储层）依赖较重的浏览器侧模块链，改为使用时
 // 动态导入：既避免面板初始化时的无意义加载，也让本模块的纯逻辑可独立单测。
 
@@ -633,14 +632,8 @@ function _settleRetarget(sessionId, active) {
 function _bindListener() {
   if (_listenerBound) return;
   _listenerBound = true;
-  const handleIncomingMessage = (message) => {
+  chrome.runtime.onMessage.addListener((message) => {
     if (!message) return false;
-    // background 对同一条流式消息会发「端口镜像 + 广播」两份，按 (消费方, callId, seq) 只消费一次。
-    // 两份到达顺序不保证，所以去重放在两条通道汇合的最前面。
-    // 控制消息（START/TOOL_CALL/DONE）与 chunk 共用同一序号通道，必须一起去重，
-    // 否则广播副本会二次消费，造成 START 重置内容或 DONE 重复收尾。
-    if (message.seq && STREAMING_MESSAGE_TYPES.has(message.type)
-      && !acceptStreamChunk(`reattach:${message.sessionId}:${message.callId}`, message.seq)) return false;
     const mirror = message.sessionId ? _mirrors.get(message.sessionId) : null;
     if (!mirror) {
       // 面板先开、任务后到：启动时后台什么都没跑（SW 刚被杀、闹钟还没醒），
@@ -663,11 +656,7 @@ function _bindListener() {
     openPanelObserverPort(message.sessionId);
     mirror.handleMessage(message);
     return false;
-  };
-
-  chrome.runtime.onMessage.addListener(handleIncomingMessage);
-  // 接管实例没有 callApi 闭包，流式镜像从观察端口进来；广播照旧兜底
-  onPanelObserverMessage(handleIncomingMessage);
+  });
 
   // 启动期的挂载时机：chat-manager 补水完成后发 session-hydrated（不发 session-switched，
   // 那条会重建聊天区）。新面板启动时 activeSessionId 尚未就绪，接管时气泡只能是游离的，

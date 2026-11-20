@@ -37,16 +37,6 @@ import { clearPageSelection } from './page-selector.js';
 import { clearKnowledgeRefs, renderKnowledgeIndicator, fetchKnowledgeCollections, refreshKnowledgePickedState } from './agent-at-selector.js';
 import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
-import { acceptStreamChunk } from './stream-dedup.js';
-
-// 与 background 的 _sendControl 共用同一 seq 通道的流式消息类型：
-// 它们既可能从端口来、也可能从广播来，必须按 (会话, callId, seq) 只放行一次。
-const STREAMING_PANEL_TYPES = new Set([
-  'STREAM_START',
-  'STREAM_CHUNK',
-  'STREAM_TOOL_CALL',
-  'STREAM_DONE',
-]);
 import { t, registerTranslations } from '../shared/i18n.js';
 import { createFullscreenButton } from './message-fullscreen.js';
 
@@ -3611,10 +3601,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 实现已拆分到 chat-streaming.js 的 createStreamingElementAccessor
   const _se = createStreamingElementAccessor(mySessionId);
 
-  // 流式增量的端口镜像入口：background 会把同一条 STREAM_CHUNK 同时走端口和广播，
-  // 端口先于 listener 定义就绪，用这个槽位把消息交给下面同一个 listener 处理。
-  let _portStreamSink = null;
-
   // 建立长连接端口以保持 Service Worker 存活，
   // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
@@ -3646,22 +3632,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
   const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null, checkpoint: null };
   keepalivePort.onMessage.addListener((msg) => {
-    // 流式消息旁路镜像：端口与广播会各来一份，交给同一 listener，由 acceptStreamChunk 去重。
-    // START / TOOL_CALL / DONE 与 chunk 共用同一序号通道，必须一起转发——只转发 chunk 会让
-    // 控制消息与增量分处两条通道，顺序无法保证。
-    // 处理完回 ACK：background 只在「所有面板端口都确认过上一条」时才省掉广播；
-    // callId 不匹配时不确认（listener 会直接丢弃，误确认会导致永久丢字）。
-    if (STREAMING_PANEL_TYPES.has(msg.type)) {
-      if (_portStreamSink) {
-        _portStreamSink(msg);
-        if (msg.callId && msg.callId === myCallId) {
-          try {
-            keepalivePort.postMessage({ type: 'STREAM_CHUNK_ACK', sessionId: mySessionId, callId: msg.callId, seq: msg.seq });
-          } catch (e) {}
-        }
-      }
-      return;
-    }
     // background 权威解析的宿主 tab 回传：覆盖本地乐观值（任务完成时随快照携带）；
     // null 也覆盖（权威源暂无值 → 删除乐观值 → 判定方保守弹，多弹不漏弹）
     if (msg.type === 'HOST_TAB_RESOLVED' && msg.sessionId === mySessionId) {
@@ -3707,7 +3677,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 统一清理函数：断开 keepalive 端口、清理 listener 和 timeout、清除状态
   const cleanupCallApi = () => {
     try { keepalivePort.disconnect(); } catch (e) {}
-    _portStreamSink = null;
     if (_timeoutCtx.timeoutId) { clearTimeout(_timeoutCtx.timeoutId); _timeoutCtx.timeoutId = null; }
     _timeoutCtx.removeListener();
     state.pendingCancelApiMap.delete(mySessionId);
@@ -3848,13 +3817,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       // 过滤：只处理属于当前请求的流式消息，防止旧任务残留输出
       if (message.callId && message.callId !== myCallId) {
         return false;
-      }
-
-      // 流式消息统一去重：端口副本与广播副本的到达顺序不确定，按 (会话, callId, seq)
-      // 只放行一次。控制消息也带 seq，避免「端口的 chunk 先到、广播的 START 后到」时
-      // 前端把增量丢在尚未创建的气泡上。
-      if (message.seq && STREAMING_PANEL_TYPES.has(message.type)) {
-        if (!acceptStreamChunk(`callapi:${mySessionId}:${message.callId}`, message.seq)) return false;
       }
       
       if (message.type === 'EXECUTION_STATUS_UPDATE') {
@@ -4221,8 +4183,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
       }
 
       if (message.type === 'STREAM_CHUNK') {
-        // 端口副本 + 广播副本按 (消费方, callId, seq) 去重，只消费一次
-        if (!acceptStreamChunk(`callapi:${mySessionId}:${message.callId}`, message.seq)) return false;
         if (_se()) {
           _streamedContent += message.delta;
           setStreamedContent(mySessionId, _streamedContent);
@@ -4342,8 +4302,6 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     };
     
     chrome.runtime.onMessage.addListener(listener);
-    // 端口镜像与广播共用同一个 listener：端口先到就由它消费，广播副本被去重表丢弃
-    _portStreamSink = (msg) => listener(msg);
     
     _timeoutCtx.removeListener = () => {
       chrome.runtime.onMessage.removeListener(listener);

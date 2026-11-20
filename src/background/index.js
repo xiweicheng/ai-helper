@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity, registerPanelObserverPort, unregisterPanelObserverPort, hasLivePanel, registerStreamPort, unregisterStreamPort } from './state.js';
+import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity, registerPanelObserverPort, unregisterPanelObserverPort, hasLivePanel } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -241,12 +241,9 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
   if (port.name?.startsWith('panel-observer-')) {
     const sessionId = port.name.replace('panel-observer-', '');
     registerPanelObserverPort(sessionId, port);
-    // 流式镜像：接管实例也要收 chunk（同一会话可能有多个面板实例并存）
-    registerStreamPort(sessionId, port);
     logger.debug('[Background] panel observer port connected, sessionId:', sessionId);
     port.onDisconnect.addListener(() => {
       unregisterPanelObserverPort(sessionId, port);
-      unregisterStreamPort(sessionId, port);
       logger.debug('[Background] panel observer port disconnected, sessionId:', sessionId);
       checkPanelDetached(sessionId);
     });
@@ -257,8 +254,6 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
     // 判断是否为重连（SW 重启后的重连），而非首次连接
     const isReconnection = hasKeepalivePort(sessionId);
     registerKeepalivePort(sessionId, port);
-    // 流式镜像：发起实例同样纳入集合，与接管实例一起参与「端口确认后才跳过广播」
-    registerStreamPort(sessionId, port);
     logger.debug('[Background] keepalive portconnected, sessionId:', sessionId, isReconnection ? '(reconnect)' : '(first times)');
 
     // 接收实例身份上报（窗口）：供桌面通知按“发起实例”判定面板是否可见。
@@ -314,7 +309,6 @@ chrome.runtime?.onConnect?.addListener?.(async (port) => {
 
     port.onDisconnect.addListener(() => {
       unregisterKeepalivePort(sessionId, port);
-      unregisterStreamPort(sessionId, port);
       logger.debug('[Background] keepalive port disconnected, sessionId:', sessionId);
       checkPanelDetached(sessionId);
     });

@@ -1,6 +1,5 @@
 import logger from '../shared/logger.js';
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../shared/chat-client.js';
-import { nextChunkSeq, mirrorStreamChunk } from './panel-bus.js';
 
 // background/stream-controller.js - 流式输出控制器
 // 负责 SSE 解析、chunk 节流发送、usage 提取、tool_calls 检测
@@ -50,16 +49,8 @@ export class StreamController {
     this._pendingChunk = '';
     this._streamStarted = !!options.preStarted;
     this._streamDone = false;
-    // 顺序栅栏：START / TOOL_CALL / DONE 这些控制消息走广播，chunk 可能走端口。
-    // 两条通道之间没有顺序保证，所以每次跨通道边界后的第一条 chunk 必须跟着广播，
-    // 否则「START 还在路上、chunk 已先到」会让前端把增量丢在尚未创建的气泡上。
-    this._forceBroadcastNextChunk = false;
     // 支持自定义消息发送函数和消息类型前缀（用于向 content script 发送流式消息）
     this._sendFn = options.sendFn || ((msg) => chrome.runtime.sendMessage(msg).catch(() => {}));
-    // 端口镜像只在“真实向面板广播”的实例上开启：注入了自定义 sendFn 的调用（例如子任务
-    // 的静默流 sendFn 是空函数）明确不希望产生 UI 消息，镜像必须一起关掉，否则会绕过
-    // sendFn 把内容直接推到面板端口。
-    this._mirrorToPanel = options.mirrorToPanel !== undefined ? !!options.mirrorToPanel : !options.sendFn;
     this._typePrefix = options.typePrefix || '';
   }
 
@@ -185,7 +176,7 @@ export class StreamController {
     if (this._streamStarted) return;
     this._streamStarted = true;
     this.isStreaming = true;
-    this._sendControl({
+    this._sendFn({
       type: this._typePrefix + 'STREAM_START',
       sessionId: this.sessionId,
       callId: this.callId
@@ -210,34 +201,18 @@ export class StreamController {
 
   /**
    * 强制刷新缓冲区
-   * @param {boolean} [forceBroadcast] 顺序栅栏：控制在消息（TOOL_CALL/DONE）之前必须走广播
    */
-  _flushChunk(forceBroadcast = false) {
+  _flushChunk() {
     if (!this._pendingChunk) return;
 
     this.sendStart(); // 确保先发 start
 
-    const payload = {
+    this._sendFn({
       type: this._typePrefix + 'STREAM_CHUNK',
       sessionId: this.sessionId,
       callId: this.callId,
       delta: this._pendingChunk
-    };
-
-    // 主流程（无前缀）才做端口镜像：AGENT_ 前缀的流式消息由 agent 卡片链路消费，
-    // 面板端口上没有对应处理，镜像过去只是无效投递。
-    // 必须有 callId：seq 按 callId 生成，无 callId 时 seq 为 0，接收端会把 0 当成
-    // 「没有序号」放行——端口副本和广播副本就会被各消费一次，正文重复。
-    // 所有面板端口都确认过上一条时，mirror 会返回 skipBroadcast，此时省掉广播；
-    // 任何一个端口没确认（含旧版前端不回 ACK）就照旧广播兜底。
-    if (this._mirrorToPanel && !this._typePrefix && this.callId) {
-      payload.seq = nextChunkSeq(this.callId);
-      const { skipBroadcast } = mirrorStreamChunk(payload);
-      if (!skipBroadcast || forceBroadcast || this._forceBroadcastNextChunk) this._sendFn(payload);
-    } else {
-      this._sendFn(payload);
-    }
-    this._forceBroadcastNextChunk = false;
+    });
 
     this._pendingChunk = '';
     this.lastSendTime = Date.now();
@@ -247,12 +222,12 @@ export class StreamController {
    * 流结束：发送 STREAM_DONE + 收集完整数据
    */
   finish() {
-    this._flushChunk(true); // 发送剩余缓冲区（强制广播：DONE 紧随其后，同通道保序）
+    this._flushChunk(); // 发送剩余缓冲区
     this.isStreaming = false;
 
     const normalizedToolCalls = normalizeToolCalls(this.toolCalls);
 
-    this._sendControl({
+    this._sendFn({
       type: this._typePrefix + 'STREAM_DONE',
       sessionId: this.sessionId,
       callId: this.callId,
@@ -264,30 +239,12 @@ export class StreamController {
   }
 
   /**
-   * 发送流式控制消息（START / TOOL_CALL / DONE）
-   *
-   * 必须与 chunk 共用同一条端口通道和同一个序号空间：控制消息若只走广播、chunk 走端口，
-   * 两条通道的到达顺序没有保证——端口的增量副本可能先于广播的 START 抵达，前端会把
-   * 增量丢在尚未创建的气泡上（并已消费 seq，广播副本随后被去重，文字永久缺失）。
-   * 走同一通道后 port 上严格 FIFO；广播副本仍保留，端口不可用时兜底。
-   */
-  _sendControl(message) {
-    if (this._mirrorToPanel && !this._typePrefix && this.callId) {
-      message.seq = nextChunkSeq(this.callId);
-      mirrorStreamChunk(message);
-    }
-    this._sendFn(message);
-    // 控制消息之后的第一条 chunk 也走广播，作为跨通道兜底
-    this._forceBroadcastNextChunk = true;
-  }
-
-  /**
    * 发送工具调用通知（ReAct 循环中截获 tool_calls）
    */
   sendToolCallNotification() {
-    this._flushChunk(true); // 栅栏前：这段文字必须与 TOOL_CALL 同走广播
+    this._flushChunk();
 
-    this._sendControl({
+    this._sendFn({
       type: this._typePrefix + 'STREAM_TOOL_CALL',
       sessionId: this.sessionId,
       callId: this.callId,
@@ -300,7 +257,7 @@ export class StreamController {
    * 重置控制器（为下一轮 ReAct 迭代）
    */
   reset() {
-    this._flushChunk(true);
+    this._flushChunk();
     this.fullContent = '';
     this.reasoningContent = '';
     this.usage = null;

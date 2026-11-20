@@ -106,7 +106,7 @@ export const DEFAULT_GOAL_CONFIG = {
 // 流式输出配置默认值
 export const DEFAULT_STREAM_CONFIG = {
   streamEnabled: true,           // LLM 流式输出默认开启
-  streamChunkDelay: 80,          // 流式 chunk 合并窗口 (ms)：每条 chunk 都会广播到所有标签页，80ms 一批既平滑又大幅降低投递量；0=每条都发
+  streamChunkDelay: 30,          // Side Panel 渲染字符间延迟 (ms)，0=瞬间渲染
   agentStreamEnabled: true       // Agent 命令流式输出默认开启
 };
 
