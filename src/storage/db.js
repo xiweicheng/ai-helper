@@ -847,8 +847,19 @@ export async function getAllReactCheckpoints() {
   // 从 chrome.storage.local 获取所有 checkpoint
   let storageCheckpoints = [];
   try {
-    const all = await chrome.storage.local.get(null);
-    for (const [key, value] of Object.entries(all)) {
+    // 只读取 checkpoint 前缀的 key。
+    // storage.local 里同时存着会话历史、配置等大对象，get(null) 会把它们全部反序列化
+    // 进 Service Worker 内存；长任务中 SW 被回收重启后，这次全量读取会形成明显的峰值。
+    // getKeys 不可用（旧版 Chrome）时回退到原来的全量读取。
+    let entries;
+    if (typeof chrome.storage.local.getKeys === 'function') {
+      const keys = (await chrome.storage.local.getKeys())
+        .filter(key => key.startsWith(CHECKPOINT_KEY_PREFIX));
+      entries = keys.length > 0 ? Object.entries(await chrome.storage.local.get(keys)) : [];
+    } else {
+      entries = Object.entries(await chrome.storage.local.get(null));
+    }
+    for (const [key, value] of entries) {
       if (key.startsWith(CHECKPOINT_KEY_PREFIX) && value?.sessionId) {
         storageCheckpoints.push(value);
       }

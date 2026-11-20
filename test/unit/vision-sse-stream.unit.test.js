@@ -149,14 +149,12 @@ describe('readVisionSSEStream 流式解析', () => {
     expect(result).toBe('');
   });
 
-  test('传入 sessionId 时逐块推送 VISION_ANALYSIS_CHUNK', async () => {
+  test('不再逐块广播 VISION_ANALYSIS_CHUNK（该消息无消费者，避免全局消息风暴）', async () => {
     sentMessages.length = 0;
     const stream = makeSseResponse([deltaChunk('推'), deltaChunk('送')]);
     const result = await readVisionSSEStream(stream, null, 'sess-vision');
     expect(result).toBe('推送');
-    const pushes = sentMessages.filter((m) => m.type === 'VISION_ANALYSIS_CHUNK');
-    expect(pushes.map((m) => m.delta)).toEqual(['推', '送']);
-    expect(pushes.every((m) => m.sessionId === 'sess-vision')).toBe(true);
+    expect(sentMessages.filter((m) => m.type === 'VISION_ANALYSIS_CHUNK')).toHaveLength(0);
   });
 
   test('abortController 中止读流：以 AbortError 拒绝并释放锁', async () => {

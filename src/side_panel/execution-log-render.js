@@ -1135,18 +1135,7 @@ function renderExecutionLogOriginal(sortedLog) {
   return result;
 }
 
-/** 面板隐藏时挂起的最新状态：可见后补渲一次，避免隐藏期间反复重建上千条 DOM */
-let _pendingHiddenStatus = null;
-
 export function updateRealtimeExecutionLogPanel(status) {
-  // 侧边栏收起（hidden）时不重建时间线：长任务期间状态更新很密，隐藏状态下重建
-  // 上千条节点只是在后台空转，还会和页面主线程抢资源。只记下最新状态，可见时补渲。
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    _pendingHiddenStatus = status;
-    return;
-  }
-  // 已经真正渲染过，就不需要再补渲；避免残留状态在下次可见时重复重建一次
-  _pendingHiddenStatus = null;
   const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
   
@@ -1192,17 +1181,6 @@ export function updateRealtimeExecutionLogPanel(status) {
   
   // 自动滚动到底部
   timeline.scrollTop = timeline.scrollHeight;
-}
-
-// 面板重新可见：把隐藏期间挂起的最新状态补渲一次。
-// 隐藏时跳过的只是 DOM 重建，状态对象本身一直在被更新，这里读到的一定是最新快照。
-if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' || !_pendingHiddenStatus) return;
-    const pending = _pendingHiddenStatus;
-    _pendingHiddenStatus = null;
-    updateRealtimeExecutionLogPanel(pending);
-  });
 }
 
 export function showRealtimeExecutionLogPanel(loadingId) {
@@ -1386,6 +1364,30 @@ export function toggleRealtimeExecutionLog(loadingId) {
   showRealtimeExecutionLogPanel(loadingId);
 }
 
+/**
+ * 合并同一个日志节点的新旧状态。
+ *
+ * 后端对超大 observation（工具输出/网页正文）只在节点首次出现时发全文，后续状态更新
+ * （processing → success/failed）改发 4KB 摘要并带 observationTruncated 标记。
+ * 这里必须保留本地已有的全文，否则日志面板会退化成只有前 4KB。
+ */
+export function mergeLogEntry(existingEntry, newEntry) {
+  const keepFullObservation = !!(newEntry.observationTruncated && existingEntry.observation);
+  const merged = {
+    ...existingEntry,
+    ...newEntry,
+    observation: keepFullObservation
+      ? existingEntry.observation
+      : (newEntry.observation ?? existingEntry.observation),
+    subtaskIndex: newEntry.subtaskIndex ?? existingEntry.subtaskIndex,
+    subtaskId: newEntry.subtaskId ?? existingEntry.subtaskId,
+    subtaskName: newEntry.subtaskName ?? existingEntry.subtaskName
+  };
+  // 标记只是传输用的，不留在节点上，避免被持久化进会话消息
+  delete merged.observationTruncated;
+  return merged;
+}
+
 export function updateExecutionStatus(loadingId, nodeName, status, executionLog) {
   const loadingDiv = document.getElementById(loadingId);
   if (!loadingDiv) return;
@@ -1415,13 +1417,10 @@ export function updateExecutionStatus(loadingId, nodeName, status, executionLog)
           existing => existing.id === newEntry.id
         );
         if (existingIndex !== -1) {
-          const existingEntry = state.currentExecutionStatus.executionLog[existingIndex];
-          state.currentExecutionStatus.executionLog[existingIndex] = {
-            ...newEntry,
-            subtaskIndex: newEntry.subtaskIndex ?? existingEntry.subtaskIndex,
-            subtaskId: newEntry.subtaskId ?? existingEntry.subtaskId,
-            subtaskName: newEntry.subtaskName ?? existingEntry.subtaskName
-          };
+          state.currentExecutionStatus.executionLog[existingIndex] = mergeLogEntry(
+            state.currentExecutionStatus.executionLog[existingIndex],
+            newEntry
+          );
         } else {
           state.currentExecutionStatus.executionLog.push(newEntry);
         }

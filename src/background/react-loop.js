@@ -1897,9 +1897,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
   logger.debug('[Background] reactLoop tasktext:', taskContext ? `subtask ${taskContext.subtaskId || ' no '} (${taskContext.subtaskName || 'maintask'})` : ' no ');
   
   /**
-   * 发送实时执行状态更新消息（固定 200ms 一帧，子任务大量执行时防止消息拥塞）
+   * 发送实时执行状态更新消息。
+   * 只对「同一节点」做 200ms 合并：工具执行通常不足 200ms，若做全局节流，
+   * processing 会被直接丢弃、只发出 success，前端就看不到「执行中」。
    */
-  let lastStatusSendTime = 0;
+  const lastStatusSendByNode = new Map(); // nodeName -> 最后发送时间
   // 跟踪已发送的执行日志条目，用于增量发送避免 64MiB 限制
   const lastSentLogSnapshot = new Map(); // id -> { status, nodeName }
   function sendExecutionStatusUpdate(nodeName, status) {
@@ -1908,12 +1910,14 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       trimExecutionLogMemory(executionLog, lastSentLogSnapshot);
       const now = Date.now();
 
-      // 节流：固定 200ms 一帧。长任务里节点名几乎每次都在变，旧规则「名字一变就立即发」
-      // 等于没有节流，每秒几十条广播会投递到所有标签页的每个 frame，直接拖慢整台浏览器。
-      // 终态（success/failed/error）必须立即下发，否则前端节点会停在「执行中」。
+      // 节流：仅同一节点在 200ms 内的重复状态合并；不同节点必须立即下发，
+      // 否则工具节点的 processing → success 会被压成一条，中间过程消失。
+      // 终态（success/failed/error）永远立即下发。
       const isTerminal = !!status && status !== 'processing';
-      if (!isTerminal && now - lastStatusSendTime < 200) return;
-      lastStatusSendTime = now;
+      const nodeKey = nodeName || '__default__';
+      const prevSendAt = lastStatusSendByNode.get(nodeKey) || 0;
+      if (!isTerminal && now - prevSendAt < 200) return;
+      lastStatusSendByNode.set(nodeKey, now);
 
       // 回调通知父任务：传递窗口内的完整日志（父任务需要完整日志进行合并）
       // 与广播共用同一节流节奏：被合并掉的中间态没有信息量，父任务拿到的仍是全量窗口
@@ -1921,13 +1925,32 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         onLogUpdate([...executionLog]);
       }
 
-      // 增量发送：只发送新增或变更的条目，避免完整 executionLog 超过 64MiB 限制
+      // 增量发送：只发送新增或变更的条目，避免完整 executionLog 超过 64MiB 限制。
+      // 大 observation（工具输出/网页正文，上限 50KB）只在节点首次出现时发全文；
+      // 之后状态变更（processing → success/failed）改发前 4KB 摘要 + observationTruncated，
+      // 前端据此保留本地已有全文。否则同一个节点的 50KB 会被完整广播 2-3 次，
+      // 每次都投递到所有标签页的所有 frame，是长任务里最大的无效负载。
+      const STATUS_OBSERVATION_CAP = 4096;
       const deltaLog = [];
       for (const entry of executionLog) {
         const prev = lastSentLogSnapshot.get(entry.id);
         if (!prev || prev.status !== entry.status || prev.nodeName !== entry.nodeName) {
-          deltaLog.push(entry);
-          lastSentLogSnapshot.set(entry.id, { status: entry.status, nodeName: entry.nodeName });
+          const obs = typeof entry.observation === 'string' ? entry.observation : '';
+          const alreadySent = prev?.observationSent === true;
+          if (alreadySent && obs.length > STATUS_OBSERVATION_CAP) {
+            deltaLog.push({
+              ...entry,
+              observation: obs.slice(0, STATUS_OBSERVATION_CAP),
+              observationTruncated: true
+            });
+          } else {
+            deltaLog.push(entry);
+          }
+          lastSentLogSnapshot.set(entry.id, {
+            status: entry.status,
+            nodeName: entry.nodeName,
+            observationSent: alreadySent || obs.length > 0
+          });
         }
       }
       

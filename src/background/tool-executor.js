@@ -1704,15 +1704,9 @@ export async function readVisionSSEStream(response, abortController, sessionId =
             || '';
           if (delta) {
             fullContent += delta;
-
-            // 实时推送到 side panel 展示
-            if (sessionId) {
-              chrome.runtime.sendMessage({
-                type: 'VISION_ANALYSIS_CHUNK',
-                sessionId,
-                delta
-              }).catch(() => {});
-            }
+            // 这里原来会逐 delta 广播 VISION_ANALYSIS_CHUNK，但全项目没有任何监听方
+            // （视觉分析结果只通过函数返回值消费）。流式识别时每吐一个字就向所有标签页
+            // 的所有 frame 派发一次消息，属于纯无效负载，已移除。
           }
         } catch (err) {
           // 解析失败时记录原始数据，方便排查不同模型的格式差异

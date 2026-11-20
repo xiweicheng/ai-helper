@@ -3825,7 +3825,19 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           deltaLog.forEach(newEntry => {
             const existingIndex = executionLog.findIndex(existing => existing.id === newEntry.id);
             if (existingIndex !== -1) {
-              executionLog[existingIndex] = { ...executionLog[existingIndex], ...newEntry };
+              const existingEntry = executionLog[existingIndex];
+              // 后端对超大 observation 只在首次发全文，后续状态更新带 4KB 摘要 +
+              // observationTruncated。这里必须保留本地全文，否则日志会退化成摘要。
+              const keepFullObservation = !!(newEntry.observationTruncated && existingEntry.observation);
+              const merged = {
+                ...existingEntry,
+                ...newEntry,
+                observation: keepFullObservation
+                  ? existingEntry.observation
+                  : (newEntry.observation ?? existingEntry.observation)
+              };
+              delete merged.observationTruncated;
+              executionLog[existingIndex] = merged;
             } else {
               executionLog.push(newEntry);
             }
