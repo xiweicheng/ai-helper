@@ -1139,6 +1139,10 @@ export function updateRealtimeExecutionLogPanel(status) {
   const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
   
+  // 注：此处始终即时渲染，不做 hidden 延迟。原 _pendingHiddenStatus 优化已移除：
+  // 一是浏览器对 hidden 页面的 requestAnimationFrame 本身会节流，后台重建开销极低；
+  // 二是跳过渲染会让面板重新可见时显示陈旧内容，直到下一条更新才修复。
+  
   // 更新"执行中"节点名称
   const executingNode = panel.querySelector('.realtime-executing-node');
   if (executingNode) {

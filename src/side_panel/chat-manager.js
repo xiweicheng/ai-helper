@@ -24,7 +24,7 @@ import { prepareGoalForSend, summarizeGoalAttachments } from './goal-panel.js';
 import { abortVoiceInput } from './voice-input.js';
 
 // 从提取的子模块导入
-import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview } from './execution-log-render.js';
+import { renderExecutionTimeline, renderExecutionLogForPanel, updateRealtimeExecutionLogPanel, showRealtimeExecutionLogPanel, toggleRealtimeExecutionLog, updateExecutionStatus, getToolCallPreview, mergeLogEntry } from './execution-log-render.js';
 import { showExportDialog, hideExportDialog, performExport, initExportDialogEvents, triggerImportDialog, handleImportFile } from './export-import.js';
 import { openImagePreview, initImagePreviewOverlay, compressAndAttachImage, renderImagePreviewsFromChat, buildUserContent, stripImagesFromContent } from './image-preview.js';
 import { buildFileContentText, getFileIcon, formatFileSize, renderFilePreviews } from './file-extract.js';
@@ -3825,19 +3825,9 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
           deltaLog.forEach(newEntry => {
             const existingIndex = executionLog.findIndex(existing => existing.id === newEntry.id);
             if (existingIndex !== -1) {
-              const existingEntry = executionLog[existingIndex];
-              // 后端对超大 observation 只在首次发全文，后续状态更新带 4KB 摘要 +
-              // observationTruncated。这里必须保留本地全文，否则日志会退化成摘要。
-              const keepFullObservation = !!(newEntry.observationTruncated && existingEntry.observation);
-              const merged = {
-                ...existingEntry,
-                ...newEntry,
-                observation: keepFullObservation
-                  ? existingEntry.observation
-                  : (newEntry.observation ?? existingEntry.observation)
-              };
-              delete merged.observationTruncated;
-              executionLog[existingIndex] = merged;
+              // 与 updateExecutionStatus 共用同一合并语义（保留本地全文 + subtask 元数据兜底），
+              // 避免两处逻辑分叉导致子任务信息丢失。
+              executionLog[existingIndex] = mergeLogEntry(executionLog[existingIndex], newEntry);
             } else {
               executionLog.push(newEntry);
             }
