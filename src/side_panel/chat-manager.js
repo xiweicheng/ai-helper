@@ -914,15 +914,22 @@ const SUBTASK_CHEVRON_SVG = `<svg class="subtask-chevron" viewBox="0 0 24 24" fi
 export function extractSubtaskPlan(executionLog) {
   const list = Array.isArray(executionLog) ? executionLog : [];
   let latest = null;
-  for (const e of list) {
+  let logIndex = -1;
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
     if (!e || e.nodeType !== 'subtask_plan' || !Array.isArray(e.items)) continue;
-    if (!latest || new Date(e.timestamp || 0) >= new Date(latest.timestamp || 0)) latest = e;
+    if (!latest || new Date(e.timestamp || 0) >= new Date(latest.timestamp || 0)) {
+      latest = e;
+      logIndex = i;
+    }
   }
   if (!latest) return null;
   // total 兜底取清单声明的条目数（含脏 item）：它代表计划了几个，与实际可渲染行数无关
   const rawItems = latest.items;
   const items = rawItems.filter((it) => it && typeof it.index === 'number');
-  return { total: latest.subtaskTotal || rawItems.length, items, timestamp: latest.timestamp };
+  // logIndex：本计划在日志中的位置。同一轮可能二次 plan_task 重排，新旧计划的执行节点
+  // 共用同一套 subtaskIndex，只有从本计划起点截断才不会把上一轮的节点混进统计。
+  return { total: latest.subtaskTotal || rawItems.length, items, timestamp: latest.timestamp, logIndex };
 }
 
 /**
@@ -981,6 +988,134 @@ export function insertSubtaskRowInOrder(container, rowEl) {
   } else {
     container.appendChild(rowEl);
   }
+}
+
+/**
+ * 子任务行终态判定 + 就地改写：凡日志已给出终态（或执行指针已前移、节点全部落定）
+ * 的子任务，行状态必须脱离「执行中/待执行」。子任务行状态由后台逐条
+ * EXECUTION_STATUS_UPDATE 驱动，终态消息偶发丢失（监听器重建、消息被会话/callId
+ * 过滤、SW 重启）时行会永久卡在转圈态误导用户；这里以权威 executionLog 为准纠偏。
+ */
+function finalizeSubtaskRow(progressEl, item, subtaskPlan, scopedLog, mainLog, allNodes) {
+  const si = item.index;
+  const stats = classifySubtaskNodeStats(allNodes);
+  const total = subtaskPlan.total || si + 1;
+  // 终态来源优先级：主日志条目显式终态 > 按节点统计推断（failureStrategy=continue
+  // 场景下后台已前移执行指针，行却没收到终态消息——失败节点少则视为部分完成）
+  let status = mainLog && (mainLog.status === 'success' || mainLog.status === 'failed') ? mainLog.status : null;
+  if (!status) {
+    status = stats.failed > 0 ? 'failed' : 'success';
+  }
+  const outcome = classifySubtaskOutcome(status, stats.success, stats.total);
+  const isDone = status === 'success';
+  const planDesc = item.description ? String(item.description).replace(/\s+/g, ' ').trim() : '';
+  const skipMarkHtml = isSubtaskReplaySkipped(scopedLog, si)
+    ? `<span class="subtask-replay-skipped" title="${escapeAttr(t('chatMsg.subtaskReplaySkippedHint'))}">${t('chatMsg.subtaskReplaySkipped')}</span>`
+    : '';
+
+  let statusHtml = '';
+  let lineLabelHtml = '';
+  if (isDone) {
+    statusHtml = `<span class="subtask-status-done">${t('chatMsg.subtaskDone')}</span>`;
+    lineLabelHtml = `<span>${t('chatMsg.subtaskAllDone')}</span>`;
+  } else if (outcome === 'partial') {
+    statusHtml = `<span class="subtask-status-partial">${t('chatMsg.subtaskPartial')}</span>`;
+    lineLabelHtml = `<span>${t('chatMsg.subtaskPartialFail', { success: stats.success, total: stats.total, fail: stats.failed })}</span>`;
+  } else {
+    statusHtml = `<span class="subtask-status-failed">${t('chatMsg.subtaskFailed')}</span>`;
+    const failErrText = mainLog && mainLog.error ? String(mainLog.error).replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+    lineLabelHtml = `<span>${t('chatMsg.subtaskPartialFail', { success: stats.success, total: stats.total, fail: stats.failed })}</span>${failErrText ? `<span class="subtask-fail-reason">${escapeHtml(t('chatMsg.subtaskFailReason', { error: failErrText }))}</span>` : ''}`;
+  }
+
+  const statsHtml = `
+    <span class="subtask-node-stats">
+      <span class="subtask-stat-done${progressEl._nodeFilter === 'success' ? ' subtask-stat-active' : ''}" data-node-filter="success" title="${t('chatMsg.subtaskFilterHint')}">✓ ${stats.success}</span>
+      ${stats.failed > 0 ? `<span class="subtask-stat-fail${progressEl._nodeFilter === 'failed' ? ' subtask-stat-active' : ''}" data-node-filter="failed" title="${t('chatMsg.subtaskFilterHint')}">✗ ${stats.failed}</span>` : ''}
+      ${stats.other > 0 ? `<span class="subtask-stat-other${progressEl._nodeFilter === 'other' ? ' subtask-stat-active' : ''}" data-node-filter="other" title="${t('chatMsg.subtaskStatOtherHint')}">⊘ ${stats.other}</span>` : ''}
+    </span>`;
+
+  const wasExpanded = progressEl.classList.contains('subtask-expanded');
+  progressEl.classList.remove('subtask-progress-active', 'subtask-progress-pending');
+  progressEl.classList.add(isDone ? 'subtask-progress-done' : 'subtask-progress-failed');
+  progressEl.dataset.terminal = '1';
+  progressEl.innerHTML = `
+    <div class="subtask-header">
+      ${SUBTASK_CHEVRON_SVG}${SUBTASK_ICON_SVG}<span class="subtask-badge">${si + 1}/${total}</span><span class="subtask-name" title="${escapeAttr(planDesc)}">${escapeHtml(item.name || '')}</span>${skipMarkHtml}${statusHtml}
+    </div>
+    <div class="subtask-progress-line ${isDone ? 'done' : 'failed'}">${lineLabelHtml}${statsHtml}</div>
+    <div class="subtask-detail-body"></div>
+  `;
+  if (wasExpanded) {
+    progressEl.classList.add('subtask-expanded');
+  }
+
+  const detailBody = progressEl.querySelector('.subtask-detail-body');
+  progressEl._renderNodes = () => {
+    if (!detailBody) return;
+    const sections = [];
+    if (planDesc) {
+      sections.push(`<div class="subtask-detail-desc"><span class="subtask-detail-label">${t('chatMsg.subtaskDescLabel')}</span>${escapeHtml(planDesc)}</div>`);
+    }
+    const resultText = mainLog && mainLog.result ? String(mainLog.result).trim() : '';
+    if (resultText) {
+      sections.push(`<div class="subtask-detail-result"><span class="subtask-detail-label">${t('chatMsg.subtaskResultLabel')}</span>${escapeHtml(resultText)}</div>`);
+    }
+    const filteredNodes = applyNodeFilter(allNodes, progressEl._nodeFilter);
+    let nodesHtml = '';
+    if (allNodes.length > 0 && filteredNodes.length === 0) {
+      nodesHtml = `<div class="subtask-node-empty">${escapeHtml(t('chatMsg.subtaskFilterEmpty'))}</div>`;
+    } else if (filteredNodes.length > 0) {
+      nodesHtml = filteredNodes.map(node => {
+        const icon = node.nodeType === 'tool_exec' ? '🔧' : node.nodeType === 'api_call' ? '📡' : node.nodeType === 'reflection' ? '🎯' : node.nodeType === 'preselect' ? '🔍' : '○';
+        const stIcon = node.status === 'success' ? '✓' : node.status === 'failed' ? '✗' : '○';
+        const stClass = node.status === 'success' ? 'done' : node.status === 'failed' ? 'failed' : 'processing';
+        const dur = node.duration ? formatDuration(node.duration) : '';
+        const name = escapeHtml(node.nodeName || t('chatMsg.unknownNode'));
+        let cmdHtml = '';
+        if (node.nodeType === 'tool_exec') {
+          const cmd = getToolCallPreview(node);
+          if (cmd) {
+            cmdHtml = `<span class="subtask-node-cmd" title="${escapeAttr(cmd)}">${escapeHtml(cmd)}</span>`;
+          }
+        }
+        return `<div class="subtask-node ${stClass}">
+          <span class="subtask-node-icon">${icon}</span>
+          <span class="subtask-node-status">${stIcon}</span>
+          <span class="subtask-node-name">${name}${cmdHtml}</span>
+          ${dur ? `<span class="subtask-node-dur">${dur}</span>` : ''}
+        </div>`;
+      }).join('');
+    }
+    detailBody.innerHTML = sections.join('') + nodesHtml;
+  };
+  progressEl._renderNodes();
+  bindSubtaskProgressClicks(progressEl);
+}
+
+/**
+ * 子任务行状态对账：跳过当前行（由主渲染路径负责），把其余已终态但行未跟进的
+ * 子任务就地改写为终态。判定依据（任一即可）：
+ * 1. 主日志条目（nodeType='subtask'）已是 success/failed；
+ * 2. 行已有执行节点且全部落定（执行指针已前移到别的子任务，本子任务不可能还在跑）。
+ */
+export function reconcileSubtaskRowStates(contentDiv, scopedLog, currentSi, plan = null) {
+  // plan 复用主渲染路径已解析的清单，避免每条消息对全量日志多做一次 O(N) 扫描
+  const subtaskPlan = plan || extractSubtaskPlan(scopedLog);
+  if (!subtaskPlan) return;
+  [...subtaskPlan.items]
+    .sort((a, b) => a.index - b.index)
+    .forEach((item) => {
+      if (item.index === currentSi) return;
+      const progressEl = contentDiv.querySelector(`.subtask-progress[data-subtask-index="${item.index}"]`);
+      if (!progressEl || progressEl.dataset.terminal === '1') return;
+      const si = item.index;
+      const allNodes = scopedLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+      const mainLog = scopedLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');
+      const mainTerminal = !!mainLog && (mainLog.status === 'success' || mainLog.status === 'failed');
+      const nodesSettled = allNodes.length > 0 && !allNodes.some(n => n.status === 'processing');
+      if (!mainTerminal && !nodesSettled) return;
+      finalizeSubtaskRow(progressEl, item, subtaskPlan, scopedLog, mainLog, allNodes);
+    });
 }
 
 export function mapApiErrorToUserMessage(errMsg) {
@@ -3844,6 +3979,20 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               // 权威子任务清单：按 index 升序补齐所有行，未执行的渲染为「待执行」，
               // 让用户一眼看出计划了什么、执行到哪、还剩哪些没跑
               const subtaskPlan = extractSubtaskPlan(executionLog);
+              // 计划代次隔离：同一轮可能二次 plan_task 重排，新旧计划复用同一套
+              // subtaskIndex。计划一旦换代，上一轮的残行必须清掉，否则旧计划多出的
+              // 序号会一直挂在面板上；节点统计也必须从本计划起点截断，否则两轮节点
+              // 叠加会把 ✓N 算得虚高。
+              const planScopedLog = subtaskPlan && subtaskPlan.logIndex > 0
+                ? executionLog.slice(subtaskPlan.logIndex)
+                : executionLog;
+              if (subtaskPlan) {
+                const planStamp = String(subtaskPlan.timestamp || subtaskPlan.logIndex);
+                if (contentDiv.dataset.planStamp !== planStamp) {
+                  contentDiv.dataset.planStamp = planStamp;
+                  contentDiv.querySelectorAll('.subtask-progress').forEach(el => el.remove());
+                }
+              }
               if (subtaskPlan) {
                 [...subtaskPlan.items]
                   .sort((a, b) => a.index - b.index)
@@ -3880,7 +4029,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               const isRunning = message.status !== 'success' && message.status !== 'failed';
               
               // 计算节点统计 & 当前执行节点（状态判定前需要：「部分完成」分类依据）
-              const allSubtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+              const allSubtaskNodes = planScopedLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
               // 三桶口径（classifySubtaskNodeStats）：success + failed + other === total 恒成立
               const stats = classifySubtaskNodeStats(allSubtaskNodes);
               const totalNodes = stats.total;
@@ -3893,11 +4042,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               // 详情区数据：清单里的任务描述 + 子任务主日志行（产出摘要 / 中断原因）
               const planItem = subtaskPlan ? subtaskPlan.items.find((it) => it.index === si) : null;
               const planDescText = planItem && planItem.description ? String(planItem.description).replace(/\s+/g, ' ').trim() : '';
-              const subtaskMainLog = executionLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');
+              const subtaskMainLog = planScopedLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');
               // 跳过重放标记：中断前已完成、本轮未执行的子任务必须与真跑完的区分开，
               // 否则两种情况在行里长得完全一样（都是「完成 ✓ 全部完成」），用户无从
               // 知道写操作有没有被二次执行——而这正是防重放唯一的用户价值
-              const skipMarkHtml = isSubtaskReplaySkipped(executionLog, si)
+              const skipMarkHtml = isSubtaskReplaySkipped(planScopedLog, si)
                 ? `<span class="subtask-replay-skipped" title="${escapeAttr(t('chatMsg.subtaskReplaySkippedHint'))}">${t('chatMsg.subtaskReplaySkipped')}</span>`
                 : '';
               // 行被真正渲染即脱离「待执行」态（补齐时打的是 pending 样式类）
@@ -3908,17 +4057,21 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 statusHtml = `<span class="subtask-status-done">${t('chatMsg.subtaskDone')}</span>`;
                 progressEl.classList.add('subtask-progress-done');
                 progressEl.classList.remove('subtask-progress-active');
+                progressEl.dataset.terminal = '1';
               } else if (outcome === 'partial') {
                 statusHtml = `<span class="subtask-status-partial">${t('chatMsg.subtaskPartial')}</span>`;
                 progressEl.classList.add('subtask-progress-failed');
                 progressEl.classList.remove('subtask-progress-active');
+                progressEl.dataset.terminal = '1';
               } else if (message.status === 'failed') {
                 statusHtml = `<span class="subtask-status-failed">${t('chatMsg.subtaskFailed')}</span>`;
                 progressEl.classList.add('subtask-progress-failed');
                 progressEl.classList.remove('subtask-progress-active');
+                progressEl.dataset.terminal = '1';
               } else {
                 statusHtml = `<span class="subtask-status-label"><span class="subtask-spinner"></span>${t('chatMsg.subtaskExecuting')}</span>`;
                 progressEl.classList.add('subtask-progress-active');
+                delete progressEl.dataset.terminal;
               }
               
               // 进度行：运行时显示当前执行节点 + 统计，完成后显示摘要
@@ -3972,7 +4125,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
               // 渲染折叠头部 + 进度行
               progressEl.innerHTML = `
                 <div class="subtask-header">
-                  ${chevron}${taskIcon}${badge}<span class="subtask-name" title="${escapeAttr(planDescText)}">${name}</span>${skipMarkHtml}${statusHtml}
+                  ${chevron}${taskIcon}${badge}<span class="subtask-name" title="${escapeAttr(planDescText)}">${escapeHtml(name)}</span>${skipMarkHtml}${statusHtml}
                 </div>
                 ${progressLineHtml}
                 <div class="subtask-detail-body"></div>
@@ -3997,7 +4150,7 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 if (resultText) {
                   sections.push(`<div class="subtask-detail-result"><span class="subtask-detail-label">${t('chatMsg.subtaskResultLabel')}</span>${escapeHtml(resultText)}</div>`);
                 }
-                const subtaskNodes = executionLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
+                const subtaskNodes = planScopedLog.filter(e => e.subtaskIndex === si && e.nodeType !== 'subtask');
                 // 点击 ✓N/✗N 后只显示对应状态节点；过滤后为空时给出提示而非空白
                 const filteredNodes = applyNodeFilter(subtaskNodes, progressEl._nodeFilter);
                 let nodesHtml = '';
@@ -4042,6 +4195,11 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
                 const allEls = contentDiv.querySelectorAll('.subtask-progress');
                 allEls.forEach(el => el.classList.add('subtask-progress-all-done'));
               }
+
+              // 状态对账：终态消息偶发丢失时，非当前行会永久卡在「执行中/待执行」，
+              // 以权威 executionLog 就地纠偏（当前行由上方主渲染路径负责）；
+              // 复用已解析的 plan 与按计划截断的日志，不重复扫描全量日志
+              reconcileSubtaskRowStates(contentDiv, planScopedLog, si, subtaskPlan);
             }
           }
         }

@@ -125,19 +125,22 @@ describe('isSubtaskReplaySkipped 跳过状态扫描', () => {
 
 describe('渲染接线与文案守卫', () => {
   test('清单行渲染消费跳过判定，标记进入折叠头部', () => {
-    // 必须钉住「标记的唯一条件是判定本身」：只 toContain('isSubtaskReplaySkipped(executionLog, si)')
+    // 必须钉住「标记的唯一条件是判定本身」：只 toContain('isSubtaskReplaySkipped(...)')
     // 的话，false && isSubtaskReplaySkipped(...) 这种接线废掉的写法照样命中（变异复验 M7
     // 就是这么存活的），而纯函数全绿、用户仍什么都看不见。
+    // 扫描范围是当前计划代次截断后的 planScopedLog（二次 plan_task 时旧轮标记不串台）。
     expect(CHAT_MANAGER_SRC).toMatch(
-      /const skipMarkHtml = isSubtaskReplaySkipped\(executionLog, si\)\s*\?/,
+      /const skipMarkHtml = isSubtaskReplaySkipped\(planScopedLog, si\)\s*\?/,
     );
     expect(CHAT_MANAGER_SRC).toContain('${skipMarkHtml}${statusHtml}');
     expect(CHAT_MANAGER_SRC).toContain('subtask-replay-skipped');
   });
 
   test('subtaskMainLog 取法必须维持原样：改了它会把跳过节点的无 result 带进详情区，产出摘要随之消失', () => {
+    // 按计划代次截断后仍用 find 取「第一条匹配」——跳过节点排在真跑完那条之后，
+    // 取到的依旧是带 result 的产出摘要；换成「优先取跳过节点」才是回归
     expect(CHAT_MANAGER_SRC).toContain(
-      "const subtaskMainLog = executionLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');",
+      "const subtaskMainLog = planScopedLog.find(e => e.subtaskIndex === si && e.nodeType === 'subtask');",
     );
   });
 

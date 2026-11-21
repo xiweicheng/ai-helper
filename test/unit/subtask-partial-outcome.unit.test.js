@@ -176,9 +176,10 @@ describe('接线守卫：方案1 UI', () => {
   test('失败/部分完成时展示真实中断原因（取子任务主日志行 error，不再让用户只见"2 个节点失败"猜因）', () => {
     expect(CHAT_MANAGER_SRC).toMatch(/subtask-fail-reason/);
     expect(CHAT_MANAGER_SRC).toMatch(/t\('chatMsg\.subtaskFailReason'/);
-    // 中断原因来源：nodeType==='subtask' 主行的 error 字段
+    // 中断原因来源：nodeType==='subtask' 主行的 error 字段（日志按当前计划代次截断，
+    // 二次 plan_task 时不会取到上一轮同序号主行的 error）
     expect(CHAT_MANAGER_SRC).toMatch(
-      /const subtaskMainLog = executionLog\.find\(e => e\.subtaskIndex === si && e\.nodeType === 'subtask'\)/
+      /const subtaskMainLog = planScopedLog\.find\(e => e\.subtaskIndex === si && e\.nodeType === 'subtask'\)/
     );
     expect(CHAT_MANAGER_SRC).toMatch(/subtaskMainLog && subtaskMainLog\.error/);
   });

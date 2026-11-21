@@ -119,12 +119,14 @@ describe('接线守卫：面板渲染与样式、文案齐备', () => {
   });
 
   // 评审 M1：删掉 failed 分支的 ⊘ span 后原有 10 例仍全绿（toMatch 单次命中即过），
-  // 三个渲染分支只有一处受保护 → 按出现次数锁定三处齐备与条件渲染
-  test('⊘ 统计在 running / success / failed 三个分支都渲染（各一次，不多不少）', () => {
-    expect((CHAT_MANAGER_SRC.match(/data-node-filter="other"/g) || []).length).toBe(3);
-    expect((CHAT_MANAGER_SRC.match(/subtask-stat-other/g) || []).length).toBe(3);
+  // 按出现次数锁定各分支齐备与条件渲染：running / success / failed 三分支 + 终态对账
+  // 路径（finalizeSubtaskRow，卡「执行中」的行由它就地纠偏）各一次
+  test('⊘ 统计在 running / success / failed 三个分支 + 终态对账路径都渲染（各一次，不多不少）', () => {
+    expect((CHAT_MANAGER_SRC.match(/data-node-filter="other"/g) || []).length).toBe(4);
+    expect((CHAT_MANAGER_SRC.match(/subtask-stat-other/g) || []).length).toBe(4);
     // 均为条件渲染：other 为 0 时不得凭空开一个可点统计
     expect((CHAT_MANAGER_SRC.match(/otherNodes > 0 \?/g) || []).length).toBe(3);
+    expect((CHAT_MANAGER_SRC.match(/stats\.other > 0 \?/g) || []).length).toBe(1);
   });
 
   test('⊘ 提示文案中英文均已注册', () => {

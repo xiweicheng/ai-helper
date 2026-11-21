@@ -92,6 +92,22 @@ describe('extractSubtaskPlan：从执行日志解析权威清单', () => {
     ]);
     expect(plan.items[0].name).toBe('新计划');
   });
+  test('logIndex 指向最新计划在日志中的位置（用于隔离上一轮节点/残行）', () => {
+    const log = [
+      planEntry('old', [{ index: 0, id: 'x', name: '旧计划' }], '2026-10-13T00:00:00.000Z'),
+      started(0),
+      planEntry('new', [{ index: 0, id: 'y', name: '新计划' }], '2026-10-13T09:00:00.000Z'),
+      started(0),
+    ];
+    const plan = extractSubtaskPlan(log);
+    expect(plan.items[0].name).toBe('新计划');
+    expect(plan.logIndex).toBe(2);
+    expect(log.slice(plan.logIndex).filter((e) => e !== log[2])).toHaveLength(1);
+  });
+  test('只有一份计划时 logIndex 为 0', () => {
+    const plan = extractSubtaskPlan([planEntry('p', [{ index: 0, id: 'a', name: 'A' }])]);
+    expect(plan.logIndex).toBe(0);
+  });
   test('剔除缺 index 的脏 item，subtaskTotal 缺失时按 items 长度兜底', () => {
     const plan = extractSubtaskPlan([{ nodeType: 'subtask_plan', items: [{ index: 0, name: 'a' }, { name: '脏数据' }] }]);
     expect(plan.items).toHaveLength(1);
