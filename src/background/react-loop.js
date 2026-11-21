@@ -1790,8 +1790,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
 
     await persistCheckpoint(sessionId, {
       // 过滤掉无法序列化的字段（如函数）：绝大多数消息是纯数据，检测到才重建对象，
-      // 避免每次落盘（5s 节流）全量浅拷贝整个消息数组；IndexedDB put 时同步结构化克隆，
-      // 传引用无别名风险
+      // 避免每次落盘（5s 节流）全量浅拷贝整个消息数组。引用共享边界（评审已核实）：
+      // chrome.storage.local 副本在 set() 调用栈内同步克隆，捕获 map 时刻状态；
+      // IndexedDB 副本在 withStore 异步开库后才 put，毫秒级窗口内 trimMessages 若原地
+      // 删 tool_calls，IDB 副本会捕获突变后状态——恢复时 cleanupIncompleteMessagePairs
+      // 会清掉孤立 tool 消息，可自愈；slimLogForCheckpoint 对短 observation 条目同样传
+      // 引用，双副本短暂分叉是双写设计的既有属性，接受该残余风险。
       currentMessages: currentMessages.map(msg => {
         if (typeof msg.content === 'function') {
           return { ...msg, content: String(msg.content) };

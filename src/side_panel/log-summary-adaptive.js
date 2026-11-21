@@ -35,7 +35,12 @@ export function scheduleLogSummaryAdapt(panel) {
   pendingPanel = panel;
   bindResizeOnce();
   if (rafId) return;
-  rafId = requestAnimationFrame(() => {
+  // 无 rAF 环境（部分测试环境）用 setTimeout 兜底：实时面板渲染体的同步兜底路径
+  // 会走到这里，裸调 requestAnimationFrame 会让该路径直接 ReferenceError
+  const scheduleAdapt = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame
+    : (fn) => setTimeout(fn, 0);
+  rafId = scheduleAdapt(() => {
     rafId = 0;
     const target = pendingPanel;
     pendingPanel = null;
