@@ -1789,11 +1789,14 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
     logger.debug(`[Background] saveCheckpointNow start saving: sessionId=${sessionId}, reason=${reason}, iteration=${iteration}, messages=${currentMessages.length}, callId=${callId}`);
 
     await persistCheckpoint(sessionId, {
+      // 过滤掉无法序列化的字段（如函数）：绝大多数消息是纯数据，检测到才重建对象，
+      // 避免每次落盘（5s 节流）全量浅拷贝整个消息数组；IndexedDB put 时同步结构化克隆，
+      // 传引用无别名风险
       currentMessages: currentMessages.map(msg => {
-        // 过滤掉无法序列化的字段（如函数）
-        const clean = { ...msg };
-        if (typeof clean.content === 'function') clean.content = String(clean.content);
-        return clean;
+        if (typeof msg.content === 'function') {
+          return { ...msg, content: String(msg.content) };
+        }
+        return msg;
       }),
       executionLog: slimLogForCheckpoint(executionLog),
       iteration,
@@ -2476,8 +2479,12 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
       
       // 剥离历史消息中的旧图片数据，只保留最后一条消息的图片
       // 当图片已经被识别处理后，后续 API 调用不需要再携带 Base64 编码
+      // 字符串 content 本身不含图片（stripImagesFromContent 原样返回），跳过对象重建，
+      // 避免每轮 API 调用前全量浅拷贝整个消息数组（长任务后期消息几乎全是纯文本）
       for (let i = 0; i < filteredMessages.length - 1; i++) {
-        filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
+        const msg = filteredMessages[i];
+        if (typeof msg.content === 'string') continue;
+        filteredMessages[i] = { ...msg, content: stripImagesFromContent(msg.content) };
       }
 
       // 任务锚点/收敛提示注入已移到上下文压力裁剪之后（防止被 filterApiMessages 重建覆盖）
@@ -2524,9 +2531,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
           if (trimmed.trimmedCount > 0) {
             currentMessages = trimmed.messages;
             filteredMessages = filterApiMessages(currentMessages);
-            // 重新剥离历史图片
+            // 重新剥离历史图片（字符串 content 跳过重建，同上）
             for (let i = 0; i < filteredMessages.length - 1; i++) {
-              filteredMessages[i] = { ...filteredMessages[i], content: stripImagesFromContent(filteredMessages[i].content) };
+              const msg = filteredMessages[i];
+              if (typeof msg.content === 'string') continue;
+              filteredMessages[i] = { ...msg, content: stripImagesFromContent(msg.content) };
             }
             logger.warn(`[Background] maindynamictrimmingcomplete: ${trimmed.trimmedCount} messageremove,remaining ${currentMessages.length} , ${estimateMessagesTokens(filteredMessages)} tokens`);
           }

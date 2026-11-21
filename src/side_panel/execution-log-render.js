@@ -1135,13 +1135,36 @@ function renderExecutionLogOriginal(sortedLog) {
   return result;
 }
 
+let _realtimePendingStatus = null;
+let _realtimeRenderScheduled = false;
+
+/**
+ * 实时面板更新入口（rAF 合帧）：同一帧内多次状态更新只渲染最后一次，
+ * 感知不变（最多延迟一帧 ~16ms）。hidden 页面 rAF 被浏览器暂停 → 后台零渲染开销；
+ * 重新可见的首帧自动带上最新状态渲染，不存在陈旧内容窗口。
+ * 长任务千条日志时全量 innerHTML 重建是大头，合帧消掉突发更新下的重复重建。
+ */
 export function updateRealtimeExecutionLogPanel(status) {
+  if (!status) return;
+  _realtimePendingStatus = status;
+  if (_realtimeRenderScheduled) return;
+  _realtimeRenderScheduled = true;
+  const run = () => {
+    _realtimeRenderScheduled = false;
+    const st = _realtimePendingStatus;
+    _realtimePendingStatus = null;
+    if (st) renderRealtimeExecutionLogPanel(st);
+  };
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(run);
+  } else {
+    run(); // 无 rAF 环境（部分单测环境）同步渲染兜底，行为与旧版一致
+  }
+}
+
+function renderRealtimeExecutionLogPanel(status) {
   const panel = document.querySelector('.execution-log-panel.realtime-mode');
   if (!panel) return;
-  
-  // 注：此处始终即时渲染，不做 hidden 延迟。原 _pendingHiddenStatus 优化已移除：
-  // 一是浏览器对 hidden 页面的 requestAnimationFrame 本身会节流，后台重建开销极低；
-  // 二是跳过渲染会让面板重新可见时显示陈旧内容，直到下一条更新才修复。
   
   // 更新"执行中"节点名称
   const executingNode = panel.querySelector('.realtime-executing-node');
@@ -1151,10 +1174,17 @@ export function updateRealtimeExecutionLogPanel(status) {
   
   const executionLog = status.executionLog || [];
   const totalCount = executionLog.length;
-  const successCount = executionLog.filter(entry => entry.status === 'success').length;
-  const failedCount = executionLog.filter(entry => entry.status === 'failed').length;
-  const subtaskCount = executionLog.filter(entry => entry.nodeType === 'subtask').length;
-  const completedSubtasks = executionLog.filter(entry => entry.nodeType === 'subtask' && entry.status === 'success').length;
+  // 单遍统计：原先 4 次 filter 全量扫描改为一次循环累加（千条日志时差异显著）
+  let successCount = 0, failedCount = 0, subtaskCount = 0, completedSubtasks = 0;
+  for (const entry of executionLog) {
+    if (!entry) continue;
+    if (entry.status === 'success') successCount++;
+    else if (entry.status === 'failed') failedCount++;
+    if (entry.nodeType === 'subtask') {
+      subtaskCount++;
+      if (entry.status === 'success') completedSubtasks++;
+    }
+  }
   
   // 更新统计数字
   const comboValue = panel.querySelector('.combo-value');
