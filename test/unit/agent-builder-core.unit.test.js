@@ -129,6 +129,56 @@ describe('normalizeAgentDraft', () => {
     const { draft } = normalizeAgentDraft({}, { language: 'en' });
     expect(draft.name).toBe('New Assistant');
   });
+
+  test('编辑模式沿用未提及字段与原工具/技能', () => {
+    const base = {
+      name: '旧助手',
+      icon: '📄',
+      description: '旧描述',
+      systemPrompt: '你是旧助手，负责整理材料。职责：归纳要点、标注风险、统一格式。边界：不编造数据，信息不足时追问，默认输出 Markdown。',
+      toolIds: ['legacy_tool'],
+      skillIds: ['legacy-skill'],
+      allowSubDispatch: true,
+      model: 'm1',
+      temperature: 0.2,
+      topP: 0.9,
+      mcpExcludedServerIds: ['s1'],
+    };
+    const { draft } = normalizeAgentDraft({}, { tools: TOOLS, skills: SKILLS, baseAgent: base });
+
+    expect(draft.name).toBe('旧助手');
+    expect(draft.toolIds).toEqual(['legacy_tool']);
+    expect(draft.skillIds).toEqual(['legacy-skill']);
+    expect(draft.allowSubDispatch).toBe(true);
+    expect(draft.model).toBe('m1');
+    expect(draft.temperature).toBe(0.2);
+    expect(draft.topP).toBe(0.9);
+    expect(draft.mcpExcludedServerIds).toEqual(['s1']);
+  });
+
+  test('编辑模式下请求的工具全部无效时保留原工具', () => {
+    const { draft, warnings } = normalizeAgentDraft(
+      { toolIds: ['ghost_tool'] },
+      { tools: TOOLS, skills: SKILLS, baseAgent: { toolIds: ['legacy_tool'] } }
+    );
+
+    expect(draft.toolIds).toEqual(['legacy_tool']);
+    expect(warnings.some(w => w.code === 'toolsAllDropped')).toBe(true);
+  });
+
+  test('显式 null 表示继承全部，覆盖原工具', () => {
+    const { draft } = normalizeAgentDraft(
+      { toolIds: null, skillIds: null },
+      {
+        tools: TOOLS,
+        skills: SKILLS,
+        baseAgent: { toolIds: ['legacy_tool'], skillIds: ['legacy-skill'] },
+      }
+    );
+
+    expect(draft.toolIds).toBeNull();
+    expect(draft.skillIds).toBeNull();
+  });
 });
 
 describe('buildBuilderSystemPrompt', () => {
@@ -146,5 +196,29 @@ describe('buildBuilderSystemPrompt', () => {
     expect(zh).toContain('当前没有可用工具');
     const en = buildBuilderSystemPrompt({ language: 'en', tools: [], skills: [] });
     expect(en).toContain('no tools available');
+  });
+
+  test('编辑模式注入当前配置并给出最小改动约束', () => {
+    const prompt = buildBuilderSystemPrompt({
+      language: 'zh',
+      tools: TOOLS,
+      skills: SKILLS,
+      currentAgent: {
+        name: '周报助手',
+        systemPrompt: '旧的系统提示词',
+        toolIds: ['page_content'],
+        skillIds: ['weekly-report'],
+      },
+    });
+
+    expect(prompt).toContain('当前助手（编辑模式）');
+    expect(prompt).toContain('最小改动');
+    expect(prompt).toContain('"name": "周报助手"');
+    expect(prompt).toContain('"toolIds": [');
+  });
+
+  test('创建模式不注入当前配置段', () => {
+    const prompt = buildBuilderSystemPrompt({ language: 'zh', tools: TOOLS, skills: SKILLS });
+    expect(prompt).not.toContain('当前助手（编辑模式）');
   });
 });

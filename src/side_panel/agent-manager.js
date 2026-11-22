@@ -424,10 +424,25 @@ function initAgentModalEvents() {
   // 关闭按钮
   modal.querySelector('#agentModalCloseBtn')?.addEventListener('click', closeAgentEditor);
 
-  // 表单不会填时转 AI 创建向导
-  modal.querySelector('#agentAiBuildBtn')?.addEventListener('click', () => {
+  // AI 入口：新建模式进入创建向导；编辑模式基于已保存配置进入编辑向导
+  modal.querySelector('#agentAiBuildBtn')?.addEventListener('click', async () => {
+    const agentId = modal.querySelector('#agentEditId')?.value || '';
+    if (!agentId) {
+      closeAgentEditor();
+      openBuilderFromManager();
+      return;
+    }
+
+    const confirmed = await showCustomConfirm(
+      t('agentBuilder.editConfirmMessage'),
+      t('agentBuilder.editConfirmTitle')
+    );
+    if (!confirmed) return;
+
+    const agent = await getAgent(agentId);
+    if (!agent || agent.isBuiltin) return;
     closeAgentEditor();
-    openBuilderFromManager();
+    openBuilderFromManager(agent);
   });
   
   // 保存按钮
@@ -848,11 +863,12 @@ function updateAgentSkillCount() {
  * 打开 AI 创建助手向导
  * 通过回调注入保存后的联动逻辑，避免 agent-builder 反向依赖本模块
  */
-function openBuilderFromManager() {
+function openBuilderFromManager(agent = null) {
   openAgentBuilder({
-    onAgentSaved: async (agent) => {
+    agent,
+    onAgentSaved: async (savedAgent) => {
       await loadAgentState();
-      await switchAgent(agent.id);
+      await switchAgent(savedAgent.id);
       updateToolsToggleState();
     },
     onEditAgent: (agentId) => openAgentEditor(agentId),
@@ -885,14 +901,24 @@ export async function openAgentEditor(agentId) {
 
   const deleteBtn = modal.querySelector('#agentDeleteBtn');
   const titleEl = modal.querySelector('#agentEditTitle');
-  // AI 创建仅用于新建；编辑模式隐藏入口，避免丢弃未保存修改或误建新助手
   const aiBuildBtn = modal.querySelector('#agentAiBuildBtn');
-  if (aiBuildBtn) aiBuildBtn.style.display = agentId ? 'none' : 'block';
+  const setAiBuildMode = (mode) => {
+    if (!aiBuildBtn) return;
+    const key = mode === 'edit' ? 'agentBuilder.editBanner' : 'agentBuilder.editorBanner';
+    aiBuildBtn.dataset.i18n = key;
+    aiBuildBtn.textContent = t(key);
+    aiBuildBtn.style.display = 'block';
+  };
+  setAiBuildMode('create');
 
   if (agentId) {
     // 编辑模式
     const agent = await getAgent(agentId);
-    if (!agent || agent.isBuiltin) return;  // 内置不可编辑
+    if (!agent || agent.isBuiltin) {
+      if (aiBuildBtn) aiBuildBtn.style.display = 'none';  // 内置不可编辑
+      return;
+    }
+    setAiBuildMode('edit');
 
     titleEl.textContent = t('agentMgr.editAgent');
     modal.querySelector('#agentEditId').value = agent.id;

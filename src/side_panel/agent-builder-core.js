@@ -51,9 +51,26 @@ function formatSkills(skills, language) {
  * @param {{ language?: 'zh'|'en', tools?: Array, skills?: Array }} opts
  * @returns {string}
  */
-export function buildBuilderSystemPrompt({ language = 'zh', tools = [], skills = [] } = {}) {
+export function buildBuilderSystemPrompt({ language = 'zh', tools = [], skills = [], currentAgent = null } = {}) {
   const toolText = formatTools(tools, language);
   const skillText = formatSkills(skills, language);
+
+  // 编辑模式：把当前配置作为上下文注入，要求最小改动并保留未提及字段
+  let currentAgentSection = '';
+  if (currentAgent) {
+    const snapshot = JSON.stringify({
+      name: currentAgent.name || '',
+      icon: currentAgent.icon || '',
+      description: currentAgent.description || '',
+      systemPrompt: currentAgent.systemPrompt || '',
+      toolIds: currentAgent.toolIds ?? null,
+      skillIds: currentAgent.skillIds ?? null,
+      allowSubDispatch: currentAgent.allowSubDispatch === true,
+    }, null, 2);
+    currentAgentSection = language === 'en'
+      ? `\n## Current assistant (edit mode)\nThe user is editing an existing assistant. Change ONLY what the user explicitly asks for; keep every unmentioned field as-is. Minimally edit systemPrompt instead of rewriting it. Still output the complete done configuration, and use message to describe what changed in one sentence.\n${snapshot}\n`
+      : `\n## 当前助手（编辑模式）\n用户是在现有助手基础上做修改：只调整用户明确提到的部分，未提及的字段必须原样保留；systemPrompt 请在原文基础上最小改动，不要整段重写；最终仍输出完整的 done 配置，并用 message 用一句话说明本次改了什么。\n${snapshot}\n`;
+  }
 
   if (language === 'en') {
     return `You are the "Assistant Creation Advisor". Through a short conversation, turn the user's vague need into a ready-to-use assistant configuration (role prompt + tools + skills).
@@ -63,7 +80,7 @@ Tools (id | name | description):
 ${toolText}
 Skills (name | description):
 ${skillText}
-
+${currentAgentSection}
 ## Conversation rules
 1. First restate the goal in one sentence. If it is clearly ambiguous, correct it before asking.
 2. Ask at most 2 questions per turn. Each question must offer 2-4 options with a recommended one. Users may answer freely.
@@ -115,7 +132,7 @@ Boundaries: never invent data; ask when information is missing; keep the default
 ${toolText}
 可用技能（名称｜说明）：
 ${skillText}
-
+${currentAgentSection}
 ## 对话规则
 1. 先用一句话复述你理解的目标；如果明显有歧义，先纠正再提问。
 2. 每轮最多问 2 个问题，每个问题给 2-4 个选项并标出推荐项；用户可自定义回答。
@@ -404,57 +421,76 @@ export function parseBuilderReply(text) {
 /**
  * 按目录白名单校验并补全模型生成的配置
  * @param {Object} rawAgent
- * @param {{ tools?: Array, skills?: Array, language?: 'zh'|'en' }} opts
+ * @param {{ tools?: Array, skills?: Array, language?: 'zh'|'en', baseAgent?: Object|null }} opts
+ *   baseAgent 为编辑模式下的原配置：未提及字段沿用原值，工具/技能白名单并入原 id，
+ *   避免目录暂时不可用或模型漏字段时把已有配置清掉。
  * @returns {{ draft: Object, warnings: Array<{code: string, count?: number, names?: string[]}> }}
  */
-export function normalizeAgentDraft(rawAgent = {}, { tools = [], skills = [], language = 'zh' } = {}) {
+export function normalizeAgentDraft(rawAgent = {}, { tools = [], skills = [], language = 'zh', baseAgent = null } = {}) {
   const warnings = [];
+  const base = baseAgent || null;
 
-  let name = truncate(cleanText(rawAgent.name), MAX_NAME);
+  let name = truncate(cleanText(rawAgent.name), MAX_NAME) || truncate(cleanText(base?.name), MAX_NAME);
   if (!name) name = language === 'en' ? 'New Assistant' : '未命名助手';
 
-  let icon = cleanText(rawAgent.icon);
+  let icon = cleanText(rawAgent.icon) || cleanText(base?.icon);
   if (!icon || Array.from(icon).length > 6) {
     icon = '🤖';
-    warnings.push({ code: 'iconFallback' });
+    if (cleanText(rawAgent.icon)) warnings.push({ code: 'iconFallback' });
   }
 
-  const description = truncate(cleanText(rawAgent.description), MAX_DESC);
-  const systemPrompt = truncate(cleanText(rawAgent.systemPrompt), MAX_PROMPT);
+  const description = truncate(cleanText(rawAgent.description) || cleanText(base?.description), MAX_DESC);
+  const systemPrompt = truncate(cleanText(rawAgent.systemPrompt) || cleanText(base?.systemPrompt), MAX_PROMPT);
   if (Array.from(systemPrompt).length < 60) {
     warnings.push({ code: 'promptShort' });
   }
 
-  const toolIdSet = new Set(tools.map(t => t.id));
-  let toolIds = null;
-  if (Array.isArray(rawAgent.toolIds) && rawAgent.toolIds.length > 0) {
-    const requested = [...new Set(rawAgent.toolIds.filter(id => typeof id === 'string' && id))];
-    const kept = requested.filter(id => toolIdSet.has(id));
-    const dropped = requested.filter(id => !toolIdSet.has(id));
-    if (dropped.length) {
-      warnings.push({
-        code: kept.length > 0 ? 'toolsDropped' : 'toolsAllDropped',
-        count: dropped.length,
-        names: dropped.slice(0, 5),
-      });
+  // 编辑模式：原配置里的 id 也视为合法，避免目录波动导致既有能力被删除
+  const baseToolIds = Array.isArray(base?.toolIds) && base.toolIds.length > 0 ? [...base.toolIds] : null;
+  const toolIdSet = new Set([...tools.map(t => t.id), ...(baseToolIds || [])]);
+  let toolIds = baseToolIds;
+  if (rawAgent.toolIds === null) {
+    toolIds = null;
+  } else if (Array.isArray(rawAgent.toolIds)) {
+    if (rawAgent.toolIds.length === 0) {
+      toolIds = null;
+    } else {
+      const requested = [...new Set(rawAgent.toolIds.filter(id => typeof id === 'string' && id))];
+      const kept = requested.filter(id => toolIdSet.has(id));
+      const dropped = requested.filter(id => !toolIdSet.has(id));
+      if (dropped.length) {
+        warnings.push({
+          code: kept.length > 0 ? 'toolsDropped' : 'toolsAllDropped',
+          count: dropped.length,
+          names: dropped.slice(0, 5),
+        });
+      }
+      // 全部无效时优先保留原工具，而不是回退成“继承全部”
+      toolIds = kept.length > 0 ? kept : baseToolIds;
     }
-    toolIds = kept.length > 0 ? kept : null;
   }
 
-  const skillNameSet = new Set(skills.map(s => s.name));
-  let skillIds = null;
-  if (Array.isArray(rawAgent.skillIds) && rawAgent.skillIds.length > 0) {
-    const requested = [...new Set(rawAgent.skillIds.filter(n => typeof n === 'string' && n))];
-    const kept = requested.filter(n => skillNameSet.has(n));
-    const dropped = requested.filter(n => !skillNameSet.has(n));
-    if (dropped.length) {
-      warnings.push({
-        code: kept.length > 0 ? 'skillsDropped' : 'skillsAllDropped',
-        count: dropped.length,
-        names: dropped.slice(0, 5),
-      });
+  const baseSkillIds = Array.isArray(base?.skillIds) && base.skillIds.length > 0 ? [...base.skillIds] : null;
+  const skillNameSet = new Set([...skills.map(s => s.name), ...(baseSkillIds || [])]);
+  let skillIds = baseSkillIds;
+  if (rawAgent.skillIds === null) {
+    skillIds = null;
+  } else if (Array.isArray(rawAgent.skillIds)) {
+    if (rawAgent.skillIds.length === 0) {
+      skillIds = null;
+    } else {
+      const requested = [...new Set(rawAgent.skillIds.filter(n => typeof n === 'string' && n))];
+      const kept = requested.filter(n => skillNameSet.has(n));
+      const dropped = requested.filter(n => !skillNameSet.has(n));
+      if (dropped.length) {
+        warnings.push({
+          code: kept.length > 0 ? 'skillsDropped' : 'skillsAllDropped',
+          count: dropped.length,
+          names: dropped.slice(0, 5),
+        });
+      }
+      skillIds = kept.length > 0 ? kept : baseSkillIds;
     }
-    skillIds = kept.length > 0 ? kept : null;
   }
 
   return {
@@ -465,11 +501,14 @@ export function normalizeAgentDraft(rawAgent = {}, { tools = [], skills = [], la
       systemPrompt,
       toolIds,
       skillIds,
-      allowSubDispatch: rawAgent.allowSubDispatch === true,
-      // 模型不参与模型参数决策，统一继承全局
-      model: null,
-      temperature: null,
-      topP: null,
+      allowSubDispatch: rawAgent.allowSubDispatch === undefined
+        ? base?.allowSubDispatch === true
+        : rawAgent.allowSubDispatch === true,
+      // 向导不管理模型参数与 MCP 排除项；编辑模式下原样保留
+      model: base?.model ?? null,
+      temperature: base?.temperature ?? null,
+      topP: base?.topP ?? null,
+      mcpExcludedServerIds: Array.isArray(base?.mcpExcludedServerIds) ? [...base.mcpExcludedServerIds] : null,
     },
     warnings,
   };

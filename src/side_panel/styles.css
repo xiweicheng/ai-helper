@@ -19571,6 +19571,13 @@ body.has-session-dock .chat-container {
   color: var(--text-secondary);
 }
 
+.agent-builder-change-note {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .agent-builder-warn {
   margin-top: 8px;
   font-size: 11px;

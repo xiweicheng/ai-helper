@@ -21,7 +21,14 @@ registerTranslations('zh', {
     subtitle: '描述你的需求，AI 会通过几个问题帮你生成配置',
     entry: 'AI 帮我创建',
     editorBanner: '不知道怎么填？让 AI 问几个问题 →',
+    editBanner: '让 AI 调整这个助手 →',
+    editConfirmTitle: '用 AI 调整助手',
+    editConfirmMessage: 'AI 将基于已保存的配置进行修改，当前未保存的修改不会带入。是否继续？',
     greeting: '告诉我你想让这个助手做什么，我会问几个关键问题，然后直接帮你创建。',
+    editGreeting: '已载入「{name}」，想调整什么？可以直接说，例如：更简洁、只保留网页工具、输出改成英文。',
+    editExample1: '更简洁一点',
+    editExample2: '只保留网页相关工具',
+    editExample3: '输出改成英文',
     example1: '帮我汇总周报',
     example2: '帮我审查代码',
     example3: '帮我抓取网页表格数据',
@@ -40,6 +47,18 @@ registerTranslations('zh', {
     created: '助手「{name}」已创建并切换',
     updated: '助手「{name}」已更新',
     saveFailed: '保存失败：{message}',
+    changedTitle: '本次修改',
+    fieldName: '名称',
+    fieldIcon: '图标',
+    fieldDescription: '描述',
+    fieldPrompt: '系统提示词',
+    fieldTools: '工具',
+    fieldSkills: '技能',
+    fieldSubDispatch: '子任务分发',
+    noChanges: '配置没有变化，已跳过保存。',
+    undo: '撤销本次修改',
+    undone: '已撤销本次修改',
+    undoFailed: '撤销失败：{message}',
     promptLabel: '系统提示词',
     toolsLabel: '工具',
     skillsLabel: '技能',
@@ -65,7 +84,14 @@ registerTranslations('en', {
     subtitle: 'Describe your need; AI asks a few questions and builds the config',
     entry: 'Create with AI',
     editorBanner: "Not sure what to fill in? Let AI ask a few questions →",
+    editBanner: 'Adjust this assistant with AI →',
+    editConfirmTitle: 'Adjust with AI',
+    editConfirmMessage: 'AI will modify the saved configuration. Unsaved edits in this form will not be carried over. Continue?',
     greeting: 'Tell me what you want this assistant to do. I will ask a few key questions and then create it.',
+    editGreeting: 'Loaded "{name}". What would you like to change? For example: make it more concise, keep only web tools, or output in English.',
+    editExample1: 'Make it more concise',
+    editExample2: 'Keep only web tools',
+    editExample3: 'Output in English',
     example1: 'Summarize my weekly report',
     example2: 'Review my code',
     example3: 'Scrape table data from a page',
@@ -84,6 +110,18 @@ registerTranslations('en', {
     created: 'Assistant "{name}" created and activated',
     updated: 'Assistant "{name}" updated',
     saveFailed: 'Save failed: {message}',
+    changedTitle: 'Changed in this update',
+    fieldName: 'Name',
+    fieldIcon: 'Icon',
+    fieldDescription: 'Description',
+    fieldPrompt: 'System prompt',
+    fieldTools: 'Tools',
+    fieldSkills: 'Skills',
+    fieldSubDispatch: 'Sub-task dispatch',
+    noChanges: 'No configuration changes detected; save skipped.',
+    undo: 'Undo this change',
+    undone: 'Change undone',
+    undoFailed: 'Undo failed: {message}',
     promptLabel: 'System prompt',
     toolsLabel: 'Tools',
     skillsLabel: 'Skills',
@@ -118,6 +156,9 @@ const builderState = {
   createdAgentId: null,
   draft: null,
   callbacks: null,
+  sessionMode: 'create', // create | edit：决定「重新开始」是新建还是继续编辑同一助手
+  editingAgent: null,    // 编辑模式：当前已保存的配置（同时作为合并基线）
+  previousAgent: null,   // 最近一次更新前的快照，用于撤销
 };
 
 let initialized = false;
@@ -227,6 +268,7 @@ function buildApiMessages() {
     language: getLanguage(),
     tools: builderState.catalog?.tools || [],
     skills: builderState.catalog?.skills || [],
+    currentAgent: builderState.editingAgent,
   });
   if (builderState.askCount >= 3) {
     system += `\n\n${t('agentBuilder.roundCapHint')}`;
@@ -352,7 +394,82 @@ function buildTagRow(values, emptyText) {
   return row;
 }
 
-function renderResult(draft, warnings) {
+/** 只提交向导管理的字段，避免把 id / 时间戳等写回存储 */
+function toAgentUpdate(agent) {
+  return {
+    name: agent.name,
+    icon: agent.icon,
+    description: agent.description,
+    systemPrompt: agent.systemPrompt,
+    toolIds: agent.toolIds ?? null,
+    skillIds: agent.skillIds ?? null,
+    allowSubDispatch: agent.allowSubDispatch === true,
+    model: agent.model ?? null,
+    temperature: agent.temperature ?? null,
+    topP: agent.topP ?? null,
+    mcpExcludedServerIds: Array.isArray(agent.mcpExcludedServerIds) ? agent.mcpExcludedServerIds : null,
+  };
+}
+
+function sameJson(a, b) {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
+function diffAgentFields(base, draft) {
+  const changed = [];
+  if ((base.name || '') !== (draft.name || '')) changed.push('name');
+  if ((base.icon || '') !== (draft.icon || '')) changed.push('icon');
+  if ((base.description || '') !== (draft.description || '')) changed.push('description');
+  if ((base.systemPrompt || '') !== (draft.systemPrompt || '')) changed.push('prompt');
+  if (!sameJson(base.toolIds, draft.toolIds)) changed.push('tools');
+  if (!sameJson(base.skillIds, draft.skillIds)) changed.push('skills');
+  if ((base.allowSubDispatch === true) !== (draft.allowSubDispatch === true)) changed.push('subDispatch');
+  return changed;
+}
+
+function fieldLabel(field) {
+  const key = {
+    name: 'fieldName',
+    icon: 'fieldIcon',
+    description: 'fieldDescription',
+    prompt: 'fieldPrompt',
+    tools: 'fieldTools',
+    skills: 'fieldSkills',
+    subDispatch: 'fieldSubDispatch',
+  }[field];
+  return key ? t(`agentBuilder.${key}`) : field;
+}
+
+async function undoLastEdit() {
+  const agentId = builderState.createdAgentId;
+  const previous = builderState.previousAgent;
+  if (!agentId || !previous) return;
+
+  try {
+    const saved = await updateAgent(agentId, toAgentUpdate(previous));
+    if (!saved) throw new Error('agent_not_found');
+
+    builderState.editingAgent = { ...previous };
+    builderState.previousAgent = null;
+
+    if (builderState.callbacks?.onAgentSaved) {
+      try {
+        await builderState.callbacks.onAgentSaved(saved, { updated: true });
+      } catch (err) {
+        logger.warn('[AgentBuilder] onAgentSaved failed:', err?.message || err);
+      }
+    }
+
+    showToast(t('agentBuilder.undone'), 'success');
+    renderResult(previous, [], { changeSummary: t('agentBuilder.undone'), changedFields: [], canUndo: false });
+    setComposerVisible(false);
+  } catch (err) {
+    logger.warn('[AgentBuilder] undo failed:', err?.message || err);
+    appendBubble('assistant error', t('agentBuilder.undoFailed', { message: err?.message || '' }));
+  }
+}
+
+function renderResult(draft, warnings, meta = {}) {
   const panel = $('agentBuilderPanel');
   if (!panel) return;
   panel.innerHTML = '';
@@ -366,6 +483,22 @@ function renderResult(draft, warnings) {
   info.appendChild(makeEl('div', 'agent-builder-result-desc', draft.description || ''));
   head.appendChild(info);
   card.appendChild(head);
+
+  if ((meta.changedFields && meta.changedFields.length > 0) || meta.changeSummary) {
+    const changeSection = makeEl('div', 'agent-builder-section');
+    changeSection.appendChild(makeEl('div', 'agent-builder-section-title', t('agentBuilder.changedTitle')));
+    if (meta.changedFields && meta.changedFields.length > 0) {
+      const changeTags = makeEl('div', 'agent-builder-tags');
+      for (const field of meta.changedFields) {
+        changeTags.appendChild(makeEl('span', 'agent-builder-tag', fieldLabel(field)));
+      }
+      changeSection.appendChild(changeTags);
+    }
+    if (meta.changeSummary) {
+      changeSection.appendChild(makeEl('div', 'agent-builder-change-note', meta.changeSummary));
+    }
+    card.appendChild(changeSection);
+  }
 
   const promptSection = makeEl('div', 'agent-builder-section');
   promptSection.appendChild(makeEl('div', 'agent-builder-section-title', t('agentBuilder.promptLabel')));
@@ -390,6 +523,12 @@ function renderResult(draft, warnings) {
   }
 
   const actions = makeEl('div', 'agent-builder-actions');
+  if (meta.canUndo) {
+    const undoBtn = makeEl('button', 'modal-btn cancel', t('agentBuilder.undo'));
+    undoBtn.type = 'button';
+    undoBtn.dataset.action = 'undo';
+    actions.appendChild(undoBtn);
+  }
   const continueBtn = makeEl('button', 'modal-btn cancel', t('agentBuilder.continueAdjust'));
   continueBtn.type = 'button';
   continueBtn.dataset.action = 'continue';
@@ -405,24 +544,39 @@ function renderResult(draft, warnings) {
   panel.appendChild(card);
 }
 
-async function finalizeDraft(rawAgent) {
+async function finalizeDraft(rawAgent, message = '') {
+  const base = builderState.editingAgent;
   const { draft, warnings } = normalizeAgentDraft(rawAgent, {
     tools: builderState.catalog?.tools || [],
     skills: builderState.catalog?.skills || [],
     language: getLanguage(),
+    baseAgent: base,
   });
   builderState.draft = draft;
 
-  let saved = null;
   const isUpdate = !!builderState.createdAgentId;
+  const changedFields = base ? diffAgentFields(base, draft) : [];
+
+  // 编辑模式下没有实际变化时不写库，避免无意义的更新时间与撤销快照
+  if (isUpdate && base && changedFields.length === 0) {
+    appendBubble('assistant', t('agentBuilder.noChanges'));
+    setComposerVisible(true);
+    return;
+  }
+
+  let saved = null;
   try {
     if (isUpdate) {
       saved = await updateAgent(builderState.createdAgentId, draft);
       if (!saved) throw new Error('agent_not_found');
+      builderState.previousAgent = base ? { ...base } : null;
+      builderState.editingAgent = { ...saved };
       showToast(t('agentBuilder.updated', { name: draft.name }), 'success');
     } else {
       saved = await createAgent(draft);
       builderState.createdAgentId = saved.id;
+      // 创建后也保留一份基线，后续「继续调整」可以计算差异与撤销
+      builderState.editingAgent = { ...saved };
       showToast(t('agentBuilder.created', { name: saved.name }), 'success');
     }
   } catch (err) {
@@ -439,7 +593,11 @@ async function finalizeDraft(rawAgent) {
     }
   }
 
-  renderResult(draft, warnings);
+  renderResult(draft, warnings, {
+    changeSummary: isUpdate && base ? message : '',
+    changedFields: isUpdate && base ? changedFields : [],
+    canUndo: isUpdate && !!builderState.previousAgent,
+  });
   setComposerVisible(false);
 }
 
@@ -482,7 +640,7 @@ async function sendMessage(text) {
       builderState.askCount += 1;
       renderQuestion(parsed.question);
     } else {
-      await finalizeDraft(parsed.agent);
+      await finalizeDraft(parsed.agent, parsed.message);
     }
   } catch (err) {
     if (runId !== builderState.runId) return;
@@ -500,6 +658,15 @@ async function sendMessage(text) {
 }
 
 function showGreeting() {
+  if (builderState.editingAgent) {
+    appendBubble('assistant', t('agentBuilder.editGreeting', { name: builderState.editingAgent.name }));
+    appendExampleChips([
+      t('agentBuilder.editExample1'),
+      t('agentBuilder.editExample2'),
+      t('agentBuilder.editExample3'),
+    ]);
+    return;
+  }
   appendBubble('assistant', t('agentBuilder.greeting'));
   appendExampleChips([
     t('agentBuilder.example1'),
@@ -512,9 +679,17 @@ function resetConversation() {
   abortInflight();
   builderState.messages = [];
   builderState.askCount = 0;
-  builderState.createdAgentId = null;
   builderState.draft = null;
   builderState.pending = false;
+  builderState.previousAgent = null;
+
+  if (builderState.sessionMode === 'edit' && builderState.editingAgent) {
+    builderState.createdAgentId = builderState.editingAgent.id || null;
+  } else {
+    // 新建模式下「重新开始」应开启一次全新创建，而不是继续改上一次创建的助手
+    builderState.editingAgent = null;
+    builderState.createdAgentId = null;
+  }
 
   const chat = $('agentBuilderChat');
   if (chat) chat.innerHTML = '';
@@ -530,13 +705,20 @@ function resetConversation() {
 
 /**
  * 打开向导
- * @param {{ onAgentSaved?: (agent: Object, meta: {updated: boolean}) => Promise<void>, onEditAgent?: (agentId: string) => void }} callbacks
+ * @param {{
+ *   agent?: Object|null,
+ *   onAgentSaved?: (agent: Object, meta: {updated: boolean}) => Promise<void>,
+ *   onEditAgent?: (agentId: string) => void
+ * }} options
+ *   agent 传入时进入编辑模式：以该配置为基线，保存走 updateAgent
  */
-export async function openAgentBuilder(callbacks = {}) {
+export async function openAgentBuilder({ agent = null, onAgentSaved, onEditAgent } = {}) {
   const modal = $('agentBuilderModal');
   if (!modal) return;
 
-  builderState.callbacks = callbacks;
+  builderState.sessionMode = agent ? 'edit' : 'create';
+  builderState.editingAgent = agent ? { ...agent } : null;
+  builderState.callbacks = { onAgentSaved, onEditAgent };
   builderState.open = true;
   modal.style.display = 'flex';
 
@@ -617,7 +799,9 @@ export function initAgentBuilder() {
     const actionBtn = e.target.closest('[data-action]');
     if (!actionBtn) return;
     const action = actionBtn.dataset.action;
-    if (action === 'continue') {
+    if (action === 'undo') {
+      undoLastEdit();
+    } else if (action === 'continue') {
       clearPanel();
       builderState.askCount = 0;
       appendBubble('assistant', t('agentBuilder.adjustHint'));
