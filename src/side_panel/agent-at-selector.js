@@ -34,6 +34,9 @@ registerTranslations('zh', {
     notAvailable: '知识库不可用（请确认代理已连接、检索依赖已安装）',
     noCollections: '暂无知识库（可在设置页「知识库」中创建）',
     docChunk: '{docs} 文档 · {chunks} 分块',
+    docsCount: '{docs} 文档',
+    chunksCount: '{chunks} 分块',
+    openDocsTitle: '在配置页打开该知识库的文档管理',
     disabledBadge: '已停用',
     disabledTooltip: '已停用（大模型不会自主检索该库），仍可手动 @ 引用',
     manualSuffix: '手动引用',
@@ -60,6 +63,9 @@ registerTranslations('en', {
     notAvailable: 'Knowledge base unavailable (check the agent connection and installed retrieval dependencies)',
     noCollections: 'No knowledge base yet (create one in Settings - Knowledge)',
     docChunk: '{docs} docs · {chunks} chunks',
+    docsCount: '{docs} docs',
+    chunksCount: '{chunks} chunks',
+    openDocsTitle: 'Open this knowledge base\'s documents in Settings',
     disabledBadge: 'Disabled',
     disabledTooltip: 'Disabled (the model won\'t search this knowledge base autonomously); you can still reference it manually via @',
     manualSuffix: 'manual',
@@ -651,7 +657,6 @@ async function renderMergedAtList(filterText = '') {
 
   filteredKbs.forEach((kb) => {
     const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
-    const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
     // 停用库：仅提示"已停用"，仍可手动 @ 引用（与技能"未启用仍可手动使用"一致）
     const isDisabled = kb.enabled === false;
 
@@ -663,7 +668,7 @@ async function renderMergedAtList(filterText = '') {
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
         ${isDisabled ? `<span class="knowledge-item-badge badge-disabled">${t('knowledgeSelector.disabledBadge')}</span>` : ''}
-        <span class="prompt-item-code">${escapeHtml(stats)}</span>
+        <span class="prompt-item-code">${renderKbStatsHtml(kb)}</span>
       </div>`;
     globalIndex++;
   });
@@ -721,6 +726,12 @@ async function renderMergedAtList(filterText = '') {
       }
       if (e.target.closest('.agent-edit-btn')) return;
       if (e.target.closest('.agent-delete-btn')) return;
+      // 知识库文档数：点击跳转配置页并打开该库的文档管理
+      if (e.target.closest('.kb-docs-link')) {
+        e.stopPropagation();
+        openKbDocsInOptions(item.dataset.kbId);
+        return;
+      }
       const type = item.dataset.type;
       if (type === 'agent') {
         await selectAgentByAt(item.dataset.agentId);
@@ -832,6 +843,28 @@ export function refreshKnowledgePickedState() {
     item.classList.toggle('agent-at-active', isRef);
     item.classList.toggle('picked', isRef);
   });
+}
+
+/**
+ * 知识库统计展示：文档数可点击（跳转配置页打开该库的文档管理），分块数仅展示
+ * @param {{documentCount?: number, chunkCount?: number}} kb
+ */
+function renderKbStatsHtml(kb) {
+  const docs = t('knowledgeSelector.docsCount', { docs: kb.documentCount || 0 });
+  const chunks = t('knowledgeSelector.chunksCount', { chunks: kb.chunkCount || 0 });
+  return `<span class="kb-docs-link" title="${escapeHtml(t('knowledgeSelector.openDocsTitle'))}">${escapeHtml(docs)}</span> · ${escapeHtml(chunks)}`;
+}
+
+/**
+ * 跳转配置页「知识库」Tab，并打开指定知识库的文档管理弹窗（等价于点击卡片上的「文档」按钮）
+ * 配置页可能尚未打开：请求先写入 storage，由配置页初始化 / 切换 Tab / storage 监听消费
+ * @param {string} kbId
+ */
+function openKbDocsInOptions(kbId) {
+  if (!kbId) return;
+  hideAgentAtSelector();
+  chrome.storage.local.set({ pendingKbDocs: { id: kbId, ts: Date.now() } }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS_PAGE', hash: 'knowledge' });
 }
 
 /**
@@ -986,7 +1019,6 @@ async function renderKnowledgeAtList(filterText = '') {
 
   listEl.innerHTML = collections.map((kb, index) => {
     const isRef = state.knowledgeRefs.some(r => r.id === kb.id);
-    const stats = t('knowledgeSelector.docChunk', { docs: kb.documentCount || 0, chunks: kb.chunkCount || 0 });
     // 停用库：仅提示"已停用"，仍可手动 @ 引用（与技能"未启用仍可手动使用"一致）
     const isDisabled = kb.enabled === false;
     return `
@@ -997,13 +1029,19 @@ async function renderKnowledgeAtList(filterText = '') {
         <span class="agent-at-icon">📚</span>
         <span class="prompt-item-content">${escapeHtml(kb.name || '')}</span>
         ${isDisabled ? `<span class="knowledge-item-badge badge-disabled">${t('knowledgeSelector.disabledBadge')}</span>` : ''}
-        <span class="prompt-item-code">${escapeHtml(stats)}</span>
+        <span class="prompt-item-code">${renderKbStatsHtml(kb)}</span>
       </div>
     `;
   }).join('');
 
   listEl.querySelectorAll('.prompt-item').forEach(item => {
     item.addEventListener('click', (e) => {
+      // 知识库文档数：点击跳转配置页并打开该库的文档管理
+      if (e.target.closest('.kb-docs-link')) {
+        e.stopPropagation();
+        openKbDocsInOptions(item.dataset.kbId);
+        return;
+      }
       selectKnowledgeByAt({ id: item.dataset.kbId, name: item.dataset.kbName, enabled: item.dataset.kbDisabled !== '1' });
       // Ctrl/Cmd+点击：选中后关闭弹窗（多选场景的单选快捷方式）
       if (e.ctrlKey || e.metaKey) hideAgentAtSelector();

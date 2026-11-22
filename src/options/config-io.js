@@ -22,7 +22,7 @@ const EXPORT_KEYS = [
   'goalConfig',
   'enableExecutionLog',
   'toolbarTools', 'toolbarIconOnly',
-  'enableSelectionToolbar', 'blockedDomains',
+  'enableSelectionToolbar', 'blockedDomains', 'selectionToolbarIncludeContext',
   'streamEnabled',
   'streamExpandTools',
   // 完成反馈（声音 + 彩带开关）

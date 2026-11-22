@@ -29,6 +29,12 @@ const ACCEPT_EXTS = '.txt,.md,.markdown,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.h
 
 // 最近一次加载的知识库列表（供卡片操作查找）
 let cachedCollections = [];
+// 待打开的文档管理请求（侧边栏知识库列表点击「N 文档」时写入）
+const PENDING_DOCS_KEY = 'pendingKbDocs';
+// 请求有效期：超时视为过期（避免面板门控期间残留的请求在很久之后突然弹窗）
+const PENDING_DOCS_TTL = 60000;
+// 消费中的并发保护：refresh 与 storage 监听可能同时触发
+let pendingDocsOpening = false;
 // 列表搜索过滤关键字（模块级，重渲染后保持；与 MCP/Skill 列表模式一致）
 let kbFilterText = '';
 // 状态筛选（模块级，重渲染后保持）：'all' | 'enabled' | 'disabled'
@@ -101,6 +107,15 @@ export function initKnowledgePanel() {
   // 依赖安装成功 / 重新检测通过后，自动刷新面板（门控 → 列表）
   setRagAvailabilityChangeHandler(() => refreshKnowledgePanel());
 
+  // 配置页已打开时的直达：侧边栏点「N 文档」写入 pendingKbDocs，无需刷新页面即可打开弹窗
+  // （其他 Tab 下不消费，交由 hash 切到知识库 Tab 后的 refreshKnowledgePanel 处理）
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[PENDING_DOCS_KEY]?.newValue) return;
+    const panel = document.querySelector('.tab-panel[data-tab="knowledge"]');
+    if (!panel || !panel.classList.contains('active')) return;
+    openPendingKbDocs();
+  });
+
   // 门控引导区（「前往 XX 标签页」/「立即启用」按钮）
   const gateEl = document.getElementById('knowledgeGate');
   if (gateEl) {
@@ -158,6 +173,31 @@ export async function refreshKnowledgePanel() {
   gateEl.style.display = 'none';
   mainEl.style.display = '';
   await loadAndRenderList();
+  // 从侧边栏「N 文档」跳转过来：列表就绪后直接打开对应库的文档管理弹窗
+  openPendingKbDocs();
+}
+
+/**
+ * 消费侧边栏写入的「打开文档管理」请求：读取后立即删除，找到对应知识库即打开文档弹窗
+ * 幂等 + 并发保护（refreshKnowledgePanel 与 storage 监听可能同时触发）
+ */
+export async function openPendingKbDocs() {
+  if (pendingDocsOpening) return;
+  pendingDocsOpening = true;
+  try {
+    const result = await chrome.storage.local.get(PENDING_DOCS_KEY);
+    const req = result?.[PENDING_DOCS_KEY];
+    if (!req?.id) return;
+    await chrome.storage.local.remove(PENDING_DOCS_KEY);
+    if (!req.ts || Date.now() - req.ts > PENDING_DOCS_TTL) return;
+    if (!cachedCollections.length) await loadAndRenderList();
+    const collection = cachedCollections.find((c) => c.id === req.id);
+    if (collection) showDocsDialog(collection);
+  } catch (err) {
+    logger.warn('[Knowledge] failed to open pending docs:', err.message);
+  } finally {
+    pendingDocsOpening = false;
+  }
 }
 
 // ==================== RAG 总开关 ====================

@@ -1041,6 +1041,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   
+  // 划词回答是否结合网页上下文变更（与工具栏下拉菜单共用同一存储键）
+  const includeContextCheckbox = document.getElementById('toolbarIncludeContext');
+  if (includeContextCheckbox) {
+    includeContextCheckbox.addEventListener('change', function() {
+      saveToolbarConfig();
+    });
+  }
+  
   // 选中内容工具栏开关变更
   const enableSelectionToolbarCheckbox = document.getElementById('enableSelectionToolbar');
   const toolbarConfig = document.getElementById('toolbarConfig');
@@ -1139,6 +1147,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.blockedDomains) {
       loadBlockedDomainsUI();
+    }
+    // 划词工具栏下拉菜单中切换「结合网页上下文」时，同步配置页开关状态
+    if (areaName === 'local' && changes.selectionToolbarIncludeContext) {
+      const checkbox = document.getElementById('toolbarIncludeContext');
+      if (checkbox) checkbox.checked = !!changes.selectionToolbarIncludeContext.newValue;
     }
   });
   

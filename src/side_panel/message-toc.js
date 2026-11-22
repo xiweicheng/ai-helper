@@ -9,6 +9,12 @@ import state from './state.js';
 import logger from '../shared/logger.js';
 import { clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
+import {
+  bindFullscreenButton,
+  createFullscreenButton,
+  isPanelFullscreen,
+  setPanelFullscreen,
+} from './panel-fullscreen.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
 registerTranslations('zh', {
@@ -38,6 +44,35 @@ registerTranslations('en', {
 const TOC_LOCKED_KEY = 'messageTocLocked';
 /** 锁定态：目录面板常驻展开，鼠标移开不自动收起 */
 let tocLocked = false;
+/** 当前处于全屏的目录归属消息（目录随消息重建，重建后据此恢复全屏） */
+let tocFullscreenMsg = null;
+/** 全屏时被挪到 body 的面板及其原位置 */
+let tocFsPanel = null;
+let tocFsHome = null;
+
+/**
+ * 进入目录全屏：消息全屏 / 预览全屏的 rail 带 transform，fixed 会被限制成 rail 大小，
+ * 只有把面板挂到 body 才是相对视口的真全屏。
+ */
+function enterTocFullscreen(panel) {
+  tocFsPanel = panel;
+  tocFsHome = { parent: panel.parentElement, nextSibling: panel.nextSibling };
+  document.body.appendChild(panel);
+  panel.classList.add('expanded');
+  setPanelFullscreen(panel, true);
+}
+
+/** 退出目录全屏：摘掉全屏态并放回原容器；容器已销毁时直接移除，避免留在 body */
+function exitTocFullscreen() {
+  const panel = tocFsPanel;
+  if (!panel) return;
+  tocFsPanel = null;
+  setPanelFullscreen(panel, false);
+  const home = tocFsHome;
+  tocFsHome = null;
+  if (home?.parent?.isConnected) home.parent.insertBefore(panel, home.nextSibling);
+  else panel.remove();
+}
 
 const LOCK_OPEN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>';
 const LOCK_CLOSED_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
@@ -102,7 +137,7 @@ export function handleMouseOver(event) {
   const headings = container.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
   
   if (headings.length === 0) {
-    if (!tocLocked) hideMessageToc();
+    if (!tocLocked && !tocFsPanel) hideMessageToc();
     return;
   }
   
@@ -153,8 +188,9 @@ export function handleMouseOut(event) {
     }
     // 延迟 800ms 隐藏目录，让用户有充足时间将鼠标移动到目录区域
     state.tocHideTimer = setTimeout(() => {
-      // 再次检查鼠标是否已经进入目录区域
-      if (!state.isMouseOverToc) {
+      // 再次检查鼠标是否已经进入目录区域；全屏面板挂在 body 上，
+      // 已经脱离 .message-toc-container，靠 hover 判定会误收起，直接豁免
+      if (!state.isMouseOverToc && !tocFsPanel) {
         hideMessageToc();
       }
       state.tocHideTimer = null;
@@ -343,10 +379,12 @@ export function showMessageToc(messageDiv, headings) {
   // 将 NodeList 转换为数组
   const headingsArray = Array.from(headings);
   
-  // 如果目录已存在，先移除
+  // 如果目录已存在，先移除；重建不是关闭，全屏态要跟着迁到新面板
+  const keepFullscreenMsg = tocFullscreenMsg;
   if (state.messageTocContainer) {
     hideMessageToc();
   }
+  tocFullscreenMsg = keepFullscreenMsg;
   
   // 为标题添加 ID（如果还没有）
   headingsArray.forEach((heading, index) => {
@@ -419,14 +457,35 @@ export function showMessageToc(messageDiv, headings) {
   const toggle = container.querySelector('.message-toc-toggle');
   const panel = container.querySelector('.message-toc-panel');
 
+  // 目录随消息/内容重建：同一条消息保留全屏态，换消息则回到普通浮层。
+  // 注意先只记状态，等所有查询与监听绑完再把面板挪到 body（挪走后 container 查不到面板内部节点）
+  const restoreFullscreen = tocFullscreenMsg === messageDiv;
+  if (!restoreFullscreen) tocFullscreenMsg = null;
+
+  // 全屏按钮：复用锁按钮样式，插在锁/叉之前
+  const lockBtn = panel.querySelector('.message-toc-lock');
+  const fsBtn = createFullscreenButton('message-toc-lock');
+  lockBtn.before(fsBtn);
+  const syncFsBtn = bindFullscreenButton(fsBtn, panel, {
+    onToggle: (on) => {
+      if (on) {
+        tocFullscreenMsg = messageDiv;
+        enterTocFullscreen(panel);
+      } else {
+        tocFullscreenMsg = null;
+        exitTocFullscreen();
+        clampPanelToViewport(panel);
+      }
+    },
+  });
+
   // 锁定态：目录面板立即常驻展开（不依赖悬停），换消息/预览重建后依旧展开
   if (tocLocked) {
     panel.classList.add('expanded', 'locked');
-    clampPanelToViewport(panel);
+    if (!isPanelFullscreen(panel)) clampPanelToViewport(panel);
   }
 
   // 锁定按钮：切换「常驻不自动消失」；锁定即展开，解锁恢复悬停显隐
-  const lockBtn = container.querySelector('.message-toc-lock');
   lockBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     tocLocked = !tocLocked;
@@ -434,7 +493,7 @@ export function showMessageToc(messageDiv, headings) {
     applyLockButton(lockBtn);
     if (tocLocked) {
       panel.classList.add('expanded', 'locked');
-      clampPanelToViewport(panel);
+      if (!isPanelFullscreen(panel)) clampPanelToViewport(panel);
       requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
     } else {
       panel.classList.remove('locked');
@@ -442,7 +501,7 @@ export function showMessageToc(messageDiv, headings) {
   });
 
   // 关闭叉：无论是否锁定都收起当前目录；若处于锁定态一并解锁，避免下次悬停又常驻
-  const closeBtn = container.querySelector('.message-toc-close');
+  const closeBtn = panel.querySelector('.message-toc-close');
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     if (tocLocked) {
@@ -455,7 +514,7 @@ export function showMessageToc(messageDiv, headings) {
   // 鼠标进入目录图标时展开
   toggle.addEventListener('mouseenter', () => {
     panel.classList.add('expanded');
-    clampPanelToViewport(panel);
+    if (!isPanelFullscreen(panel)) clampPanelToViewport(panel);
     // 展开后把当前章节高亮项滚入目录可视区
     requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
   });
@@ -464,9 +523,12 @@ export function showMessageToc(messageDiv, headings) {
   toggle.addEventListener('click', () => {
     const expanded = panel.classList.toggle('expanded');
     if (expanded) {
-      clampPanelToViewport(panel);
+      if (!isPanelFullscreen(panel)) clampPanelToViewport(panel);
       requestAnimationFrame(() => tocScrollActiveIntoView && tocScrollActiveIntoView());
     } else {
+      // 收起即退出全屏：留着一个不可见却仍是全屏态的浮层会绊住下次展开
+      tocFullscreenMsg = null;
+      exitTocFullscreen();
       releasePanelClamp(panel);
     }
   });
@@ -479,7 +541,7 @@ export function showMessageToc(messageDiv, headings) {
   });
   
   // 点击目录项滚动定位
-  container.querySelectorAll('.message-toc-item').forEach(item => {
+  panel.querySelectorAll('.message-toc-item').forEach(item => {
     item.addEventListener('click', () => {
       const targetId = item.dataset.target;
       const targetHeading = document.getElementById(targetId);
@@ -500,8 +562,15 @@ export function showMessageToc(messageDiv, headings) {
     });
   });
 
-  // 正文滚动 → 目录章节高亮联动
-  bindTocScrollSpy(container, messageDiv, headingsArray, panel);
+  // 正文滚动 → 目录章节高亮联动。用 panel 作查询根：全屏时面板会被挪到 body，
+  // 仍以 container 查询会找不到目录项与内容区，联动直接失效
+  bindTocScrollSpy(panel, messageDiv, headingsArray, panel);
+
+  // 同一条消息重建时恢复全屏：查询与监听都已完成，这时再挪到 body 不影响绑定
+  if (restoreFullscreen) {
+    enterTocFullscreen(panel);
+    syncFsBtn();
+  }
 
   // 默认折叠，用户需要点击按钮展开
 }
@@ -510,6 +579,10 @@ export function showMessageToc(messageDiv, headings) {
  * 隐藏目录
  */
 export function hideMessageToc() {
+  // 关闭目录后不保留全屏态，下次打开从普通浮层开始；
+  // 全屏面板可能挂在 body 上，必须先放回容器随容器一起销毁
+  tocFullscreenMsg = null;
+  exitTocFullscreen();
   // 清除可能存在的延迟隐藏定时器
   if (state.tocHideTimer) {
     clearTimeout(state.tocHideTimer);

@@ -873,6 +873,7 @@ export default {
     enabled: '已启用',
     subtitle: '管理划词工具栏的按钮和顺序',
     iconOnly: '工具栏图标精简模式（仅显示图标，不显示文字）',
+    includeContext: '划词回答时结合网页上下文（参考选中内容所在段落及页面信息）',
     addCustomTool: '＋ 添加自定义工具',
     domainBlocklistTitle: '域名屏蔽',
     domainBlocklistDesc: '在此添加需要屏蔽工具栏的域名，屏蔽后该域名下不再显示划词工具栏',

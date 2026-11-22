@@ -4,6 +4,7 @@ import state from './state.js';
 import { switchToSession } from './session-manager.js';
 import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
+import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import { getAllSessions, getSession, deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -165,6 +166,15 @@ function bindSearchPanelEvents() {
     closePanel();
   });
 
+  // 全屏：退出后重新夹取一次位置，避免全屏期间窗口尺寸变化留下偏差
+  const fsBtn = createFullscreenButton('search-panel-close-btn');
+  searchClose.before(fsBtn);
+  bindFullscreenButton(fsBtn, panel, {
+    onToggle: (on) => {
+      if (!on) clampPanelToViewport(panel);
+    },
+  });
+
   // 清除按钮
   searchClear.addEventListener('click', () => {
     searchInput.value = '';
@@ -304,6 +314,7 @@ function openPanel() {
  */
 function closePanel() {
   const panel = document.getElementById('searchPanel');
+  exitPanelFullscreen(panel);
   panel.classList.remove('expanded');
   releasePanelClamp(panel);
   // 关闭时取消正在进行的搜索

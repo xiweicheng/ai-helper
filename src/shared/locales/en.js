@@ -873,6 +873,7 @@ export default {
     enabled: 'Enabled',
     subtitle: 'Manage buttons and order of the selection toolbar',
     iconOnly: 'Compact icon-only mode (show icons only, no text)',
+    includeContext: 'Include page context when answering selections (use the surrounding paragraph and page info)',
     addCustomTool: '＋ Add custom tool',
     domainBlocklistTitle: 'Domain blocklist',
     domainBlocklistDesc: 'Add domains where the toolbar should be blocked. Once blocked, the selection toolbar will not appear on those domains.',

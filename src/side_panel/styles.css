@@ -8259,6 +8259,15 @@ body {
   background: var(--brand-soft-bg);
   color: var(--brand-500);
 }
+/* 知识库文档数：可点击，跳转配置页打开该库的文档管理 */
+.kb-docs-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kb-docs-link:hover {
+  color: var(--brand-600);
+}
 /* 当前激活标签页标识 */
 .current-tab-badge {
   flex-shrink: 0;
@@ -15757,10 +15766,10 @@ body {
   padding: 0 6px 0 10px;
   border: 1px solid var(--border-default);
   margin-left: auto;
-  flex: 0 0 36px;
+  flex: 0 0 auto;
   width: 36px;
   height: 28px;
-  transition: width 0.25s ease, flex 0.25s ease;
+  transition: width 0.25s ease;
   overflow: hidden;
 }
 
@@ -15803,9 +15812,7 @@ body {
 
 .workspace-search-box:focus-within,
 .workspace-search-box.search-box-expanded {
-  flex: 1 1 120px;
   width: 120px;
-  max-width: 120px;
 }
 
 .workspace-search-box:focus-within input,
@@ -16628,6 +16635,79 @@ body.voice-recording-active .input-container {
   transition: opacity 0.2s ease, visibility 0.2s;
 }
 
+/* 全屏：铺满侧边面板视口，脱离「输入区上沿」的高度约束。
+   .side-rail 是 fixed + 无 transform，fixed 子元素直接相对视口定位 */
+.todo-panel.expanded.fullscreen {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  bottom: 8px;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  transform: none;
+  z-index: 3;
+}
+
+/* ==================== 侧边浮层全屏（搜索 / 收藏 / 目录 / 工作目录） ==================== */
+/* 切换全屏的瞬间禁用过渡，避免浮层 top/transform 与全屏 inset 的过渡叠加导致回弹 */
+.panel-fs-no-anim {
+  transition: none !important;
+}
+
+.search-panel.panel-fullscreen,
+.bookmark-panel.panel-fullscreen,
+.message-toc-panel.panel-fullscreen,
+.workspace-panel.panel-fullscreen {
+  position: fixed;
+  inset: 8px;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  transform: none;
+  /* 高于入口轨道(10000)与会话列表(10003)，低于确认弹窗(10010)与菜单(10020) */
+  z-index: 10005;
+}
+
+/* 目录是纵向 flex：全屏时内容区撑满，不再锁 60vh */
+.message-toc-panel.panel-fullscreen .message-toc-content {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+/* 搜索 / 收藏列表同样撑满全屏高度，而不是停在 65vh / 70vh */
+.search-panel.panel-fullscreen .search-panel-content {
+  max-height: none;
+}
+
+.bookmark-panel.panel-fullscreen .bookmark-panel-content {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+/* 工作目录嵌入模式：面板本来是分栏列，全屏时改为覆盖，退出后自动回到分栏 */
+.workspace-panel-container.embedded .workspace-panel.panel-fullscreen {
+  position: fixed;
+  inset: 8px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(var(--overlay-rgb), 0.2);
+}
+
+/* 全屏按钮与面板已有图标按钮同尺寸；工作目录复用模式按钮样式但不抢右推 */
+.workspace-panel-mode-btn.panel-fullscreen-btn {
+  margin-left: 2px;
+}
+
+.panel-fullscreen-btn svg {
+  display: block;
+}
+
 .todo-panel-header {
   display: flex;
   align-items: center;
@@ -16818,6 +16898,7 @@ body.voice-recording-active .input-container {
 .todo-tab {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   flex: 1 1 0;
   min-width: 0;
@@ -17080,6 +17161,27 @@ body.voice-recording-active .input-container {
 .todo-item.done .todo-name {
   color: var(--text-tertiary);
   text-decoration: line-through;
+}
+
+/* 标题 / 备注正文支持双击编辑：文本光标提示可直接改 */
+.todo-name,
+.todo-note {
+  cursor: text;
+}
+
+/* 新增条目落在列表末尾，长列表下会滚出视口：接住滚动后高亮一次给出确认 */
+.todo-item.just-added {
+  animation: todo-just-added 1.6s ease-out;
+}
+
+@keyframes todo-just-added {
+  0%,
+  35% {
+    background: rgba(var(--brand-violet-rgb), 0.18);
+  }
+  100% {
+    background: transparent;
+  }
 }
 
 .todo-edit-input {

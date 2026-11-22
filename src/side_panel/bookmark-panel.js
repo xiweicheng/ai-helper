@@ -5,6 +5,7 @@ import { getSortedBookmarks, removeBookmarkById, removeBookmark, toggleBookmarkP
 import { switchToSession } from './session-manager.js';
 import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
+import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -116,6 +117,15 @@ export function initBookmarkPanel() {
   const searchInput = document.getElementById('bookmarkSearchInput');
   const closeBtn = document.getElementById('bookmarkPanelClose');
 
+  // 全屏：退出后重新夹取一次位置，避免全屏期间窗口尺寸变化留下偏差
+  const fsBtn = createFullscreenButton('bookmark-panel-close-btn');
+  closeBtn.before(fsBtn);
+  bindFullscreenButton(fsBtn, panel, {
+    onToggle: (on) => {
+      if (!on) clampPanelToViewport(panel);
+    },
+  });
+
   // 初始化收藏搜索历史
   state.bookmarkSearchHistory = [];
   state.bookmarkSearchHistoryIndex = -1;
@@ -147,6 +157,7 @@ export function initBookmarkPanel() {
   toggle.addEventListener('click', () => {
     const isOpen = panel.classList.contains('expanded');
     if (isOpen) {
+      exitPanelFullscreen(panel);
       panel.classList.remove('expanded');
       releasePanelClamp(panel);
     } else {
@@ -158,6 +169,7 @@ export function initBookmarkPanel() {
 
   // 关闭按钮
   closeBtn.addEventListener('click', () => {
+    exitPanelFullscreen(panel);
     panel.classList.remove('expanded');
     releasePanelClamp(panel);
   });

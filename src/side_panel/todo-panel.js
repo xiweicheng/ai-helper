@@ -134,6 +134,8 @@ registerTranslations('zh', {
     importedToast: '已导入 {added} 条（跳过 {skipped} 条）',
     importFailedToast: '导入失败，请重试',
     statsEntry: '待办统计',
+    fullscreen: '全屏',
+    exitFullscreen: '退出全屏',
   },
 });
 
@@ -218,6 +220,8 @@ registerTranslations('en', {
     importedToast: 'Imported {added} todos ({skipped} skipped)',
     importFailedToast: 'Import failed, try again',
     statsEntry: 'Statistics',
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit fullscreen',
   },
 });
 
@@ -234,6 +238,8 @@ const ICONS = {
   listCheck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>',
+  expand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+  collapse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h3a2 2 0 0 0 2-2V3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M21 16h-3a2 2 0 0 0-2 2v3"/></svg>',
   fill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/></svg>',
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
@@ -263,6 +269,7 @@ let badgeEl = null;
 let menuEl = null;
 let tabActiveEl = null;
 let tabDoneEl = null;
+let fullscreenBtnEl = null;
 
 // 当前 Tab：'active' | 'done'（不持久化，面板每次打开都回到待办）
 let activeTab = 'active';
@@ -282,6 +289,12 @@ let activeId = null;
 let fitObserver = null;
 // 本次打开期间锁定过的高度：只增不减，切 Tab / 删条目都不回缩
 let heightFloor = 0;
+// 新增条目的高亮计时器：连续添加时只保留最后一次
+let revealTimer = null;
+// 本轮刚打开行内编辑器：重渲染后必须把焦点送进去，不能退化成「只聚焦到行」
+let pendingEditorFocus = false;
+// 面板是否处于全屏（铺满侧边面板视口）
+let isFullscreen = false;
 
 // 行内编辑的未提交内容只活在 DOM 里，而每一次落库成功都会 emitChange → render()
 // 重建整段列表。不在重建前把这些脏值抓下来，用户正在敲的备注/标题就会在下一次
@@ -317,6 +330,7 @@ export function initTodoPanel() {
         <span class="todo-panel-icon">${ICONS.listCheck}</span>
         <span class="todo-panel-title" data-i18n="todo.title"></span>
         <div class="todo-panel-actions">
+          <button class="todo-icon-btn todo-fullscreen-btn" data-action="toggle-fullscreen">${ICONS.expand}</button>
           <button class="todo-icon-btn" data-action="header-more" data-i18n-title="todo.headerMore" data-i18n-aria-label="todo.headerMore">${ICONS.more}</button>
           <button class="todo-icon-btn" data-action="close" data-i18n-title="common.close" data-i18n-aria-label="common.close">${ICONS.close}</button>
         </div>
@@ -353,6 +367,8 @@ export function initTodoPanel() {
   badgeEl = containerEl.querySelector('#todoBadge');
   tabActiveEl = containerEl.querySelector('#todoTabActive');
   tabDoneEl = containerEl.querySelector('#todoTabDone');
+  fullscreenBtnEl = containerEl.querySelector('.todo-fullscreen-btn');
+  syncFullscreenButton();
 
   countEl.textContent = t('todo.progressLabel', { done: 0, total: 0 });
 
@@ -365,18 +381,29 @@ export function initTodoPanel() {
   bodyEl.addEventListener('drop', handleDrop);
   bodyEl.addEventListener('dragend', cleanupDrag);
   bodyEl.addEventListener('focusout', handleFocusOut);
+  // 双击标题 / 备注正文直接进编辑，省去先找到行尾「编辑」按钮
+  bodyEl.addEventListener('dblclick', handleDoubleClick);
   // 快捷键的作用对象 = 当前聚焦 / 最后聚焦的那一行
   bodyEl.addEventListener('focusin', (e) => {
     const item = e.target.closest?.('.todo-item');
     if (item?.dataset.id) activeId = item.dataset.id;
   });
   // 「取消」在 pointerdown 就生效：change 与 focusout 都比 click 早，等到 click 时
-  // 链接已经存进库了，取消就成了死按钮。先结束编辑态，两条自动保存通道自然被拦住
+  // 链接 / 备注已经存进库了，取消就成了死按钮。先结束编辑态，两条自动保存通道自然被拦住
   containerEl.addEventListener('pointerdown', (e) => {
-    const btn = e.target?.closest?.('[data-action="link-cancel"]');
-    if (!btn) return;
-    e.preventDefault();
-    cancelLinkEdit(btn.dataset.id || linkEditId);
+    const linkBtn = e.target?.closest?.('[data-action="link-cancel"]');
+    if (linkBtn) {
+      e.preventDefault();
+      cancelLinkEdit(linkBtn.dataset.id || linkEditId);
+      return;
+    }
+    const noteBtn = e.target?.closest?.('[data-action="note-cancel"]');
+    if (noteBtn) {
+      e.preventDefault();
+      noteEditId = null;
+      clearDraft(noteBtn.dataset.id);
+      render();
+    }
   });
 
   document.addEventListener('keydown', (e) => {
@@ -436,6 +463,10 @@ function openPanel() {
 }
 
 function closePanel() {
+  // 关面板即退出全屏：下次打开回到常规浮层形态
+  isFullscreen = false;
+  panelEl.classList.remove('fullscreen');
+  syncFullscreenButton();
   panelEl.classList.remove('expanded');
   toggleEl.classList.remove('active');
   stopWatchingInputArea();
@@ -446,6 +477,38 @@ function closePanel() {
   closeMenu();
   cancelInlineEdit();
   clearUndo();
+}
+
+/**
+ * 全屏 / 退出全屏：全屏时铺满侧边面板视口，不再受「输入区上沿」高度限制；
+ * 退出后恢复监听输入区并重新贴合。
+ */
+function setFullscreen(on) {
+  if (!panelEl || isFullscreen === on) return;
+  isFullscreen = on;
+  panelEl.classList.toggle('fullscreen', on);
+  syncFullscreenButton();
+  closeMenu();
+  if (on) {
+    stopWatchingInputArea();
+    panelEl.style.removeProperty('--fit-y');
+    panelEl.style.removeProperty('--todo-max-h');
+    panelEl.style.removeProperty('height');
+    heightFloor = 0;
+  } else {
+    watchInputArea();
+    fitPanelToInputArea();
+  }
+}
+
+/** 按钮文案与图标随全屏状态切换；语言切换时由 render() 再对齐一次 */
+function syncFullscreenButton() {
+  if (!fullscreenBtnEl) return;
+  const label = t(isFullscreen ? 'todo.exitFullscreen' : 'todo.fullscreen');
+  fullscreenBtnEl.innerHTML = isFullscreen ? ICONS.collapse : ICONS.expand;
+  fullscreenBtnEl.title = label;
+  fullscreenBtnEl.setAttribute('aria-label', label);
+  fullscreenBtnEl.setAttribute('aria-pressed', String(isFullscreen));
 }
 
 // ==================== 渲染 ====================
@@ -520,7 +583,9 @@ function focusFreshEditor() {
   if (titleEditId) { focusTitleInput(); return; }
   if (noteEditId) {
     const el = editorEl({ cls: 'todo-note-input', id: noteEditId });
-    if (el) el.focus();
+    if (!el) return;
+    el.focus();
+    el.selectionStart = el.selectionEnd = el.value.length;
     return;
   }
   if (dueEditId) {
@@ -550,6 +615,7 @@ function render() {
   progressEl.style.width = stats.total ? `${Math.round((stats.done / stats.total) * 100)}%` : '0%';
   updateBadge(active.length);
   updateTabs(active.length, done.length);
+  syncFullscreenButton();
 
   const list = activeTab === 'done' ? done : active;
   const parts = [];
@@ -579,10 +645,20 @@ function render() {
   }
 
   bodyEl.innerHTML = parts.join('');
-  // 焦点在编辑器里 → 原处还原（含光标位置）；否则视为刚打开编辑器 → 主动聚焦
-  if (focusMarker) restoreFocus(focusMarker);
-  else if (focusedRowId) restoreRowFocus(focusedRowId);
-  else focusFreshEditor();
+  // 焦点优先级：原编辑器原处还原 > 刚打开的新编辑器 > 原来那一行 > 无焦点可还原时兜底聚焦
+  // 「刚打开的新编辑器」必须排在行聚焦之前：双击 / 点编辑按钮时焦点先落在行上，
+  // 若先还原行焦点，输入框永远拿不到焦点，点外面也就不会有 focusout 来结束编辑
+  const freshEditor = pendingEditorFocus;
+  pendingEditorFocus = false;
+  if (focusMarker) {
+    restoreFocus(focusMarker);
+  } else if (freshEditor) {
+    focusFreshEditor();
+  } else if (focusedRowId) {
+    restoreRowFocus(focusedRowId);
+  } else {
+    focusFreshEditor();
+  }
   fitPanelToInputArea();
 }
 
@@ -614,7 +690,8 @@ function measureInputTop() {
  * 共享的 clampPanelToViewport 只按视口底夹，正好会把面板放到输入框上，所以这里不用它。
  */
 function fitPanelToInputArea() {
-  if (!panelEl || !isOpen()) return;
+  // 全屏由 CSS 铺满视口，任何按输入区算出来的高度都会把面板拽回去
+  if (!panelEl || !isOpen() || isFullscreen) return;
   panelEl.style.removeProperty('--fit-y');
   requestAnimationFrame(() => {
     if (!panelEl || !isOpen()) return;
@@ -897,6 +974,10 @@ function handleClick(e) {
       e.stopPropagation();
       openHeaderMenu(actionEl);
       return;
+    case 'toggle-fullscreen':
+      e.stopPropagation();
+      setFullscreen(!isFullscreen);
+      return;
     case 'add':
       e.stopPropagation();
       submitQuickAdd();
@@ -932,9 +1013,7 @@ function handleClick(e) {
       return;
     case 'edit-title':
       e.stopPropagation();
-      cancelInlineEdit();
-      titleEditId = id;
-      render();
+      startTitleEdit(id);
       return;
     case 'row-more':
       e.stopPropagation();
@@ -1164,11 +1243,39 @@ function focusAddInput() {
 function startNoteEdit(id) {
   noteEditId = id;
   expandedNoteIds.add(id);
+  pendingEditorFocus = true;
   render();
+}
+
+function startTitleEdit(id) {
+  cancelInlineEdit();
+  titleEditId = id;
+  pendingEditorFocus = true;
+  render();
+}
+
+/** 双击标题或备注正文 → 直接进对应的行内编辑态 */
+function handleDoubleClick(e) {
+  const nameEl = e.target.closest?.('.todo-name');
+  if (nameEl) {
+    const id = nameEl.closest('.todo-item')?.dataset.id;
+    if (!id) return;
+    e.preventDefault();
+    startTitleEdit(id);
+    return;
+  }
+  const noteEl = e.target.closest?.('.todo-note');
+  if (noteEl) {
+    const id = noteEl.closest('.todo-item')?.dataset.id;
+    if (!id) return;
+    e.preventDefault();
+    startNoteEdit(id);
+  }
 }
 
 function startLinkEdit(id) {
   linkEditId = id;
+  pendingEditorFocus = true;
   render();
 }
 
@@ -1209,12 +1316,19 @@ function handleChange(e) {
   persist(updateTodo(id, { dueAt: isNaN(d.getTime()) ? null : d.getTime() }));
 }
 
-/** 标题/链接输入框失焦即保存，避免用户点别处后编辑内容丢失 */
+/** 标题 / 备注 / 链接输入框失焦即保存，避免用户点别处后编辑内容丢失 */
 function handleFocusOut(e) {
   if (e.target?.classList?.contains('todo-link-input')) {
     const id = e.target.dataset.id;
     if (!linkEditId || linkEditId !== id) return;
     saveLink(id, e.target.value);
+    return;
+  }
+  if (e.target?.classList?.contains('todo-note-input')) {
+    const id = e.target.dataset.id;
+    // 点「取消」时已先结束编辑态（pointerdown 先于 blur），这里不能再写库
+    if (!noteEditId || noteEditId !== id) return;
+    saveNote(id);
     return;
   }
   if (!e.target?.classList?.contains('todo-edit-input')) return;
@@ -1241,11 +1355,34 @@ async function submitQuickAdd() {
   // 新条目只会落在待办，在已完成 Tab 里添加要先转回去，否则「加了但看不见」
   if (activeTab === 'done') activeTab = 'active';
   const created = await addTodo(title);
-  if (!created) showToast(t('todo.saveFailed'), 'error');
+  if (!created) {
+    showToast(t('todo.saveFailed'), 'error');
+  } else {
+    // 追加在列表末尾：列表一长就落在可视区外，必须滚过去并短暂高亮
+    requestAnimationFrame(() => revealNewItem(created.id));
+  }
   addInputEl.focus();
 }
 
+/** 把新增条目滚进可视区（只滚列表容器，不牵动整页）并高亮一次 */
+function revealNewItem(id) {
+  const row = rowItems().find(el => el.dataset.id === id);
+  if (!row) return;
+  const bodyRect = bodyEl.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  if (rowRect.bottom > bodyRect.bottom - 4) {
+    bodyEl.scrollTop += rowRect.bottom - bodyRect.bottom + 4;
+  } else if (rowRect.top < bodyRect.top + 4) {
+    bodyEl.scrollTop -= bodyRect.top - rowRect.top + 4;
+  }
+  row.classList.add('just-added');
+  clearTimeout(revealTimer);
+  revealTimer = setTimeout(() => row.classList.remove('just-added'), 1600);
+}
+
 function saveNote(id) {
+  // 失焦保存已经结束时不再重复写库（例如 blur 后紧跟的保存按钮 click）
+  if (noteEditId !== id) return;
   const input = bodyEl.querySelector(`.todo-note-input[data-id="${escapeAttr(id)}"]`);
   const note = input ? input.value : '';
   noteEditId = null;
@@ -1281,6 +1418,7 @@ function cancelInlineEdit() {
   noteEditId = null;
   dueEditId = null;
   linkEditId = null;
+  pendingEditorFocus = false;
   clearDraft();
   if (had) render();
 }
@@ -1509,28 +1647,15 @@ async function handleMenuAction(action, id) {
       restoreOne(id);
       return;
     case 'edit-title':
-      titleEditId = id;
-      render();
+      startTitleEdit(id);
       return;
     case 'edit-note':
-      noteEditId = id;
-      expandedNoteIds.add(id);
-      render();
-      setTimeout(() => {
-        const input = bodyEl.querySelector(`.todo-note-input[data-id="${id}"]`);
-        if (input) {
-          input.focus();
-          input.selectionStart = input.selectionEnd = input.value.length;
-        }
-      }, 30);
+      startNoteEdit(id);
       return;
     case 'set-due':
       dueEditId = id;
+      pendingEditorFocus = true;
       render();
-      setTimeout(() => {
-        const input = bodyEl.querySelector(`.todo-due-input[data-id="${id}"]`);
-        if (input) input.focus();
-      }, 30);
       return;
     case 'edit-link':
       startLinkEdit(id);

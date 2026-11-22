@@ -9,12 +9,13 @@ let editingToolIndex = -1; // -1 表示新增，>=0 表示编辑
 // 加载工具栏工具列表
 export function loadToolbarTools() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['toolbarTools', 'toolbarIconOnly', 'enableSelectionToolbar'], (result) => {
+    chrome.storage.local.get(['toolbarTools', 'toolbarIconOnly', 'enableSelectionToolbar', 'selectionToolbarIncludeContext'], (result) => {
       const rawTools = (result.toolbarTools && result.toolbarTools.length > 0)
         ? result.toolbarTools
         : [...DEFAULT_TOOLBAR_TOOLS];
       const iconOnly = result.toolbarIconOnly !== undefined ? result.toolbarIconOnly : DEFAULT_TOOLBAR_ICON_ONLY;
       const enableSelectionToolbar = result.enableSelectionToolbar !== undefined ? result.enableSelectionToolbar : DEFAULT_ENABLE_SELECTION_TOOLBAR;
+      const includeContext = !!result.selectionToolbarIncludeContext;
       
       // 内置工具始终使用当前语言的名称和最新的 systemPrompt（防止旧数据缺失，且名称随语言切换）
       const defaultMap = new Map(DEFAULT_TOOLBAR_TOOLS.map(t => [t.id, t]));
@@ -29,6 +30,8 @@ export function loadToolbarTools() {
       
       const iconOnlyCheckbox = document.getElementById('toolbarIconOnly');
       if (iconOnlyCheckbox) iconOnlyCheckbox.checked = iconOnly;
+      const includeContextCheckbox = document.getElementById('toolbarIncludeContext');
+      if (includeContextCheckbox) includeContextCheckbox.checked = includeContext;
       const enableToolbarCheckbox = document.getElementById('enableSelectionToolbar');
       if (enableToolbarCheckbox) enableToolbarCheckbox.checked = enableSelectionToolbar;
       resolve(tools);
@@ -152,6 +155,7 @@ function initToolDragAndDrop() {
 export function saveToolbarConfig() {
   const iconOnly = document.getElementById('toolbarIconOnly')?.checked || false;
   const enableSelectionToolbar = document.getElementById('enableSelectionToolbar')?.checked !== false;
+  const includeContext = document.getElementById('toolbarIncludeContext')?.checked || false;
   
   chrome.storage.local.get(['toolbarTools'], (result) => {
     const tools = result.toolbarTools || [...DEFAULT_TOOLBAR_TOOLS];
@@ -159,7 +163,8 @@ export function saveToolbarConfig() {
     chrome.storage.local.set({
       toolbarTools: tools,
       toolbarIconOnly: iconOnly,
-      enableSelectionToolbar: enableSelectionToolbar
+      enableSelectionToolbar: enableSelectionToolbar,
+      selectionToolbarIncludeContext: includeContext
     }, () => {
       logger.debug('[Options] toolbarconfiguration saved');
     });

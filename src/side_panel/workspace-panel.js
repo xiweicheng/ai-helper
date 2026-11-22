@@ -17,6 +17,7 @@ import { createWorkdirBrowserView } from './workdir-browser.js';
 import logger from '../shared/logger.js';
 import { showToast, copyToClipboard, clampPanelToViewport, releasePanelClamp } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
+import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import state from './state.js';
 import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { renderFilePreviews } from './file-extract.js';
@@ -863,6 +864,15 @@ function bindEvents() {
   document.getElementById('workspacePanelClose').addEventListener('click', (e) => {
     e.stopPropagation();
     closePanel();
+  });
+
+  // 全屏：嵌入模式下同样只是覆盖，退出后回到原分栏；浮窗模式退出后重新夹取位置
+  const fsBtn = createFullscreenButton('workspace-panel-mode-btn');
+  document.getElementById('workspacePanelClose').before(fsBtn);
+  bindFullscreenButton(fsBtn, panel, {
+    onToggle: (on) => {
+      if (!on && !embedMode) clampPanelToViewport(panel);
+    },
   });
 
   // 浮窗/嵌入模式切换按钮
@@ -5886,6 +5896,8 @@ async function closePanelInternal(force = false) {
   const panel = document.getElementById('workspacePanel');
   const container = document.getElementById('workspacePanelContainer');
   if (panel) {
+    // 关闭即退出全屏：下次打开回到浮窗/嵌入的常规形态
+    exitPanelFullscreen(panel);
     panel.classList.remove('expanded');
     releasePanelClamp(panel);
     // 记忆收起状态：重开插件后保持收起，不自动展开；
