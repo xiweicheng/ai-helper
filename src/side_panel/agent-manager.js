@@ -9,6 +9,8 @@ import { saveCurrentSession } from './session-manager.js';
 import { renderToolsPopupList, updateCategoryBadges, updateToolsPopupTitle, updateToolsToggleState, getToolDesc, getMcpToolDisplayDesc, applyRagToolIntroduction, getValidToolIdUniverse } from './tool-panel.js';
 import { filterAgentToolEntries } from './agent-tool-filter.js';
 import { getEnabledSkills } from './skill-selector.js';
+import { loadAgentCatalog } from './agent-catalog.js';
+import { openAgentBuilder, initAgentBuilder } from './agent-builder.js';
 import { EMOJI_DATA } from './emoji-data.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations, getLanguage } from '../shared/i18n.js';
@@ -109,6 +111,7 @@ export async function initAgentManager() {
   await renderAgentSelector();
   initAgentSelectorEvents();
   initAgentModalEvents();
+  initAgentBuilder();
   logger.debug('[AgentMgr] Agent managerinitialization complete, activeAgentId:', state.activeAgentId);
 }
 
@@ -170,6 +173,10 @@ export async function renderAgentSelector() {
   // 固定底部：创建按钮
   if (footerContainer) {
     footerContainer.innerHTML = `
+      <div class="agent-item" id="agentAIBuildBtn" style="color:var(--brand-500);">
+        <span class="agent-item-icon" style="color:var(--brand-500);">✨</span>
+        <span class="agent-item-name">${t('agentBuilder.entry')}</span>
+      </div>
       <div class="agent-item" id="agentAddBtn" style="color:var(--brand-500);">
         <span class="agent-item-icon" style="color:var(--brand-500);">＋</span>
         <span class="agent-item-name">${t('agentEditor.createNew')}</span>
@@ -292,6 +299,12 @@ function initAgentSelectorEvents() {
       return;
     }
 
+    if (item.id === 'agentAIBuildBtn') {
+      dropdown.style.display = 'none';
+      openBuilderFromManager();
+      return;
+    }
+
     if (item.id === 'agentAddBtn') {
       openAgentEditor(null);
       return;
@@ -410,6 +423,12 @@ function initAgentModalEvents() {
 
   // 关闭按钮
   modal.querySelector('#agentModalCloseBtn')?.addEventListener('click', closeAgentEditor);
+
+  // 表单不会填时转 AI 创建向导
+  modal.querySelector('#agentAiBuildBtn')?.addEventListener('click', () => {
+    closeAgentEditor();
+    openBuilderFromManager();
+  });
   
   // 保存按钮
   modal.querySelector('#agentSaveBtn')?.addEventListener('click', saveAgent);
@@ -826,6 +845,21 @@ function updateAgentSkillCount() {
 }
 
 /**
+ * 打开 AI 创建助手向导
+ * 通过回调注入保存后的联动逻辑，避免 agent-builder 反向依赖本模块
+ */
+function openBuilderFromManager() {
+  openAgentBuilder({
+    onAgentSaved: async (agent) => {
+      await loadAgentState();
+      await switchAgent(agent.id);
+      updateToolsToggleState();
+    },
+    onEditAgent: (agentId) => openAgentEditor(agentId),
+  });
+}
+
+/**
  * 打开 Agent 编辑器
  * @param {string|null} agentId - null 表示新建
  */
@@ -851,6 +885,9 @@ export async function openAgentEditor(agentId) {
 
   const deleteBtn = modal.querySelector('#agentDeleteBtn');
   const titleEl = modal.querySelector('#agentEditTitle');
+  // AI 创建仅用于新建；编辑模式隐藏入口，避免丢弃未保存修改或误建新助手
+  const aiBuildBtn = modal.querySelector('#agentAiBuildBtn');
+  if (aiBuildBtn) aiBuildBtn.style.display = agentId ? 'none' : 'block';
 
   if (agentId) {
     // 编辑模式
@@ -1016,44 +1053,10 @@ async function renderAgentToolSelector(selectedToolIds, excludedMcpServerIds) {
   const container = document.getElementById('agentToolList');
   if (!container) return;
 
-  // 加载 MCP 工具（仅用于构建服务级行，不再作为工具级勾选项）
-  let mcpTools = [];
-  try {
-    const result = await chrome.storage.local.get(['mcpTools']);
-    mcpTools = result.mcpTools || [];
-  } catch { /* ignore */ }
-
-  // 读取全局开关、已注册的知识库（RAG）工具和 Agent 连接状态
-  const { mcpEnabled, skillsEnabled, ragTools } = await chrome.storage.local.get(['mcpEnabled', 'skillsEnabled', 'ragTools']);
-  const agentConnected = state.agentPlatform?.connected === true;
-
-  // 常规工具（内置 + 知识库 RAG，不含 MCP：MCP 按服务级开关整体开放/关闭）
-  // 必须并入 ragTools：与侧边栏工具配置弹窗 getAgentFilteredTools 同口径，否则
-  // 自定义助手无法勾选知识库工具，保存的 toolIds 不含其 ID，运行期会被过滤排除
-  let allTools = [...BUILTIN_TOOLS, ...(ragTools || [])];
-
-  // Agent 未连接时，隐藏依赖代理服务的工具（agent_* 与知识库 knowledge_*，与弹窗同口径）
-  if (!agentConnected) {
-    allTools = allTools.filter(t => !t.id.startsWith('agent_') && !t.id.startsWith('knowledge_'));
-  }
-  // Skill 全局开关关闭时，隐藏 Skill 相关工具
-  if (skillsEnabled === false) {
-    allTools = allTools.filter(t => t.id !== 'agent_skill');
-  }
-
-  // MCP 服务（全局开关开启且 Agent 连通时展示；勾选 = 开放，取消勾选 = 排除）
-  let mcpServices = [];
-  if (mcpEnabled === true && agentConnected) {
-    const serverMap = new Map();
-    for (const tool of mcpTools) {
-      const sid = tool.serverId || 'unknown';
-      if (!serverMap.has(sid)) {
-        serverMap.set(sid, { serverId: sid, serverName: tool.serverName || sid, tools: [] });
-      }
-      serverMap.get(sid).tools.push(tool);
-    }
-    mcpServices = Array.from(serverMap.values());
-  }
+  // 能力目录与 AI 创建向导共用（内置 + 知识库工具；MCP 仅服务级）
+  const catalog = await loadAgentCatalog();
+  const allTools = catalog.tools;
+  const mcpServices = catalog.mcpServices;
   const excludedSet = new Set(Array.isArray(excludedMcpServerIds) ? excludedMcpServerIds : []);
 
   // 写入渲染缓存并重置过滤态（每次进入编辑器/切换模板都回到全量视图）

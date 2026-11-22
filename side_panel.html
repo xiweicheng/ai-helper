@@ -1328,6 +1328,7 @@
     <div class="modal-container" style="max-width: 650px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; position: relative;">
       <button class="prompt-modal-close" id="agentModalCloseBtn" data-i18n-title="common.close" title="关闭" style="position: absolute; top: 12px; right: 16px; z-index: 1;">×</button>
       <div class="modal-title" id="agentEditTitle" style="flex-shrink: 0; margin-bottom: 12px;" data-i18n="agentEditor.createNew">创建新助手</div>
+      <button type="button" class="agent-ai-build-banner" id="agentAiBuildBtn" data-i18n="agentBuilder.editorBanner">不知道怎么填？让 AI 问几个问题 →</button>
       <input type="hidden" id="agentEditId">
       
       <div style="flex: 1; overflow-y: auto; padding-right: 4px;">
@@ -1424,6 +1425,27 @@
       <div class="modal-actions" style="flex-shrink: 0; padding-top: 12px; margin-top: 0;">
         <button class="modal-btn cancel" id="agentDeleteBtn" style="display:none; background: var(--danger-500); color: var(--text-on-brand); border: none; margin-right: auto;" data-i18n-title="agentEditor.deleteAgentTitle" title="删除此助手" data-i18n="common.delete">删除</button>
         <button class="modal-btn confirm" id="agentSaveBtn" style="background: var(--brand-gradient);" data-i18n="common.save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 创建助手向导 -->
+  <div class="modal-overlay" id="agentBuilderModal" style="display:none; z-index: 5000;">
+    <div class="modal-container agent-builder-modal">
+      <button class="prompt-modal-close" id="agentBuilderCloseBtn" data-i18n-title="common.close" title="关闭" style="position: absolute; top: 12px; right: 16px; z-index: 1;">×</button>
+      <div class="agent-builder-head">
+        <div class="modal-title agent-builder-title">✨ <span data-i18n="agentBuilder.title">AI 创建助手</span></div>
+        <div class="agent-builder-sub" data-i18n="agentBuilder.subtitle">描述你的需求，AI 会通过几个问题帮你生成配置</div>
+      </div>
+      <div class="agent-builder-chat" id="agentBuilderChat"></div>
+      <div class="agent-builder-panel" id="agentBuilderPanel"></div>
+      <div class="agent-builder-composer" id="agentBuilderComposer" style="display:flex;">
+        <textarea id="agentBuilderInput" rows="2" data-i18n-placeholder="agentBuilder.placeholder" placeholder="描述你的需求，例如：帮我每天汇总科技新闻…"></textarea>
+        <button type="button" class="modal-btn confirm" id="agentBuilderSendBtn" data-i18n="agentBuilder.send">发送</button>
+      </div>
+      <div class="agent-builder-foot">
+        <span class="agent-builder-hint" data-i18n="agentBuilder.hint">最多 3 轮澄清，信息够了会自动创建</span>
+        <button type="button" class="agent-builder-restart" id="agentBuilderRestartBtn" data-i18n="agentBuilder.restart">重新开始</button>
       </div>
     </div>
   </div>
