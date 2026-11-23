@@ -129,12 +129,22 @@ describe('autoScrollToBottom - 布局延后稳定时补滚到位', () => {
 // 回归：回答完成后的“回顶”必须生效。P1-2 把滚动改成帧内执行后，流式最后一帧的
 // “跟随到底”可能排在回顶之后执行，把视口又拉回底部；因此回顶前必须取消排队的滚动帧。
 describe('cancelPendingAutoScroll - 回顶前取消排队的跟随到底', () => {
+  // 走完一次完整的 合并帧 → 补滚帧 → 复位帧，让模块级 _isProgramScroll 归位。
+  // 取消用例会把标志留在 true 且没有复位帧在队列里，不清理会泄漏给后续用例。
+  function settleProgramScroll(cc) {
+    autoScrollToBottom(cc);
+    flushFrame();
+    flushFrame();
+    flushFrame();
+  }
+
   test('尚未执行的合并帧被取消后不再滚动', () => {
     const { cc, readScrollTop } = buildContainer();
     autoScrollToBottom(cc);
     cancelPendingAutoScroll();
     flushFrame();
     expect(readScrollTop()).toBe(0);
+    settleProgramScroll(cc);
   });
 
   test('合并帧已执行后，补滚帧被取消则不会再把视口拉到底部', () => {
@@ -147,6 +157,7 @@ describe('cancelPendingAutoScroll - 回顶前取消排队的跟随到底', () =>
     cancelPendingAutoScroll(); // 模拟回顶前取消补滚帧
     flushFrame();
     expect(readScrollTop()).toBe(300); // 保持原位，没有被拉回底部
+    settleProgramScroll(cc);
   });
 });
 

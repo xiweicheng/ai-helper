@@ -336,6 +336,9 @@ function autoScrollToBottom(chatContainer, options = {}) {
  * 用于「回答完成后回顶」：回顶前必须清掉上一批 chunk 已登记的跟随到底，
  * 否则它们会在下一帧把视口重新拉到答案底部。
  * 只清待执行的滚动，不碰 _isProgramScroll——回顶自己会接管程序滚动标志。
+ * 调用方必须自行安排 _isProgramScroll 的复位（如回顶路径的 450ms 定时器）：
+ * 若被取消的是尚未执行的合并帧，标志已置 true 且没有复位帧在队列里，漏复位会让
+ * 用户上滚再也无法被检测到。
  */
 function cancelPendingAutoScroll() {
   if (_scrollFlushRaf) { cancelAnimationFrame(_scrollFlushRaf); _scrollFlushRaf = 0; }
