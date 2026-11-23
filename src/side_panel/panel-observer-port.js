@@ -21,6 +21,23 @@ const PORT_PREFIX = 'panel-observer-';
 const _ports = new Map();
 
 /**
+ * 观察端口的消息处理器集合。
+ *
+ * 背景：流式消息改为「有面板端口就只投端口、不广播」之后，接管实例（没有 callApi
+ * 闭包的 reattach 面板）只能靠这条端口收流。它必须与 keepalive 端口一样能承载消息，
+ * 否则接管面板会停在「生成中」不动。
+ */
+const _messageHandlers = new Set();
+
+/**
+ * 注册观察端口消息处理器（与 runtime.onMessage 使用同一个处理入口）。
+ * @param {(message: Object) => void} handler
+ */
+export function onPanelObserverMessage(handler) {
+  if (typeof handler === 'function') _messageHandlers.add(handler);
+}
+
+/**
  * 为某会话建立观察端口（幂等：已有则直接复用，不重复连）。
  * @param {string} sessionId
  * @returns {chrome.runtime.Port|null} 端口，失败返回 null
@@ -39,6 +56,20 @@ export function openPanelObserverPort(sessionId) {
   }
 
   _ports.set(sessionId, port);
+  // 端口双向使用：SW → 本实例的流式消息从这里进来（详见 onPanelObserverMessage）
+  try {
+    port.onMessage.addListener((msg) => {
+      for (const handler of _messageHandlers) {
+        try {
+          handler(msg);
+        } catch (err) {
+          logger.debug('[PanelObserver] 消息处理异常（忽略）:', err?.message || err);
+        }
+      }
+    });
+  } catch (err) {
+    logger.debug('[PanelObserver] 观察端口消息监听挂不上（忽略）:', err?.message || err);
+  }
   // Chrome 自己拆掉端口（扩展上下文失效等）时把本地引用一起摘掉，否则下次接管
   // 会复用一个已经死掉的端口，SW 那边再也等不到断开。
   try {

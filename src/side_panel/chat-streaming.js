@@ -1536,10 +1536,33 @@ function _ensureAgentOutput(card) {
   const existing = card.querySelector('.agent-stream-output');
   const existingCode = existing ? existing.querySelector('code') : null;
   if (existing && existingCode) {
-    return { element: existing, codeEl: existingCode };
+    // 接管还原/快照回填后卡片里已有输出：把已有长度算进上限基准，否则裁剪永远不会触发
+    return { element: existing, codeEl: existingCode, textLength: (existingCode.textContent || '').length };
   }
   const outputDiv = createAgentStreamOutput(card, null);
-  return { element: outputDiv, codeEl: outputDiv.querySelector('code') };
+  return { element: outputDiv, codeEl: outputDiv.querySelector('code'), textLength: 0 };
+}
+
+// 命令输出渲染上限：agent_exec 可能刷出几十 MB 日志，全量留在 DOM 里会让后续每次
+// 追加都要重排越来越大的文本节点，长任务越跑越卡。超过上限只保留最近一段，并在开头
+// 标注已省略的字符数（不静默丢内容）。
+const AGENT_OUTPUT_MAX_CHARS = 200_000;
+const AGENT_OUTPUT_KEEP_CHARS = 150_000;
+
+/** 超出上限时把 code 内容裁到最近一段；stderr 分隔节点一并重置 */
+function _trimAgentOutput(entry) {
+  const codeEl = entry && entry.codeEl;
+  if (!codeEl) return;
+  const full = codeEl.textContent || '';
+  if (full.length <= AGENT_OUTPUT_KEEP_CHARS) {
+    entry.textLength = full.length;
+    return;
+  }
+  const kept = full.slice(full.length - AGENT_OUTPUT_KEEP_CHARS);
+  const notice = `… 已省略前 ${full.length - kept.length} 字符（仅保留最近 ${AGENT_OUTPUT_KEEP_CHARS} 字符）\n`;
+  entry.stderrSeparator = null;
+  codeEl.textContent = notice + kept;
+  entry.textLength = notice.length + kept.length;
 }
 
 /** 按既有规则把一段输出写进 entry（stdout 始终排在 stderr 之前） */
@@ -1560,6 +1583,8 @@ function _writeAgentText(entry, streamType, data) {
   } else {
     codeEl.appendChild(textNode);
   }
+  entry.textLength = (entry.textLength || 0) + data.length;
+  if (entry.textLength > AGENT_OUTPUT_MAX_CHARS) _trimAgentOutput(entry);
 }
 
 /**
@@ -1597,13 +1622,14 @@ export function attachAgentStreamChunk(store, element, message) {
         };
       }
     } else {
-      const { element: outputDiv, codeEl } = _ensureAgentOutput(card);
+      const { element: outputDiv, codeEl, textLength } = _ensureAgentOutput(card);
       entry = {
         element: outputDiv,
         codeEl,
         stderrSeparator: null,
         toolCallId: message.toolCallId || '',
-        pending: null
+        pending: null,
+        textLength
       };
       addCodeCopyButtons();
     }
@@ -1617,8 +1643,12 @@ export function attachAgentStreamChunk(store, element, message) {
     const preEl = entry.codeEl.parentElement;
     if (preEl) preEl.scrollTop = preEl.scrollHeight;
   } else if (entry.pending && data) {
-    if (message.streamType === 'stderr') entry.pending.stderr += data;
-    else entry.pending.stdout += data;
+    // 卡片未就绪时的暂存同样要限量，否则一次大输出会先在内存里攒成巨串
+    const key = message.streamType === 'stderr' ? 'stderr' : 'stdout';
+    const next = entry.pending[key] + data;
+    entry.pending[key] = next.length > AGENT_OUTPUT_MAX_CHARS
+      ? next.slice(next.length - AGENT_OUTPUT_KEEP_CHARS)
+      : next;
   }
   return entry;
 }
@@ -1636,12 +1666,13 @@ export function flushPendingAgentStreams(store, element) {
     if (!entry || entry.codeEl || !entry.pending) continue;
     const card = resolveToolCallCard(element, entry.toolCallId);
     if (!card) continue;
-    const { element: outputDiv, codeEl } = _ensureAgentOutput(card);
+    const { element: outputDiv, codeEl, textLength } = _ensureAgentOutput(card);
     const { stdout, stderr } = entry.pending;
     entry.element = outputDiv;
     entry.codeEl = codeEl;
     entry.stderrSeparator = null;
     entry.pending = null;
+    entry.textLength = textLength;
     // 复用同一套 stderr 规则：stdout 先写，stderr 带分隔符跟在后面
     if (stdout) _writeAgentText(entry, 'stdout', stdout);
     if (stderr) _writeAgentText(entry, 'stderr', stderr);

@@ -13,14 +13,15 @@
 // 失败隔离：落库/广播异常都不外溢 —— 收尾失败绝不能炸掉闹钟的下一拍。
 import logger from '../shared/logger.js';
 import { persistCompletionWithoutPanel } from './panel-absent-persist.js';
+import { sendStreamMessage } from './stream-controller.js';
 
 const DEFAULT_IO = {
   persist: persistCompletionWithoutPanel,
   broadcast: (message) => {
     try {
-      // MV3 的 sendMessage 返回 Promise；扩展重载瞬间也可能同步抛错
-      const p = chrome.runtime.sendMessage(message);
-      if (p && typeof p.catch === 'function') p.catch(() => {});
+      // 与流式输出同一条出口：有面板端口就定向投递，没有才广播。
+      // 否则会出现「正文走端口、终态走广播」的双通道乱序。
+      sendStreamMessage(message?.sessionId, message);
     } catch { /* 无接收方 / API 被剥离：广播失败不影响收尾 */ }
   },
 };

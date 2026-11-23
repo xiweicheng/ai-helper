@@ -727,8 +727,17 @@ export async function ensureMigration() {
 
 /**
  * 保存/更新 ReAct checkpoint
- * 采用双写策略：IndexedDB + chrome.storage.local（后备）
- * 当 IndexedDB 的 reactCheckpoints store 不存在或写入失败时，chrome.storage.local 确保数据不丢失
+ *
+ * 单写策略：常规轮次只写 IndexedDB；仅在 IndexedDB 写入失败时才回退
+ * chrome.storage.local 兜底。
+ *
+ * 为什么不再双写：checkpoint 是全量现场（上下文消息 + 执行日志，MB 量级），长任务里
+ * 每 5s 落一次。双写等于把同一份数据序列化两遍、写两块盘；其中 chrome.storage.local
+ * 是 JSON 序列化 + LevelDB 落盘、且在浏览器进程里执行，是长任务卡顿外溢到其他页面的
+ * 主要来源之一。改成单写后写入量减半，最慢的那条路径只在 IDB 故障时才走。
+ *
+ * 恢复语义不变：getReactCheckpoint 本来就优先 IndexedDB、失败再降级到
+ * chrome.storage.local；deleteReactCheckpoint 也仍然两边都删。
  * @param {Object} checkpoint - 必须包含 sessionId
  * @returns {Promise<boolean>}
  */
@@ -742,17 +751,7 @@ export async function saveReactCheckpoint(checkpoint) {
   };
   const key = CHECKPOINT_KEY_PREFIX + checkpoint.sessionId;
 
-  // 策略：先写 chrome.storage.local（可靠），再尝试 IndexedDB（性能优化）
-  // 这样即使 IndexedDB 完全不可用，checkpoint 也不会丢失
-  let storageOk = false;
-  try {
-    await chrome.storage.local.set({ [key]: data });
-    storageOk = true;
-  } catch (e) {
-    logger.warn('[Storage] chrome.storage.local save checkpoint failed:', e.message);
-  }
-
-  // 同时写入 IndexedDB（如果可用），供 getAllReactCheckpoints 高效查询
+  // ① 主存储：IndexedDB（常态路径，只写这一份）
   let idbOk = false;
   try {
     idbOk = await withStore('reactCheckpoints', 'readwrite', (store, resolve) => {
@@ -761,15 +760,20 @@ export async function saveReactCheckpoint(checkpoint) {
       request.onerror = () => resolve(false);
     });
   } catch (e) {
-    // IndexedDB 不可用（store 不存在等），不影响主流程
-    logger.warn('[Storage] IndexedDB save checkpoint failed (downgraded to chrome.storage.local):', e.message);
+    // IndexedDB 不可用（store 缺失/升级阻塞/连接已关闭）：走下面的兜底
+    logger.warn('[Storage] IndexedDB save checkpoint failed, falling back to chrome.storage.local:', e.message);
   }
+  if (idbOk) return true;
 
-  if (!storageOk && !idbOk) {
-    logger.error('[Storage] checkpoint save complete failed:chrome.storage.local  and  IndexedDB averagenon- with ');
+  // ② 兜底：仅在 IndexedDB 写入失败时写 chrome.storage.local，保证 checkpoint 不丢
+  try {
+    await chrome.storage.local.set({ [key]: data });
+    logger.warn('[Storage] checkpoint saved to chrome.storage.local fallback');
+    return true;
+  } catch (e) {
+    logger.error('[Storage] checkpoint save failed: IndexedDB 与 chrome.storage.local 均写入失败:', e.message);
     return false;
   }
-  return true;
 }
 
 /**

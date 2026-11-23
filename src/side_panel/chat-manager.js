@@ -3670,6 +3670,22 @@ async function countEffectiveMcpTools(forcedMcpServerIds = null) {
   }
 }
 
+// 走面板端口定向通道的流式消息类型。
+// background 侧 sendStreamMessage 的行为：会话有面板端口时只投端口、不广播；
+// 没有端口（面板全关）才回退广播。这两侧必须成对维护，否则会出现消息没人收。
+const PORT_STREAM_TYPES = new Set([
+  'STREAM_START',
+  'STREAM_CHUNK',
+  'STREAM_TOOL_CALL',
+  'STREAM_TOOL_RESULT',
+  'STREAM_DONE',
+  'AGENT_STREAM',
+  'AGENT_STREAM_DONE',
+  'API_RETRYING',
+  'API_COMPLETE',
+  'API_ERROR',
+]);
+
 export async function callApi(messages, model, useTools = false, apiParams = {}, options = {}) {
   // options.resumeFromCheckpoint: 是否为从 checkpoint 恢复任务
   //   - true 时忽略 messages/model/useTools，发送 RESUME_REACT 而非 CALL_API
@@ -3736,6 +3752,13 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 实现已拆分到 chat-streaming.js 的 createStreamingElementAccessor
   const _se = createStreamingElementAccessor(mySessionId);
 
+  // 流式消息的端口入口：background 在有面板端口时不再广播 STREAM_*，
+  // 而是定向投递到这里，再交给同一个 runtime listener 处理（渲染路径完全不变）。
+  // 单通道 FIFO 保证了 START → CHUNK → TOOL_CALL → DONE 的到达顺序，
+  // 不需要序号去重/ACK（上一版正是在双通道去重上把 chunk 整批丢掉了）。
+  let _portStreamSink = null;
+  const _earlyPortStream = [];
+
   // 建立长连接端口以保持 Service Worker 存活，
   // 防止 API 调用耗时较长时 Chrome 判定 SW 空闲而将其杀死
   const keepalivePort = chrome.runtime.connect({ name: 'keepalive-' + mySessionId });
@@ -3767,6 +3790,17 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
   // 使用 _swRestartCtx 对象桥接异步的 onMessage 和同步的 Promise executor
   const _swRestartCtx = { restarted: false, rejectFn: null, cleanup: null, checkpoint: null };
   keepalivePort.onMessage.addListener((msg) => {
+    // 流式消息定向通道：进入与本函数 registry 中 runtime listener 完全相同的处理逻辑。
+    // sink 尚未就绪时先缓存（正常情况下 CALL_API/RESUME_REACT 在 listener 注册之后才发出，
+    // 这里只是兜底，防止首字丢失）。
+    if (msg && PORT_STREAM_TYPES.has(msg.type)) {
+      if (_portStreamSink) {
+        _portStreamSink(msg);
+      } else if (_earlyPortStream.length < 200) {
+        _earlyPortStream.push(msg);
+      }
+      return;
+    }
     // background 权威解析的宿主 tab 回传：覆盖本地乐观值（任务完成时随快照携带）；
     // null 也覆盖（权威源暂无值 → 删除乐观值 → 判定方保守弹，多弹不漏弹）
     if (msg.type === 'HOST_TAB_RESOLVED' && msg.sessionId === mySessionId) {
@@ -3811,6 +3845,10 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
 
   // 统一清理函数：断开 keepalive 端口、清理 listener 和 timeout、清除状态
   const cleanupCallApi = () => {
+    // 先摘端口入口再断开：端口里可能还有已排队的流式消息，收尾后不能再往
+    // 已 finalize 的气泡里追加文本（否则末尾会多出一截重复内容）
+    _portStreamSink = null;
+    _earlyPortStream.length = 0;
     try { keepalivePort.disconnect(); } catch (e) {}
     if (_timeoutCtx.timeoutId) { clearTimeout(_timeoutCtx.timeoutId); _timeoutCtx.timeoutId = null; }
     _timeoutCtx.removeListener();
@@ -4462,6 +4500,12 @@ export async function callApi(messages, model, useTools = false, apiParams = {},
     };
     
     chrome.runtime.onMessage.addListener(listener);
+
+    // 端口通道就绪：与 runtime listener 共用同一入口，端口先到/广播后到的处理完全一致
+    _portStreamSink = (msg) => listener(msg);
+    while (_earlyPortStream.length > 0) {
+      _portStreamSink(_earlyPortStream.shift());
+    }
     
     _timeoutCtx.removeListener = () => {
       chrome.runtime.onMessage.removeListener(listener);

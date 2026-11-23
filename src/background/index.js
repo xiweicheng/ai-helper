@@ -5,6 +5,7 @@ import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
 import { reactLoop, callApiNonStream, activeReactLoops, resumeReactLoopFromCheckpoint, revokeTaskLoopApproval } from './react-loop.js';
+import { sendStreamMessage } from './stream-controller.js';
 import { goalIsRunning } from '../shared/goal.js';
 import { preselectTools } from './tool-preselector.js';
 import { recordTokenUsage } from './token-recorder.js';
@@ -1437,14 +1438,14 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           getReactCheckpoint(sessionId).then(cp => {
             logger.warn('[Background] RESUME_REACT: re-query checkpoint result:', cp ? 'exists' : 'not found');
           }).catch(() => {});
-          chrome.runtime.sendMessage({
+          sendStreamMessage(sessionId, {
             type: 'API_ERROR',
             sessionId,
             callId: resumeCallId,
             error: t('bg.checkpointNotFound'),
             executionLog: [],
             resumed: true,
-          }).catch(() => {});
+          });
           return;
         }
         logger.debug('[Background] RESUME_REACT complete,content length:', result.content?.length);
@@ -1459,7 +1460,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           wasRevised: result.wasRevised || false,
           budgetEnded: result.budgetEnded === true,
         });
-        chrome.runtime.sendMessage({
+        sendStreamMessage(sessionId, {
           type: 'API_COMPLETE',
           sessionId,
           callId: resumeCallId,
@@ -1472,8 +1473,6 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           // 续跑后再次撞线同样软着陆：透传终态标记供面板维持「可续跑」入口
           budgetEnded: result.budgetEnded === true,
           exhaustedBy: result.exhaustedBy || null
-        }).catch(err => {
-          logger.warn('[Background] send RESUME completemessage failed:', err);
         });
       })
       .catch(async error => {
@@ -1488,14 +1487,14 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           error: error.message || t('bg.resumeFailed'),
           executionLog: truncatedErrLog,
         });
-        chrome.runtime.sendMessage({
+        sendStreamMessage(sessionId, {
           type: 'API_ERROR',
           sessionId,
           callId: resumeCallId,
           error: error.message || t('bg.resumeFailed'),
           executionLog: truncatedErrLog,
           resumed: true,
-        }).catch(() => {});
+        });
       });
     };  // doResume 函数结束
 
@@ -1887,7 +1886,7 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           wasRevised,
           budgetEnded,
         });
-        chrome.runtime.sendMessage({
+        sendStreamMessage(sessionId, {
           type: 'API_COMPLETE',
           sessionId: sessionId,
           callId: callId,
@@ -1898,8 +1897,6 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           wasRevised: wasRevised,
           budgetEnded: budgetEnded,
           exhaustedBy: result.exhaustedBy || null
-        }).catch(err => {
-          logger.warn('[Background] send backmessage failed:', err);
         });
       })
       .catch(async error => {
@@ -1919,14 +1916,12 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           error: error.message || t('bg.apiCallFailed'),
           executionLog: truncatedErrLog,
         });
-        chrome.runtime.sendMessage({
+        sendStreamMessage(sessionId, {
           type: 'API_ERROR',
           sessionId: sessionId,
           callId: callId,
           error: error.message || t('bg.apiCallFailed'),
           executionLog: truncatedErrLog
-        }).catch(err => {
-          logger.warn('[Background] send errormessage failed:', err);
         });
       });
     

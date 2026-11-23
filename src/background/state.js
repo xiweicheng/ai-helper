@@ -319,6 +319,33 @@ export function unregisterPanelObserverPort(sessionId, port) {
 }
 
 /**
+ * 取某会话（含祖先链回退）当前在线的全部面板端口（keepalive + observer，去重）。
+ *
+ * 流式输出优先走这里：只要取到端口，同一轮的 STREAM_* 就只投递到端口、不再广播。
+ * 广播会把每条 chunk 投递到所有标签页的所有 frame，是长任务拖慢无关页面的主因；
+ * 而端口是单通道 FIFO，天然保序，不需要序号/去重/ACK 这类额外机制。
+ * 端口为空（面板全关 / 端口刚断开）时调用方回退广播，行为与改造前一致。
+ *
+ * keepalive 与 observer 都要收：同一会话可能同时存在「发起任务的面板」与
+ * 「接管任务的面板」（侧边栏 + detach 独立窗口），缺一个就会有一侧不刷新。
+ * @param {string|null} sessionId
+ * @returns {chrome.runtime.Port[]}
+ */
+export function getSessionPorts(sessionId) {
+  if (!sessionId) return [];
+  const ports = [];
+  const seen = new Set();
+  for (const id of getSessionAncestry(sessionId)) {
+    for (const port of [keepalivePorts.get(id), observerPorts.get(id)]) {
+      if (!port || seen.has(port)) continue;
+      seen.add(port);
+      ports.push(port);
+    }
+  }
+  return ports;
+}
+
+/**
  * 「还有没有面板看着这个任务」：发起实例的 keepalive 与接管实例的 observer 任一存活都算。
  *
  * 适用于“面板看得见就不用提醒”这类判定（断开复核）。不适用

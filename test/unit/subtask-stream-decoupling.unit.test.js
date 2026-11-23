@@ -31,8 +31,10 @@ describe('子任务流式协议与 UI 推送解耦', () => {
   });
 
   test('STREAM_START 预发送仅在主任务 UI 推送开启时', () => {
+    // 出口由广播改为 sendStreamMessage（有面板端口定向、无端口回退广播），
+    // 但「仅主任务推送 UI」的门控不变，子任务仍然不得发出任何 UI 消息。
     expect(REACT_LOOP).toMatch(
-      /if \(uiStreamEnabled\) \{\s*\n\s*chrome\.runtime\.sendMessage\(\{\s*\n\s*type: 'STREAM_START'/
+      /if \(uiStreamEnabled\) \{\s*\n\s*sendStreamMessage\(sessionId, \{\s*\n\s*type: 'STREAM_START'/
     );
   });
 

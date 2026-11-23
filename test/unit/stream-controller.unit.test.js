@@ -3,7 +3,7 @@
 // 会形成稀疏数组；.map 保留空洞，经 chrome.runtime.sendMessage 的 JSON 序列化后空洞变成 null，
 // 导致侧边栏 appendToolCallItems 渲染工具卡片时抛 "Cannot read properties of null (reading 'function')"
 import { describe, test, expect } from 'vitest';
-import { StreamController, readSSEStream, normalizeToolCalls } from '../../src/background/stream-controller.js';
+import { StreamController, readSSEStream, normalizeToolCalls, sendAgentStream, sendAgentStreamDone } from '../../src/background/stream-controller.js';
 
 const TOOL_CALL_CHUNK = (idx, id, name, args) =>
   `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: idx, id, type: 'function', function: { name, arguments: args } }] } }] })}`;
@@ -89,5 +89,70 @@ describe('stream-controller tool_calls 稀疏数组防御', () => {
 
     const toolCallMsg = sent.find(m => m.type === 'STREAM_TOOL_CALL');
     expect(toolCallMsg.toolCalls).toHaveLength(2);
+  });
+
+  // 回归：流式出口改为「有面板端口定向、无端口广播」后，默认 _sendFn 变成同步函数（返回 undefined）。
+  // readSSEStream 曾在 _sendFn(...) 上链 .catch()，导致每条 tool_calls 都抛
+  // "Cannot read properties of undefined (reading 'catch')" 并把整条流打断。
+  test('默认出口（未注入 sendFn）时 tool_calls 流程不中断', async () => {
+    const sent = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { sent.push(msg); return Promise.resolve(); };
+    try {
+      const controller = new StreamController('s1', { streamEnabled: true }, { callId: 'c1' });
+      const sse = [
+        TOOL_CALL_CHUNK(0, 'call_a', 'execute_command', '{}'),
+        '',
+        FINISH_TOOL_CALLS_CHUNK,
+        '',
+      ].join('\n');
+
+      const result = await readSSEStream(makeStream(sse).getReader(), controller, null);
+      expect(result.status).toBe('tool_calls');
+      expect(sent.some(m => m.type === 'STREAM_TOOL_CALL')).toBe(true);
+    } finally {
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+});
+
+describe('Agent 命令输出合流', () => {
+  test('同一 execId 的连续输出合并成一条，DONE 前强制冲刷且顺序不乱', () => {
+    const sent = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { sent.push(msg); return Promise.resolve(); };
+    try {
+      sendAgentStream('s2', 'e1', 'tc1', 'stdout', 'line-a\n');
+      sendAgentStream('s2', 'e1', 'tc1', 'stdout', 'line-b\n');
+      // 合流窗口未到：此刻不应有 AGENT_STREAM 消息
+      expect(sent.filter(m => m.type === 'AGENT_STREAM')).toHaveLength(0);
+
+      sendAgentStreamDone('s2', 'e1', 'tc1', 0);
+
+      const chunks = sent.filter(m => m.type === 'AGENT_STREAM');
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].data).toBe('line-a\nline-b\n');
+      expect(chunks[0].streamType).toBe('stdout');
+      // 终态必须排在输出之后
+      const doneIdx = sent.findIndex(m => m.type === 'AGENT_STREAM_DONE');
+      expect(doneIdx).toBeGreaterThan(sent.indexOf(chunks[0]));
+    } finally {
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+
+  test('stdout 与 stderr 分开发送，保持前端按类型分隔着色', () => {
+    const sent = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { sent.push(msg); return Promise.resolve(); };
+    try {
+      sendAgentStream('s3', 'e2', 'tc2', 'stdout', 'out');
+      sendAgentStream('s3', 'e2', 'tc2', 'stderr', 'err');
+      sendAgentStreamDone('s3', 'e2', 'tc2', 1);
+      const chunks = sent.filter(m => m.type === 'AGENT_STREAM');
+      expect(chunks.map(m => m.streamType).sort()).toEqual(['stderr', 'stdout']);
+    } finally {
+      globalThis.chrome.runtime.sendMessage = original;
+    }
   });
 });

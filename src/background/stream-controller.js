@@ -1,8 +1,44 @@
 import logger from '../shared/logger.js';
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS } from '../shared/chat-client.js';
+import { getSessionPorts } from './state.js';
 
 // background/stream-controller.js - 流式输出控制器
 // 负责 SSE 解析、chunk 节流发送、usage 提取、tool_calls 检测
+
+/**
+ * 流式消息出口：有面板端口就只走端口，没有才回退广播。
+ *
+ * 为什么不是「端口 + 广播」双发：双通道会带来重复消费与跨通道乱序，必须再引入
+ * 序号去重和 ACK 收敛，而上一版正是栽在这套机制里（去重写重了一次，chunk 被整批丢弃，
+ * 表现为工具跑完才一次性渲染）。单通道没有这些问题：端口本身 FIFO，START → CHUNK →
+ * TOOL_CALL → DONE 的顺序天然成立。
+ *
+ * 同一轮的生命周期消息（START/CHUNK/TOOL_CALL/TOOL_RESULT/DONE/API_COMPLETE/API_ERROR）
+ * 必须走同一个出口，否则又会退化成双通道，重新引入乱序风险。
+ *
+ * @param {string|null} sessionId
+ * @param {Object} message
+ */
+export function sendStreamMessage(sessionId, message) {
+  const ports = getSessionPorts(sessionId);
+  if (ports.length > 0) {
+    let delivered = 0;
+    for (const port of ports) {
+      try {
+        port.postMessage(message);
+        delivered++;
+      } catch {
+        // 端口刚好断开（面板关闭/刷新竞态）：其余端口仍在就继续，全失败则回退广播
+      }
+    }
+    if (delivered > 0) return;
+  }
+  // 无端口（面板全关/端口刚断开）或端口全部投递失败：回退广播，行为与改造前一致。
+  // 扩展重载瞬间 sendMessage 可能同步抛错，这里一并兜住，避免影响 ReAct 主循环。
+  try {
+    chrome.runtime.sendMessage(message).catch(() => {});
+  } catch { /* 扩展上下文失效：丢弃这条 UI 消息，不影响任务本身 */ }
+}
 
 // 流式读取空闲超时：收到响应头后 apiTimeout 即失效（fetchWithTimeout 会 clearTimeout 并移除监听），
 // outerWatchdog 也在 readSSEStream 之前被清除，故空闲超时是"流式数据卡住"的唯一自动保护。
@@ -50,8 +86,18 @@ export class StreamController {
     this._streamStarted = !!options.preStarted;
     this._streamDone = false;
     // 支持自定义消息发送函数和消息类型前缀（用于向 content script 发送流式消息）
-    this._sendFn = options.sendFn || ((msg) => chrome.runtime.sendMessage(msg).catch(() => {}));
-    this._typePrefix = options.typePrefix || '';
+    // 默认出口按会话定向：有面板端口就只投端口，没有才回退广播（见 sendStreamMessage）。
+    // 带 typePrefix 的是 content script / 页面浮层通道，接收方不是侧边栏面板，保持广播。
+    const typePrefix = options.typePrefix || '';
+    this._sendFn = options.sendFn || ((msg) => {
+      if (typePrefix) {
+        // 页面浮层/划词通道：接收方是 content script，保持广播
+        try { chrome.runtime.sendMessage(msg).catch(() => {}); } catch { /* 上下文失效：忽略 */ }
+        return;
+      }
+      sendStreamMessage(this.sessionId, msg);
+    });
+    this._typePrefix = typePrefix;
   }
 
   /**
@@ -360,13 +406,15 @@ export async function readSSEStream(reader, controller, abortSignal, idleTimeout
           // 双重保险：检查 streamEnabled 配置，子任务禁用流式输出时不发送 STREAM_TOOL_CALL
           // 即使 reactLoop 中的条件检查被绕过，此处也能防止消息泄漏
           if (!controller.config || controller.config.streamEnabled !== false) {
+            // 不要在 _sendFn 的返回值上链 .catch：默认出口是同步的（端口投递 / 内部已兜住广播异常），
+            // 返回 undefined，链 .catch 会抛 TypeError 把整条流打断
             controller._sendFn({
               type: controller._typePrefix + 'STREAM_TOOL_CALL',
               sessionId: controller.sessionId,
               callId: controller.callId,
               toolCalls: normalizedToolCalls,
               thinkingContent: controller.fullContent
-            }).catch(() => {});
+            });
           }
           
           return { status: 'tool_calls', ...controller.getResult() };
@@ -410,8 +458,43 @@ export async function readSSEStream(reader, controller, abortSignal, idleTimeout
   }
 }
 
+// ========== Agent 命令实时输出：合流 ==========
+//
+// 现场：agent_exec 的 stdout/stderr 每来一帧 WebSocket 输出就发一条消息。跑 build/test
+// 时每秒几十到上百条，每条都要跨进程投递 + 前端追加 DOM + 强制滚动布局，是长任务里
+// 仅次于正文 chunk 的噪声源。
+//
+// 做法：按「会话 + execId + 输出类型」合并，80ms 发一条。保留 stderr 独立成条是为了
+// 前端仍能按类型分隔着色；单条超过 64KB 立即冲刷，避免大输出在 SW 里攒成巨包。
+// AGENT_STREAM_DONE 发出前先把该 execId 的缓冲全部冲刷，保证「输出 → 结束」的顺序。
+const AGENT_STREAM_FLUSH_MS = 80;
+const AGENT_STREAM_FLUSH_BYTES = 64 * 1024;
+const _agentStreamBuffers = new Map(); // `${sessionId}|${execId}|${type}` → 缓冲
+
+function _flushAgentStreamBuffer(key) {
+  const buf = _agentStreamBuffers.get(key);
+  if (!buf) return;
+  _agentStreamBuffers.delete(key);
+  if (buf.timer) { clearTimeout(buf.timer); buf.timer = null; }
+  if (!buf.data) return;
+  sendStreamMessage(buf.sessionId, {
+    type: 'AGENT_STREAM',
+    sessionId: buf.sessionId,
+    execId: buf.execId,
+    toolCallId: buf.toolCallId,
+    streamType: buf.type,
+    data: buf.data,
+  });
+}
+
+function _flushAgentStreamsForExec(sessionId, execId) {
+  for (const [key, buf] of [..._agentStreamBuffers]) {
+    if (buf.execId === execId && buf.sessionId === sessionId) _flushAgentStreamBuffer(key);
+  }
+}
+
 /**
- * 发送 Agent 命令实时输出
+ * 发送 Agent 命令实时输出（合并后发送，见上方说明）
  * @param {string} sessionId - 会话 ID
  * @param {string} execId - Agent 执行 ID
  * @param {string} toolCallId - 工具调用 ID，用于前端关联到对应的工具卡片
@@ -419,14 +502,22 @@ export async function readSSEStream(reader, controller, abortSignal, idleTimeout
  * @param {string} data - 输出数据
  */
 export function sendAgentStream(sessionId, execId, toolCallId, type, data) {
-  chrome.runtime.sendMessage({
-    type: 'AGENT_STREAM',
-    sessionId,
-    execId,
-    toolCallId,
-    streamType: type, // 'stdout' | 'stderr'
-    data
-  }).catch(() => {});
+  if (!execId || !data) return;
+  const key = `${sessionId}|${execId}|${type}`;
+  let buf = _agentStreamBuffers.get(key);
+  if (!buf) {
+    buf = { sessionId, execId, toolCallId, type, data: '', timer: null };
+    _agentStreamBuffers.set(key, buf);
+  }
+  buf.toolCallId = toolCallId || buf.toolCallId;
+  buf.data += data;
+  if (buf.data.length >= AGENT_STREAM_FLUSH_BYTES) {
+    _flushAgentStreamBuffer(key);
+    return;
+  }
+  if (!buf.timer) {
+    buf.timer = setTimeout(() => _flushAgentStreamBuffer(key), AGENT_STREAM_FLUSH_MS);
+  }
 }
 
 /**
@@ -437,11 +528,12 @@ export function sendAgentStream(sessionId, execId, toolCallId, type, data) {
  * @param {number} exitCode - 命令退出码
  */
 export function sendAgentStreamDone(sessionId, execId, toolCallId, exitCode) {
-  chrome.runtime.sendMessage({
+  _flushAgentStreamsForExec(sessionId, execId);
+  sendStreamMessage(sessionId, {
     type: 'AGENT_STREAM_DONE',
     sessionId,
     execId,
     toolCallId,
     exitCode
-  }).catch(() => {});
+  });
 }

@@ -39,7 +39,7 @@ import {
   renderStreamingContentFull,
 } from './chat-streaming.js';
 import { readStreamSnapshot } from './stream-snapshot.js';
-import { openPanelObserverPort, closePanelObserverPort } from './panel-observer-port.js';
+import { openPanelObserverPort, closePanelObserverPort, onPanelObserverMessage } from './panel-observer-port.js';
 // 注意：会话落库（session-manager → 存储层）依赖较重的浏览器侧模块链，改为使用时
 // 动态导入：既避免面板初始化时的无意义加载，也让本模块的纯逻辑可独立单测。
 
@@ -632,7 +632,10 @@ function _settleRetarget(sessionId, active) {
 function _bindListener() {
   if (_listenerBound) return;
   _listenerBound = true;
-  chrome.runtime.onMessage.addListener((message) => {
+  // 处理入口唯一：广播（runtime.onMessage）与观察端口（panel-observer-<sessionId>）共用。
+  // background 在有面板端口时不再广播流式消息，接管实例靠这条端口继续收流；
+  // 两条通道都指向同一函数，避免出现两套渲染/过滤口径。
+  const handleMessage = (message) => {
     if (!message) return false;
     const mirror = message.sessionId ? _mirrors.get(message.sessionId) : null;
     if (!mirror) {
@@ -656,7 +659,10 @@ function _bindListener() {
     openPanelObserverPort(message.sessionId);
     mirror.handleMessage(message);
     return false;
-  });
+  };
+
+  chrome.runtime.onMessage.addListener(handleMessage);
+  onPanelObserverMessage(handleMessage);
 
   // 启动期的挂载时机：chat-manager 补水完成后发 session-hydrated（不发 session-switched，
   // 那条会重建聊天区）。新面板启动时 activeSessionId 尚未就绪，接管时气泡只能是游离的，

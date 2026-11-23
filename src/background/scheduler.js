@@ -4,6 +4,7 @@
 import { getStoredConfig } from './config.js';
 import { getTools } from './tool-executor.js';
 import { reactLoop, callApiNonStream, activeReactLoops } from './react-loop.js';
+import { sendStreamMessage } from './stream-controller.js';
 import { getActiveCallMap } from './active-call-registry.js';
 import { willAutoResumeCheckpoint, startAutoResumeWatch } from './auto-resume.js';
 import { createScheduledSession, appendMessageToSession } from '../storage/session-store.js';
@@ -608,7 +609,8 @@ export async function runTask(taskId, force = false) {
       callId: callId || undefined,
     });
     // 广播终态：面板若正开着这个会话，镜像据此收尾（否则气泡会永远停在「生成中」）
-    chrome.runtime.sendMessage({
+    // 走 sendStreamMessage：与流式正文同一条出口（有面板端口则定向，无端口才广播）
+    sendStreamMessage(hostSession.id, {
       type: 'API_COMPLETE',
       sessionId: hostSession.id,
       callId,
@@ -619,7 +621,7 @@ export async function runTask(taskId, force = false) {
       wasRevised: result.wasRevised || false,
       budgetEnded: result.budgetEnded === true,
       exhaustedBy: result.exhaustedBy || null,
-    }).catch(() => {});
+    });
     // 成功通知（受 scheduledNotificationEnabled 开关控制；定时任务无面板实例，不做可见性抑制）
     notifyTaskFeedback({ success: true, sessionId: task.sessionId, name: task.name, source: 'scheduled' }).catch(() => {});
     task = { ...task, lastStatus: 'success', lastError: null, lastRunAt: Date.now() };
@@ -646,13 +648,13 @@ export async function runTask(taskId, force = false) {
         });
         // 同步终态：面板镜像要收尾，否则气泡停「生成中」（同一 callId 落库会自动合并）
         if (callId) {
-          chrome.runtime.sendMessage({
+          sendStreamMessage(targetSessionId, {
             type: 'API_ERROR',
             sessionId: targetSessionId,
             callId,
             error: failContent,
             executionLog: [],
-          }).catch(() => {});
+          });
         }
       }
     } catch { /* 写失败说明不影响主流程 */ }

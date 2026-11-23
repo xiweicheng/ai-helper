@@ -6,7 +6,7 @@ import { decideNetworkAccess, classifyUrlTarget, toCleanHostList } from '../shar
 import { PARALLELIZABLE_TOOLS, CONFIRMATION_REQUIRED_TOOLS, CONFIRMATION_ACTION_MAP, TOOL_TIMEOUT_MS, INTERACTION_CONFIRM_TIMEOUT_MS, INTERACTION_PANEL_POLL_MS, PRESELECT_MIN_TOOL_COUNT, DEFAULT_REACT_CONFIG } from './constants.js';
 import { estimateTokens, estimateMessagesTokens, truncateByTokens, truncateContentSmart, getContextWindow, assessContextPressure, filterApiMessages, sanitizeImageUrlsForApi, stripImagesFromContent, trimMessagesByBudget, updateCalibration, getCalibratedTokens, getCalibrationInfo } from '../shared/token-counter.js';
 import { recordTokenUsage } from './token-recorder.js';
-import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS } from './stream-controller.js';
+import { StreamController, readSSEStream, STREAM_IDLE_TIMEOUT_MS, sendStreamMessage } from './stream-controller.js';
 import { saveReactCheckpoint, getReactCheckpoint, deleteReactCheckpoint, getAllReactCheckpoints } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -2688,11 +2688,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
 
         // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态（子任务不推送 UI）
         if (uiStreamEnabled) {
-          chrome.runtime.sendMessage({
+          sendStreamMessage(sessionId, {
             type: 'STREAM_START',
             sessionId: sessionId,
             callId: callId
-          }).catch(() => {});
+          });
           logger.debug('[Background] STREAM_START sent (API call with  before )');
         }
 
@@ -3065,7 +3065,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                 // 补发工具结果：前端卡片由 STREAM_TOOL_CALL 创建，只有 STREAM_TOOL_RESULT
                 // 才能把它从"执行中..."落定为失败态；这里提前 return 会绕过下方的统一发送
                 if (!isSubtask) {
-                  chrome.runtime.sendMessage({
+                  sendStreamMessage(sessionId, {
                     type: 'STREAM_TOOL_RESULT',
                     sessionId,
                     result: {
@@ -3076,7 +3076,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                       truncated: false,
                       duration: Date.now() - toolStartTime
                     }
-                  }).catch(() => {});
+                  });
                 }
                 // 推送工具拒绝响应到消息历史，确保 assistant(tool_calls) 后面有对应的 tool 消息
                 currentMessages.push({
@@ -3217,7 +3217,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
             // 子任务禁用流式输出，不发送 STREAM_TOOL_RESULT（子任务通过 EXECUTION_STATUS_UPDATE 汇报状态）
             // 与下方失败分支保持一致，避免子任务工具结果泄漏到主 UI
             if (!isSubtask) {
-              chrome.runtime.sendMessage({
+              sendStreamMessage(sessionId, {
                 type: 'STREAM_TOOL_RESULT',
                 sessionId,
                 result: {
@@ -3228,7 +3228,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                   truncated: toolResultTruncated,
                   duration: Date.now() - toolStartTime
                 }
-              }).catch(() => {});
+              });
             }
 
             // 统计本轮已落定的失败数（含失败分支先行落定的当前调用）。
@@ -3325,7 +3325,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                   loopRecords.push({ order: j, name: skippedName, args: parseToolCallArgs(skippedCall), result: { skipped: true } });
                   // 补发 STREAM_TOOL_RESULT 让前端卡片从"执行中"变为"已跳过"
                   if (!isSubtask) {
-                    chrome.runtime.sendMessage({
+                    sendStreamMessage(sessionId, {
                       type: 'STREAM_TOOL_RESULT',
                       sessionId,
                       result: {
@@ -3336,7 +3336,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                         truncated: false,
                         duration: 0
                       }
-                    }).catch(() => {});
+                    });
                   }
                 }
                 await trimMessages();
@@ -3533,7 +3533,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
             // 发送工具错误结果到 Side Panel 展示（更新 UI 中的工具卡片状态）
             // 子任务禁用流式输出，不发送 STREAM_TOOL_RESULT（子任务通过 EXECUTION_STATUS_UPDATE 汇报状态）
             if (!isSubtask) {
-              chrome.runtime.sendMessage({
+              sendStreamMessage(sessionId, {
                 type: 'STREAM_TOOL_RESULT',
                 sessionId,
                 result: {
@@ -3544,7 +3544,7 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
                   truncated: false,
                   duration: Date.now() - toolStartTime
                 }
-              }).catch(() => {});
+              });
             }
 
             return {
@@ -4845,12 +4845,18 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
     }
 
     // 在 API 调用前发送 STREAM_START，让前端在等待响应时显示"思考中"状态
+    // 走与 CHUNK 相同的出口：带 typePrefix 的是页面浮层通道（广播），其余按会话定向
     if (useStream && sessionId) {
-      chrome.runtime.sendMessage({
+      const streamStartMsg = {
         type: 'STREAM_START',
         sessionId: sessionId,
         callId: callId
-      }).catch(() => {});
+      };
+      if (streamOptions?.typePrefix) {
+        chrome.runtime.sendMessage(streamStartMsg).catch(() => {});
+      } else {
+        sendStreamMessage(sessionId, streamStartMsg);
+      }
       logger.debug('[Background] STREAM_START sent (API call with  before )');
     }
 
@@ -4865,15 +4871,21 @@ export function callApiNonStream(messages, model, apiParams = {}, sessionId = nu
     }, config.reactConfig.apiTimeout, config.reactConfig.apiRetryCount, config.reactConfig.apiRetryBaseDelay, (retryAttempt, retryError, delay) => {
       logger.warn(`[Background] API retry (${retryAttempt}/${config.reactConfig.apiRetryCount}) scheduled in ${delay}ms:`, retryError.message);
       // 通知前端显示重试状态（仅带 sessionId 的场景，避免无会话信令误更新侧边栏 UI）
+      // 与流式消息同通道：同一轮里不会出现「重试状态先于/晚于正文」的乱序
       if (sessionId) {
-        chrome.runtime.sendMessage({
+        const retryMsg = {
           type: 'API_RETRYING',
           sessionId: sessionId,
           callId: callId,
           attempt: retryAttempt,
           maxRetries: config.reactConfig.apiRetryCount,
           delay: delay
-        }).catch(() => {});
+        };
+        if (streamOptions?.typePrefix) {
+          chrome.runtime.sendMessage(retryMsg).catch(() => {});
+        } else {
+          sendStreamMessage(sessionId, retryMsg);
+        }
       }
     })
     .then(async response => {
