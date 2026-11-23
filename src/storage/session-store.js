@@ -162,6 +162,37 @@ export function hydrateSessionWorkdir(session) {
 }
 
 /**
+ * 会话历史指纹（轻量）。
+ * updatedAt 只需要回答「这次保存是否改变了对话内容」，不需要逐字比对文本：
+ * 每条消息只取身份与长度类字段，一次 O(条数) 遍历，不分配大字符串。
+ * 不用 JSON.stringify 整段历史的原因：htmlContent / 执行日志可能到 MB 级，
+ * 每次保存都序列化两遍会带来明显的瞬时内存与 GC 压力。
+ * 覆盖的实际变更来源：追加/删除消息、流式内容增长、执行日志与 HTML 快照落盘。
+ */
+function historySignature(history) {
+  const list = history || [];
+  const parts = [String(list.length)];
+  for (const msg of list) {
+    if (!msg) { parts.push('-'); continue; }
+    const content = msg.content;
+    const contentSize = typeof content === 'string'
+      ? content.length
+      : (Array.isArray(content) ? content.length : 0);
+    parts.push([
+      msg.role || '',
+      msg.messageId || '',
+      msg.callId || '',
+      contentSize,
+      msg.htmlContent ? msg.htmlContent.length : 0,
+      msg.executionLog ? msg.executionLog.length : 0,
+      msg.resumable ? 1 : 0,
+      msg.resumed ? 1 : 0,
+    ].join(':'));
+  }
+  return parts.join('|');
+}
+
+/**
  * 保存当前会话状态
  */
 export async function saveCurrentSession() {
@@ -172,6 +203,11 @@ export async function saveCurrentSession() {
     logger.warn('[SessionStore] saveCurrentSession cannot find currentsession:', state.activeSessionId);
     return false;
   }
+
+  // 保存前的历史指纹：只有对话内容真的变化才刷新 updatedAt。
+  // switchToSession 会保存「切走的会话」，但用户只是点开看一眼不算一次更新；
+  // 以前无条件写 now，导致按「最近更新」排序时每点一次会话列表顺序就跳一次。
+  const historyBefore = historySignature(currentSession.messageHistory);
 
   // 更新当前会话数据
   currentSession.model = state.currentModel;
@@ -196,8 +232,6 @@ export async function saveCurrentSession() {
 
   currentSession.messageHistory = serializeMessageHistory(state.messageHistory);
 
-  currentSession.updatedAt = new Date().toISOString();
-
   // 更新标题（取第一条用户消息的前 50 个字符）
   // 分叉/复制的会话保留其自定义标题（含"- 分叉"/"- 副本"后缀），不自动覆盖
   // 用户手动重命名的会话（titleManuallySet）同样保留自定义标题，避免切换/保存时被首条消息覆盖
@@ -206,6 +240,12 @@ export async function saveCurrentSession() {
     if (firstUserMsg) {
       currentSession.title = getTextContent(firstUserMsg.content).substring(0, 50).replace(/\n/g, ' ');
     }
+  }
+
+  // 会话时间戳语义是「最近一次对话更新」，不是「最近一次保存」。
+  // 纯切换 / 重绘触发的保存不改历史，就不该把时间改成 now（否则排序会来回跳）。
+  if (historySignature(currentSession.messageHistory) !== historyBefore) {
+    currentSession.updatedAt = new Date().toISOString();
   }
 
   const saved = await idb.putSession(currentSession);
