@@ -46,24 +46,32 @@ globalThis.chrome = {
 
 let autoScrollToBottom;
 let scrollStreamingToBottom;
+let cancelPendingAutoScroll;
 
 beforeAll(async () => {
-  ({ autoScrollToBottom, scrollStreamingToBottom } = await import('../../src/side_panel/chat-streaming.js'));
+  ({ autoScrollToBottom, scrollStreamingToBottom, cancelPendingAutoScroll } = await import('../../src/side_panel/chat-streaming.js'));
 });
 
-// 用手动队列完全接管 rAF，令测试与 jsdom 的 rAF 实现/时序无关
+// 用手动队列完全接管 rAF，令测试与 jsdom 的 rAF 实现/时序无关。
+// 队列用 id → callback 保存，并接管 cancelAnimationFrame，才能验证“取消排队滚动”。
 let rafQueue;
+let rafIdSeq;
 const realRaf = globalThis.requestAnimationFrame;
+const realCancelRaf = globalThis.cancelAnimationFrame;
 beforeEach(() => {
-  rafQueue = [];
-  globalThis.requestAnimationFrame = (cb) => { rafQueue.push(cb); return rafQueue.length; };
+  rafQueue = new Map();
+  rafIdSeq = 1;
+  globalThis.requestAnimationFrame = (cb) => { const id = rafIdSeq++; rafQueue.set(id, cb); return id; };
+  globalThis.cancelAnimationFrame = (id) => { rafQueue.delete(id); };
 });
 afterEach(() => {
   globalThis.requestAnimationFrame = realRaf;
+  globalThis.cancelAnimationFrame = realCancelRaf;
 });
 // 冲刷一帧：执行本帧入队的全部回调（回调内新入队的留到下一帧，模拟真实分帧）
 function flushFrame() {
-  const cbs = rafQueue.splice(0, rafQueue.length);
+  const cbs = Array.from(rafQueue.values());
+  rafQueue.clear();
   cbs.forEach((cb) => cb());
 }
 
@@ -73,10 +81,11 @@ function buildContainer() {
   const cc = document.getElementById('chatContainer');
   let scrollTop = 0;
   let scrollHeight = 300; // 首帧时测得的高度（偏小，模拟尚未稳定）
+  let writes = 0; // 记录 scrollTop 被写入的次数，用于验证同帧合并
   Object.defineProperty(cc, 'scrollTop', {
     configurable: true,
     get: () => scrollTop,
-    set: (v) => { scrollTop = v; },
+    set: (v) => { scrollTop = v; writes++; },
   });
   Object.defineProperty(cc, 'clientHeight', { configurable: true, value: 200 });
   Object.defineProperty(cc, 'scrollHeight', {
@@ -86,17 +95,26 @@ function buildContainer() {
   });
   // scrollTo（smooth 分支用）在本用例里不需要真实行为
   cc.scrollTo = () => {};
-  return { cc, grown: () => { scrollHeight = 1000; }, readScrollTop: () => scrollTop };
+  return { cc, grown: () => { scrollHeight = 1000; }, readScrollTop: () => scrollTop, readWrites: () => writes };
 }
 
 describe('autoScrollToBottom - 布局延后稳定时补滚到位', () => {
-  test('scrollHeight 在下一帧才增大时，补滚后应滚到最终底部', () => {
-    const { cc, grown, readScrollTop } = buildContainer();
+  test('同帧多次触发合并为一次滚动，且高度延后增大时补滚到位', () => {
+    const { cc, grown, readScrollTop, readWrites } = buildContainer();
 
-    autoScrollToBottom(cc); // 非强制、非平滑（流式每块的默认调用形态）
+    // 流式每块都会调用一次；同一帧内的多次调用必须合并
+    autoScrollToBottom(cc);
+    autoScrollToBottom(cc);
+    autoScrollToBottom(cc);
 
-    // 同步滚动：按当时偏小的 scrollHeight 滚动（300）——单帧滚动的结果，差一点没到底
+    // 只登记、不立即读写 scrollTop（避免把强制布局插到任务中间）
+    expect(readScrollTop()).toBe(0);
+    expect(readWrites()).toBe(0);
+
+    // 本帧执行合并后的滚动：按当时偏小的 scrollHeight 滚动（300）——差一点没到底
+    flushFrame();
     expect(readScrollTop()).toBe(300);
+    expect(readWrites()).toBe(1);
 
     // 关键：下一帧浏览器才把内容真正撑高（代码块/图片/指示器折叠完成）
     grown();
@@ -105,6 +123,30 @@ describe('autoScrollToBottom - 布局延后稳定时补滚到位', () => {
 
     // 断言补滚后滚到最终底部
     expect(readScrollTop()).toBe(1000);
+  });
+});
+
+// 回归：回答完成后的“回顶”必须生效。P1-2 把滚动改成帧内执行后，流式最后一帧的
+// “跟随到底”可能排在回顶之后执行，把视口又拉回底部；因此回顶前必须取消排队的滚动帧。
+describe('cancelPendingAutoScroll - 回顶前取消排队的跟随到底', () => {
+  test('尚未执行的合并帧被取消后不再滚动', () => {
+    const { cc, readScrollTop } = buildContainer();
+    autoScrollToBottom(cc);
+    cancelPendingAutoScroll();
+    flushFrame();
+    expect(readScrollTop()).toBe(0);
+  });
+
+  test('合并帧已执行后，补滚帧被取消则不会再把视口拉到底部', () => {
+    const { cc, grown, readScrollTop } = buildContainer();
+    autoScrollToBottom(cc);
+    flushFrame(); // 合并帧执行：滚到偏小的 300，并登记补滚帧
+    expect(readScrollTop()).toBe(300);
+
+    grown(); // 高度延后稳定
+    cancelPendingAutoScroll(); // 模拟回顶前取消补滚帧
+    flushFrame();
+    expect(readScrollTop()).toBe(300); // 保持原位，没有被拉回底部
   });
 });
 

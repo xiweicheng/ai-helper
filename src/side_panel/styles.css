@@ -24,8 +24,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* 背景是不透明的 brand-gradient，backdrop-filter 没有可透视的内容，视觉零收益，
+     却让这块大面积元素长期维持一个 GPU 模糊合成层（GPU 进程全浏览器共享）。 */
   box-shadow: 0 2px 12px var(--shadow-sm);
   position: relative;
   z-index: 100;
@@ -5813,8 +5813,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* 背后只有 body 纯色背景（与消息列表是 flex 兄弟、不重叠），模糊纯色仍是纯色，
+     去掉这块大面积的 backdrop-filter 可少一个 GPU 模糊合成层。 */
   transition: border-color 0.25s, box-shadow 0.25s;
 }
 .input-container:focus-within {

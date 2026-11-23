@@ -173,6 +173,20 @@ let _userScrolledUp = false;       // 用户是否在流式过程中主动上滚
 let _scrollListenerBound = false;  // scroll 监听是否已绑定（防止重复绑定）
 let _hasPendingContent = false;    // 用户上滚后，是否有新的流式内容产生（用于按钮 badge）
 
+// 滚动合并：流式 chunk 约 30ms 一个，每个都同步读 scrollHeight 会把强制布局插到
+// 任意任务中间（历史越长越贵）。这里改为只登记目标，由同一帧的 rAF 统一读一次、
+// 写一次——一帧最多一次布局，且与渲染对齐。
+let _scrollFlushRaf = 0;           // 已登记的滚动帧（0 = 未登记）
+let _scrollTarget = null;          // 待滚动容器
+let _scrollForce = false;          // 本次是否强制（忽略用户上滚）
+let _scrollSmooth = false;         // 本次是否平滑（以最后一次登记为准）
+let _scrollResetRaf = 0;           // 补滚完成后的标志复位帧
+let _scrollFixRaf = 0;             // 补滚帧（高度延后稳定时再滚一次）
+let _programScrollResetTimer = 0;  // 平滑程序滚动的标志复位定时器
+// 回答完成后“回顶”期间抑制自动跟随：回顶是平滑滚动，而流式最后一帧的“跟随到底”
+// 可能排在回顶之后执行，若不抑制会把视口又拉回底部（历史行为：回顶必须生效）。
+let _suppressAutoScrollUntil = 0;
+
 /** 更新滚动到底部按钮的显示状态 */
 function updateScrollButtonState() {
   const btn = document.getElementById('scrollToBottomBtn');
@@ -249,6 +263,9 @@ function autoScrollToBottom(chatContainer, options = {}) {
 
   const { force = false, smooth = false } = options;
 
+  // 回顶动画期间不跟随到底（force 除外：用户显式点“滚动到底部”总要生效）
+  if (!force && Date.now() < _suppressAutoScrollUntil) return;
+
   if (!force && _userScrolledUp) {
     // 用户已上滚查看，不自动滚动，但标记有新内容等待查看
     _hasPendingContent = true;
@@ -256,27 +273,76 @@ function autoScrollToBottom(chatContainer, options = {}) {
     return;
   }
 
+  // 只登记，不立即读 scrollHeight：同帧内的多次调用（chunk、补滚、按钮）合并为一次
+  _scrollTarget = chatContainer;
+  _scrollForce = _scrollForce || force;
+  _scrollSmooth = smooth;
+
+  if (_scrollFlushRaf) return;
   _isProgramScroll = true;
-  if (smooth) {
-    chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
-    // 平滑滚动自身会持续动画到底，无需补帧；下一帧复位标志
-    requestAnimationFrame(() => { _isProgramScroll = false; });
-    return;
-  }
+  _scrollFlushRaf = requestAnimationFrame(() => {
+    _scrollFlushRaf = 0;
+    const el = _scrollTarget;
+    const isForce = _scrollForce;
+    const isSmooth = _scrollSmooth;
+    _scrollTarget = null;
+    _scrollForce = false;
+    _scrollSmooth = false;
 
-  chatContainer.scrollTop = chatContainer.scrollHeight;
-
-  // 流式每块用 innerHTML 重渲染整段内容（含代码块/图片/思考指示器折叠），其真实高度
-  // 常在下一帧才最终确定。单帧按当时的 scrollHeight 滚动会"差一点没到底"，最新内容被
-  // 底部遮挡。补滚一帧：若期间用户未上滚，用稳定后的高度再滚到位（保持 _isProgramScroll
-  // 跨越补滚帧，避免把程序滚动误判为用户上滚而停跟随）。
-  requestAnimationFrame(() => {
-    if (!_userScrolledUp) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+    // 容器已脱落（切换会话/后台会话）：不滚，且别把标志留在 true
+    if (!el || !el.isConnected) {
+      _isProgramScroll = false;
+      return;
     }
-    // 补滚完成后再下一帧复位标志（scroll 事件通常在同步或下一帧触发）
-    requestAnimationFrame(() => { _isProgramScroll = false; });
+    // 登记到执行之间用户可能上滚了
+    if (!isForce && _userScrolledUp) {
+      _hasPendingContent = true;
+      updateScrollButtonState();
+      _isProgramScroll = false;
+      return;
+    }
+
+    if (isSmooth) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      // 平滑滚动自身会持续动画到底，无需补帧；下一帧复位标志
+      requestAnimationFrame(() => { _isProgramScroll = false; });
+      return;
+    }
+
+    el.scrollTop = el.scrollHeight;
+
+    // 流式每块用 innerHTML 重渲染整段内容（含代码块/图片/思考指示器折叠），其真实高度
+    // 常在下一帧才最终确定。单帧按当时的 scrollHeight 滚动会"差一点没到底"，最新内容被
+    // 底部遮挡。补滚一帧：若期间用户未上滚，用稳定后的高度再滚到位（保持 _isProgramScroll
+    // 跨越补滚帧，避免把程序滚动误判为用户上滚而停跟随）。
+    if (_scrollFixRaf) cancelAnimationFrame(_scrollFixRaf);
+    _scrollFixRaf = requestAnimationFrame(() => {
+      _scrollFixRaf = 0;
+      if (el.isConnected && !_userScrolledUp) {
+        el.scrollTop = el.scrollHeight;
+      }
+      // 补滚完成后再下一帧复位标志（scroll 事件通常在同步或下一帧触发）
+      if (_scrollResetRaf) cancelAnimationFrame(_scrollResetRaf);
+      _scrollResetRaf = requestAnimationFrame(() => {
+        _scrollResetRaf = 0;
+        _isProgramScroll = false;
+      });
+    });
   });
+}
+
+/**
+ * 取消排队中的自动滚动（合并帧 + 补滚帧）。
+ * 用于「回答完成后回顶」：回顶前必须清掉上一批 chunk 已登记的跟随到底，
+ * 否则它们会在下一帧把视口重新拉到答案底部。
+ * 只清待执行的滚动，不碰 _isProgramScroll——回顶自己会接管程序滚动标志。
+ */
+function cancelPendingAutoScroll() {
+  if (_scrollFlushRaf) { cancelAnimationFrame(_scrollFlushRaf); _scrollFlushRaf = 0; }
+  if (_scrollFixRaf) { cancelAnimationFrame(_scrollFixRaf); _scrollFixRaf = 0; }
+  _scrollTarget = null;
+  _scrollForce = false;
+  _scrollSmooth = false;
 }
 
 /**
@@ -298,6 +364,7 @@ function scrollStreamingToBottom(element) {
 function resetScrollState() {
   _userScrolledUp = false;
   _hasPendingContent = false;
+  _suppressAutoScrollUntil = 0;
   // 重置后若正在生成中，立即标记有待处理内容，确保 badge 能正常显示
   if (state.isGenerating) {
     _hasPendingContent = true;
@@ -2646,7 +2713,15 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       const cc = document.getElementById('chatContainer');
       // 仅当该消息较高（超出视口 60%）时才回顶，避免短回答突兀跳动
       if (cc && element.offsetHeight > cc.clientHeight * 0.6) {
+        // 回顶是平滑滚动，而流式最后一帧的“跟随到底”可能排在它之后执行：
+        // 先清掉排队的滚动帧，并在动画期间抑制自动跟随，否则会被拉回底部。
+        cancelPendingAutoScroll();
+        _suppressAutoScrollUntil = Date.now() + 1000;
+        _isProgramScroll = true;
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // 平滑滚动约 300ms，期间持续发 scroll 事件；动画结束后再开放用户滚动判定
+        clearTimeout(_programScrollResetTimer);
+        _programScrollResetTimer = setTimeout(() => { _isProgramScroll = false; }, 450);
       }
     }
     // 流式结束后保留待处理内容标记（转为静态圆点，提醒用户下面还有未看内容）
@@ -2749,4 +2824,4 @@ export function finalizeCancelledStream(element) {
   element.querySelectorAll('.tool-call-terminate-btn').forEach(el => el.style.display = 'none');
 }
 
-export { initScrollToBottomBtn, updateScrollButtonState, resetScrollState, notifyNonStreamContentArrived, autoScrollToBottom, scrollStreamingToBottom };
+export { initScrollToBottomBtn, updateScrollButtonState, resetScrollState, notifyNonStreamContentArrived, autoScrollToBottom, scrollStreamingToBottom, cancelPendingAutoScroll };
