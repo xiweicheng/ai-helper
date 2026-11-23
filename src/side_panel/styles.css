@@ -7533,6 +7533,17 @@ body {
   -ms-user-select: text;
 }
 
+/* 历史消息的正文跳过屏幕外布局/绘制：长会话的滚动与重排不再随消息数线性增长。
+   只作用于已收口的助手消息正文（不含用户消息，也不含正在流式的气泡）：
+   - 不加在消息外层/包裹层：收藏、左侧提问目录、跳转都依赖消息元素自身的布局盒；
+   - 不加在 .message-content：底部工具条/导出下拉在它内部，paint containment 会裁掉浮层；
+   - `auto` 让浏览器记住上次渲染的真实高度，减少滚动条跳动。 */
+#chatContainer .message.assistant .markdown-body,
+#chatContainer .message-wrapper.assistant:not(.streaming) .markdown-body {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}
+
 .message.user {
   user-select: text;
   -webkit-user-select: text;

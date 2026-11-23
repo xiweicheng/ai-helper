@@ -340,6 +340,9 @@ function autoScrollToBottom(chatContainer, options = {}) {
 function cancelPendingAutoScroll() {
   if (_scrollFlushRaf) { cancelAnimationFrame(_scrollFlushRaf); _scrollFlushRaf = 0; }
   if (_scrollFixRaf) { cancelAnimationFrame(_scrollFixRaf); _scrollFixRaf = 0; }
+  // 补滚帧可能已经执行过、复位帧还在队列里：它会在回顶动画中把 _isProgramScroll
+  // 提前置回 false，导致回顶的 scroll 事件被误判为用户上滚。回顶路径会自己安排复位。
+  if (_scrollResetRaf) { cancelAnimationFrame(_scrollResetRaf); _scrollResetRaf = 0; }
   _scrollTarget = null;
   _scrollForce = false;
   _scrollSmooth = false;

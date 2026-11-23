@@ -3,7 +3,8 @@
 // 会形成稀疏数组；.map 保留空洞，经 chrome.runtime.sendMessage 的 JSON 序列化后空洞变成 null，
 // 导致侧边栏 appendToolCallItems 渲染工具卡片时抛 "Cannot read properties of null (reading 'function')"
 import { describe, test, expect } from 'vitest';
-import { StreamController, readSSEStream, normalizeToolCalls, sendAgentStream, sendAgentStreamDone } from '../../src/background/stream-controller.js';
+import { StreamController, readSSEStream, normalizeToolCalls, sendAgentStream, sendAgentStreamDone, sendStreamMessage } from '../../src/background/stream-controller.js';
+import { registerKeepalivePort, unregisterKeepalivePort } from '../../src/background/state.js';
 
 const TOOL_CALL_CHUNK = (idx, id, name, args) =>
   `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: idx, id, type: 'function', function: { name, arguments: args } }] } }] })}`;
@@ -151,6 +152,58 @@ describe('Agent 命令输出合流', () => {
       sendAgentStreamDone('s3', 'e2', 'tc2', 1);
       const chunks = sent.filter(m => m.type === 'AGENT_STREAM');
       expect(chunks.map(m => m.streamType).sort()).toEqual(['stderr', 'stdout']);
+    } finally {
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+});
+
+// 流式出口的核心契约：有面板端口 → 只投端口不广播；无端口 → 回退广播。
+// 这条路径此前没有单测覆盖（旧测试都直接注入 sendFn，绕过了默认出口）。
+describe('sendStreamMessage - 端口优先、无端口回退广播', () => {
+  test('会话有在线端口时只投端口，不再广播', () => {
+    const portMessages = [];
+    const port = { postMessage: (msg) => portMessages.push(msg) };
+    const broadcast = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { broadcast.push(msg); return Promise.resolve(); };
+    try {
+      registerKeepalivePort('sess-port', port);
+      sendStreamMessage('sess-port', { type: 'STREAM_CHUNK', sessionId: 'sess-port', content: 'x' });
+
+      expect(portMessages).toHaveLength(1);
+      expect(portMessages[0].content).toBe('x');
+      expect(broadcast).toHaveLength(0);
+    } finally {
+      unregisterKeepalivePort('sess-port', port);
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+
+  test('端口全部投递失败时回退广播（面板刚好关闭的竞态）', () => {
+    const port = { postMessage: () => { throw new Error('port disconnected'); } };
+    const broadcast = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { broadcast.push(msg); return Promise.resolve(); };
+    try {
+      registerKeepalivePort('sess-dead-port', port);
+      sendStreamMessage('sess-dead-port', { type: 'STREAM_DONE', sessionId: 'sess-dead-port' });
+
+      expect(broadcast).toHaveLength(1);
+      expect(broadcast[0].type).toBe('STREAM_DONE');
+    } finally {
+      unregisterKeepalivePort('sess-dead-port', port);
+      globalThis.chrome.runtime.sendMessage = original;
+    }
+  });
+
+  test('没有端口时直接广播', () => {
+    const broadcast = [];
+    const original = globalThis.chrome.runtime.sendMessage;
+    globalThis.chrome.runtime.sendMessage = (msg) => { broadcast.push(msg); return Promise.resolve(); };
+    try {
+      sendStreamMessage('sess-no-port', { type: 'STREAM_START', sessionId: 'sess-no-port' });
+      expect(broadcast).toHaveLength(1);
     } finally {
       globalThis.chrome.runtime.sendMessage = original;
     }

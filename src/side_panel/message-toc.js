@@ -286,7 +286,15 @@ function bindTocScrollSpy(tocContainer, contentRoot, headings, panel) {
     const viewBottom = view.bottom;
     const viewHeight = Math.max(viewBottom - viewTop, 1);
 
-    const tops = headings.map((heading) => heading.getBoundingClientRect().top);
+    // 标题可能在 content-visibility: auto 跳过的子树里（长历史消息的正文被跳过时，
+    // 内部标题没有布局盒，getBoundingClientRect 返回全 0）。此时退回它所在的
+    // .markdown-body：跳过子树的根自身仍有占位盒，位置与真实滚动布局一致。
+    const tops = headings.map((heading) => {
+      const rect = heading.getBoundingClientRect();
+      if (rect.width || rect.height) return rect.top;
+      const body = heading.closest('.markdown-body');
+      return body ? body.getBoundingClientRect().top : rect.top;
+    });
 
     let anchorIndex = 0;
     for (let i = 0; i < tops.length; i++) {
@@ -547,9 +555,16 @@ export function showMessageToc(messageDiv, headings) {
       const targetHeading = document.getElementById(targetId);
       
       if (targetHeading) {
-        // 滚动到标题位置
-        targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        
+        // 目标标题可能在 content-visibility 跳过的正文里：先把所在正文滚进视野
+        // 让它完成渲染，下一帧再精确滚到标题，避免 scrollIntoView 落在占位位置。
+        const body = targetHeading.closest('.markdown-body');
+        if (body) body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+
         // 添加高亮效果
         targetHeading.classList.add('toc-highlight');
         setTimeout(() => {

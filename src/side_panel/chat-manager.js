@@ -3673,6 +3673,10 @@ async function countEffectiveMcpTools(forcedMcpServerIds = null) {
 // 走面板端口定向通道的流式消息类型。
 // background 侧 sendStreamMessage 的行为：会话有面板端口时只投端口、不广播；
 // 没有端口（面板全关）才回退广播。这两侧必须成对维护，否则会出现消息没人收。
+//
+// 注意：EXECUTION_STATUS_UPDATE 刻意不在列表里。它除了驱动聊天气泡，还被
+// session-dock（跨会话"执行中"指示）与 queue-runner（插话接力判定）通过
+// chrome.runtime.onMessage 消费；改走端口会让这些非聊天消费者收不到消息。
 const PORT_STREAM_TYPES = new Set([
   'STREAM_START',
   'STREAM_CHUNK',
