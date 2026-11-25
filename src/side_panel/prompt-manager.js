@@ -28,7 +28,8 @@ registerTranslations('zh', {
     noMatchResult: '暂无匹配结果',
     requestFailed: '❌ 请求失败：{message}',
     emptyPromptHint: '暂无提示词，请添加',
-    menuDisplayTitle: '菜单显示',
+    menuEnableTooltip: '加入右键菜单',
+    menuDisableTooltip: '移出右键菜单',
     codeAndContentRequired: '请填写编码和内容',
     codeExists: '编码已存在',
     saveChanges: '保存修改',
@@ -46,7 +47,8 @@ registerTranslations('en', {
     noMatchResult: 'No matching results',
     requestFailed: '❌ Request failed: {message}',
     emptyPromptHint: 'No prompts yet, please add one',
-    menuDisplayTitle: 'Show in menu',
+    menuEnableTooltip: 'Add to right-click menu',
+    menuDisableTooltip: 'Remove from right-click menu',
     codeAndContentRequired: 'Please fill in both code and content',
     codeExists: 'Code already exists',
     saveChanges: 'Save changes',
@@ -1052,8 +1054,10 @@ export function renderPromptManageList() {
     return;
   }
 
-  list.innerHTML = state.customPrompts.map((prompt, index) => `
-    <div class="prompt-manage-item" draggable="true" data-index="${index}">
+  list.innerHTML = state.customPrompts.map((prompt, index) => {
+    const inMenu = prompt.enabledInMenu === true;
+    return `
+    <div class="prompt-manage-item ${inMenu ? 'in-menu' : ''}" draggable="true" data-index="${index}">
       <div class="prompt-manage-item-left">
         <span class="prompt-drag-handle" title="${t('toolbar.dragSort')}">⋮⋮</span>
         <span class="prompt-manage-item-content">${prompt.content}</span>
@@ -1062,7 +1066,7 @@ export function renderPromptManageList() {
       <div class="prompt-manage-item-actions">
         <button class="prompt-sort-btn move-up-btn" data-index="${index}" title="${t('toolbar.moveUp')}" ${index === 0 ? 'disabled' : ''}>↑</button>
         <button class="prompt-sort-btn move-down-btn" data-index="${index}" title="${t('toolbar.moveDown')}" ${index === state.customPrompts.length - 1 ? 'disabled' : ''}>↓</button>
-        <button class="prompt-sort-btn menu-toggle-btn ${prompt.enabledInMenu === true ? 'active' : ''}" data-index="${index}" title="${t('promptMgr.menuDisplayTitle')}">
+        <button class="prompt-sort-btn menu-toggle-btn ${inMenu ? 'active' : ''}" data-index="${index}" title="${t(inMenu ? 'promptMgr.menuDisableTooltip' : 'promptMgr.menuEnableTooltip')}" aria-pressed="${inMenu}">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
             <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
           </svg>
@@ -1080,7 +1084,8 @@ export function renderPromptManageList() {
         </button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   // 绑定上移按钮事件
   list.querySelectorAll('.move-up-btn').forEach(btn => {

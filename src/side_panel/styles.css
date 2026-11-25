@@ -9194,6 +9194,23 @@ body {
   border-color: var(--border-default);
 }
 
+/* 已加入右键菜单：左侧色条 + 淡品牌底色，未加入保持中性样式，便于一眼区分 */
+.prompt-manage-item.in-menu {
+  background: var(--brand-soft-bg);
+  border-color: rgba(var(--brand-rgb), 0.45);
+}
+
+.prompt-manage-item.in-menu::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--brand-500);
+}
+
 .prompt-manage-item:hover .prompt-manage-item-actions {
   opacity: 1;
   visibility: visible;
@@ -9308,8 +9325,11 @@ body {
   color: var(--text-secondary);
 }
 
+/* 已加入菜单：实心品牌色，与未加入的空心态形成明显反差 */
 .prompt-sort-btn.menu-toggle-btn.active {
-  color: var(--brand-500);
+  color: var(--text-on-brand);
+  background: var(--brand-500);
+  border-color: var(--brand-500);
 }
 
 .prompt-sort-btn.menu-toggle-btn:hover {
@@ -9319,9 +9339,9 @@ body {
 }
 
 .prompt-sort-btn.menu-toggle-btn.active:hover {
-  background: var(--brand-soft-bg);
-  border-color: var(--brand-500);
-  color: var(--brand-500);
+  background: var(--brand-600);
+  border-color: var(--brand-600);
+  color: var(--text-on-brand);
 }
 
 .prompt-manage-item-actions .edit-btn,

@@ -849,7 +849,7 @@ export function refreshKnowledgePickedState() {
  * 知识库统计展示：文档数可点击（跳转配置页打开该库的文档管理），分块数仅展示
  * @param {{documentCount?: number, chunkCount?: number}} kb
  */
-function renderKbStatsHtml(kb) {
+export function renderKbStatsHtml(kb) {
   const docs = t('knowledgeSelector.docsCount', { docs: kb.documentCount || 0 });
   const chunks = t('knowledgeSelector.chunksCount', { chunks: kb.chunkCount || 0 });
   return `<span class="kb-docs-link" title="${escapeHtml(t('knowledgeSelector.openDocsTitle'))}">${escapeHtml(docs)}</span> · ${escapeHtml(chunks)}`;
@@ -860,7 +860,7 @@ function renderKbStatsHtml(kb) {
  * 配置页可能尚未打开：请求先写入 storage，由配置页初始化 / 切换 Tab / storage 监听消费
  * @param {string} kbId
  */
-function openKbDocsInOptions(kbId) {
+export function openKbDocsInOptions(kbId) {
   if (!kbId) return;
   hideAgentAtSelector();
   chrome.storage.local.set({ pendingKbDocs: { id: kbId, ts: Date.now() } }).catch(() => {});

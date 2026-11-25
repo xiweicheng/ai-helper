@@ -37,6 +37,8 @@ vi.mock('../../src/side_panel/agent-at-selector.js', () => ({
     return online ? 'online' : 'offline';
   }),
   refreshProxyStatus: vi.fn(async () => {}),
+  renderKbStatsHtml: vi.fn((kb) => `<span class="kb-docs-link" title="在配置页打开该知识库的文档管理">${kb.documentCount || 0} 文档</span> · ${kb.chunkCount || 0} 分块`),
+  openKbDocsInOptions: vi.fn(),
 }));
 vi.mock('../../src/side_panel/agent-store.js', () => ({
   getAllAgents: vi.fn(async () => []),
@@ -74,6 +76,7 @@ import {
   fetchKnowledgeCollections, getPairedAgents,
   selectKnowledgeByAt, refreshKnowledgePickedState,
   selectAgentByAt, selectProxyByAt, refreshProxyStatus,
+  openKbDocsInOptions,
 } from '../../src/side_panel/agent-at-selector.js';
 import { getAllAgents } from '../../src/side_panel/agent-store.js';
 import { getWorkspaceRoot, listDirectory } from '../../src/side_panel/workspace-manager.js';
@@ -284,6 +287,7 @@ describe('渲染', () => {
     expect(items[0].classList.contains('input-add-panel-item-two-line')).toBe(true);
     expect(items[0].textContent).toContain('产品知识库');
     expect(items[0].textContent).toContain('3 文档 · 12 分块');
+    expect(items[0].querySelector('.kb-docs-link').textContent).toContain('3 文档');
     expect(items[1].classList.contains('knowledge-item-disabled')).toBe(true);
     expect(items[1].dataset.kbDisabled).toBe('1');
     expect(items[1].querySelector('.badge-disabled')).toBeTruthy();
@@ -514,6 +518,14 @@ describe('选择接线', () => {
       { id: 'kb-2', name: '研发知识库', enabled: false },
       { clearTrigger: false },
     );
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
+  it('点击知识库「文档数」链接 → 收起菜单并跳转文档管理，不切换选中', async () => {
+    await openCategoryPanel('knowledge');
+    clickItem(dom.list.querySelector('.kb-docs-link'));
+    expect(openKbDocsInOptions).toHaveBeenCalledWith('kb-1');
+    expect(selectKnowledgeByAt).not.toHaveBeenCalled();
     expect(closeSpy).toHaveBeenCalled();
   });
 

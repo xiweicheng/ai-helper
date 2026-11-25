@@ -34,6 +34,7 @@ import {
   selectAgentByAt, selectProxyByAt,
   getAgentDisplayName, getAgentDisplayDesc,
   getProxyDotClass, getCachedProxyStatus, refreshProxyStatus,
+  renderKbStatsHtml, openKbDocsInOptions,
 } from './agent-at-selector.js';
 import { getAllAgents } from './agent-store.js';
 import { openAgentEditor } from './agent-manager.js';
@@ -360,10 +361,10 @@ function renderItem(item) {
     }
     case 'knowledge': {
       const disabled = item.enabled === false;
-      const stats = t('knowledgeSelector.docChunk', { docs: item.documentCount || 0, chunks: item.chunkCount || 0 });
+      // 文档数可点击：与 @ 弹窗同款链接，跳配置页打开该知识库的文档管理
       return `<div class="prompt-item input-add-panel-item input-add-panel-item-two-line prompt-item-knowledge${disabled ? ' knowledge-item-disabled' : ''}" data-kb-id="${escapeHtml(item.id)}" data-kb-name="${escapeHtml(item.name || '')}" data-kb-disabled="${disabled ? '1' : '0'}"${disabled ? ` title="${escapeAttr(t('knowledgeSelector.disabledTooltip'))}"` : ''}>
         <span class="input-add-panel-item-title">📚 ${escapeHtml(item.name || '')}${disabled ? ` <span class="knowledge-item-badge badge-disabled">${t('knowledgeSelector.disabledBadge')}</span>` : ''}</span>
-        <span class="input-add-panel-item-sub">${escapeHtml(stats)}</span>
+        <span class="input-add-panel-item-sub">${renderKbStatsHtml(item)}</span>
       </div>`;
     }
     case 'agents': {
@@ -440,6 +441,13 @@ async function handleItemClick(e, el) {
       break;
     }
     case 'knowledge':
+      // 文档数链接：先收起菜单再跳配置页打开该库的文档管理（与 @ 弹窗行为一致，不切换选中）
+      if (e.target.closest('.kb-docs-link')) {
+        e.stopPropagation();
+        onRequestClose();
+        openKbDocsInOptions(el.dataset.kbId);
+        break;
+      }
       // 多选切换；面板保持展开便于连续勾选（与技能/MCP 一致），修饰键点击 = 选中并收起
       selectKnowledgeByAt(
         { id: el.dataset.kbId, name: el.dataset.kbName, enabled: el.dataset.kbDisabled !== '1' },
