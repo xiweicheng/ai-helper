@@ -58,10 +58,12 @@ describe('insertPromptToInputByCode 签名扩展', () => {
     expect(input.value).toBe('看 https://a.com/b 这个\n\n发送内容');
   });
 
-  test('默认路径回归：仍按最后一个 "/" 截断', () => {
+  test('默认路径：把光标前合法的 /code 原地替换为提示词，其他行内容保留', () => {
     const input = document.getElementById('userInput');
-    input.value = '前缀/过滤词';
+    input.value = '请参考：\n/p1\n下面还有内容';
+    // 模拟光标停在 /p1 之后（弹窗打开时的真实位置）
+    input.selectionStart = input.selectionEnd = input.value.indexOf('\n下面');
     pm.insertPromptToInputByCode('p1');
-    expect(input.value).toBe('前缀\n\n发送内容');
+    expect(input.value).toBe('请参考：\n发送内容\n下面还有内容');
   });
 });

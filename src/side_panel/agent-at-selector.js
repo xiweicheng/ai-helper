@@ -10,6 +10,7 @@ import { switchAgent, openAgentEditor, deleteAgentWithConfirm } from './agent-ma
 import { escapeHtml, updateDropdownPosition } from './utils.js';
 import { adjustInputHeight } from './utils.js';
 import { getOpenTabs, renderPageList, updatePageSelection, selectPage, handlePageAction } from './page-selector.js';
+import { stripActiveTrigger, resolveActiveTrigger } from './input-trigger.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -153,6 +154,19 @@ async function updateAtTabCounts() {
 }
 
 /**
+ * 同步 @ 弹窗顶部操作提示文案
+ * 知识库支持多选：Enter 选中并关闭、Ctrl/Cmd+Enter 多选/反选；其余 Tab 选中即关闭。
+ * @param {string} tab - 当前激活 Tab（搜索合并模式传 'merged'）
+ */
+function updateAtHeaderHint(tab) {
+  const hintEl = document.querySelector('#agentAtDropdown .prompt-dropdown-header > span[data-i18n]');
+  if (!hintEl) return;
+  const key = tab === 'knowledge' ? 'promptSelector.switchHintMulti' : 'promptSelector.agentHeaderHint';
+  hintEl.textContent = t(key);
+  hintEl.setAttribute('data-i18n', key);
+}
+
+/**
  * 隐藏 @选择器
  */
 export function hideAgentAtSelector() {
@@ -245,7 +259,7 @@ function initAtEvents() {
       if (deleted) {
         // 删除成功后刷新当前 @ 列表
         const userInput = document.getElementById('userInput');
-        const filterText = userInput ? getAtFilterText(userInput.value) : '';
+        const filterText = userInput ? getAtFilterText(userInput.value, userInput.selectionStart) : '';
         await renderActiveAtList(filterText);
       }
     }
@@ -257,6 +271,7 @@ function initAtEvents() {
  */
 export async function switchAtTab(tab) {
   activeAtTab = tab;
+  updateAtHeaderHint(tab);
 
   const tabsContainer = document.getElementById('agentAtTabs');
   if (tabsContainer) {
@@ -282,7 +297,7 @@ export async function switchAtTab(tab) {
   const userInput = document.getElementById('userInput');
   if (userInput) userInput.focus();
 
-  const filterText = userInput ? getAtFilterText(userInput.value) : '';
+  const filterText = userInput ? getAtFilterText(userInput.value, userInput.selectionStart) : '';
   await renderActiveAtList(filterText);
 }
 
@@ -299,6 +314,7 @@ async function renderActiveAtList(filterText = '') {
   if (filterText) {
     // 搜索模式：隐藏 Tab 按钮（显示聚合搜索标题），合并展示
     isMergedMode = true;
+    updateAtHeaderHint('merged');
     if (tabsContainer) tabsContainer.classList.add('merged-mode');
     if (agentPageList) agentPageList.style.display = 'none';
     if (agentProxyList) agentProxyList.style.display = 'none';
@@ -311,6 +327,7 @@ async function renderActiveAtList(filterText = '') {
   } else {
     // 默认 Tab 模式
     isMergedMode = false;
+    updateAtHeaderHint(activeAtTab);
     if (tabsContainer) tabsContainer.classList.remove('merged-mode');
     // 恢复 Tab 激活状态
     if (tabsContainer) {
@@ -339,12 +356,17 @@ async function renderActiveAtList(filterText = '') {
 }
 
 /**
- * 获取 @ 后面的过滤文本
+ * 获取 @ 后面的过滤文本：只取「光标前最近的合法 @ 触发符」到光标之间的内容，
+ * 不含空格/换行——一旦输入空白即视为本次匹配结束，不再作为搜索词。
+ * 旧实现 value.substring(lastIndexOf('@') + 1) 一直取到文末，会把下方已有
+ * 多行内容（含换行）一并当成搜索词，导致切 Tab 时用「@ + 换行 + 下方文字」搜索。
+ * @param {string} value
+ * @param {number} caret - 光标位置（userInput.selectionStart）
  */
-function getAtFilterText(value) {
-  const lastAtIndex = value.lastIndexOf('@');
-  if (lastAtIndex === -1) return '';
-  return value.substring(lastAtIndex + 1);
+export function getAtFilterText(value, caret) {
+  const trig = resolveActiveTrigger({ value, caret });
+  if (!trig || trig.key !== 'at') return '';
+  return trig.filterText;
 }
 
 /**
@@ -773,19 +795,20 @@ export function updateAgentAtSelection(items) {
 }
 
 /**
- * 选中项后把焦点与光标交还输入框：移除 @ 触发文本（含过滤词）；
- * @ 已不在时仅把光标定位到当前文本末尾（无条件回焦，保证可继续输入）
+ * 选中项后把焦点与光标交还输入框：只移除「光标前最近的 @xxx 触发 token」，
+ * 触发符之前与光标之后的内容（包括其他行）一律保留——旧实现用
+ * value.substring(0, lastIndexOf('@')) 一直截到文末，会把下方已有的多行内容一起抹掉。
+ * 当前输入框里已无合法 @ 触发符时（如多选已选过一个），仅回焦。
  */
 function focusUserInputAfterSelect() {
   const userInput = document.getElementById('userInput');
   if (!userInput) return;
-  const value = userInput.value;
-  const lastAtIndex = value.lastIndexOf('@');
-  if (lastAtIndex !== -1) {
-    userInput.value = value.substring(0, lastAtIndex);
+  const stripped = stripActiveTrigger(userInput.value, userInput.selectionStart, 'at');
+  if (stripped) {
+    userInput.value = stripped.value;
+    userInput.selectionStart = userInput.selectionEnd = stripped.caret;
   }
   userInput.focus();
-  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
 }
 
 /**
@@ -847,6 +870,7 @@ export function refreshKnowledgePickedState() {
 
 /**
  * 知识库统计展示：文档数可点击（跳转配置页打开该库的文档管理），分块数仅展示
+ * （@ 弹窗与「＋」菜单知识库列表共用）
  * @param {{documentCount?: number, chunkCount?: number}} kb
  */
 export function renderKbStatsHtml(kb) {
@@ -858,6 +882,7 @@ export function renderKbStatsHtml(kb) {
 /**
  * 跳转配置页「知识库」Tab，并打开指定知识库的文档管理弹窗（等价于点击卡片上的「文档」按钮）
  * 配置页可能尚未打开：请求先写入 storage，由配置页初始化 / 切换 Tab / storage 监听消费
+ * （@ 弹窗与「＋」菜单知识库列表共用）
  * @param {string} kbId
  */
 export function openKbDocsInOptions(kbId) {
@@ -871,15 +896,17 @@ export function openKbDocsInOptions(kbId) {
  * 选择/取消选择知识库（支持多选，再次选同一库为移除）
  * 多选时保持弹窗/面板打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  * @param {{id: string, name: string, enabled?: boolean}} kb
- * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 @ 触发文本（菜单面板场景）
+ * @param {{clearTrigger?: boolean, toggle?: boolean}} [options]
+ *   - clearTrigger=false 时不清除输入框中的 @ 触发文本（菜单面板场景）
+ *   - toggle=false 时只做「确保选中」，已选中不回退（键盘 Enter 单选并关闭）
  */
-export function selectKnowledgeByAt(kb, { clearTrigger = true } = {}) {
+export function selectKnowledgeByAt(kb, { clearTrigger = true, toggle = true } = {}) {
   if (clearTrigger) focusUserInputAfterSelect();
   else refocusUserInputOnly();
 
   const existsIndex = state.knowledgeRefs.findIndex(r => r.id === kb.id);
   if (existsIndex >= 0) {
-    state.knowledgeRefs.splice(existsIndex, 1);
+    if (toggle) state.knowledgeRefs.splice(existsIndex, 1);
   } else {
     // 记录选择时的启用状态快照：停用库引用在 chip 上以"手动引用"提示（与技能快照一致）
     state.knowledgeRefs.push({ id: kb.id, name: kb.name || kb.id, enabled: kb.enabled !== false });
@@ -889,6 +916,18 @@ export function selectKnowledgeByAt(kb, { clearTrigger = true } = {}) {
   refreshKnowledgePickedState();
   renderKnowledgeIndicator();
   adjustInputHeight();
+}
+
+/**
+ * 键盘回车提交知识库引用
+ * - 默认（Enter）：确保选中并关闭弹窗；已选中则保持选中，不回退
+ * - multi=true（Ctrl/Cmd+Enter）：多选切换，已选中的再次触发即反选，弹窗保持打开
+ * @param {{id: string, name: string, enabled?: boolean}} kb
+ * @param {{multi?: boolean}} [options]
+ */
+export function commitKnowledgeSelection(kb, { multi = false } = {}) {
+  selectKnowledgeByAt(kb, { toggle: multi });
+  if (!multi) hideAgentAtSelector();
 }
 
 /**
@@ -1023,7 +1062,7 @@ async function renderKnowledgeAtList(filterText = '') {
     const isDisabled = kb.enabled === false;
     return `
       <div class="prompt-item ${index === 0 ? 'selected' : ''} ${isRef ? 'agent-at-active picked' : ''} ${isDisabled ? 'knowledge-item-disabled' : ''} prompt-item-knowledge"
-           data-index="${index}" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}"
+           data-index="${index}" data-type="knowledge" data-kb-id="${escapeHtml(kb.id)}" data-kb-name="${escapeHtml(kb.name || '')}"
            data-kb-disabled="${isDisabled ? '1' : '0'}"${isDisabled ? ` title="${escapeHtml(t('knowledgeSelector.disabledTooltip'))}"` : ''}>
         <span class="prompt-item-index">${index + 1}</span>
         <span class="agent-at-icon">📚</span>
@@ -1087,7 +1126,7 @@ function initTabActivationListener() {
     // 仅网页相关模式（网页 Tab / 搜索合并模式）需要跟随 Tab 切换刷新
     if (activeAtTab !== 'pages' && !isMergedMode) return;
     const userInput = document.getElementById('userInput');
-    const filterText = userInput ? getAtFilterText(userInput.value) : '';
+    const filterText = userInput ? getAtFilterText(userInput.value, userInput.selectionStart) : '';
     renderActiveAtList(filterText);
   });
 }
@@ -1145,6 +1184,6 @@ async function handleProxyToolbarAction(action, agentId) {
 
   // 刷新列表并重置选中索引
   const userInput = document.getElementById('userInput');
-  const filterText = userInput ? getAtFilterText(userInput.value) : '';
+  const filterText = userInput ? getAtFilterText(userInput.value, userInput.selectionStart) : '';
   await renderActiveAtList(filterText);
 }

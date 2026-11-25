@@ -11,6 +11,7 @@ import { runAutoCompactionBeforeSend } from './auto-compaction.js';
 import { shouldShowSkillsTab, switchDropdownTab, getEnabledSkills, getVisibleSkills, selectSkill, updateSkillSelection, shouldShowMcpTab, getMcpServices, selectMcpService, getSkillContextText, getMcpContextText, refreshSkillPickedState, refreshMcpPickedState, renderSkillIndicator, renderMcpIndicator } from './skill-selector.js';
 import { clearPageSelection } from './page-selector.js';
 import { refreshKnowledgePickedState, renderKnowledgeIndicator } from './agent-at-selector.js';
+import { replaceActiveTrigger } from './input-trigger.js';
 import { buildFileContentText, renderFilePreviews } from './file-extract.js';
 import { renderImagePreviewsFromChat } from './image-preview.js';
 import { saveDocImageSnapshot, buildChatImageHint } from './doc-images.js';
@@ -24,7 +25,7 @@ registerTranslations('zh', {
     skillsTabCount: '技能 ({count})',
     mcpTabCount: 'MCP ({count})',
     noMatchPrompt: '暂无匹配的提示词',
-    mergedHeaderHint: '方向键切换 · Enter发送/选择 · Ctrl+Enter带入/选中并关闭 · Esc取消',
+    mergedHeaderHint: '方向键切换 · Enter发送/选中并关闭 · Ctrl+Enter带入/多选反选 · Esc取消',
     noMatchResult: '暂无匹配结果',
     requestFailed: '❌ 请求失败：{message}',
     emptyPromptHint: '暂无提示词，请添加',
@@ -43,7 +44,7 @@ registerTranslations('en', {
     skillsTabCount: 'Skills ({count})',
     mcpTabCount: 'MCP ({count})',
     noMatchPrompt: 'No matching prompts',
-    mergedHeaderHint: 'Arrow keys to switch · Enter to send/select · Ctrl+Enter to insert/select & close · Esc to cancel',
+    mergedHeaderHint: 'Arrow keys to switch · Enter to send / select & close · Ctrl+Enter to insert / multi-select · Esc to cancel',
     noMatchResult: 'No matching results',
     requestFailed: '❌ Request failed: {message}',
     emptyPromptHint: 'No prompts yet, please add one',
@@ -537,42 +538,6 @@ export function updatePromptSelection(promptItems) {
 }
 
 /**
- * 选择提示词（通过编码）
- */
-export function selectPromptByCode(code) {
-  const prompt = state.customPrompts.find(p => p.code === code);
-  if (!prompt) return;
-
-  const userInput = document.getElementById('userInput');
-  // 找到最后一个 / 的位置
-  const value = userInput.value;
-  const lastSlashIndex = value.lastIndexOf('/');
-
-  // 找到 / 所在行的开始位置
-  let lineStart = lastSlashIndex;
-  for (let i = lastSlashIndex - 1; i >= 0; i--) {
-    if (value[i] === '\n') {
-      lineStart = i + 1;
-      break;
-    }
-  }
-
-  // 替换 /code 为提示词内容
-  const newValue = value.substring(0, lineStart) + prompt.content + value.substring(lastSlashIndex + code.length + 1);
-  userInput.value = newValue;
-
-  // 移动光标到末尾
-  userInput.focus();
-  userInput.selectionStart = userInput.selectionEnd = newValue.length;
-
-  // 隐藏提示词选择器
-  hidePromptSelector();
-
-  // 自动调整输入框高度
-  adjustInputHeight();
-}
-
-/**
  * 通过编码插入提示词到输入框（Ctrl+Enter）
  * @param {string} code - 提示词编码
  * @param {{skipTriggerStrip?: boolean}} [options] - skipTriggerStrip=true 时保留输入框全文（菜单面板场景，不按 / 截断）
@@ -582,37 +547,33 @@ export function insertPromptToInputByCode(code, { skipTriggerStrip = false } = {
   if (!prompt) return;
 
   const userInput = document.getElementById('userInput');
-
-  // 找到最后一个 / 的位置，截取该位置之前的内容
   const value = userInput.value;
-  const lastSlashIndex = value.lastIndexOf('/');
+  const caret = userInput.selectionStart;
 
-  let baseContent = value;
-  if (!skipTriggerStrip && lastSlashIndex !== -1) {
-    // 找到 / 前面的最后一个换行符的位置
-    let lineStart = -1;
-    for (let i = lastSlashIndex - 1; i >= 0; i--) {
-      if (value[i] === '\n') {
-        lineStart = i;
-        break;
-      }
-    }
-
-    if (lineStart !== -1) {
-      // 保留换行之前的内容，去掉换行后到 / 之间的内容（包括尾部空格）
-      baseContent = value.substring(0, lineStart + 1).trimEnd();
+  let newValue;
+  let newCaret;
+  if (skipTriggerStrip) {
+    // 菜单面板场景：无 / 触发符，输入框全文保留，在末尾追加提示词
+    newValue = value + (value && !value.endsWith('\n') ? '\n\n' : '') + prompt.content;
+    newCaret = newValue.length;
+  } else {
+    // 弹窗场景：把光标前的 /code 触发 token 原地替换为提示词正文，
+    // token 之前与光标之后的内容（包括其他行）一律保留——填入式提示词不能把
+    // 用户写在其他行的内容清掉。旧实现按最后一个 / 截断到文末会一并清空下方内容。
+    const replaced = replaceActiveTrigger(value, caret, 'slash', prompt.content);
+    if (replaced) {
+      newValue = replaced.value;
+      newCaret = replaced.caret;
     } else {
-      // / 在第一行，从头截取到 / 之前（包括尾部空格）
-      baseContent = value.substring(0, lastSlashIndex).trimEnd();
+      // 没有可替换的合法触发符（弹窗理论上只在合法位置打开）：退化为光标处插入
+      newValue = value.substring(0, caret) + prompt.content + value.substring(caret);
+      newCaret = caret + prompt.content.length;
     }
   }
 
-  // 追加提示词到输入框
-  userInput.value = baseContent + (baseContent && !baseContent.endsWith('\n') ? '\n\n' : '') + prompt.content;
-
-  // 移动光标到末尾
+  userInput.value = newValue;
   userInput.focus();
-  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
+  userInput.selectionStart = userInput.selectionEnd = newCaret;
 
   // 隐藏提示词选择器
   hidePromptSelector();
@@ -1000,15 +961,6 @@ export async function sendPromptByCode(code) {
     notifyGenerationEnded(mySessionId);
     userInput.focus();
   }
-}
-
-/**
- * 选择提示词（通过索引，保留兼容）
- */
-export function selectPrompt(index) {
-  const prompt = state.customPrompts[index];
-  if (!prompt) return;
-  selectPromptByCode(prompt.code);
 }
 
 // ==================== 提示词管理模态框 ====================

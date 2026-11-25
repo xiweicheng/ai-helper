@@ -335,11 +335,72 @@ describe('Ctrl/Cmd+点击单选并关闭（技能/MCP）', () => {
   });
 });
 
-describe('默认行为回归（弹窗侧不受签名扩展影响）', () => {
-  test('selectSkill 默认仍截断最后一个 "/" 之后文本', () => {
+describe('键盘 Enter 单选并关闭 / Ctrl+Enter 多选反选（技能/MCP）', () => {
+  test('Enter（multi=false）选中技能并关闭下拉框', async () => {
+    await selector.commitSkillSelection('技能A', { multi: false });
+    expect(state.selectedSkills.map(s => s.name)).toEqual(['技能A']);
+    expect(document.getElementById('promptSelector').style.display).toBe('none');
+  });
+
+  test('已选中技能再按 Enter → 保持选中并关闭（不回退）', async () => {
+    await selector.commitSkillSelection('技能A', { multi: false });
+    document.getElementById('promptSelector').style.display = 'block';
+
+    await selector.commitSkillSelection('技能A', { multi: false });
+    expect(state.selectedSkills.map(s => s.name)).toEqual(['技能A']);
+    expect(document.getElementById('promptSelector').style.display).toBe('none');
+  });
+
+  test('Ctrl+Enter（multi=true）可连续多选且保持打开；再次触发同一项为反选', async () => {
+    await selector.commitSkillSelection('技能A', { multi: true });
+    expect(state.selectedSkills.map(s => s.name)).toEqual(['技能A']);
+    expect(document.getElementById('promptSelector').style.display).not.toBe('none');
+
+    await selector.commitSkillSelection('技能B', { multi: true });
+    expect(state.selectedSkills.map(s => s.name)).toEqual(['技能A', '技能B']);
+
+    await selector.commitSkillSelection('技能A', { multi: true });
+    expect(state.selectedSkills.map(s => s.name)).toEqual(['技能B']);
+    expect(document.getElementById('promptSelector').style.display).not.toBe('none');
+  });
+
+  test('MCP：Enter 选中并关闭；Ctrl+Enter 多选与反选', async () => {
+    await selector.commitMcpSelection('srv-x', '服务X', { multi: false });
+    expect(state.selectedMcpServices.map(s => s.serverName)).toEqual(['服务X']);
+    expect(document.getElementById('promptSelector').style.display).toBe('none');
+
+    document.getElementById('promptSelector').style.display = 'block';
+    await selector.commitMcpSelection('srv-y', '服务Y', { multi: true });
+    expect(state.selectedMcpServices.map(s => s.serverName)).toEqual(['服务X', '服务Y']);
+    expect(document.getElementById('promptSelector').style.display).not.toBe('none');
+
+    await selector.commitMcpSelection('srv-x', '服务X', { multi: true });
+    expect(state.selectedMcpServices.map(s => s.serverName)).toEqual(['服务Y']);
+  });
+});
+
+describe('默认行为（弹窗侧）：只移除光标前合法的 / 触发 token，其余内容保留', () => {
+  test('合法 / 触发符下方另有内容 → 仅移除 /xxx，下方内容保留', () => {
     const input = document.getElementById('userInput');
-    input.value = '前缀/过滤词';
+    input.value = '前缀 /过滤词\n下面还有内容';
+    // 光标停在 /过滤词 之后（弹窗打开时的真实位置）
+    input.selectionStart = input.selectionEnd = input.value.indexOf('\n');
     selector.selectSkill('技能A', SKILLS);
-    expect(input.value).toBe('前缀');
+    expect(input.value).toBe('前缀 \n下面还有内容');
+  });
+
+  test('没有合法触发符（/ 不在词首）时不动输入框正文', () => {
+    const input = document.getElementById('userInput');
+    input.value = '前缀/过滤词'; // / 紧贴前缀，不是合法触发位置，弹窗本不会打开
+    selector.selectSkill('技能A', SKILLS);
+    expect(input.value).toBe('前缀/过滤词');
+  });
+
+  test('selectMcpService 同样只移除合法 / 触发 token', () => {
+    const input = document.getElementById('userInput');
+    input.value = '/过\n保留这行';
+    input.selectionStart = input.selectionEnd = input.value.indexOf('\n');
+    selector.selectMcpService('srv-x', '服务X', SERVICES);
+    expect(input.value).toBe('\n保留这行');
   });
 });

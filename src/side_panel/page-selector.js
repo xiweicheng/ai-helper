@@ -1,6 +1,7 @@
 // side_panel/page-selector.js - 网页选择器（@ 弹出框中「网页」Tab）
 import state from './state.js';
 import { escapeHtml, adjustInputHeight } from './utils.js';
+import { stripActiveTrigger } from './input-trigger.js';
 import { hideAgentAtSelector } from './agent-at-selector.js';
 import { sendMessage } from './chat-manager.js';
 import logger from '../shared/logger.js';
@@ -188,19 +189,17 @@ export function clearPageSelection() {
  */
 function selectPageByTabId(tabId) {
   const userInput = document.getElementById('userInput');
-  const value = userInput ? userInput.value : '';
 
-  // 找到最后一个 @ 的位置；无论触发符是否仍在，选中后都要把焦点交还输入框
-  const lastAtIndex = value.lastIndexOf('@');
-
-  if (lastAtIndex !== -1) {
-    // 移除 @ 及其后面的过滤文本
-    userInput.value = value.substring(0, lastAtIndex);
-  }
-
+  // 只移除光标前最近的 @xxx 触发 token，触发符之前与光标之后的内容（含其他行）保留；
+  // 旧实现 substring(0, lastIndexOf('@')) 截到文末，会把下方已有的多行内容一并清空。
   if (userInput) {
+    const stripped = stripActiveTrigger(userInput.value, userInput.selectionStart, 'at');
+    if (stripped) {
+      userInput.value = stripped.value;
+      userInput.selectionStart = userInput.selectionEnd = stripped.caret;
+    }
+    // 无论触发符是否仍在，选中后都要把焦点交还输入框
     userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   }
 
   // 通过代理获取 tab 信息

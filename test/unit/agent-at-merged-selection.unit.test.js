@@ -180,3 +180,41 @@ describe('@ 搜索合并列表：默认选中全局第一项', () => {
     expect(state.selectedAgentAtIndex).toBe(-1);
   });
 });
+
+describe('getAtFilterText：只取 @ 到光标之间、不含空白的过滤词', () => {
+  test('正常过滤：@ag → ag', () => {
+    expect(selector.getAtFilterText('@ag', 3)).toBe('ag');
+  });
+
+  test('@ 后紧跟换行 + 下方文字 → 空（换行结束匹配，下方内容不参与搜索）', () => {
+    // 复现：上面行输入 @ 并换行，下面行有内容；切 Tab 不应把「换行 + 下方文字」当搜索词
+    expect(selector.getAtFilterText('@\nfdfddfg', '@\nfdfddfg'.length)).toBe('');
+  });
+
+  test('@ 后输入空格 → 空（空格结束匹配）', () => {
+    expect(selector.getAtFilterText('@ag ', 4)).toBe('');
+  });
+
+  test('光标紧跟 @ 之后 → 空过滤词（展示 Tab 列表而非搜索）', () => {
+    expect(selector.getAtFilterText('@', 1)).toBe('');
+  });
+
+  test('中间行触发：上方下方内容都不参与，只取触发符到光标之间', () => {
+    const value = '前缀\n@kb\n下面还有';
+    const caret = value.indexOf('\n下面'); // 光标停在 @kb 之后、换行之前
+    expect(selector.getAtFilterText(value, caret)).toBe('kb');
+  });
+
+  test('@ 不在词首（如邮箱 a@b）→ 不触发，空过滤词', () => {
+    expect(selector.getAtFilterText('a@b', 3)).toBe('');
+  });
+
+  test('无 @ → 空过滤词', () => {
+    expect(selector.getAtFilterText('普通文本', 4)).toBe('');
+  });
+
+  test('caret 非法时回退到文末：@ag → ag', () => {
+    expect(selector.getAtFilterText('@ag', undefined)).toBe('ag');
+    expect(selector.getAtFilterText('@ag', 999)).toBe('ag');
+  });
+});

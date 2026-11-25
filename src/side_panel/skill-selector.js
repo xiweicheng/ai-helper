@@ -1,6 +1,7 @@
 // side_panel/skill-selector.js - 技能选择器（提示词下拉框中的技能 Tab）
 import state from './state.js';
 import { escapeHtml, escapeAttr, adjustInputHeight } from './utils.js';
+import { stripActiveTrigger } from './input-trigger.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 // 注：prompt-manager.js 反向依赖本模块（selectSkill/selectMcpService 等），构成循环 import；
@@ -233,20 +234,19 @@ export function updateSkillSelection(items) {
 }
 
 /**
- * 清除输入框中的 / 触发文本（保留触发符之前的内容）
- * 与 @ 选择器惯例对齐：从最后一个触发符处截断，恢复焦点与光标；
- * 无论触发符是否仍存在都无条件回焦输入框（保证可继续输入）
+ * 清除输入框中光标前最近的 /xxx 触发文本，触发符之前与光标之后的内容（含其他行）保留。
+ * 旧实现用 value.substring(0, lastIndexOf('/')) 截断到文末，会把下方已有的多行内容一并清空；
+ * 技能 / MCP 是「引入附件」，不该动用户写在其他行的内容。无合法触发符时仅回焦。
  */
 function clearSlashTriggerText() {
   const userInput = document.getElementById('userInput');
   if (!userInput) return;
-  const value = userInput.value;
-  const lastSlashIndex = value.lastIndexOf('/');
-  if (lastSlashIndex !== -1) {
-    userInput.value = value.substring(0, lastSlashIndex);
+  const stripped = stripActiveTrigger(userInput.value, userInput.selectionStart, 'slash');
+  if (stripped) {
+    userInput.value = stripped.value;
+    userInput.selectionStart = userInput.selectionEnd = stripped.caret;
   }
   userInput.focus();
-  userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   adjustInputHeight();
 }
 
@@ -255,15 +255,17 @@ function clearSlashTriggerText() {
  * 多选时保持下拉框打开，便于连续勾选；点击外部或开始输入时由既有逻辑关闭
  * @param {string} skillName - 技能名称
  * @param {Array} skills - 技能列表（用于查找完整信息）
- * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
+ * @param {{clearTrigger?: boolean, toggle?: boolean}} [options]
+ *   - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
+ *   - toggle=false 时只做「确保选中」，已选中不回退（键盘 Enter 单选并关闭）
  */
-export function selectSkill(skillName, skills, { clearTrigger = true } = {}) {
+export function selectSkill(skillName, skills, { clearTrigger = true, toggle = true } = {}) {
   const skill = skills.find(s => s.name === skillName);
   if (!skill) return;
 
   const existsIndex = state.selectedSkills.findIndex(s => s.name === skillName);
   if (existsIndex >= 0) {
-    state.selectedSkills.splice(existsIndex, 1);
+    if (toggle) state.selectedSkills.splice(existsIndex, 1);
   } else {
     state.selectedSkills.push({
       name: skill.name,
@@ -293,6 +295,19 @@ export function selectSkill(skillName, skills, { clearTrigger = true } = {}) {
   }
 
   logger.debug('[SidePanel] skill toggled:', skill.name, 'count:', state.selectedSkills.length);
+}
+
+/**
+ * 键盘回车提交技能选择
+ * - 默认（Enter）：确保选中并关闭下拉框；已选中则保持选中，不回退
+ * - multi=true（Ctrl/Cmd+Enter）：多选切换，已选中的再次触发即反选，下拉框保持打开
+ * @param {string} skillName - 技能名称
+ * @param {{multi?: boolean}} [options]
+ */
+export async function commitSkillSelection(skillName, { multi = false } = {}) {
+  const skills = await getVisibleSkills();
+  selectSkill(skillName, skills, { toggle: multi });
+  if (!multi) hidePromptSelector();
 }
 
 /**
@@ -392,7 +407,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'block';
     if (mcpList) mcpList.style.display = 'none';
-    if (headerText) headerText.textContent = t('promptSelector.switchHintSelect');
+    if (headerText) headerText.textContent = t('promptSelector.switchHintMulti');
     state.selectedPromptIndex = -1;
     state.selectedMcpServiceIndex = -1;
     await renderSkillList();
@@ -400,7 +415,7 @@ export async function switchDropdownTab(tab) {
     if (promptList) promptList.style.display = 'none';
     if (skillList) skillList.style.display = 'none';
     if (mcpList) mcpList.style.display = 'block';
-    if (headerText) headerText.textContent = t('promptSelector.switchHintSelect');
+    if (headerText) headerText.textContent = t('promptSelector.switchHintMulti');
     state.selectedPromptIndex = -1;
     state.selectedSkillIndex = -1;
     await renderMcpList();
@@ -676,16 +691,18 @@ export function updateMcpSelection(items) {
  * @param {string} serverId - 服务 ID
  * @param {string} serverName - 服务名称
  * @param {Array} services - 服务列表（用于查找 toolCount）
- * @param {{clearTrigger?: boolean}} [options] - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
+ * @param {{clearTrigger?: boolean, toggle?: boolean}} [options]
+ *   - clearTrigger=false 时不清除输入框中的 / 触发文本（菜单面板场景）
+ *   - toggle=false 时只做「确保选中」，已选中不回退（键盘 Enter 单选并关闭）
  */
-export function selectMcpService(serverId, serverName, services, { clearTrigger = true } = {}) {
+export function selectMcpService(serverId, serverName, services, { clearTrigger = true, toggle = true } = {}) {
   const svc = services?.find(s => s.serverId === serverId);
   const toolCount = svc?.toolCount || 0;
   const name = serverName || serverId;
 
   const existsIndex = state.selectedMcpServices.findIndex(s => s.serverName === name);
   if (existsIndex >= 0) {
-    state.selectedMcpServices.splice(existsIndex, 1);
+    if (toggle) state.selectedMcpServices.splice(existsIndex, 1);
   } else {
     state.selectedMcpServices.push({
       serverId,
@@ -712,6 +729,20 @@ export function selectMcpService(serverId, serverName, services, { clearTrigger 
   }
 
   logger.debug('[SidePanel] MCP service toggled:', name, 'count:', state.selectedMcpServices.length);
+}
+
+/**
+ * 键盘回车提交 MCP 服务选择
+ * - 默认（Enter）：确保选中并关闭下拉框；已选中则保持选中，不回退
+ * - multi=true（Ctrl/Cmd+Enter）：多选切换，已选中的再次触发即反选，下拉框保持打开
+ * @param {string} serverId - 服务 ID
+ * @param {string} serverName - 服务名称
+ * @param {{multi?: boolean}} [options]
+ */
+export async function commitMcpSelection(serverId, serverName, { multi = false } = {}) {
+  const services = await getMcpServices();
+  selectMcpService(serverId, serverName, services, { toggle: multi });
+  if (!multi) hidePromptSelector();
 }
 
 /**

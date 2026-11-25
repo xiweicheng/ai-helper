@@ -186,6 +186,32 @@ describe('Ctrl/Cmd+点击单选并关闭（知识库）', () => {
   });
 });
 
+describe('键盘 Enter 单选并关闭 / Ctrl+Enter 多选反选（知识库）', () => {
+  test('Enter 选中并关闭弹窗；已选中再按 Enter 保持选中不回退', () => {
+    selector.commitKnowledgeSelection({ id: 'kb-1', name: '知识库一' }, { multi: false });
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1']);
+    expect(document.getElementById('agentAtSelector').style.display).toBe('none');
+
+    document.getElementById('agentAtSelector').style.display = 'block';
+    selector.commitKnowledgeSelection({ id: 'kb-1', name: '知识库一' }, { multi: false });
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1']);
+    expect(document.getElementById('agentAtSelector').style.display).toBe('none');
+  });
+
+  test('Ctrl+Enter 可连续多选且保持打开；再次触发同一项为反选', () => {
+    selector.commitKnowledgeSelection({ id: 'kb-1', name: '知识库一' }, { multi: true });
+    expect(document.getElementById('agentAtSelector').style.display).not.toBe('none');
+
+    selector.commitKnowledgeSelection({ id: 'kb-2', name: '知识库二' }, { multi: true });
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1', 'kb-2']);
+    expect(document.getElementById('agentAtSelector').style.display).not.toBe('none');
+
+    selector.commitKnowledgeSelection({ id: 'kb-1', name: '知识库一' }, { multi: true });
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-2']);
+    expect(document.getElementById('agentAtSelector').style.display).not.toBe('none');
+  });
+});
+
 describe('停用知识库：@ 选择器展示与手动引用', () => {
   test('停用库在列表中带"已停用"徽标，仍可正常选中引用', async () => {
     await selector.switchAtTab('knowledge');
@@ -245,5 +271,29 @@ describe('菜单面板入口（clearTrigger=false）：不截断输入框中的 
     input.value = '@知识';
     selector.selectKnowledgeByAt({ id: 'kb-2', name: '知识库二' });
     expect(input.value).toBe('');
+  });
+});
+
+describe('选中知识库时不清空其他行内容', () => {
+  test('@ 触发符下方另有文本 → 仅移除 @xxx，下方内容保留', () => {
+    const input = document.getElementById('userInput');
+    input.value = '@知识\n第二行内容';
+    // 光标停在 @知识 之后（弹窗打开时的真实位置）
+    input.selectionStart = input.selectionEnd = input.value.indexOf('\n');
+    selector.selectKnowledgeByAt({ id: 'kb-1', name: '知识库一' });
+
+    expect(input.value).toBe('\n第二行内容');
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1']);
+  });
+
+  test('多选：第一个移除触发符后，第二个不再动输入框内容', () => {
+    const input = document.getElementById('userInput');
+    input.value = '@知识\n保留这行';
+    input.selectionStart = input.selectionEnd = input.value.indexOf('\n');
+    selector.selectKnowledgeByAt({ id: 'kb-1', name: '知识库一' });
+    selector.selectKnowledgeByAt({ id: 'kb-2', name: '知识库二' });
+
+    expect(input.value).toBe('\n保留这行');
+    expect(state.knowledgeRefs.map(r => r.id)).toEqual(['kb-1', 'kb-2']);
   });
 });

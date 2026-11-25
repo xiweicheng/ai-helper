@@ -38,6 +38,7 @@ import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
 import { initUsageTips } from './usage-tips.js';
 import { resolveHistoryNav } from './input-history-nav.js';
+import { resolveActiveTrigger } from './input-trigger.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
 import { decodeSecret } from '../shared/secret.js';
 import { debounce } from '../shared/utils.js';
@@ -293,7 +294,7 @@ import {
 } from './prompt-manager.js';
 import {
   showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab,
-  clearKnowledgeRefs, renderKnowledgeIndicator
+  clearKnowledgeRefs, renderKnowledgeIndicator, commitKnowledgeSelection
 } from './agent-at-selector.js';
 import {
   showFileAtSelector, hideFileAtSelector, updateFileAtSelection, isFileAtSelectorVisible
@@ -302,7 +303,8 @@ import {
   initSkillIndicatorEvents, initSkillTabEvents, updateSkillSelection,
   switchDropdownTab, getSkillContextText, clearSkillSelection,
   updateMcpSelection, renderMcpList, selectMcpService, getMcpServices,
-  initMcpIndicatorEvents, clearMcpService, renderMcpIndicator, renderSkillIndicator
+  initMcpIndicatorEvents, clearMcpService, renderMcpIndicator, renderSkillIndicator,
+  commitSkillSelection, commitMcpSelection
 } from './skill-selector.js';
 import {
   openToolsPopup, closeToolsPopup, renderToolsPopupList,
@@ -3373,8 +3375,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       } else if (e.key === 'Enter' && selectedIndex >= 0) {
         e.preventDefault();
-        items[selectedIndex].click();
-        // Ctrl/Cmd+Enter：选中后关闭弹窗（知识库等多选场景的单选快捷方式；其余类型本就关闭）
+        const item = items[selectedIndex];
+        // 知识库：Enter 选中并关闭；Ctrl/Cmd+Enter 多选切换（已选中则反选），弹窗保持打开
+        if (item.dataset.type === 'knowledge') {
+          commitKnowledgeSelection(
+            { id: item.dataset.kbId, name: item.dataset.kbName, enabled: item.dataset.kbDisabled !== '1' },
+            { multi: e.ctrlKey || e.metaKey }
+          );
+          return;
+        }
+        item.click();
+        // Ctrl/Cmd+Enter：选中后关闭弹窗（其余类型本就关闭）
         if (e.ctrlKey || e.metaKey) hideAgentAtSelector();
         return;
       } else if (e.key === 'Escape') {
@@ -3451,15 +3462,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.key === 'Enter' && state.selectedPromptIndex >= 0) {
           e.preventDefault();
           const selected = mergedItems[state.selectedPromptIndex];
+          const multi = e.ctrlKey || e.metaKey;
           if (selected.dataset.type === 'skill') {
-            // 技能：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
-            selected.click();
-            if (e.ctrlKey || e.metaKey) hidePromptSelector();
+            // Enter：选中并关闭；Ctrl/Cmd+Enter：多选切换（已选中则反选），保持下拉框打开
+            void commitSkillSelection(selected.dataset.skillName, { multi });
           } else if (selected.dataset.type === 'mcp') {
-            // MCP 服务：触发点击选中；Ctrl/Cmd+Enter 选中后关闭（单选快捷方式）
-            selected.click();
-            if (e.ctrlKey || e.metaKey) hidePromptSelector();
-          } else if (e.ctrlKey || e.metaKey) {
+            // Enter：选中并关闭；Ctrl/Cmd+Enter：多选切换（已选中则反选），保持下拉框打开
+            void commitMcpSelection(selected.dataset.serverId, selected.dataset.serverName, { multi });
+          } else if (multi) {
             insertPromptToInputByCode(selected.dataset.code);
           } else {
             sendPromptByCode(selected.dataset.code);
@@ -3505,9 +3515,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (e.key === 'Enter' && state.selectedSkillIndex >= 0) {
           e.preventDefault();
-          skillItems[state.selectedSkillIndex].click();
-          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
-          if (e.ctrlKey || e.metaKey) hidePromptSelector();
+          const item = skillItems[state.selectedSkillIndex];
+          // Enter：选中并关闭；Ctrl/Cmd+Enter：多选切换（已选中则反选），保持下拉框打开
+          void commitSkillSelection(item.dataset.skillName, { multi: e.ctrlKey || e.metaKey });
           return;
         }
 
@@ -3561,9 +3571,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (e.key === 'Enter' && state.selectedMcpServiceIndex >= 0) {
           e.preventDefault();
-          mcpItems[state.selectedMcpServiceIndex].click();
-          // Ctrl/Cmd+Enter：选中后关闭下拉框（单选快捷方式）
-          if (e.ctrlKey || e.metaKey) hidePromptSelector();
+          const item = mcpItems[state.selectedMcpServiceIndex];
+          // Enter：选中并关闭；Ctrl/Cmd+Enter：多选切换（已选中则反选），保持下拉框打开
+          void commitMcpSelection(item.dataset.serverId, item.dataset.serverName, { multi: e.ctrlKey || e.metaKey });
           return;
         }
 
@@ -3910,51 +3920,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     const agentAtSelector = document.getElementById('agentAtSelector');
     const agentAtDropdown = document.getElementById('agentAtDropdown');
 
-    const lastSlashIndex = value.lastIndexOf('/');
-    const lastAtIndex = value.lastIndexOf('@');
-    const lastDollarIndex = value.lastIndexOf('$');
-
-    // 优先级：在同一个触发区域（空格后或行首），/、@、$ 都需要在合法位置触发
-    // 确定触发符是否在合法位置（且后面没有空格/换行，输入空格表示匹配结束）
-    const isTriggerValid = (index) => {
-      if (index === -1) return false;
-      if (index !== 0 && value[index - 1] !== '\n' && value[index - 1] !== ' ') return false;
-      const after = value.substring(index + 1);
-      if (after.includes(' ') || after.includes('\n')) return false;
-      return true;
-    };
-
-    const slashValid = isTriggerValid(lastSlashIndex);
-    const atValid = isTriggerValid(lastAtIndex);
-    const dollarValid = isTriggerValid(lastDollarIndex);
-
-    // 当多个触发符同时有效时，取最后出现的一个
-    let activeTrigger = null;
-    if (slashValid) activeTrigger = { key: 'slash', index: lastSlashIndex };
-    if (atValid && (!activeTrigger || lastAtIndex > activeTrigger.index)) activeTrigger = { key: 'at', index: lastAtIndex };
-    if (dollarValid && (!activeTrigger || lastDollarIndex > activeTrigger.index)) activeTrigger = { key: 'dollar', index: lastDollarIndex };
+    // 只看光标之前的文本：下方已有的多行内容不能影响当前触发符判定
+    const activeTrigger = resolveActiveTrigger({ value, caret: userInput.selectionStart });
 
     if (activeTrigger && activeTrigger.key === 'dollar') {
       // $ 在后面，显示工作目录文件选择器
       hidePromptSelector();
       hideAgentAtSelector();
-      const filterText = value.substring(lastDollarIndex + 1);
-      showFileAtSelector(filterText);
+      showFileAtSelector(activeTrigger.filterText);
     } else if (activeTrigger && activeTrigger.key === 'at') {
       // @ 在后面，显示 Agent 选择器
       hidePromptSelector();
       hideFileAtSelector();
-      const filterText = value.substring(lastAtIndex + 1);
-      showAgentAtSelector(filterText);
+      showAgentAtSelector(activeTrigger.filterText);
     } else if (activeTrigger && activeTrigger.key === 'slash') {
       // / 在后面，显示提示词选择器
       hideAgentAtSelector();
       hideFileAtSelector();
-      const filterText = value.substring(lastSlashIndex + 1);
       if (promptSelector.style.display !== 'none' && promptDropdown.classList.contains('show')) {
-        updatePromptList(filterText);
+        updatePromptList(activeTrigger.filterText);
       } else {
-        showPromptSelector(filterText);
+        showPromptSelector(activeTrigger.filterText);
       }
     } else {
       hidePromptSelector();

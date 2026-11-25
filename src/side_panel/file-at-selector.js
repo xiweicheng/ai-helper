@@ -3,6 +3,7 @@ import state from './state.js';
 import { getWorkspaceRoot, listDirectory, searchFilesRemote, getFileIcon } from './workspace-manager.js';
 import { attachFilesForQuestion, openWorkspacePanel } from './workspace-panel.js';
 import { escapeHtml, adjustInputHeight, updateDropdownPosition } from './utils.js';
+import { stripActiveTrigger } from './input-trigger.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 
@@ -268,18 +269,17 @@ function selectFileByAt(entry) {
   if (!fullPath) return;
 
   const userInput = document.getElementById('userInput');
-  const value = userInput ? userInput.value : '';
-  const lastDollarIndex = value.lastIndexOf('$');
 
-  // 去掉输入框中的 $ 及后面的匹配文本（与 @ 选择器行为一致）
-  if (lastDollarIndex !== -1) {
-    userInput.value = value.substring(0, lastDollarIndex);
-  }
-
-  // 无论触发符是否仍在输入框中，选中后焦点都必须回到输入框
+  // 只移除光标前最近的 $xxx 触发 token，触发符之前与光标之后的内容（含其他行）保留；
+  // 旧实现 substring(0, lastIndexOf('$')) 会把下方已有的多行内容一并清空。
   if (userInput) {
+    const stripped = stripActiveTrigger(userInput.value, userInput.selectionStart, 'dollar');
+    if (stripped) {
+      userInput.value = stripped.value;
+      userInput.selectionStart = userInput.selectionEnd = stripped.caret;
+    }
+    // 无论触发符是否仍在输入框中，选中后焦点都必须回到输入框
     userInput.focus();
-    userInput.selectionStart = userInput.selectionEnd = userInput.value.length;
   }
 
   hideFileAtSelector();
