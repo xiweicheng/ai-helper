@@ -147,3 +147,25 @@ describe('S5 · 提示词直发不抹掉等待期间的新草稿', () => {
     expect(body).toContain('if (userInput.value === draftAtEntry)');
   });
 });
+
+describe('S6 · 提示词直发必须携带输入框原有内容', () => {
+  test('发送前复用填入逻辑，正文来自替换/插入后的完整输入', () => {
+    const body = promptByCodeBody();
+    const insertIdx = body.indexOf('insertPromptToInputByCode(code);');
+    const draftIdx = body.indexOf('const draftAtEntry');
+    expect(insertIdx, '发送前未复用 insertPromptToInputByCode 填入提示词').toBeGreaterThan(-1);
+    expect(draftIdx, '缺少填入后的输入内容快照').toBeGreaterThan(insertIdx);
+    expect(body).toContain('const promptContentAtEntry = draftAtEntry || prompt.content;');
+    expect(body).not.toContain('let userMessage = prompt.content;');
+    expect(body).toContain('let userMessage = promptContentAtEntry;');
+  });
+
+  test('检索、气泡与输入历史统一使用完整输入，不再只取 prompt.content', () => {
+    const body = promptByCodeBody();
+    expect(body).toContain('buildKnowledgeContextText(promptContentAtEntry, refsSnapshot)');
+    expect(body).toContain('buildUserContent(promptContentAtEntry, attachedImagesSnapshot)');
+    expect(body).toContain('addToInputHistory(promptContentAtEntry)');
+    expect(body).not.toContain('buildKnowledgeContextText(prompt.content, refsSnapshot)');
+    expect(body).not.toContain('addToInputHistory(prompt.content)');
+  });
+});

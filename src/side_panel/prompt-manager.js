@@ -597,9 +597,13 @@ export async function sendPromptByCode(code) {
     return;
   }
 
-  // 输入框草稿：收尾只清“发送前就存在的那份”。提示词直发的正文来自 prompt.content，
-  // 与输入框无关；等压缩/检索的这段时间用户可能已经为下一条敲好草稿，不能抹掉。
+  // 提示词直发也先复用填入逻辑：替换光标前的 /code（无合法触发符则插入光标处），
+  // 保留输入框其他内容；发送正文是填入后的完整输入，而不是单独的 prompt.content。
+  insertPromptToInputByCode(code);
+
+  // 草稿快照记录填入后的完整内容：收尾只清这一份；等待期间用户新敲的草稿不能抹掉。
   const draftAtEntry = document.getElementById('userInput')?.value || '';
+  const promptContentAtEntry = draftAtEntry || prompt.content;
 
   // 上下文快照：必须在第一个 await 之前取。
   // 后面要等自动压缩、知识库检索、图片快照写入——等完再读 state，
@@ -633,7 +637,7 @@ export async function sendPromptByCode(code) {
   }
 
   // 如果有选中内容且划词问答开启，拼接到用户消息前面，并标记为已使用
-  let userMessage = prompt.content;
+  let userMessage = promptContentAtEntry;
   const hasSelectedContext = ctxSnapshot.selectedContextText && ctxSnapshot.selectedContextText.trim();
   const hasQuotedContext = ctxSnapshot.quotedContextText && ctxSnapshot.quotedContextText.trim();
 
@@ -644,7 +648,7 @@ export async function sendPromptByCode(code) {
   if (hasQuotedContext) {
     const ctx = ctxSnapshot.quotedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    userMessage = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
+    userMessage = `[引用内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${promptContentAtEntry}`;
     // 先添加独立引用气泡
     addContextBubble('quoted', ctx, false);
     contextBubbles.push({ type: 'quoted', text: ctx });
@@ -653,7 +657,7 @@ export async function sendPromptByCode(code) {
   } else if (hasSelectedContext) {
     const ctx = ctxSnapshot.selectedContextText.trim();
     const { compressed: compressedCtx, wasCompressed } = compressQuotedContext(ctx);
-    userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${prompt.content}`;
+    userMessage = `[选中内容${wasCompressed ? '摘要' : ''}]\n${compressedCtx}\n\n[用户问题]\n${promptContentAtEntry}`;
     // 先添加独立选中内容气泡
     addContextBubble('selected', ctx, false);
     contextBubbles.push({ type: 'selected', text: ctx });
@@ -711,7 +715,7 @@ export async function sendPromptByCode(code) {
     const searchingBubble = addContextBubble('knowledge', t('contextBubble.bubbleKnowledgeSearching'), false);
     let kbPayload = null;
     try {
-      kbPayload = await buildKnowledgeContextText(prompt.content, refsSnapshot);
+      kbPayload = await buildKnowledgeContextText(promptContentAtEntry, refsSnapshot);
     } catch (err) {
       logger.warn('[SidePanel] knowledge search failed:', err);
     }
@@ -782,7 +786,7 @@ export async function sendPromptByCode(code) {
   const userContent = buildUserContent(userMessage, attachedImagesSnapshot);
 
   // 添加用户问题气泡（含图片），传入完整上下文格式供编辑时恢复，文件标签由 attachedFilesSnapshot 渲染
-  const { messageId, timestamp } = addMessage('user', buildUserContent(prompt.content, attachedImagesSnapshot), true, [], null, false, userMessage, null, attachedFilesSnapshot);
+  const { messageId, timestamp } = addMessage('user', buildUserContent(promptContentAtEntry, attachedImagesSnapshot), true, [], null, false, userMessage, null, attachedFilesSnapshot);
 
   // 更新消息历史（附带上下文气泡信息，供刷新恢复）
   state.messageHistory.push({ role: 'user', content: userContent, messageId, timestamp, contextBubbles });
@@ -791,7 +795,7 @@ export async function sendPromptByCode(code) {
   saveChatHistory();
 
   // 添加到输入历史
-  addToInputHistory(prompt.content);
+  addToInputHistory(promptContentAtEntry);
 
   // 清空输入框并保持焦点（只清发送前就存在的那份：等待期间用户新敲的草稿不能抹掉）
   const userInput = document.getElementById('userInput');
@@ -920,7 +924,7 @@ export async function sendPromptByCode(code) {
 
       // 失败反馈：用户主动取消不播放失败音；失败通知附带错误文本
       if (errorResult.message !== t('chatMsg.errTaskStopped')) {
-        playFailureFeedback(mySessionId, content, prompt.content);
+        playFailureFeedback(mySessionId, content, promptContentAtEntry);
       }
 
       throw errorResult; // 重新抛出以触发 finally 块
@@ -951,7 +955,7 @@ export async function sendPromptByCode(code) {
     saveChatHistory();
 
     // 回答成功完成：触发用户配置的反馈（音效 / 彩带 + 桌面通知），错误路径已在 catch 中提前 return，不会到达此处
-    playCompletionFeedback(mySessionId, prompt.content);
+    playCompletionFeedback(mySessionId, promptContentAtEntry);
 
   } catch (error) {
     // 已在内部 catch 块中处理并保存，这里只做清理工作
