@@ -71,11 +71,12 @@ export function initMessageFooterAdaptive() {
   adaptMessageFooters();
   window.addEventListener('resize', scheduleMessageFooterAdapt);
 
-  // 窗口不变但可用宽度变了（会话栏展开/收起、宽度拖拽、工作区分栏）
+  // 窗口不变但可用宽度变了（会话栏展开/收起、宽度拖拽、工作区分栏）。
+  // 宽度统一读 clientWidth：与初始值同口径，避免「初始含滚动条、回调不含」的误判。
   if (typeof ResizeObserver !== 'undefined') {
     let lastWidth = container.clientWidth;
-    new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect?.width ?? 0;
+    new ResizeObserver(() => {
+      const width = container.clientWidth;
       if (Math.abs(width - lastWidth) < 1) return;
       lastWidth = width;
       scheduleMessageFooterAdapt();
