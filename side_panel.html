@@ -294,6 +294,7 @@
       </div>
       <h2 data-i18n="chat.welcomeTitle">开始对话</h2>
       <p data-i18n="chat.welcomeSubtitle">输入您的问题，AI 助手将为您解答</p>
+      <div class="welcome-examples" id="welcomeExamples"></div>
     </div>
     <!-- 选中文本浮动菜单不在此处静态声明：AI 回答全屏阅读会把消息节点迁出本容器，
          静态节点留在容器内既会被覆盖层遮住又会被会话 DOM 快照复制，改由
@@ -576,6 +577,13 @@
       <button class="goal-bar-btn goal-bar-btn-danger" id="goalBarClearBtn" type="button" data-i18n="goal.clear">清除</button>
     </div>
   </div>
+
+  <!-- 未配置模型时的常驻提示条（配置完成后由 onboarding-wizard.js 隐藏） -->
+  <button class="onboarding-status-bar" id="onboardingStatusBar" type="button" style="display: none;">
+    <span class="onboarding-status-dot" aria-hidden="true">⚠</span>
+    <span data-i18n="onboarding.statusUnconfigured">未配置模型</span>
+    <span class="onboarding-status-action" data-i18n="onboarding.statusConfigure">去配置</span>
+  </button>
 
   <div class="input-container">
     <div class="input-bottom-row">
@@ -1500,6 +1508,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 首次使用配置向导挂载点：DOM 由 onboarding-wizard.js 构建 -->
+  <div id="onboardingRoot"></div>
 
 </body>
 </html>

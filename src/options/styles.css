@@ -800,16 +800,32 @@ textarea {
   display: flex;
   gap: 8px;
   align-items: center;
+  /* 按钮变多时换行，而不是把下拉框挤到看不清配置名 */
+  flex-wrap: wrap;
 }
 .profile-switcher-row .profile-selector {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 260px;
+  min-width: 220px;
 }
 .profile-actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
+/* 次级文字入口：不占按钮行宽度，避免挤压下拉框 */
+.profile-link-btn {
+  margin-top: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--brand-500);
+  text-decoration: underline;
+}
+.profile-link-btn:hover { color: var(--brand-600); }
 .profile-action-btn {
   background: none;
   border: 1px solid var(--border-default);
@@ -843,6 +859,9 @@ textarea {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  /* 窄宽度时域名换到第二行，保证配置名有整行可读 */
+  flex-wrap: wrap;
+  row-gap: 2px;
 }
 .profile-option:last-child {
   border-bottom: none;
@@ -856,7 +875,7 @@ textarea {
   background: var(--brand-soft-bg);
 }
 .profile-option-left {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -868,8 +887,8 @@ textarea {
   font-family: 'Consolas', 'Monaco', monospace;
   white-space: nowrap;
   flex-shrink: 0;
-  /* 长域名不许吞掉左侧名称：限制宽度并截断省略号 */
-  max-width: 55%;
+  /* 放得下就与名称同行，放不下整段换行，不再用 55% 硬挤名称 */
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }

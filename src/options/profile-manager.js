@@ -15,6 +15,7 @@ import {
   DEFAULT_API_BASE,
   DEFAULT_MODEL_NAME,
 } from '../shared/model-profiles.js';
+import { ONBOARDING_DONE_KEY, ONBOARDING_REQUEST_KEY } from '../side_panel/onboarding-core.js';
 import {
   currentModel,
   setCurrentModel,
@@ -70,6 +71,8 @@ async function refreshProfileDropdown() {
     option.appendChild(leftSpan);
 
     const host = getHostFromApiBase(profile.apiBase);
+    // 窄宽度下名称/域名会被省略号截断，悬停给出完整信息
+    option.title = host ? `${profile.name} · ${host}` : profile.name;
     if (host) {
       const rightSpan = document.createElement('span');
       rightSpan.className = 'profile-option-right';
@@ -121,7 +124,41 @@ function bindProfileEvents() {
   document.getElementById('profileRenameBtn')?.addEventListener('click', handleProfileRename);
   document.getElementById('profileDeleteBtn')?.addEventListener('click', handleProfileDelete);
 
+  const reopenBtn = document.getElementById('onboardingReopenBtn');
+  if (reopenBtn && !reopenBound) {
+    reopenBound = true;
+    // sidePanel.open 必须在用户手势的同步调用栈里发起，tabId 提前解析好备用
+    resolveReopenTargetTab();
+    // 用户可能在设置页停留期间切换标签页，切回时刷新目标 tab，避免用过期 tabId
+    window.addEventListener('focus', resolveReopenTargetTab);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resolveReopenTargetTab();
+    });
+    reopenBtn.addEventListener('click', handleReopenOnboardingWizard);
+  }
+
   bindProfileModal();
+}
+
+// 设置页「重新打开配置向导」的目标标签页（提前解析，保证点击时 sendMessage 是同步调用）
+let reopenTargetTabId = null;
+let reopenBound = false;
+
+function resolveReopenTargetTab() {
+  chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
+    const url = String(tab?.url || '');
+    if (tab?.id != null && !url.startsWith('chrome-extension://')) reopenTargetTabId = tab.id;
+  }).catch(() => { /* 拿不到就退回提示用户手动打开 */ });
+}
+
+function handleReopenOnboardingWizard() {
+  // 同步发消息，保住用户手势；侧边栏打开后按 onboardingOpenRequestedAt 弹向导
+  if (reopenTargetTabId != null) {
+    chrome.runtime.sendMessage({ type: 'ATTACH_SIDEPANEL', tabId: reopenTargetTabId }).catch(() => {});
+  }
+  chrome.storage.local.remove(ONBOARDING_DONE_KEY).catch(() => {});
+  chrome.storage.local.set({ [ONBOARDING_REQUEST_KEY]: Date.now() }).catch(() => {});
+  if (reopenTargetTabId == null) showToast(t('settings.reopenWizardHint'), 'info');
 }
 
 /**

@@ -39,6 +39,8 @@ import { deleteMessageFromSession } from '../storage/db.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
 import { createFullscreenButton } from './message-fullscreen.js';
+import { decodeSecret } from '../shared/secret.js';
+import { isModelConfigured } from './onboarding-core.js';
 
 // 从拆分子模块导入复制与导出相关函数
 import { copyMessage, copyAssistantMessage, quoteAndAsk, setQuoteContextInjector } from './chat-copy.js';
@@ -1230,6 +1232,15 @@ export async function sendMessage(opts = {}) {
       || !!(runState?.activeCallIds && runState.activeCallIds[mySessionId]);
     if (runningInBackground) return { ok: false, reason: 'generating' };
   } catch { /* 查询失败按原逻辑继续发送 */ }
+
+  // 未配置模型时不发请求：直接唤起配置向导，避免新用户只看到一条 401。
+  // 放在生成中/后台运行态早退之后，保持既有「生成中」返回值优先级，且仍在任何状态变更与请求之前。
+  const cfgSnapshot = await chrome.storage.local.get(['apiKey', 'modelName']);
+  if (!isModelConfigured({ apiKey: decodeSecret(cfgSnapshot.apiKey), modelName: cfgSnapshot.modelName })) {
+    const { openOnboardingWizard } = await import('./onboarding-wizard.js');
+    openOnboardingWizard();
+    return { ok: false, reason: 'no_model_config' };
+  }
 
   // 清除旧的恢复卡片和后台 checkpoint
   // 新任务开始意味着用户放弃之前的中断恢复

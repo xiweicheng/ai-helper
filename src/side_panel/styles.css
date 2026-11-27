@@ -19677,3 +19677,132 @@ body.has-session-dock .chat-container {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ==================== 首次使用引导 ==================== */
+#onboardingRoot { display: none; }
+#onboardingRoot.is-open { display: block; }
+
+.onboarding-mask {
+  position: fixed; inset: 0; z-index: 4800;
+  background: rgba(var(--overlay-rgb), .32);
+}
+.onboarding-dialog {
+  position: fixed; z-index: 4801;
+  left: 10px; right: 10px;  /* 侧边栏通常又窄又高，顶部贴齐会让下方大片留白、显得头重脚轻；
+     改为相对视口垂直居中，窄面板矮窗口下靠 max-height 兜底不溢出。 */
+  top: 50%; transform: translateY(-50%);
+  max-height: calc(100vh - 24px); overflow-y: auto;
+  outline: none;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px; border-radius: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+}
+.onboarding-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.onboarding-subtitle { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.onboarding-steps { font-size: 11px; color: var(--text-tertiary); }
+
+.onboarding-primary {
+  width: 100%; padding: 9px; border: none; border-radius: 9px; cursor: pointer;
+  background: var(--brand-500); color: var(--text-on-brand); font-size: 13px; font-weight: 600;
+}
+.onboarding-primary:disabled { opacity: .55; cursor: not-allowed; }
+.onboarding-link {
+  width: 100%; padding: 6px; border: none; background: transparent; cursor: pointer;
+  color: var(--text-tertiary); font-size: 12px;
+}
+.onboarding-doc { text-align: center; font-size: 11px; color: var(--text-tertiary); }
+.onboarding-doc a, .onboarding-doc-link { color: var(--brand-500); text-decoration: none; }
+
+/* 首屏厂商走马灯：只做展示，不承载点击；两端淡出 */
+.onboarding-marquee {
+  position: relative; width: 100%; overflow: hidden;
+  color: var(--text-secondary);
+  -webkit-mask-image: linear-gradient(90deg, transparent, currentColor 10%, currentColor 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, currentColor 10%, currentColor 90%, transparent);
+}
+.onboarding-marquee-track {
+  display: flex; width: max-content;
+  animation: onboarding-marquee 18s linear infinite;
+}
+.onboarding-marquee:hover .onboarding-marquee-track { animation-play-state: paused; }
+.onboarding-marquee-group { display: flex; gap: 6px; padding-right: 6px; }
+.onboarding-chip {
+  flex: 0 0 auto; white-space: nowrap; text-align: center; padding: 5px 10px; border-radius: 8px;
+  border: 1px solid var(--border-default); font-size: 11px; color: var(--text-secondary);
+}
+@keyframes onboarding-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-marquee { -webkit-mask-image: none; mask-image: none; }
+  .onboarding-marquee-track { animation: none; width: auto; flex-wrap: wrap; }
+  .onboarding-marquee-group:last-child { display: none; }
+  .onboarding-marquee-group { flex-wrap: wrap; }
+}
+
+.onboarding-provider-list { display: flex; flex-direction: column; gap: 6px; }
+.onboarding-provider {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 10px; border-radius: 9px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border-default); background: transparent;
+  color: var(--text-primary); font-size: 12px;
+}
+.onboarding-provider.is-active { border-color: var(--brand-500); background: var(--brand-soft-bg); }
+.onboarding-provider-hint { font-size: 10px; color: var(--brand-500); }
+
+.onboarding-input {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 12px;
+  border-radius: 9px; border: 1px solid var(--border-default);
+  background: var(--bg-primary); color: var(--text-primary);
+}
+.onboarding-key-row { display: flex; gap: 6px; }
+.onboarding-key-row .onboarding-input { flex: 1; min-width: 0; width: auto; }
+.onboarding-eye { padding: 8px 10px; }
+.onboarding-ghost {
+  flex: 0 0 auto; padding: 8px 12px; font-size: 12px; cursor: pointer;
+  border-radius: 9px; border: 1px solid var(--border-default);
+  background: transparent; color: var(--text-primary);
+}
+.onboarding-status { font-size: 11px; }
+.onboarding-status.is-ok { color: var(--success-500); }
+.onboarding-status.is-error { color: var(--danger-500); }
+.onboarding-status.is-loading { color: var(--text-tertiary); }
+.onboarding-model-label { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; }
+.onboarding-base-hint { font-size: 11px; color: var(--text-tertiary); margin: 4px 0 2px; line-height: 1.4; }
+.onboarding-actions { display: flex; gap: 8px; align-items: center; }
+.onboarding-actions .onboarding-primary { flex: 2; }
+.onboarding-actions .onboarding-link { flex: 1; }
+
+.onboarding-examples { display: flex; flex-direction: column; gap: 6px; }
+.onboarding-example {
+  display: flex; gap: 8px; align-items: center; padding: 9px 10px; cursor: pointer;
+  border-radius: 9px; border: 1px solid var(--border-default); background: transparent;
+  color: var(--text-primary); font-size: 12px; text-align: left;
+}
+.onboarding-agent-card {
+  padding: 9px 10px; cursor: pointer; text-align: left; font-size: 11px;
+  border-radius: 9px; border: 1px dashed var(--border-default);
+  background: transparent; color: var(--text-tertiary);
+}
+.onboarding-agent-link { color: var(--brand-500); }
+
+.onboarding-status-bar {
+  display: flex; align-items: center; gap: 6px; width: calc(100% - 20px);
+  margin: 0 10px 6px; padding: 6px 10px; cursor: pointer;
+  border-radius: 8px; border: 1px solid var(--warning-soft-border);
+  background: var(--warning-soft-bg); color: var(--warning-text-soft);
+  font-size: 11px; text-align: left;
+}
+.onboarding-status-action { margin-left: auto; font-weight: 600; text-decoration: underline; }
+
+.welcome-examples { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; width: 100%; }
+.welcome-tagline { font-size: 12px; color: var(--text-tertiary); text-align: center; }
+.welcome-example {
+  padding: 8px 10px; cursor: pointer; text-align: left; font-size: 12px;
+  border-radius: 9px; border: 1px solid var(--border-default);
+  background: transparent; color: var(--text-secondary);
+}
+.welcome-example:hover { border-color: var(--brand-500); color: var(--text-primary); }

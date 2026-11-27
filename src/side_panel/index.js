@@ -38,6 +38,7 @@ import { initToolbarAdaptive } from './toolbar-adapt.js';
 import { initMessageFooterAdaptive } from './message-footer-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
 import { initUsageTips } from './usage-tips.js';
+import { initOnboardingWizard, maybeShowOnboardingWizard } from './onboarding-wizard.js';
 import { resolveHistoryNav } from './input-history-nav.js';
 import { resolveActiveTrigger } from './input-trigger.js';
 import { ensureProfilesMigrated, updateActiveProfileModelName, compareByName } from '../shared/model-profiles.js';
@@ -4850,6 +4851,13 @@ document.addEventListener('DOMContentLoaded', initMessageFooterAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
 // 输入框上方使用技巧轮播条（依赖代理连接状态：未连接时过滤掉 agent 类文案）
 document.addEventListener('DOMContentLoaded', initUsageTips);
+// 首次使用引导：未配置模型时自动弹配置向导（用户可跳过，之后仅通过状态条手动唤起）
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    initOnboardingWizard();
+    await maybeShowOnboardingWizard();
+  } catch (e) { /* 引导失败不阻塞侧边栏 */ }
+});
 // 目标模式：chip 绑定 + 目标条 + GOAL_UPDATE 回推监听，必须在入口挂上，
 // 否则 goal-panel.js 整个模块成了无人调用的死代码（chip 点了没反应、目标条永不出现）
 document.addEventListener('DOMContentLoaded', initGoalPanel);
