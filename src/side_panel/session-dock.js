@@ -121,6 +121,8 @@ const titleCache = new Map();
  * stamp 取该轮的 startedAt / doneAt，所以「同一会话又开了一轮新任务」会自动失效重取。
  */
 const questionCache = new Map();
+/** 已结束、等待下一次启动的会话；后台运行集合有轮询延迟，不能靠它识别连续两轮 */
+const restartPendingIds = new Set();
 /** 正在补标题/问题的会话，避免重复查库 */
 const labelPending = new Set();
 /** 后台权威运行集合 */
@@ -534,6 +536,26 @@ function describeEntry(entry) {
   }
   if (entry.phase === 'queued') return t('dock.queued', { count: entry.queuedCount });
   return entry.doneAt ? t('dock.doneAt', { time: formatClock(entry.doneAt) }) : t('dock.done');
+}
+
+/** 新一轮执行必须换 stamp：旧缓存与尚未返回的旧读库响应都会因此失效 */
+function startNewRound(sessionId) {
+  startedAt.set(sessionId, Date.now());
+  doneAt.delete(sessionId);
+  questionCache.delete(sessionId);
+}
+
+function onGeneratingStateChanged() {
+  const localExecuting = new Set([
+    ...state.generatingSessionIds,
+    ...state.pendingCallApiSessionIds,
+  ]);
+  for (const sid of localExecuting) {
+    if (!restartPendingIds.has(sid)) continue;
+    restartPendingIds.delete(sid);
+    startNewRound(sid);
+  }
+  scheduleRender();
 }
 
 /** 计算当前应该显示的条目，并维护 startedAt / doneAt / dismiss 标记 */
@@ -956,7 +978,17 @@ function refreshRunningFromBackground() {
     try {
       chrome.runtime.sendMessage({ type: 'QUERY_SESSION_RUNNING' }, (res) => {
         if (chrome.runtime.lastError || !res) { resolve(); return; }
-        if (Array.isArray(res.activeSessionIds)) runningIds = normalizeRunningIds(res.activeSessionIds);
+        if (Array.isArray(res.activeSessionIds)) {
+          const nextRunningIds = normalizeRunningIds(res.activeSessionIds);
+          for (const sid of nextRunningIds) {
+            // 本地启动已在 generating-state-changed 里换过轮次，不重复失效缓存
+            if (runningIds.has(sid) || state.generatingSessionIds.has(sid)
+              || state.pendingCallApiSessionIds.has(sid)) continue;
+            restartPendingIds.delete(sid);
+            startNewRound(sid);
+          }
+          runningIds = nextRunningIds;
+        }
         resolve();
       });
     } catch {
@@ -988,6 +1020,7 @@ function clearEntry(sessionId) {
   dismissedIds.delete(sessionId);
   titleCache.delete(sessionId);
   questionCache.delete(sessionId);
+  restartPendingIds.delete(sessionId);
   scheduleRender();
 }
 
@@ -999,11 +1032,14 @@ export function initSessionDock() {
 
   restoreDismissed();
 
-  document.addEventListener('generating-state-changed', scheduleRender);
+  document.addEventListener('generating-state-changed', onGeneratingStateChanged);
   document.addEventListener('session-switched', scheduleRender);
   document.addEventListener('generation-ended', (e) => {
     const sid = e?.detail?.sessionId;
-    if (sid && !doneAt.has(sid)) doneAt.set(sid, Date.now());
+    if (sid) {
+      restartPendingIds.add(sid);
+      if (!doneAt.has(sid)) doneAt.set(sid, Date.now());
+    }
     scheduleRender();
   });
   // 归档 / 彻底删除后，条目立即消失（含「彻底删除已被归档的会话」这条路径）
@@ -1080,6 +1116,7 @@ export function __resetSessionDockForTest() {
   dismissedIds.clear();
   titleCache.clear();
   questionCache.clear();
+  restartPendingIds.clear();
   labelPending.clear();
   runningIds = new Set();
   currentEntries = [];

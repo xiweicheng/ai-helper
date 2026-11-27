@@ -69,10 +69,10 @@ describe('入口轨道', () => {
 });
 
 describe('入口 tinted 风格', () => {
-  test('待办入口使用 violet 语义族，且不是实心块/硬编码色值', () => {
+  test('待办入口与其它入口统一用品牌蓝 tinted，且不是实心块/硬编码色值', () => {
     const block = rule(STYLES, '.todo-panel-toggle {');
-    expect(block).toContain('rgba(var(--brand-violet-rgb), 0.1');
-    expect(block).toContain('var(--brand-violet-500)');
+    expect(block).toContain('rgba(var(--brand-rgb), 0.1');
+    expect(block).toContain('var(--brand-600)');
     expect(block).not.toContain('0.85');
     expect(block).not.toMatch(/#[0-9a-f]{3,6}/i);
   });

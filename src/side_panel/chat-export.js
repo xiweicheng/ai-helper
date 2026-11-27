@@ -4,7 +4,7 @@
 // 刻意不接扩展主题——导出物需在任意宿主环境保持白底可读，且多为 var() 无效上下文（对象字面量/canvas）。
 
 import { showToast } from './utils.js';
-import { formatMarkdown, splitTableCells } from './markdown-render.js';
+import { formatMarkdown, tableRowCells, extractTableBlocks } from './markdown-render.js';
 import { resolveExportFileName, normalizeExportMarkdown } from './export-filename.js';
 import { loadPdfExportLibs, loadHtml2Canvas } from './libs-loader.js';
 import logger from '../shared/logger.js';
@@ -311,13 +311,10 @@ export async function parseMarkdownToDocxChildren(markdown) {
     return `\n\n%%HTMLTABLE_${idx}%%\n\n`;
   });
 
-  // Step 3: 提取 Markdown 表格
-  const mdTables = [];
-  content = content.replace(/(?:^\|.+\|\s*$\n)+^\|[\s\-:|]+\|\s*$\n(?:^\|.+\|\s*$\n?)+/gm, (match) => {
-    const idx = mdTables.length;
-    mdTables.push(match);
-    return `\n\n%%MDTABLE_${idx}%%\n\n`;
-  });
+  // Step 3: 提取 Markdown 表格（GFM 外层竖线可选）
+  const tableExtract = extractTableBlocks(content, 'MDTABLE');
+  content = tableExtract.text;
+  const mdTables = tableExtract.blocks.map(block => block.full);
 
   // Step 4: 按双换行分割为块
   const blocks = content.split(/\n{2,}/).filter(b => b.trim());
@@ -486,8 +483,8 @@ function parseMdTable(md) {
   for (const line of lines) {
     // 跳过分隔行 (|---|---|)
     if (/^[\s\|:\-]+$/.test(line.replace(/\|/g, ''))) continue;
-    // 按未转义竖线拆分（支持单元格内转义竖线）
-    const cells = splitTableCells(line).slice(1, -1).map(c => c.trim());
+    // 按未转义竖线拆分（支持单元格内转义竖线与可选外层竖线）
+    const cells = tableRowCells(line).map(c => c.trim());
     if (cells.length > 0) rows.push(cells);
   }
   return rows;

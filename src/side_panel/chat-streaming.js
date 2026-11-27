@@ -172,6 +172,11 @@ let _isProgramScroll = false;      // 程序自动滚动标志（避免误判为
 let _userScrolledUp = false;       // 用户是否在流式过程中主动上滚
 let _scrollListenerBound = false;  // scroll 监听是否已绑定（防止重复绑定）
 let _hasPendingContent = false;    // 用户上滚后，是否有新的流式内容产生（用于按钮 badge）
+// 最近一次"真实用户滚动输入"（滚轮/触摸/指针按下/方向键）的时间戳。
+// 只用它来判定"用户上滚"：工具结果批量插入、content-visibility 正文渲染等布局变化
+// 同样会触发 scroll 事件并让离底距离变大，若直接据此判定，会把一次布局抖动当成
+// 用户上滚，自动跟随从此永久停摆（表现为偶发滚不到底、之后再也不跟）。
+let _lastUserScrollIntent = 0;
 
 // 滚动合并：流式 chunk 约 30ms 一个，每个都同步读 scrollHeight 会把强制布局插到
 // 任意任务中间（历史越长越贵）。这里改为只登记目标，由同一帧的 rAF 统一读一次、
@@ -225,17 +230,34 @@ function ensureScrollListener() {
   const cc = document.getElementById('chatContainer');
   if (!cc) return;
   _scrollListenerBound = true;
+  // 记录真实用户滚动输入：只有这些输入之后紧邻的 scroll 才可能是"用户上滚"。
+  // pointerdown 覆盖拖拽滚动条，wheel/touchmove 覆盖滚轮与触摸，方向键覆盖键盘滚动。
+  const markIntent = () => { _lastUserScrollIntent = Date.now(); };
+  cc.addEventListener('wheel', markIntent, { passive: true });
+  cc.addEventListener('touchmove', markIntent, { passive: true });
+  cc.addEventListener('pointerdown', markIntent, { passive: true });
+  cc.addEventListener('mousedown', markIntent, { passive: true });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'PageUp'
+      || e.key === 'PageDown' || e.key === 'Home' || e.key === 'End' || e.key === ' ') {
+      markIntent();
+    }
+  });
+
   cc.addEventListener('scroll', () => {
     if (_isProgramScroll) return;
-    // 距底部超过 80px 视为用户主动上滚查看
+    // 距底部超过 80px 视为离开底部
     const atBottom = cc.scrollHeight - cc.scrollTop - cc.clientHeight < 80;
-    _userScrolledUp = !atBottom;
-    // 用户滚回底部时清除待处理内容标记
+    // 只有存在近期真实用户输入才判定为用户上滚；否则这是内容高度变化（批量插入工具
+    // 执行结果、长正文渲染等）带来的位移，应继续自动跟随，而不是停摆。
     if (atBottom) {
+      _userScrolledUp = false;
       _hasPendingContent = false;
-    } else if (state.isGenerating) {
-      // 生成过程中用户上滚，标记有待处理内容，以便 badge 正常显示
-      _hasPendingContent = true;
+    } else if (Date.now() - _lastUserScrollIntent < 800) {
+      _userScrolledUp = true;
+      if (state.isGenerating) {
+        _hasPendingContent = true;
+      }
     }
     updateScrollButtonState();
   }, { passive: true });
@@ -303,6 +325,8 @@ function autoScrollToBottom(chatContainer, options = {}) {
     }
 
     if (isSmooth) {
+      // 平滑滚动取代排队中的补滚帧，避免旧的补滚把动画打断成跳变
+      if (_scrollFixRaf) { cancelAnimationFrame(_scrollFixRaf); _scrollFixRaf = 0; }
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       // 平滑滚动自身会持续动画到底，无需补帧；下一帧复位标志
       requestAnimationFrame(() => { _isProgramScroll = false; });
@@ -312,14 +336,18 @@ function autoScrollToBottom(chatContainer, options = {}) {
     el.scrollTop = el.scrollHeight;
 
     // 流式每块用 innerHTML 重渲染整段内容（含代码块/图片/思考指示器折叠），其真实高度
-    // 常在下一帧才最终确定。单帧按当时的 scrollHeight 滚动会"差一点没到底"，最新内容被
-    // 底部遮挡。补滚一帧：若期间用户未上滚，用稳定后的高度再滚到位（保持 _isProgramScroll
-    // 跨越补滚帧，避免把程序滚动误判为用户上滚而停跟随）。
+    // 常在下一帧才最终确定。此外一次工具执行可能在同一帧插入多条结果，单帧补滚仍会
+    // 落不到底。这里连续补滚少量帧，直到贴底或用户上滚（保持 _isProgramScroll 跨越
+    // 补滚帧，避免把程序滚动误判为用户上滚而停跟随）。
     if (_scrollFixRaf) cancelAnimationFrame(_scrollFixRaf);
-    _scrollFixRaf = requestAnimationFrame(() => {
+    let fixFrames = 0;
+    const fixToBottom = () => {
       _scrollFixRaf = 0;
-      if (el.isConnected && !_userScrolledUp) {
+      if (el.isConnected && !_userScrolledUp
+        && el.scrollHeight - el.scrollTop - el.clientHeight > 2 && fixFrames++ < 4) {
         el.scrollTop = el.scrollHeight;
+        _scrollFixRaf = requestAnimationFrame(fixToBottom);
+        return;
       }
       // 补滚完成后再下一帧复位标志（scroll 事件通常在同步或下一帧触发）
       if (_scrollResetRaf) cancelAnimationFrame(_scrollResetRaf);
@@ -327,7 +355,8 @@ function autoScrollToBottom(chatContainer, options = {}) {
         _scrollResetRaf = 0;
         _isProgramScroll = false;
       });
-    });
+    };
+    _scrollFixRaf = requestAnimationFrame(fixToBottom);
   });
 }
 
@@ -349,6 +378,34 @@ function cancelPendingAutoScroll() {
   _scrollTarget = null;
   _scrollForce = false;
   _scrollSmooth = false;
+}
+
+/**
+ * 点击「滚动到底部」后可靠地滚到底。
+ * 长会话里历史消息正文启用了 content-visibility:auto，屏幕外的正文只按占位高度
+ * 参与 scrollHeight 计算：平滑滚动过程中它们才渲染出真实高度，scrollHeight 随之
+ * 变大，首次算出的目标偏低，会停在离底部还差一截的位置（表现为需要点两次）。
+ * 这里在平滑动画结束后按真实高度补滚几帧，直到真正贴底。
+ */
+let _toBottomSeq = 0;
+
+function scrollToBottomReliably(chatContainer) {
+  if (!chatContainer) return;
+  const seq = ++_toBottomSeq; // 新的一次点击作废上一轮补滚
+  autoScrollToBottom(chatContainer, { force: true, smooth: true });
+
+  setTimeout(() => {
+    let attempts = 0;
+    const settle = () => {
+      if (seq !== _toBottomSeq || !chatContainer.isConnected) return;
+      if (_userScrolledUp) return; // 期间用户主动上滚，尊重其位置
+      if (chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 8) return;
+      if (attempts++ >= 8) return;
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
+  }, 420);
 }
 
 /**
@@ -490,7 +547,7 @@ function initScrollToBottomBtn() {
         _userScrolledUp = false;
         _hasPendingContent = false;
         updateScrollButtonState();
-        autoScrollToBottom(cc, { force: true, smooth: true });
+        scrollToBottomReliably(cc);
       }
     }
     dragMoved = false;

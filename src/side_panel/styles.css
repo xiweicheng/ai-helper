@@ -12702,7 +12702,7 @@ body {
   background: rgba(var(--brand-rgb), 0.14);
   color: var(--brand-600);
   border: none;
-  border-radius: 8px 0 0 8px;
+  border-radius: 6px 0 0 6px;
   padding: 8px 6px;
   cursor: pointer;
   font-size: 14px;
@@ -13323,8 +13323,8 @@ body {
 
 /* 收藏入口按钮 */
 .bookmark-panel-toggle {
-  background: rgba(var(--warning-rgb), 0.14);
-  color: var(--warning-strong);
+  background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-600);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
@@ -13338,8 +13338,8 @@ body {
 }
 
 .bookmark-panel-toggle:hover {
-  background: rgba(var(--warning-rgb), 0.24);
-  box-shadow: -2px 2px 8px rgba(var(--warning-rgb), 0.2);
+  background: rgba(var(--brand-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2);
 }
 
 .bookmark-panel-toggle svg {
@@ -13742,8 +13742,8 @@ body {
 
 /* 搜索入口按钮 */
 .search-panel-toggle {
-  background: rgba(var(--info-rgb), 0.14);
-  color: var(--info-strong);
+  background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-600);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
@@ -13757,8 +13757,8 @@ body {
 }
 
 .search-panel-toggle:hover {
-  background: rgba(var(--info-rgb), 0.24);
-  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.2);
+  background: rgba(var(--brand-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2);
 }
 
 .search-panel-toggle svg {
@@ -14087,8 +14087,8 @@ body {
 
 /* 入口按钮 */
 .workspace-panel-toggle {
-  background: rgba(var(--info-rgb), 0.14);
-  color: var(--info-strong);
+  background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-600);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
@@ -14102,8 +14102,8 @@ body {
 }
 
 .workspace-panel-toggle:hover {
-  background: rgba(var(--info-rgb), 0.24);
-  box-shadow: -2px 2px 8px rgba(var(--info-rgb), 0.2);
+  background: rgba(var(--brand-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2);
 }
 
 .workspace-panel-toggle svg {
@@ -16208,8 +16208,13 @@ body {
 
 /* ============================================
    右侧功能入口轨道（side-rail）
-   工作目录/收藏/消息目录/搜索/定时任务五个入口的统一容器，
+   工作目录/收藏/消息目录/搜索/待办/定时任务六个入口的统一容器，
    上下边界由 side-rail.js 与聊天区可视区实时对齐
+
+   配色：六个入口统一走品牌蓝 tinted（浅蓝底 + --brand-600 图标）。
+   早期按功能各占一个语义色族（info=工作目录+搜索 / warning=收藏 /
+   violet=待办 / success=定时任务），纵向排列时暖色收藏夹在一列冷色里最跳；
+   现靠图标形状区分功能，悬停/打开态只在同一色阶上加深，角标仍用语义强调色。
    ============================================ */
 .side-rail {
   position: fixed;
@@ -16567,8 +16572,7 @@ body.voice-recording-active .input-container {
 
 /* ============================================
    侧边栏待办面板（todo-panel）
-   入口挂 side-rail 的 todo 槽位，配色用主题里唯一未被其它入口占用的 violet 语义族：
-   brand=消息目录 / warning=收藏 / info=工作目录+搜索 / success=定时任务
+   入口挂 side-rail 的 todo 槽位
    ============================================ */
 .todo-panel-container {
   /* 与其它入口容器同一语法：槽内右对齐，按钮尺寸由自身 padding 决定（24×32） */
@@ -16580,8 +16584,8 @@ body.voice-recording-active .input-container {
 
 .todo-panel-toggle {
   position: relative;
-  background: rgba(var(--brand-violet-rgb), 0.1);
-  color: var(--brand-violet-500);
+  background: rgba(var(--brand-rgb), 0.14);
+  color: var(--brand-600);
   border: none;
   border-radius: 6px 0 0 6px;
   padding: 8px 4px;
@@ -16595,13 +16599,13 @@ body.voice-recording-active .input-container {
 
 .todo-panel-toggle:hover,
 .todo-panel-toggle:focus-visible {
-  background: rgba(var(--brand-violet-rgb), 0.2);
-  box-shadow: -2px 2px 8px rgba(var(--brand-violet-rgb), 0.2);
+  background: rgba(var(--brand-rgb), 0.24);
+  box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2);
   outline: none;
 }
 
 .todo-panel-toggle.active {
-  background: rgba(var(--brand-violet-rgb), 0.26);
+  background: rgba(var(--brand-rgb), 0.28);
 }
 
 .todo-panel-toggle svg {

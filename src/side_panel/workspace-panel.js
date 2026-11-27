@@ -22,7 +22,7 @@ import state from './state.js';
 import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { renderFilePreviews } from './file-extract.js';
 import { renderImagePreviews } from './image-helpers.js';
-import { formatMarkdown, splitTableCells, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
+import { formatMarkdown, tableRowCells, extractTableBlocks, renderMermaidCharts, addCodeCopyButtons, addMermaidControls, addTableToolbarEvents, cleanTableForClipboard } from './markdown-render.js';
 import { hideMessageToc } from './message-toc.js';
 // chat-export 的 mermaid/docx 辅助改为按需加载：它的顶层 docx 依赖会把 MB 级代码
 // 拖进 side_panel 首屏 chunk（PERF-05）
@@ -3585,13 +3585,10 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     return `\n\n%%HTMLTABLE_${idx}%%\n\n`;
   });
 
-  // 提取 Markdown 表格
-  const mdTables = [];
-  content = content.replace(/(?:^\|.+\|\s*$\n)+^\|[\s\-:|]+\|\s*$\n(?:^\|.+\|\s*$\n?)+/gm, (match) => {
-    const idx = mdTables.length;
-    mdTables.push(match);
-    return `\n\n%%MDTABLE_${idx}%%\n\n`;
-  });
+  // 提取 Markdown 表格（GFM 外层竖线可选）
+  const tableExtract = extractTableBlocks(content, 'MDTABLE');
+  content = tableExtract.text;
+  const mdTables = tableExtract.blocks.map(block => block.full);
 
   const blocks = content.split(/\n{2,}/).filter(b => b.trim());
 
@@ -3653,8 +3650,8 @@ async function parseMarkdownToDocxChildrenLocal(markdown) {
     const rows = [];
     for (const line of lines) {
       if (/^[\s\|:\-]+$/.test(line.replace(/\|/g, ''))) continue;
-      // 按未转义竖线拆分（支持单元格内转义竖线）
-      const cells = splitTableCells(line).slice(1, -1).map(c => c.trim());
+      // 按未转义竖线拆分（支持单元格内转义竖线与可选外层竖线）
+      const cells = tableRowCells(line).map(c => c.trim());
       if (cells.length > 0) rows.push(cells);
     }
     return rows;

@@ -25,6 +25,7 @@ const { buildDockEntries, isEntryStale, normalizeLabel, isSameLabel, pickEntryLa
   renderDock, initSessionDock, __resetSessionDockForTest } =
   await import('../../src/side_panel/session-dock.js');
 const { default: state } = await import('../../src/side_panel/state.js');
+const { getSession } = await import('../../src/storage/db.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -163,7 +164,8 @@ describe('normalizeRunningIds（子任务/子代理不该各占一个执行状�
 
   it('后台回执必须经 normalize 后才成为运行集合', () => {
     const src = read('src/side_panel/session-dock.js');
-    expect(src).toContain('runningIds = normalizeRunningIds(res.activeSessionIds);');
+    expect(src).toContain('const nextRunningIds = normalizeRunningIds(res.activeSessionIds);');
+    expect(src).toContain('runningIds = nextRunningIds;');
     // 裸用后台集合等于把子任务画成第二个会话
     expect(src).not.toContain('runningIds = new Set(res.activeSessionIds)');
   });
@@ -443,6 +445,95 @@ describe('主行用用户问题而不是会话标题', () => {
     expect(hydrate).toContain('cached.stamp !== stamp');
     // 且一次 getSession 同时补标题与问题，不多一次 IO
     expect(hydrate.match(/getSession\(/g)).toHaveLength(1);
+  });
+});
+
+describe('同一会话连续执行任务时刷新用户问题', () => {
+  function recordWithQuestion(text) {
+    return {
+      title: '会话标题',
+      messageHistory: [{ role: 'user', content: text, messageId: `msg_${text}` }],
+    };
+  }
+
+  function hoverQuestion(sessionId) {
+    const wrapper = document.querySelector(`.session-dock-item[data-session-id="${sessionId}"]`);
+    expect(wrapper).not.toBeNull();
+    wrapper.dispatchEvent(new MouseEvent('mouseenter'));
+    return document.querySelector('.session-dock-tip-title')?.textContent;
+  }
+
+  it('第二轮启动后重新读库，不继续展示第一轮缓存的问题', async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000 });
+    try {
+      __resetSessionDockForTest();
+      initSessionDock();
+      await vi.advanceTimersByTimeAsync(0);
+
+      state.activeSessionId = 'cur';
+      state.sessions = [{ id: 'other', title: '会话标题', messageHistory: [
+        { role: 'user', content: '第一轮问题', messageId: 'msg_first' },
+      ] }];
+      getSession.mockResolvedValue(recordWithQuestion('第一轮问题'));
+      state.generatingSessionIds.add('other');
+      renderDock();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(hoverQuestion('other')).toBe('第一轮问题');
+
+      state.generatingSessionIds.delete('other');
+      state.completedSessionIds.add('other');
+      document.dispatchEvent(new CustomEvent('generation-ended', { detail: { sessionId: 'other' } }));
+      await vi.advanceTimersByTimeAsync(300);
+
+      // state.sessions 故意保留旧快照；新一轮的真值必须从库里重取。
+      getSession.mockResolvedValue(recordWithQuestion('第二轮问题'));
+      state.generatingSessionIds.add('other');
+      document.dispatchEvent(new CustomEvent('generating-state-changed'));
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(hoverQuestion('other')).toBe('第二轮问题');
+      expect(getSession).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('第一轮读库迟到时，旧响应不能覆盖第二轮问题', async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000 });
+    try {
+      __resetSessionDockForTest();
+      initSessionDock();
+      await vi.advanceTimersByTimeAsync(0);
+
+      let resolveFirst;
+      getSession
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+        .mockResolvedValueOnce(recordWithQuestion('第二轮问题'));
+      state.activeSessionId = 'cur';
+      state.sessions = [{ id: 'other', title: '会话标题', messageHistory: [
+        { role: 'user', content: '第一轮问题', messageId: 'msg_first' },
+      ] }];
+      state.generatingSessionIds.add('other');
+      renderDock();
+
+      state.generatingSessionIds.delete('other');
+      state.completedSessionIds.add('other');
+      document.dispatchEvent(new CustomEvent('generation-ended', { detail: { sessionId: 'other' } }));
+      await vi.advanceTimersByTimeAsync(300);
+
+      vi.setSystemTime(1_700_000_001_000);
+      state.generatingSessionIds.add('other');
+      document.dispatchEvent(new CustomEvent('generating-state-changed'));
+      await vi.advanceTimersByTimeAsync(300);
+
+      resolveFirst(recordWithQuestion('第一轮问题'));
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(hoverQuestion('other')).toBe('第二轮问题');
+      expect(getSession).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -917,4 +1008,6 @@ afterEach(() => {
   state.completedSessionIds.clear();
   state.activeSessionId = null;
   state.sessions = [];
+  getSession.mockReset();
+  getSession.mockResolvedValue(null);
 });

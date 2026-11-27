@@ -400,14 +400,10 @@ export function formatMarkdown(text) {
     return `%%CODE_BLOCK_${index}%%`;
   });
   
-  // 提取表格并替换为占位符
-  const tableBlocks = [];
-  text = text.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)*)/gm, (match, header, separator, body) => {
-    const index = tableBlocks.length;
-    tableBlocks.push({ header, separator, body, full: match.trim() });
-    // 在占位符前后添加换行符，确保表格作为独立块级元素，避免被标题包裹
-    return `\n%%TABLE_BLOCK_${index}%%\n`;
-  });
+  // 提取表格并替换为占位符（外层竖线可选，与 GFM 一致）
+  const tableExtract = extractTableBlocks(text);
+  const tableBlocks = tableExtract.blocks;
+  text = tableExtract.text;
   
   // 使用 marked 解析 Markdown
   let html = '';
@@ -463,9 +459,12 @@ export function formatMarkdown(text) {
     );
   });
   
-  // 还原表格占位符
+  // 还原表格占位符（marked 通常会把独立占位符包成 <p>，替换时一并去掉，避免 <div> 嵌在 <p> 里）
   tableBlocks.forEach((table, index) => {
-    html = html.replace(`%%TABLE_BLOCK_${index}%%`, createTableHTML(table));
+    const token = `%%TABLE_BLOCK_${index}%%`;
+    const tableHTML = createTableHTML(table);
+    const wrapped = new RegExp(`<p>\\s*${token}\\s*</p>`);
+    html = wrapped.test(html) ? html.replace(wrapped, tableHTML) : html.replace(token, tableHTML);
   });
   
   return html;
@@ -544,6 +543,123 @@ export function splitTableCells(line) {
 }
 
 /**
+ * 判断行尾是否为「未转义的竖线」（奇数个反斜杠表示竖线被转义，不算分隔符）
+ */
+function endsWithUnescapedPipe(text) {
+  if (!text.endsWith('|')) return false;
+  let backslashes = 0;
+  let i = text.length - 2;
+  while (i >= 0 && text[i] === '\\') {
+    backslashes++;
+    i--;
+  }
+  return backslashes % 2 === 0;
+}
+
+/**
+ * 把一行 Markdown 表格拆成单元格数组（GFM：行首/行尾的外层竖线都是可选的）
+ * 例：'| a | b |' / 'a | b' / '| a | b' 都得到 ['a', 'b']
+ */
+export function tableRowCells(line) {
+  const trimmed = String(line == null ? '' : line).trim();
+  if (!trimmed) return [];
+  const cells = splitTableCells(trimmed);
+  let start = 0;
+  let end = cells.length;
+  if (trimmed.startsWith('|')) start = 1;
+  if (endsWithUnescapedPipe(trimmed)) end -= 1;
+  if (end <= start) return [];
+  return cells.slice(start, end);
+}
+
+/**
+ * 是否为 GFM 表格分隔行（|---|---|、--- | :-: 等，外层竖线可选）
+ */
+function isTableSeparatorLine(line) {
+  const trimmed = String(line == null ? '' : line).trim();
+  if (!trimmed) return false;
+  if (!trimmed.includes('|')) return /^:?-+:?$/.test(trimmed);
+  const cells = tableRowCells(trimmed);
+  if (cells.length === 0) return false;
+  return cells.every(cell => /^:?-+:?$/.test(cell.trim()));
+}
+
+/** 行首为这些标记时属于新的块级结构，不能再算作表格行 */
+function startsNewBlock(trimmed) {
+  return /^(```|~~~)/.test(trimmed)
+    || /^#{1,6}\s/.test(trimmed)
+    || /^>/.test(trimmed)
+    || /^([-*+]\s|\d+[.)]\s)/.test(trimmed);
+}
+
+/**
+ * 提取 Markdown 表格（GFM：每个表格行的外层竖线都可省略），替换为占位符。
+ * 之前只认「每行都以 | 开头和结尾」的写法，AI 常见的
+ *   | 仓库 | 分支 |
+ *   |---|---|
+ *   `repo` | `branch`             ← 表体行没有外层竖线
+ * 会被截走表头+分隔行、表体退化成普通段落（渲染成“一堆竖线”）。
+ * @param {string} text
+ * @param {string} marker 占位符前缀，默认 TABLE_BLOCK
+ * @returns {{text: string, blocks: Array<{header: string, separator: string, body: string, full: string}>}}
+ */
+export function extractTableBlocks(text, marker = 'TABLE_BLOCK') {
+  if (!text) return { text: text || '', blocks: [] };
+  const lines = String(text).split('\n');
+  const blocks = [];
+  const output = [];
+  let inFence = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (/^\s*(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      output.push(line);
+      i++;
+      continue;
+    }
+
+    // 表格必须顶格（缩进的表格留给 marked 处理，避免打乱列表层级），且表头与分隔行列数一致
+    const isHeaderCandidate = !inFence && line === trimmed && !startsNewBlock(trimmed)
+      && trimmed.includes('|') && !isTableSeparatorLine(trimmed);
+
+    if (isHeaderCandidate && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1])) {
+      const header = trimmed;
+      const separator = lines[i + 1].trim();
+      const columnCount = tableRowCells(header).length;
+      if (columnCount > 0 && tableRowCells(separator).length === columnCount) {
+        const bodyLines = [];
+        let j = i + 2;
+        while (j < lines.length) {
+          const rowLine = lines[j];
+          const rowTrimmed = rowLine.trim();
+          if (!rowTrimmed || !rowTrimmed.includes('|') || startsNewBlock(rowTrimmed)) break;
+          // 紧跟着另一张表的表头时结束当前表：当前行是表头、下一行是同列数的分隔行
+          if (j + 1 < lines.length && isTableSeparatorLine(lines[j + 1])
+            && tableRowCells(rowLine).length === tableRowCells(lines[j + 1]).length) break;
+          bodyLines.push(rowLine);
+          j++;
+        }
+        const index = blocks.length;
+        blocks.push({ header, separator, body: bodyLines.join('\n'), full: [header, separator, ...bodyLines].join('\n') });
+        // 占位符前后留空行，确保表格作为独立块级元素，避免被段落/标题包裹
+        output.push('', `%%${marker}_${index}%%`, '');
+        i = j;
+        continue;
+      }
+    }
+
+    output.push(line);
+    i++;
+  }
+
+  return { text: output.join('\n'), blocks };
+}
+
+/**
  * 创建表格 HTML（含工具栏按钮）
  */
 export function createTableHTML(tableData) {
@@ -555,12 +671,12 @@ export function createTableHTML(tableData) {
     window.__tableBlocks[tableIndex] = { full, header, body };
   }
   
-  // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线）
-  const headers = splitTableCells(header).slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
-  
-  // 解析表格行数据（按未转义竖线拆分，支持单元格内 \| 字面竖线）
+  // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线与可选外层竖线）
+  const headers = tableRowCells(header).map(cell => parseInlineMarkdown(cell.trim()));
+
+  // 解析表格行数据
   const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-    return splitTableCells(row).slice(1, -1).map(cell => parseInlineMarkdown(cell.trim()));
+    return tableRowCells(row).map(cell => parseInlineMarkdown(cell.trim()));
   });
   
   // 构建表格 HTML
@@ -623,12 +739,12 @@ export function downloadTableAsExcel(tableBlock) {
   try {
     const { header, body } = tableBlock;
     
-    // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线）
-    const headers = splitTableCells(header).slice(1, -1).map(cell => cell.trim());
+    // 解析表头（按未转义竖线拆分，支持单元格内 \| 字面竖线与可选外层竖线）
+    const headers = tableRowCells(header).map(cell => cell.trim());
     
-    // 解析表格行数据（按未转义竖线拆分，支持单元格内 \| 字面竖线）
+    // 解析表格行数据
     const rows = body.trim().split('\n').filter(row => row.trim()).map(row => {
-      return splitTableCells(row).slice(1, -1).map(cell => cell.trim());
+      return tableRowCells(row).map(cell => cell.trim());
     });
     
     // 转换为 CSV 格式

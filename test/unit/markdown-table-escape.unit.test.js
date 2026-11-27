@@ -4,12 +4,16 @@
 import { describe, test, expect, beforeAll, beforeEach } from 'vitest';
 
 let splitTableCells;
+let tableRowCells;
+let extractTableBlocks;
 let createTableHTML;
 let parseMarkdownToDocxChildren;
 
 beforeAll(async () => {
   const mod = await import('../../src/side_panel/markdown-render.js');
   splitTableCells = mod.splitTableCells;
+  tableRowCells = mod.tableRowCells;
+  extractTableBlocks = mod.extractTableBlocks;
   createTableHTML = mod.createTableHTML;
   const exp = await import('../../src/side_panel/chat-export.js');
   parseMarkdownToDocxChildren = exp.parseMarkdownToDocxChildren;
@@ -91,6 +95,67 @@ describe('createTableHTML - 渲染层不再多列', () => {
     expect(code.textContent).toBe('openai-compat|BAAI/bge-m3|1024');
     expect(vectorCells[1].textContent).toContain('，stale=false');
     expect(vectorCells[1].textContent).not.toContain('\\');
+  });
+});
+
+describe('表格外层竖线可选（GFM 语义）', () => {
+  test('tableRowCells 兼容表头/表体行有无外层竖线', () => {
+    expect(tableRowCells('| a | b |')).toEqual([' a ', ' b ']);
+    expect(tableRowCells('| a | b')).toEqual([' a ', ' b']);
+    expect(tableRowCells('a | b |')).toEqual(['a ', ' b ']);
+    expect(tableRowCells('a | b')).toEqual(['a ', ' b']);
+    expect(tableRowCells('| 仓库 | 分支 | 提交 | 远端 |')).toHaveLength(4);
+  });
+
+  test('表体行缺少外层竖线时整张表被完整提取，不残留竖线段落', () => {
+    const md = [
+      '| 仓库 | 分支 | 提交 | 远端 |',
+      '|---|---|---|---|',
+      '`ability-auto-util/web` | `feature/poc-frontend-adapter` | abc123 | origin',
+      '`other/repo` | `main` | def456 | upstream',
+      '',
+      '收尾段落',
+    ].join('\n');
+
+    const { text, blocks } = extractTableBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].body.split('\n')).toHaveLength(2);
+    expect(text).not.toContain('ability-auto-util');
+    expect(text).toContain('%%TABLE_BLOCK_0%%');
+    expect(text).toContain('收尾段落');
+  });
+
+  test('该类表格渲染为 4 列 2 行，单元格内容完整', () => {
+    const { blocks } = extractTableBlocks([
+      '| 仓库 | 分支 | 提交 | 远端 |',
+      '|---|---|---|---|',
+      '`a` | `b` | c | d',
+      '| `e` | `f` | g | h |',
+    ].join('\n'));
+    const div = document.createElement('div');
+    div.innerHTML = createTableHTML(blocks[0]);
+
+    expect(div.querySelectorAll('thead th')).toHaveLength(4);
+    const rows = div.querySelectorAll('tbody tr');
+    expect(rows).toHaveLength(2);
+    rows.forEach(tr => expect(tr.querySelectorAll('td')).toHaveLength(4));
+    expect(rows[0].querySelectorAll('td')[3].textContent.trim()).toBe('d');
+    expect(rows[1].querySelectorAll('td')[0].querySelector('code').textContent).toBe('e');
+  });
+
+  test('表头也没有外层竖线时同样识别', () => {
+    const { blocks } = extractTableBlocks('仓库 | 分支\n---|---\na | b');
+    expect(blocks).toHaveLength(1);
+    expect(tableRowCells(blocks[0].header)).toHaveLength(2);
+  });
+
+  test('分隔行列数与表头不一致时不当作表格', () => {
+    expect(extractTableBlocks('a | b\n---').blocks).toHaveLength(0);
+  });
+
+  test('表格后的普通段落不被吞进表体', () => {
+    const { blocks } = extractTableBlocks('| a | b |\n|---|---|\n| 1 | 2 |\n\n普通段落 | 带竖线');
+    expect(blocks[0].body).toBe('| 1 | 2 |');
   });
 });
 

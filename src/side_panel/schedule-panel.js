@@ -234,13 +234,13 @@ export function initSchedulePanel() {
   container.innerHTML = `
     <style>
       .schedule-panel-container { position: relative; display: flex; justify-content: flex-end; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; width: 100%; background: transparent; }
-      .schedule-panel-toggle { background: rgba(var(--success-rgb), 0.14); color: var(--success-strong); border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
-      .schedule-panel-toggle:hover { background: rgba(var(--success-rgb), 0.24); box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.2); }
+      .schedule-panel-toggle { background: rgba(var(--brand-rgb), 0.14); color: var(--brand-600); border: none; border-radius: 6px 0 0 6px; padding: 8px 4px; cursor: pointer; font-size: 14px; box-shadow: -1px 1px 4px rgba(var(--overlay-rgb), 0.12); transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; }
+      .schedule-panel-toggle:hover { background: rgba(var(--brand-rgb), 0.24); box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.2); }
       .schedule-panel-toggle svg { width: 16px; height: 16px; }
       .schedule-panel-toggle.running svg { animation: sched-icon-spin 1.4s linear infinite; transform-origin: center; transform-box: fill-box; }
       .schedule-panel-toggle.running { animation: sched-btn-glow 1.4s ease-in-out infinite; }
       @keyframes sched-icon-spin { to { transform: rotate(360deg); } }
-      @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(var(--success-rgb), 0.3); } 50% { box-shadow: -2px 2px 18px rgba(var(--success-rgb), 0.85); } }
+      @keyframes sched-btn-glow { 0%, 100% { box-shadow: -2px 2px 8px rgba(var(--brand-rgb), 0.3); } 50% { box-shadow: -2px 2px 18px rgba(var(--brand-rgb), 0.85); } }
       .schedule-panel { position: absolute; right: 26px; bottom: -40px; width: 360px; max-height: 70vh; background: rgba(var(--surface-rgb), 1); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 8px 32px rgba(var(--overlay-rgb), 0.18); display: none; flex-direction: column; overflow: hidden; transform: translateY(var(--clamp-y, 0px)); }
       .schedule-panel.open { display: flex; }
       .schedule-panel-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
