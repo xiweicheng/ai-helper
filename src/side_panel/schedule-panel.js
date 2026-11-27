@@ -1,6 +1,7 @@
 // side_panel/schedule-panel.js - 定时任务管理面板（创建/编辑/删除/启停/立即执行）
 
 import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import { getSideRailSlot } from './side-rail.js';
 import { loadSessions } from '../storage/session-store.js';
 import { t, registerTranslations } from '../shared/i18n.js';
@@ -406,6 +407,14 @@ export function initSchedulePanel() {
       : t('schedPanel.toggleTitle');
   }
   const closeBtn = document.getElementById('schedulePanelClose');
+  // 全屏：退出后重新夹取一次位置，避免全屏期间窗口尺寸变化留下偏差
+  const fsBtn = createFullscreenButton('close-btn');
+  closeBtn.before(fsBtn);
+  bindFullscreenButton(fsBtn, panel, {
+    onToggle: (on) => {
+      if (!on) clampPanelToViewport(panel);
+    },
+  });
   const newBtn = document.getElementById('scheduleNewTask');
   const listEl = document.getElementById('schedulePanelList');
   const overlay = document.getElementById('scheduleModalOverlay');
@@ -520,6 +529,7 @@ export function initSchedulePanel() {
       clampPanelToViewport(panel);
       refreshTaskList();
     } else {
+      exitPanelFullscreen(panel);
       panel.classList.remove('open');
       releasePanelClamp(panel);
     }

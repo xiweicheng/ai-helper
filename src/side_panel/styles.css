@@ -16682,7 +16682,7 @@ body.voice-recording-active .input-container {
   z-index: 3;
 }
 
-/* ==================== 侧边浮层全屏（搜索 / 收藏 / 目录 / 工作目录） ==================== */
+/* ==================== 侧边浮层全屏（搜索 / 收藏 / 目录 / 工作目录 / 定时任务） ==================== */
 /* 切换全屏的瞬间禁用过渡，避免浮层 top/transform 与全屏 inset 的过渡叠加导致回弹 */
 .panel-fs-no-anim {
   transition: none !important;
@@ -16691,6 +16691,7 @@ body.voice-recording-active .input-container {
 .search-panel.panel-fullscreen,
 .bookmark-panel.panel-fullscreen,
 .message-toc-panel.panel-fullscreen,
+.schedule-panel.panel-fullscreen,
 .workspace-panel.panel-fullscreen {
   position: fixed;
   inset: 8px;
@@ -16715,6 +16716,12 @@ body.voice-recording-active .input-container {
 }
 
 .bookmark-panel.panel-fullscreen .bookmark-panel-content {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+/* 定时任务列表同样撑满全屏高度，而不是停在 70vh */
+.schedule-panel.panel-fullscreen .schedule-panel-list {
   flex: 1 1 auto;
   max-height: none;
 }
