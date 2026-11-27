@@ -35,6 +35,7 @@ import { playCompletionFeedback, playFailureFeedback } from './completion-feedba
 import { initProviderSelector } from './provider-selector.js';
 import { closeAllSectionSelects, sectionSelectSearchHtml } from './section-select.js';
 import { initToolbarAdaptive } from './toolbar-adapt.js';
+import { initMessageFooterAdaptive } from './message-footer-adapt.js';
 import { initInputAddMenu } from './input-add-menu.js';
 import { initUsageTips } from './usage-tips.js';
 import { resolveHistoryNav } from './input-history-nav.js';
@@ -4845,6 +4846,7 @@ document.addEventListener('DOMContentLoaded', initContextIndicator);
 document.addEventListener('DOMContentLoaded', initCurrentModelTag);
 document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
+document.addEventListener('DOMContentLoaded', initMessageFooterAdaptive);
 document.addEventListener('DOMContentLoaded', initInputAddMenu);
 // 输入框上方使用技巧轮播条（依赖代理连接状态：未连接时过滤掉 agent 类文案）
 document.addEventListener('DOMContentLoaded', initUsageTips);

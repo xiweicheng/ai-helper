@@ -168,6 +168,8 @@ describe('normalizeRunningIds（子任务/子代理不该各占一个执行状�
     expect(src).toContain('runningIds = nextRunningIds;');
     // 裸用后台集合等于把子任务画成第二个会话
     expect(src).not.toContain('runningIds = new Set(res.activeSessionIds)');
+    // generation-ended 标记优先于 runningIds 滞后判断，避免连续轮次漏刷新问题
+    expect(src).toContain('if (restartPendingIds.has(sid)) {');
   });
 });
 

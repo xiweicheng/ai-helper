@@ -7564,6 +7564,20 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* footer 内的按钮一律不参与收缩：flex 默认允许压到 min-content，中文标签会被
+   挤成两行、右侧图标也被推出可视区。宽度不足统一交给 message-footer-adapt.js
+   实测后降级，不靠 flex 硬挤 */
+.message.assistant .message-footer > * {
+  flex-shrink: 0;
+}
+
+.footer-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .message.assistant .copy-btn {
   display: flex;
   align-items: center;
@@ -12911,23 +12925,53 @@ body {
 
 /* 消息目录已统一挂入入口轨道（.side-rail），层级由轨道统一提供，见文件末尾轨道样式 */
 
-/* 窄栏模式：消息底部工具栏只显示图标，隐藏文字 */
-@media (max-width: 420px) {
-  .message.assistant .copy-btn span,
-  .message.assistant .quote-btn span,
-  .message.assistant .fullscreen-btn span,
-  .export-trigger-btn span {
-    display: none;
-  }
-  .message.assistant .copy-btn,
-  .message.assistant .quote-btn,
-  .message.assistant .fullscreen-btn,
-  .export-trigger-btn {
-    padding: 4px 6px;
-  }
-  .message.assistant .message-footer {
-    gap: 2px;
-  }
+/* AI 回复底部工具栏溢出降级（由 message-footer-adapt.js 按条实测后添加）：
+   ① footer-compact        文字按钮只留图标，间距收紧
+   ② footer-compact-ultra  再收起 token 标签（仍可从执行日志查看）
+   ③ footer-wrap           仍放不下则允许换行，宁可两行也不裁掉右侧图标
+   不用固定断点：视口宽度与消息实际可用宽度并不一致（会话栏、工作区分栏都会
+   压缩消息区），且中英文案长度差异明显 */
+.message-footer.footer-compact {
+  gap: 2px;
+}
+
+.message-footer.footer-compact .copy-btn,
+.message-footer.footer-compact .quote-btn,
+.message-footer.footer-compact .fullscreen-btn,
+.message-footer.footer-compact .export-trigger-btn {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.message-footer.footer-compact .copy-btn span,
+.message-footer.footer-compact .quote-btn span,
+.message-footer.footer-compact .fullscreen-btn span,
+.message-footer.footer-compact .export-trigger-btn span {
+  display: none;
+}
+
+.message-footer.footer-compact .footer-right-actions {
+  gap: 6px;
+}
+
+.message-footer.footer-compact-ultra .token-usage-tag {
+  display: none;
+}
+
+.message-footer.footer-compact-ultra .footer-right-actions {
+  gap: 4px;
+}
+
+.message-footer.footer-wrap {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* 测量期间关闭过渡：padding 若走 transition，紧接着读 scrollWidth 拿到的仍是
+   过渡起点（旧 padding），会把「还需继续降级」误判成「已放下」 */
+.message-footer.footer-measuring,
+.message-footer.footer-measuring * {
+  transition: none !important;
 }
 
 /* 删除确认对话框 */

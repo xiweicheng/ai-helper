@@ -177,6 +177,8 @@ let _hasPendingContent = false;    // 用户上滚后，是否有新的流式内
 // 同样会触发 scroll 事件并让离底距离变大，若直接据此判定，会把一次布局抖动当成
 // 用户上滚，自动跟随从此永久停摆（表现为偶发滚不到底、之后再也不跟）。
 let _lastUserScrollIntent = 0;
+// 用户输入到 scroll 事件的合理时间窗：超过这个窗口的位移一律视为内容/布局变化。
+const USER_SCROLL_INTENT_WINDOW_MS = 800;
 
 // 滚动合并：流式 chunk 约 30ms 一个，每个都同步读 scrollHeight 会把强制布局插到
 // 任意任务中间（历史越长越贵）。这里改为只登记目标，由同一帧的 rAF 统一读一次、
@@ -253,7 +255,7 @@ function ensureScrollListener() {
     if (atBottom) {
       _userScrolledUp = false;
       _hasPendingContent = false;
-    } else if (Date.now() - _lastUserScrollIntent < 800) {
+    } else if (Date.now() - _lastUserScrollIntent < USER_SCROLL_INTENT_WINDOW_MS) {
       _userScrolledUp = true;
       if (state.isGenerating) {
         _hasPendingContent = true;
@@ -2544,10 +2546,6 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
 
   const rightActionsContainer = document.createElement('div');
   rightActionsContainer.className = 'footer-right-actions';
-  rightActionsContainer.style.marginLeft = 'auto';
-  rightActionsContainer.style.display = 'flex';
-  rightActionsContainer.style.alignItems = 'center';
-  rightActionsContainer.style.gap = '8px';
 
   // Token 消耗小标签（方案三：footer 快速概览）
   const footerTokenSummary = aggregateTokenUsage(executionLog);

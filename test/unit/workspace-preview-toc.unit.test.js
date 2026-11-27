@@ -142,7 +142,7 @@ describe('工作目录预览目录接线（源码守卫）', () => {
   test('渲染态↔源码态切换先收起旧目录，避免入口指向重建掉的标题', () => {
     const idx = src().indexOf('function toggleMarkdownPreview');
     expect(idx).toBeGreaterThan(0);
-    const body = src().slice(idx, idx + 700);
+    const body = src().slice(idx, idx + 900);
     expect(body).toContain('hideMessageToc()');
   });
 

@@ -7,6 +7,7 @@ let splitTableCells;
 let tableRowCells;
 let extractTableBlocks;
 let createTableHTML;
+let formatMarkdown;
 let parseMarkdownToDocxChildren;
 
 beforeAll(async () => {
@@ -15,6 +16,7 @@ beforeAll(async () => {
   tableRowCells = mod.tableRowCells;
   extractTableBlocks = mod.extractTableBlocks;
   createTableHTML = mod.createTableHTML;
+  formatMarkdown = mod.formatMarkdown;
   const exp = await import('../../src/side_panel/chat-export.js');
   parseMarkdownToDocxChildren = exp.parseMarkdownToDocxChildren;
 });
@@ -149,6 +151,17 @@ describe('表格外层竖线可选（GFM 语义）', () => {
     expect(tableRowCells(blocks[0].header)).toHaveLength(2);
   });
 
+  test('表头行尾带空格仍识别，且存储时已去除', () => {
+    const { blocks } = extractTableBlocks('| a | b |   \n|---|---|\n| 1 | 2 |');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].header).toBe('| a | b |');
+    expect(tableRowCells(blocks[0].header)).toHaveLength(2);
+  });
+
+  test('行首缩进的表格不提取，留给 marked 处理（不打乱列表层级）', () => {
+    expect(extractTableBlocks('  | a | b |\n  |---|---|\n  | 1 | 2 |').blocks).toHaveLength(0);
+  });
+
   test('分隔行列数与表头不一致时不当作表格', () => {
     expect(extractTableBlocks('a | b\n---').blocks).toHaveLength(0);
   });
@@ -156,6 +169,25 @@ describe('表格外层竖线可选（GFM 语义）', () => {
   test('表格后的普通段落不被吞进表体', () => {
     const { blocks } = extractTableBlocks('| a | b |\n|---|---|\n| 1 | 2 |\n\n普通段落 | 带竖线');
     expect(blocks[0].body).toBe('| 1 | 2 |');
+  });
+});
+
+describe('formatMarkdown - 表格占位符还原', () => {
+  test('单元格含 $& 等替换模式时不污染输出', () => {
+    // formatMarkdown 依赖全局 marked / DOMPurify（生产由 libs-loader 注入），这里给最小实现
+    const prevMarked = globalThis.marked;
+    const prevPurify = globalThis.DOMPurify;
+    globalThis.marked = { setOptions() {}, parse: (t) => `<p>${t}</p>` };
+    globalThis.DOMPurify = { sanitize: (h) => h };
+    try {
+      const html = formatMarkdown('| 价格 | 说明 |\n|---|---|\n| $&.00 | 折扣 $` |');
+      // 旧实现把 tableHTML 直接当替换串，$& 会展开成被匹配的占位符 <p>%%TABLE_BLOCK_0%%</p>
+      expect(html).not.toContain('%%TABLE_BLOCK_0%%');
+      expect(html).toContain('<table');
+    } finally {
+      globalThis.marked = prevMarked;
+      globalThis.DOMPurify = prevPurify;
+    }
   });
 });
 

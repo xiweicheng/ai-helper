@@ -981,10 +981,16 @@ function refreshRunningFromBackground() {
         if (Array.isArray(res.activeSessionIds)) {
           const nextRunningIds = normalizeRunningIds(res.activeSessionIds);
           for (const sid of nextRunningIds) {
+            // generation-ended 已证明上一轮结束：之后即便上一轮轮询还把它留在 runningIds 里
+            // （轮询滞后），这里的「运行中」也只能是新的一轮，先失效缓存。
+            if (restartPendingIds.has(sid)) {
+              restartPendingIds.delete(sid);
+              startNewRound(sid);
+              continue;
+            }
             // 本地启动已在 generating-state-changed 里换过轮次，不重复失效缓存
             if (runningIds.has(sid) || state.generatingSessionIds.has(sid)
               || state.pendingCallApiSessionIds.has(sid)) continue;
-            restartPendingIds.delete(sid);
             startNewRound(sid);
           }
           runningIds = nextRunningIds;

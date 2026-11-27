@@ -459,12 +459,15 @@ export function formatMarkdown(text) {
     );
   });
   
-  // 还原表格占位符（marked 通常会把独立占位符包成 <p>，替换时一并去掉，避免 <div> 嵌在 <p> 里）
+  // 还原表格占位符（marked 通常会把独立占位符包成 <p>，替换时一并去掉，避免 <div> 嵌在 <p> 里）。
+  // 用函数式替换：tableHTML 来自用户内容，直接当替换串会让单元格里的 `$&`/`$'` 等被当成替换模式。
   tableBlocks.forEach((table, index) => {
     const token = `%%TABLE_BLOCK_${index}%%`;
     const tableHTML = createTableHTML(table);
     const wrapped = new RegExp(`<p>\\s*${token}\\s*</p>`);
-    html = wrapped.test(html) ? html.replace(wrapped, tableHTML) : html.replace(token, tableHTML);
+    html = wrapped.test(html)
+      ? html.replace(wrapped, () => tableHTML)
+      : html.replace(token, () => tableHTML);
   });
   
   return html;
@@ -622,8 +625,9 @@ export function extractTableBlocks(text, marker = 'TABLE_BLOCK') {
       continue;
     }
 
-    // 表格必须顶格（缩进的表格留给 marked 处理，避免打乱列表层级），且表头与分隔行列数一致
-    const isHeaderCandidate = !inFence && line === trimmed && !startsNewBlock(trimmed)
+    // 表格必须顶格（缩进的表格留给 marked 处理，避免打乱列表层级），且表头与分隔行列数一致。
+    // 仅排除行首空白；行尾空格是 AI 输出常见噪声，允许（存储时已 trim）。
+    const isHeaderCandidate = !inFence && line.trimStart() === line && !startsNewBlock(trimmed)
       && trimmed.includes('|') && !isTableSeparatorLine(trimmed);
 
     if (isHeaderCandidate && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1])) {

@@ -2141,10 +2141,6 @@ export function addMessage(role, content, scroll = true, executionLog = [], refl
     
     const rightActionsContainer = document.createElement('div');
     rightActionsContainer.className = 'footer-right-actions';
-    rightActionsContainer.style.marginLeft = 'auto';
-    rightActionsContainer.style.display = 'flex';
-    rightActionsContainer.style.alignItems = 'center';
-    rightActionsContainer.style.gap = '8px';
 
     // Token 消耗小标签（方案三：footer 快速概览）——置于最左，与流式渲染路径保持一致
     const footerTokenSummary = aggregateTokenUsage(executionLog);
