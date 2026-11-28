@@ -60,6 +60,21 @@ describe('划词菜单复制按钮 - JS 接线', () => {
     // 按钮悬停提示在渲染时动态取词（i18n 热切换不缓存）
     expect(showFn).toContain(".title = t('sidePanel.copySelectionTooltip')");
   });
+
+  test('右上角加号跳转提示词管理：新增/编辑划词菜单项', () => {
+    expect(ensureFn).toContain('menu-add-btn');
+    const handler = ensureFn.slice(
+      ensureFn.indexOf("querySelector('.menu-add-btn')"),
+      ensureFn.indexOf('document.body.appendChild(selectionMenuEl)')
+    );
+    // 打开管理弹窗（可勾选「在划词菜单显示」），并先收口菜单与选区
+    expect(handler).toContain('showPromptManageModal');
+    expect(handler).toContain('removeAllRanges');
+    expect(handler.indexOf('hideFloatingMenu()')).toBeLessThan(handler.indexOf('showPromptManageModal'));
+    // 加号只管理菜单，不触发提问
+    expect(handler).not.toContain('handleSelectionPromptClick');
+    expect(showFn).toContain("t('sidePanel.manageSelectionMenuTooltip')");
+  });
 });
 
 describe('划词菜单复制按钮 - CSS 结构', () => {
@@ -134,6 +149,7 @@ describe('划词菜单复制按钮 - i18n 键成对', () => {
     for (const [name, block] of [['zh', zhBlock], ['en', enBlock]]) {
       expect(block, name).toContain('copySelectionTooltip');
       expect(block, name).toContain('copySelectionDone');
+      expect(block, name).toContain('manageSelectionMenuTooltip');
     }
   });
 });

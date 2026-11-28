@@ -72,6 +72,7 @@ registerTranslations('zh', {
     copySelectionDone: '已复制选中内容',
     sendToChatTooltip: '在对话中提问',
     customAskMenuItem: '自定义问答',
+    manageSelectionMenuTooltip: '管理划词菜单',
     selectedContentLabel: '选中内容',
     selectedContentSummary: '摘要',
     userQuestionLabel: '用户问题',
@@ -158,6 +159,7 @@ registerTranslations('en', {
     copySelectionDone: 'Selection copied',
     sendToChatTooltip: 'Ask in conversation',
     customAskMenuItem: 'Custom question',
+    manageSelectionMenuTooltip: 'Manage selection menu',
     selectedContentLabel: 'Selected content',
     selectedContentSummary: 'summary',
     userQuestionLabel: 'User question',
@@ -297,7 +299,8 @@ import {
 import {
   addPromptManageButton, showPromptSelector, hidePromptSelector,
   updatePromptList, sendPromptByCode,
-  insertPromptToInputByCode, updatePromptSelection, initPromptEvents
+  insertPromptToInputByCode, updatePromptSelection, initPromptEvents,
+  showPromptManageModal
 } from './prompt-manager.js';
 import {
   showAgentAtSelector, hideAgentAtSelector, updateAgentAtSelection, switchAtTab, activeAtTab,
@@ -1035,11 +1038,19 @@ function ensureSelectionMenuEl() {
   selectionMenuEl.innerHTML = `
     <div class="menu-header">
       <span class="menu-header-title"></span>
-      <button class="menu-copy-btn" type="button">
-        <svg viewBox="0 0 16 16" fill="currentColor">
-          <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
-        </svg>
-      </button>
+      <div class="menu-header-actions">
+        <button class="menu-add-btn" type="button">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <line x1="8" y1="3" x2="8" y2="13"/>
+            <line x1="3" y1="8" x2="13" y2="8"/>
+          </svg>
+        </button>
+        <button class="menu-copy-btn" type="button">
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25zM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25z"/>
+          </svg>
+        </button>
+      </div>
     </div>
     <div class="menu-items"></div>
   `;
@@ -1057,6 +1068,14 @@ function ensureSelectionMenuEl() {
     showToast(t('sidePanel.copySelectionDone'), 'success');
     window.getSelection()?.removeAllRanges();
     window.hideFloatingMenu();
+  });
+  // 右上角加号：直接跳到提示词管理弹窗，去新增/编辑「在划词菜单显示」的项
+  const addBtn = selectionMenuEl.querySelector('.menu-add-btn');
+  addBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    window.getSelection()?.removeAllRanges();
+    window.hideFloatingMenu();
+    showPromptManageModal();
   });
   document.body.appendChild(selectionMenuEl);
   return selectionMenuEl;
@@ -1101,6 +1120,8 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   menuEl.querySelector('.menu-header-title').textContent = t('sidePanel.askBasedOnSelection');
   const copyBtnEl = menuEl.querySelector('.menu-copy-btn');
   if (copyBtnEl) copyBtnEl.title = t('sidePanel.copySelectionTooltip');
+  const addBtnEl = menuEl.querySelector('.menu-add-btn');
+  if (addBtnEl) addBtnEl.title = t('sidePanel.manageSelectionMenuTooltip');
   const selectionMenuItems = menuEl.querySelector('.menu-items');
 
   selectionMenuItems.innerHTML = '';

@@ -9794,6 +9794,41 @@ body {
   color: var(--success-500);
 }
 
+/* 菜单右上角动作区：加号（管理划词菜单）+ 复制 */
+.selection-floating-menu .menu-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.selection-floating-menu .menu-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.selection-floating-menu .menu-add-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.selection-floating-menu .menu-add-btn:hover {
+  background: rgba(var(--brand-violet-rgb), 0.12);
+  border-color: rgba(var(--brand-violet-rgb), 0.35);
+  color: var(--brand-violet-600);
+}
+
 .selection-floating-menu .menu-item {
   padding: 10px 14px;
   font-size: 13px;
