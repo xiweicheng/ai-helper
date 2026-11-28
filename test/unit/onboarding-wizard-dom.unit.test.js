@@ -67,6 +67,19 @@ describe('onboarding 向导', () => {
     expect(store.onboardingWizardDismissedAt).toBeTruthy();
   });
 
+  it('点击遮罩不关闭，右上角有关闭按钮', () => {
+    openOnboardingWizard();
+    document.querySelector('.onboarding-mask').click();
+    expect(document.querySelector('.onboarding-dialog')).toBeTruthy();
+    expect(document.querySelector('.onboarding-close-btn')).toBeTruthy();
+  });
+
+  it('点右上角关闭按钮关闭向导', () => {
+    openOnboardingWizard();
+    document.querySelector('.onboarding-close-btn').click();
+    expect(document.querySelector('.onboarding-dialog')).toBeFalsy();
+  });
+
   it('未配置时状态条可见', async () => {
     initOnboardingWizard();
     await new Promise(r => setTimeout(r, 0));

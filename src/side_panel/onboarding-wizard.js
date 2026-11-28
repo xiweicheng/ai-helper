@@ -277,12 +277,21 @@ function render() {
   view.root.classList.add('is-open');
   const body = [renderStep0, renderStep1, renderStep2, renderStep3][view.step]();
   view.root.innerHTML = `
-    <div class="onboarding-mask" data-action="skip"></div>
+    <div class="onboarding-mask" aria-hidden="true"></div>
     ${body}`;
   // 弹层打开/切步骤时把焦点移入，避免键盘用户仍在背景页面里操作
   const dlg = view.root.querySelector('.onboarding-dialog');
   if (dlg) {
     dlg.setAttribute('tabindex', '-1');
+    // 右上角显式关闭：遮罩点击不再关闭，避免误触后找不到入口
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'onboarding-close-btn';
+    closeBtn.dataset.action = 'close';
+    closeBtn.textContent = '×';
+    closeBtn.title = t('onboarding.close');
+    closeBtn.setAttribute('aria-label', t('onboarding.close'));
+    dlg.prepend(closeBtn);
     if (view.step !== lastFocusedStep) {
       lastFocusedStep = view.step;
       dlg.focus();

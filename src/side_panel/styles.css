@@ -19688,9 +19688,11 @@ body.has-session-dock .chat-container {
 }
 .onboarding-dialog {
   position: fixed; z-index: 4801;
-  left: 10px; right: 10px;  /* 侧边栏通常又窄又高，顶部贴齐会让下方大片留白、显得头重脚轻；
-     改为相对视口垂直居中，窄面板矮窗口下靠 max-height 兜底不溢出。 */
-  top: 50%; transform: translateY(-50%);
+  /* 宽面板下不跟随拉伸：限宽 440px 并水平居中；窄面板保留 10px 边距。
+     垂直方向相对视口居中，矮窗口下靠 max-height 兜底不溢出。 */
+  left: 50%;
+  width: min(440px, calc(100vw - 20px));
+  top: 50%; transform: translate(-50%, -50%);
   max-height: calc(100vh - 24px); overflow-y: auto;
   outline: none;
   display: flex; flex-direction: column; gap: 8px;
@@ -19699,7 +19701,14 @@ body.has-session-dock .chat-container {
   border: 1px solid var(--border-default);
   box-shadow: var(--shadow-lg);
 }
-.onboarding-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.onboarding-title { font-size: 15px; font-weight: 700; color: var(--text-primary); padding-right: 24px; }
+.onboarding-close-btn {
+  position: absolute; top: 8px; right: 8px;
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--text-tertiary); border-radius: 6px;
+}
+.onboarding-close-btn:hover { color: var(--text-primary); }
 .onboarding-subtitle { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 .onboarding-steps { font-size: 11px; color: var(--text-tertiary); }
 
