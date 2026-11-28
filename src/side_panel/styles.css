@@ -10153,6 +10153,14 @@ body {
   flex-shrink: 0;
 }
 
+/* 四枚图标的原始画布留白不一致（图片图标偏宽、Markdown 偏窄长、PDF 偏满），
+   同尺寸渲染时看起来大小参差；按各自墨迹面积做一次光学归一，让视觉重量一致。
+   只缩放不改变布局盒子，文字起点仍对齐。 */
+.export-docx-item svg { transform: scale(1.05); }
+.export-pdf-item svg { transform: translateX(0.4px) scale(0.98); }
+.export-image-item svg { transform: scale(0.94); }
+.export-md-item svg { transform: scale(1.04); }
+
 .export-dropdown-item:nth-child(1) svg {
   color: var(--info-strong);
 }
