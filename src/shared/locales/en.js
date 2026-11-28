@@ -642,6 +642,7 @@ export default {
   // Goal mode
   goal: {
     label: 'Goal',
+    shortHint: 'Keeps pushing the task automatically',
     toggleHint: 'When enabled, this task runs as a session goal that keeps pushing itself until it is met, judged impossible, or runs out of budget',
     statusActive: 'Running',
     statusPaused: 'Paused',
@@ -680,6 +681,10 @@ export default {
     selectionHint: 'When enabled, select text on page to quickly ask questions',
     tools: 'Tools',
     selection: 'Selection',
+    selectionShortHint: 'Ask about selected text',
+    more: 'More',
+    moreTitle: 'More switches',
+    moreHint: 'Goal and selection switches',
     modelSettings: 'Model Settings',
     toolsConfigTitle: 'Click to open detailed tool settings',
   },

@@ -65,6 +65,8 @@ function scheduleToolbarAdapt() {
 function moveSelectionGroupToMenu() {
   const group = document.getElementById('selectionToggleGroup');
   const target = document.getElementById('inputAddMenuSwitches');
+  // 已收进底行「更多」菜单时不再搬动，避免 "+" 菜单出现不可见的重复开关
+  if (group && group.classList.contains('more-menu-hidden')) return;
   if (group && target && group.parentElement !== target) target.appendChild(group);
 }
 

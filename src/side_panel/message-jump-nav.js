@@ -355,6 +355,49 @@ export function initMessageJumpNav() {
     }
   }
 
+  // ========== 空会话隐藏 ==========
+  // 没有任何用户提问时，{把手 / ▲▼ / 问题列表} 都没有可跳转的内容：
+  // 空会话里留着一组箭头既无意义又挡视线，整组隐藏，等首条提问出现再恢复。
+  let navVisibilityState = null;
+  function hasUserQuestion() {
+    const chatContainer = document.getElementById('chatContainer');
+    return !!chatContainer && !!chatContainer.querySelector('.message.user');
+  }
+
+  function syncNavVisibility() {
+    const show = hasUserQuestion();
+    if (chatNavHotzone) chatNavHotzone.classList.toggle('chat-nav-empty', !show);
+    if (chatNavButtons) chatNavButtons.classList.toggle('chat-nav-empty', !show);
+    if (chatNavQuestionPanel) chatNavQuestionPanel.classList.toggle('chat-nav-empty', !show);
+    if (!show && navVisibilityState !== false) {
+      // 会话被清空/切到空会话：顺手复位钉住与展开态，避免留下不可见的“已钉住”状态
+      setNavPinned(false);
+      collapseChatNav();
+      navQuery = '';
+      if (chatNavQuestionPanel) chatNavQuestionPanel.innerHTML = '';
+    }
+    navVisibilityState = show;
+  }
+
+  // 消息是异步渲染的（新会话、切会话、清空），用 rAF 合并 MutationObserver 的高频回调
+  {
+    const chatContainer = document.getElementById('chatContainer');
+    if (chatContainer) {
+      let navVisibilityScheduled = false;
+      const scheduleNavVisibility = () => {
+        if (navVisibilityScheduled) return;
+        navVisibilityScheduled = true;
+        requestAnimationFrame(() => {
+          navVisibilityScheduled = false;
+          syncNavVisibility();
+        });
+      };
+      new MutationObserver(scheduleNavVisibility).observe(chatContainer, { childList: true, subtree: true });
+      document.addEventListener('session-switched', scheduleNavVisibility);
+      syncNavVisibility();
+    }
+  }
+
   /**
    * 全局 Esc 的导航分支：搜索框有词先清词，否则退钉住/收起并把焦点还给把手。
    * @returns {boolean} 是否消费了这次 Esc（调用方据此短路）

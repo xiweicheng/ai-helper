@@ -1880,6 +1880,198 @@ body {
   font-weight: 500;
   min-width: 28px;
 }
+/* 模型设置入口已并入信息带末位的模型名（#currentModelTag），
+   工具栏不再单独露出温度按钮；保留 .temp-selector 作为 #tempDropdown 的定位锚点 */
+.temp-selector {
+  width: 0;
+  align-self: stretch;
+}
+.temp-selector .temp-display { display: none; }
+/* ========== 「更多」开关菜单（目标 / 划词收拢，减少底行常驻项） ========== */
+/* 原开关组保留在 DOM 中供既有逻辑与事件使用，仅从底行视觉上隐藏 */
+.input-bottom-left .more-menu-hidden { display: none !important; }
+
+.more-options-group {
+  position: relative;
+}
+/* 与「记忆 / 工具」chip 完全同源：文字字号/颜色/行高全部继承，
+   内边距交给分组容器，不再额外撑高或改成按钮默认样式 */
+.more-options-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: normal;
+  user-select: none;
+  cursor: pointer;
+}
+.more-options-btn:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.35);
+  outline-offset: 1px;
+}
+/* 图标仅在图标态露出，与记忆/工具 chip 的 emoji 图标同规则 */
+.more-options-btn > svg {
+  display: none;
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.input-container.switches-icon .input-bottom-left .more-options-btn .more-options-label { display: none; }
+.input-container.switches-icon .input-bottom-left .more-options-btn > svg { display: inline; }
+/* 展开时沿用分组选中态底色，与其它 chip 的选中样式一致 */
+.more-options-group:has(.more-options-btn[aria-expanded="true"]) {
+  background: rgba(var(--brand-rgb), 0.13);
+  border-color: rgba(var(--brand-rgb), 0.30);
+}
+.more-options-group:has(.more-options-btn[aria-expanded="true"]):hover {
+  background: rgba(var(--brand-rgb), 0.20);
+  border-color: rgba(var(--brand-rgb), 0.40);
+}
+.more-options-group:has(.more-options-btn[aria-expanded="true"]) .more-options-label {
+  color: var(--brand-500);
+  font-weight: 500;
+}
+/* 右上角状态角标：与「工具」的配置角标同形状（白底胶囊 + 小圆点），
+   一枚圆点对应菜单里的一个开关，关闭=浅灰常驻，开启=各自颜色 */
+.more-options-flags {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  display: flex;
+  gap: 1px;
+  padding: 1px;
+  background: var(--bg-surface);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(var(--overlay-rgb), 0.10);
+  pointer-events: none; /* 装饰层不参与交互，避免 chip 边缘悬停抖动 */
+}
+.more-options-flag {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-default);
+  transition: background 0.2s;
+}
+.more-options-flag.flag-goal.on { background: var(--warning-500); }
+.more-options-flag.flag-selection.on { background: var(--brand-500); }
+.more-options-flag[hidden] { display: none; }
+/* 下拉指示箭头：小号 chevron，展开时翻转，提示这是可展开菜单 */
+.more-options-caret {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  opacity: 0.55;
+  transition: transform 0.2s ease, opacity 0.15s ease;
+}
+.more-options-group:has(.more-options-btn[aria-expanded="true"]) .more-options-caret {
+  transform: rotate(180deg);
+  opacity: 1;
+  color: var(--brand-500);
+}
+
+.more-options-dropdown {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1000;
+  width: 252px;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 1px solid rgba(var(--overlay-rgb), 0.12);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(var(--overlay-rgb), 0.16), 0 1px 3px rgba(var(--overlay-rgb), 0.12);
+  display: none;
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.more-options-dropdown.show { display: block; }
+.more-options-title {
+  padding: 6px 8px 4px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.more-options-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.more-options-row:hover { background: var(--bg-subtle); }
+.more-options-row[hidden] { display: none; }
+.more-options-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.more-options-emoji {
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+.more-options-labelwrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.more-options-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.more-options-desc {
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+.more-options-row input[type="checkbox"] {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+}
+.more-options-row .toggle-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border-subtle);
+  box-shadow: inset 0 0 0 1px rgba(var(--overlay-rgb), 0.12);
+  transition: background 0.2s ease;
+}
+.more-options-row .toggle-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  box-shadow: 0 1px 3px var(--shadow-md);
+  transition: transform 0.2s ease;
+}
+/* 开关颜色与右上角圆点一一对应：目标=橙、划词=蓝紫（同「工具」的角标/开关对应关系） */
+.more-options-row input:checked ~ .toggle-switch { background: var(--brand-500); }
+#moreGoalRow input:checked ~ .toggle-switch { background: var(--warning-500); }
+#moreSelectionRow input:checked ~ .toggle-switch { background: var(--brand-500); }
+.more-options-row input:checked ~ .toggle-switch::after { transform: translateX(12px); }
+.more-options-row input:focus-visible ~ .toggle-switch {
+  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.25);
+}
 /* 输入底行溢出探测降级（由 toolbar-adapt.js 的 adaptInputToolbar 动态测量后添加）：
    空间不足时逐级降级——① 隐藏温度数字仅留图标 ② 折叠助手名称为 emoji
    ③ 记忆/工具/划词图标化 ④ 划词开关整组收进 "+" 菜单；
@@ -5502,6 +5694,10 @@ body {
   background: rgba(var(--brand-rgb), 0.55);
   box-shadow: 0 0 10px rgba(var(--brand-rgb), 0.45);
 }
+/* 空会话（还没有任何用户提问）：整组跳转 UI 隐藏，不留无意义的箭头与把手 */
+.chat-nav-hotzone.chat-nav-empty,
+.chat-nav-buttons.chat-nav-empty,
+.chat-nav-question-panel.chat-nav-empty { display: none; }
 .chat-nav-buttons {
   position: absolute;
   left: 10px;
@@ -5901,37 +6097,51 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* ========== 上下文占用指示器（信息带首位） ========== */
+/* ========== 上下文占用指示器（信息带首位） ==========
+   进度由图标本身的圆环承载：占用越高，彩色弧越长；颜色表达安全/预警/危险，
+   文字保持中性色，避免整个指示器被染色后显得像状态链接。 */
+@property --usage-ratio {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
 .context-usage-indicator {
   flex: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
+  gap: 5px;
+  padding: 2px 5px;
   background: none;
   border: none;
   cursor: pointer;
   font-size: 10px;
   line-height: 1;
   color: var(--text-tertiary);
-  border-radius: 4px;
-  transition: color 0.15s ease, opacity 0.15s ease;
+  border-radius: 5px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.context-usage-indicator:hover { opacity: 0.8; }
+.context-usage-indicator:hover {
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+}
 
-.context-usage-indicator[data-level="safe"] { color: var(--success-500); }
-.context-usage-indicator[data-level="warning"] { color: var(--warning-500); }
-.context-usage-indicator[data-level="critical"] { color: var(--danger-500); }
+.context-usage-indicator[data-level="safe"] { --usage-color: var(--success-500); }
+.context-usage-indicator[data-level="warning"] { --usage-color: var(--warning-500); }
+.context-usage-indicator[data-level="critical"] { --usage-color: var(--danger-500); }
 
 .context-usage-ring {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   flex: none;
-  background: conic-gradient(currentColor calc(var(--usage-ratio, 0) * 1turn), rgba(var(--overlay-rgb), 0.25) 0);
-  -webkit-mask: radial-gradient(circle, transparent 3px, #000 3.5px);
-  mask: radial-gradient(circle, transparent 3px, #000 3.5px);
+  background: conic-gradient(
+    var(--usage-color, var(--brand-500)) calc(var(--usage-ratio, 0) * 1turn),
+    rgba(var(--overlay-rgb), 0.22) 0
+  );
+  -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+  mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+  transition: --usage-ratio 0.35s ease;
 }
 
 /* ========== 本会话工作目录 chip（信息带内，上下文环右侧；点击打开会话级切换弹窗） ========== */
@@ -5991,7 +6201,10 @@ body {
   transition: color 0.15s ease;
 }
 
-.current-model-tag:hover { color: var(--text-tertiary); }
+.current-model-tag:hover {
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
 
 .context-usage-percent { font-variant-numeric: tabular-nums; }
 

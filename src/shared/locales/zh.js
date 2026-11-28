@@ -642,6 +642,7 @@ export default {
   // 目标模式（Goal）
   goal: {
     label: '目标',
+    shortHint: '持续自动推进任务',
     toggleHint: '开启后，本轮任务会作为会话目标持续自动推进，直到达成、被判为不可能或预算耗尽',
     statusActive: '进行中',
     statusPaused: '已暂停',
@@ -680,6 +681,10 @@ export default {
     selectionHint: '开启后，划词选中内容时可快速提问',
     tools: '工具',
     selection: '划词',
+    selectionShortHint: '选中文字快速提问',
+    more: '更多',
+    moreTitle: '更多开关',
+    moreHint: '目标与划词开关',
     modelSettings: '模型设置',
     toolsConfigTitle: '点击打开工具详细配置',
   },

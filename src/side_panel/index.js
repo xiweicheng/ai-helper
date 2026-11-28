@@ -612,7 +612,7 @@ function updateCurrentModelTag() {
   if (!el) return;
   const name = state.currentModel || '';
   el.textContent = name;
-  el.title = name;
+  el.title = name ? `${name} · ${t('toggle.modelSettings')}` : '';
   el.style.display = name ? '' : 'none';
 }
 
@@ -745,12 +745,132 @@ function initWorkdirTag() {
 function initCurrentModelTag() {
   const el = document.getElementById('currentModelTag');
   if (el) {
+    el.setAttribute('aria-haspopup', 'true');
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      // 与底行「更多」菜单互斥，避免两个浮层叠在一起
+      document.getElementById('moreOptionsDropdown')?.classList.remove('show');
+      document.getElementById('moreOptionsBtn')?.setAttribute('aria-expanded', 'false');
       document.getElementById('tempDisplay')?.click();
     });
   }
   updateCurrentModelTag();
+}
+
+/**
+ * 输入底行「更多」菜单：把目标、划词这类低频开关从常驻工具条收进浮层。
+ * 原开关组继续保留在 DOM 中（供既有逻辑和事件使用），这里用镜像开关与之双向同步。
+ */
+function initMoreOptionsMenu() {
+  const btn = document.getElementById('moreOptionsBtn');
+  const dropdown = document.getElementById('moreOptionsDropdown');
+  if (!btn || !dropdown) return;
+
+  const goalSource = document.getElementById('goalModeBtn');
+  const selectionSource = document.getElementById('enableSelectionQueryBtn');
+  const goalRow = document.getElementById('moreGoalRow');
+  const goalToggle = document.getElementById('moreGoalToggle');
+  const selectionToggle = document.getElementById('moreSelectionToggle');
+  const flagGoal = document.getElementById('moreFlagGoal');
+  const flagSelection = document.getElementById('moreFlagSelection');
+
+  // 右上角角标：一枚圆点对应一个开关，颜色区分是谁开着；目标能力被关掉时连圆点一起收起
+  const syncFlags = () => {
+    const goalAvailable = !!goalSource && goalSource.style.display !== 'none';
+    const goalOn = goalAvailable && !!goalSource.checked;
+    const selectionOn = !!selectionSource && selectionSource.checked;
+    if (flagGoal) {
+      flagGoal.hidden = !goalAvailable;
+      flagGoal.classList.toggle('on', goalOn);
+    }
+    if (flagSelection) flagSelection.classList.toggle('on', selectionOn);
+  };
+
+  const syncFromToolbar = () => {
+    if (goalToggle && goalSource) goalToggle.checked = goalSource.checked;
+    if (selectionToggle && selectionSource) selectionToggle.checked = selectionSource.checked;
+    // 目标能力被配置关闭时，整行一起隐藏
+    if (goalRow && goalSource) goalRow.hidden = goalSource.style.display === 'none';
+    syncFlags();
+  };
+
+  const close = () => {
+    dropdown.classList.remove('show');
+    btn.setAttribute('aria-expanded', 'false');
+  };
+
+  // 浮层跟随「更多」按钮，但限制在输入容器内，避免窄面板下溢出
+  const placeDropdown = () => {
+    if (!dropdown.classList.contains('show')) return;
+    const btnRect = btn.getBoundingClientRect();
+    const groupRect = (dropdown.parentElement || btn).getBoundingClientRect();
+    const container = btn.closest('.input-container');
+    const cRect = container ? container.getBoundingClientRect() : { left: 8, right: window.innerWidth - 8 };
+    const width = dropdown.offsetWidth || 252;
+    const margin = 8;
+    const minLeft = cRect.left + margin;
+    const maxLeft = Math.max(minLeft, cRect.right - width - margin);
+    const targetLeft = Math.min(Math.max(minLeft, btnRect.left), maxLeft);
+    dropdown.style.left = `${Math.round(targetLeft - groupRect.left)}px`;
+  };
+
+  btn.addEventListener('click', () => {
+    const willOpen = !dropdown.classList.contains('show');
+    dropdown.classList.toggle('show', willOpen);
+    btn.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) {
+      syncFromToolbar();
+      placeDropdown();
+    }
+  });
+
+  window.addEventListener('resize', placeDropdown);
+
+  // 菜单内点击不应触发外部的关闭逻辑
+  dropdown.addEventListener('click', (e) => e.stopPropagation());
+
+  document.addEventListener('click', (e) => {
+    if (dropdown.contains(e.target) || btn.contains(e.target)) return;
+    // 镜像开关会触发隐藏源开关的 click，该事件冒泡到 document 会误判为「外部点击」，
+    // 导致刚点完开关菜单就收起；这里放行两个源开关自身的点击。
+    if (e.target === goalSource || e.target === selectionSource) return;
+    close();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && dropdown.classList.contains('show')) {
+      close();
+      btn.focus();
+    }
+  });
+
+  const bindMirror = (mirror, source) => {
+    if (!mirror || !source) return;
+    mirror.addEventListener('change', () => {
+      if (source.checked !== mirror.checked) source.click();
+      // 开关可能被业务拦截（如生成中），以真实状态回写界面
+      setTimeout(() => {
+        mirror.checked = source.checked;
+        syncFlags();
+      }, 0);
+    });
+    source.addEventListener('change', () => {
+      mirror.checked = source.checked;
+      syncFlags();
+    });
+  };
+
+  bindMirror(goalToggle, goalSource);
+  bindMirror(selectionToggle, selectionSource);
+
+  document.addEventListener('session-switched', () => {
+    setTimeout(syncFromToolbar, 0);
+  });
+
+  syncFromToolbar();
+  // 两个源开关的初始值来自 chrome.storage 异步回填（直接赋值 .checked 不会触发 change），
+  // 目标组的显隐还要等设页配置；只校准一次会在首次打开时漏掉蓝点，这里短时多校准几次。
+  [0, 80, 250, 600, 1200, 2000].forEach((ms) => setTimeout(syncFromToolbar, ms));
 }
 
 function updateModelSelection(selectedValue) {
@@ -4845,6 +4965,7 @@ document.addEventListener('DOMContentLoaded', () => {
 document.addEventListener('DOMContentLoaded', initMessageToc);
 document.addEventListener('DOMContentLoaded', initContextIndicator);
 document.addEventListener('DOMContentLoaded', initCurrentModelTag);
+document.addEventListener('DOMContentLoaded', initMoreOptionsMenu);
 document.addEventListener('DOMContentLoaded', initWorkdirTag);
 document.addEventListener('DOMContentLoaded', initToolbarAdaptive);
 document.addEventListener('DOMContentLoaded', initMessageFooterAdaptive);

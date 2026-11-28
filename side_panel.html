@@ -734,10 +734,50 @@
             </span>
           </button>
         </div>
+        <!-- 更多：目标 / 划词等低频开关收拢，避免底行持续膨胀 -->
+        <div class="toolbar-chip-group more-options-group" id="moreOptionsGroup">
+          <button class="more-options-btn" id="moreOptionsBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="moreOptionsDropdown" data-i18n-title="toggle.moreHint" title="目标与划词开关">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h8M18 7h2M4 17h3M12 17h8"/><circle cx="15.5" cy="7" r="2"/><circle cx="8.5" cy="17" r="2"/></svg>
+            <span class="more-options-label" data-i18n="toggle.more">更多</span>
+            <span class="more-options-caret" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="8" height="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </button>
+          <!-- 右上角状态角标：一枚小圆点对应菜单里的一个开关，开启时显示各自颜色 -->
+          <span class="more-options-flags" id="moreOptionsFlags" aria-hidden="true">
+            <span class="more-options-flag flag-goal" id="moreFlagGoal"></span>
+            <span class="more-options-flag flag-selection" id="moreFlagSelection"></span>
+          </span>
+          <div class="more-options-dropdown" id="moreOptionsDropdown">
+            <div class="more-options-title" data-i18n="toggle.moreTitle">更多开关</div>
+            <label class="more-options-row" id="moreGoalRow" data-i18n-title="goal.toggleHint" title="开启后，本轮任务会作为会话目标持续自动推进">
+              <span class="more-options-text">
+                <span class="more-options-emoji" aria-hidden="true">🎯</span>
+                <span class="more-options-labelwrap">
+                  <span class="more-options-name" data-i18n="goal.label">目标</span>
+                  <span class="more-options-desc" data-i18n="goal.shortHint">持续自动推进任务</span>
+                </span>
+              </span>
+              <input type="checkbox" id="moreGoalToggle">
+              <span class="toggle-switch" aria-hidden="true"></span>
+            </label>
+            <label class="more-options-row" id="moreSelectionRow" data-i18n-title="toggle.selectionHint" title="开启后，划词选中内容时可快速提问">
+              <span class="more-options-text">
+                <span class="more-options-emoji" aria-hidden="true">✏️</span>
+                <span class="more-options-labelwrap">
+                  <span class="more-options-name" data-i18n="toggle.selection">划词</span>
+                  <span class="more-options-desc" data-i18n="toggle.selectionShortHint">选中文字快速提问</span>
+                </span>
+              </span>
+              <input type="checkbox" id="moreSelectionToggle">
+              <span class="toggle-switch" aria-hidden="true"></span>
+            </label>
+          </div>
+        </div>
         <!-- 目标组放在「工具」之后：语义上先选能力（工具）再选执行策略（目标），
              且 🎯 是带状态的开关（预算/暂停/放行徽标），靠右更突出。
              不要往回挪到「记忆」旁边——那里是原实现就近插入的位置，不是设计意图。 -->
-        <div class="toolbar-chip-group" id="goalGroup">
+        <div class="toolbar-chip-group more-menu-hidden" id="goalGroup">
           <label class="check-toggle core-feature" for="goalModeBtn" data-i18n-title="goal.toggleHint" title="开启后，本轮任务会作为会话目标持续自动推进，直到达成、被判为不可能或预算耗尽">
             <input type="checkbox" id="goalModeBtn">
             <span class="checkmark"></span>
@@ -745,7 +785,7 @@
             <span class="toggle-icon" aria-hidden="true">🎯</span>
           </label>
         </div>
-        <div class="toolbar-chip-group" id="selectionToggleGroup">
+        <div class="toolbar-chip-group more-menu-hidden" id="selectionToggleGroup">
           <label class="check-toggle core-feature" data-i18n-title="toggle.selectionHint" title="开启后，划词选中内容时可快速提问">
             <input type="checkbox" id="enableSelectionQueryBtn">
             <span class="checkmark"></span>
