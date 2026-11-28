@@ -24,6 +24,7 @@ import {
 } from './loop-budget-phase.js';
 import { isAgentPaired, writeFile as writeAgentFile, execCommandWait, getAgentConfig } from './local-agent-client.js';
 import { beginSessionRun, endSessionRun, getEffectiveWorkdir } from '../shared/workdir-scope.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 import { getSubagentDepth, setSubagentDepth, clearSubagentDepth } from './subagent-depth.js';
 import { startSwHeartbeat, stopSwHeartbeat } from './sw-heartbeat.js';
 import { startAutoResumeWatch, stopAutoResumeWatch } from './auto-resume.js';
@@ -2892,10 +2893,11 @@ async function reactLoopImpl(messages, model, tools, tabId, apiParams = {}, sess
         };
       }
 
-      // 记录 token 使用统计
+      // 记录 token 使用统计：浮层旁支任务归到固定伪会话，避免每次带工具提问
+      // 都凭空多出一个「会话」把总会话数刷高
       if (response.usage) {
         recordTokenUsage({
-          sessionId,
+          sessionId: isEphemeralSessionId(sessionId) ? 'selection_popup' : sessionId,
           model: model || config.modelName,
           usage: response.usage,
           callType: 'react_loop'

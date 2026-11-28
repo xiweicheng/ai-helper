@@ -13,6 +13,7 @@ import state from './state.js';
 import { showToast } from './utils.js';
 import logger from '../shared/logger.js';
 import { t, registerTranslations } from '../shared/i18n.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 import {
   INTERACTION_KIND,
   registerInteractionPresenter,
@@ -31,6 +32,7 @@ registerTranslations('zh', {
     timeoutSoon: '时间即将耗尽',
     sessionNameTitle: '{title}',
     sessionNameId: '会话 ID: {id}',
+    sessionNamePopup: '划词问答',
     recommended: '推荐',
     otherOption: '其他（自定义输入）',
     timedOut: '已超时',
@@ -47,6 +49,7 @@ registerTranslations('en', {
     timeoutSoon: 'Time is almost up',
     sessionNameTitle: '{title}',
     sessionNameId: 'Session ID: {id}',
+    sessionNamePopup: 'Selection Q&A',
     recommended: 'Recommended',
     otherOption: 'Other (custom input)',
     timedOut: 'Timed out',
@@ -294,6 +297,11 @@ function renderActiveClarify(item) {
         // 会话名在标题下方另起一行（block）；过长时单行省略，靠 title 悬浮看全名
         sessionNameEl.style.display = 'block';
         sessionNameEl.title = session.title || '';
+      } else if (isEphemeralSessionId(sessionId)) {
+        // 划词浮层旁支任务没有会话记录，不暴露内部临时 ID
+        sessionNameEl.textContent = t('clarify.sessionNamePopup');
+        sessionNameEl.style.display = 'block';
+        sessionNameEl.title = '';
       } else {
         sessionNameEl.textContent = t('clarify.sessionNameId', { id: sessionId.substring(0, 8) });
         sessionNameEl.style.display = 'block';

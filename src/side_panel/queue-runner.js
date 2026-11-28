@@ -22,6 +22,7 @@ import { evaluateAutoCarry, peakIteration, commitAutoCarry } from './queue-auto-
 import * as attachmentStore from './queue-attachment-store.js';
 import { loadSessions } from './session-manager.js';
 import { abortVoiceInput } from './voice-input.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 
 /** 本面板实例标识，用于派发租约 */
 const INSTANCE_ID = 'panel_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
@@ -820,6 +821,8 @@ function handleInjectRejected(message) {
 function handleAutoCarryOnExecutionUpdate(message) {
   const sid = message?.sessionId;
   if (!sid) return;
+  // 浮层旁支任务没有队列，别为它留自动携带记账
+  if (isEphemeralSessionId(sid)) return;
   // 子任务有自己的迭代号，但它不取插话缓冲（只有顶层循环在迭代边界 drain），
   // 此时投递必须干等到 15s 超时回退 → 白弹一次“插入超时”。整段跳过。
   if (message.isSubtask === true) return;

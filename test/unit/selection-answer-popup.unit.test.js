@@ -10,6 +10,14 @@ import { resolve } from 'node:path';
 import { extractSelectionContext, buildPopupMessages } from '../../src/side_panel/selection-answer-popup.js';
 
 const modSrc = readFileSync(resolve(process.cwd(), 'src/side_panel/selection-answer-popup.js'), 'utf8');
+const bgSrc = readFileSync(resolve(process.cwd(), 'src/background/index.js'), 'utf8');
+const cssSrc = readFileSync(resolve(process.cwd(), 'src/side_panel/styles.css'), 'utf8');
+const htmlSrc = readFileSync(resolve(process.cwd(), 'side_panel.html'), 'utf8');
+
+function fnBody(src, name) {
+  const start = src.indexOf(name);
+  return src.slice(start, src.indexOf('\n}\n', start));
+}
 
 function makeRangeWithMessage(messageText, selectedText) {
   const msg = document.createElement('div');
@@ -158,7 +166,102 @@ describe('自定义问答：先输入再发送（接线守卫）', () => {
   it('预置提问的浮层在答案出来后露出追问输入框', () => {
     const doneIdx = modSrc.indexOf("message.type === 'SIDEPANEL_POPUP_STREAM_DONE'");
     expect(doneIdx).toBeGreaterThan(-1);
-    const tail = modSrc.slice(doneIdx, doneIdx + 600);
+    const tail = modSrc.slice(doneIdx, doneIdx + 1200);
     expect(tail).toContain("if (!isCustomMode) popupEl.classList.add('show-input')");
+  });
+});
+
+describe('自定义问答：允许使用工具（接线守卫）', () => {
+  it('浮层含工具开关且默认关闭，仅在自定义输入区展开时展示', () => {
+    expect(modSrc).toContain('class="sap-tools-checkbox"');
+    expect(modSrc).toContain('let useTools = false;');
+    expect(modSrc).toContain('toolsCheckbox.checked = useTools');
+    expect(cssSrc).toContain('.selection-answer-popup.show-input .sap-tools-row');
+  });
+
+  it('开关打开时走带工具请求，预置菜单的追问同样生效', () => {
+    const body = fnBody(modSrc, 'async function sendRequest');
+    expect(body).toContain('const withTools = useTools');
+    expect(body).not.toContain('isCustomMode && useTools');
+    expect(body).toContain("type: withTools ? 'SIDEPANEL_POPUP_TOOL_ASK' : 'SIDEPANEL_POPUP_ASK'");
+    expect(body).toContain('payload.agentToolIds');
+    expect(body).toContain('payload.tabId');
+    expect(body).toContain('getApiParams()');
+    expect(body).toContain("t('sidePanel.popupExecuting')");
+  });
+
+  it('打开自定义问答与关闭浮层时复位开关', () => {
+    expect(fnBody(modSrc, 'function openCustomAsk')).toContain('useTools = false');
+    expect(fnBody(modSrc, 'function closePopup')).toContain('useTools = false');
+  });
+
+  it('工具模式不渲染 ReAct 流式过程，只消费浮层专用消息', () => {
+    expect(modSrc).toContain("if (!message.type.startsWith('SIDEPANEL_POPUP_')) return;");
+  });
+
+  it('后台注册工具版请求、补发浮层终态，空工具降级普通问答', () => {
+    const start = bgSrc.indexOf("message.type === 'SIDEPANEL_POPUP_TOOL_ASK'");
+    expect(start).toBeGreaterThan(-1);
+    const body = bgSrc.slice(start, start + 2400);
+    expect(body).toContain('getTools(agentToolIds, agentId, agentSkillIds, null, agentMcpExcludedServerIds)');
+    expect(body).toContain('reactLoop(');
+    expect(body).toContain("type: 'SIDEPANEL_POPUP_STREAM_DONE'");
+    expect(body).toContain('tools.length === 0');
+    expect(body).toContain("typePrefix: 'SIDEPANEL_POPUP_'");
+    expect(body).toContain('isCancelled(sessionId)');
+  });
+
+  it('澄清/风险确认弹窗层级高于划词浮层，确认弹窗不再被内联 z-index 压低', () => {
+    const pickZ = (selector) => {
+      const start = cssSrc.indexOf(selector);
+      expect(start).toBeGreaterThan(-1);
+      return Number(cssSrc.slice(start, start + 600).match(/z-index:\s*(\d+)/)[1]);
+    };
+    const popupZ = pickZ('.selection-answer-popup {');
+    const clarifyZ = pickZ('.clarify-overlay {');
+    expect(clarifyZ).toBeGreaterThan(popupZ);
+    expect(htmlSrc).not.toContain('id="confirmOverlay" style="display: none; z-index');
+  });
+
+  it('与澄清/确认弹窗交互时浮层不关闭，避免连带取消后台任务', () => {
+    const outside = fnBody(modSrc, 'function handleOutsidePointerDown');
+    expect(outside).toContain('MODAL_OVERLAY_SELECTOR');
+    expect(outside).toContain('e.target.closest?.(MODAL_OVERLAY_SELECTOR)');
+    const esc = fnBody(modSrc, 'function handleEscapeKey');
+    expect(esc).toContain('isModalOverlayOpen()');
+  });
+});
+
+describe('自定义问答：多轮上下文记忆（接线守卫）', () => {
+  it('发送时把本浮层历史插到 system 与当前问题之间', () => {
+    const body = fnBody(modSrc, 'async function sendRequest');
+    expect(body).toContain('messages.splice(1, 0, ...popupHistory');
+    expect(body).toContain('pendingUserContent = messages[messages.length - 1].content');
+  });
+
+  it('DONE 时成对写入历史并限制条数，失败轮次不写入', () => {
+    const doneIdx = modSrc.indexOf("message.type === 'SIDEPANEL_POPUP_STREAM_DONE'");
+    expect(doneIdx).toBeGreaterThan(-1);
+    const tail = modSrc.slice(doneIdx, doneIdx + 1200);
+    expect(tail).toContain("popupHistory.push({ role: 'user'");
+    expect(tail).toContain("popupHistory.push({ role: 'assistant'");
+    expect(tail).toContain('POPUP_HISTORY_LIMIT');
+    const errorIdx = modSrc.indexOf("message.type === 'SIDEPANEL_POPUP_STREAM_ERROR'");
+    expect(modSrc.slice(errorIdx, errorIdx + 500)).toContain("pendingUserContent = ''");
+  });
+
+  it('重新生成移除上一轮问答对，打开/关闭浮层清空历史', () => {
+    expect(fnBody(modSrc, 'function dropLastPopupTurn')).toContain('popupHistory.splice(-2, 2)');
+    expect(modSrc).toContain('sendRequest({ regenerate: true })');
+    expect(fnBody(modSrc, 'function closePopup')).toContain('resetPopupHistory()');
+    expect(fnBody(modSrc, 'function openCustomAsk')).toContain('resetPopupHistory()');
+    expect(fnBody(modSrc, 'function openSelectionAnswerPopup')).toContain('resetPopupHistory()');
+  });
+
+  it('面板关闭时取消仍在跑的浮层任务，避免后台幽灵执行工具', () => {
+    const init = fnBody(modSrc, 'function initSelectionAnswerPopup');
+    expect(init).toContain("addEventListener('pagehide'");
+    expect(init).toContain('isEphemeralSessionId(currentSessionId)');
+    expect(init).toContain("type: 'CANCEL_REACT'");
   });
 });

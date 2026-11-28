@@ -7,7 +7,8 @@ import { t, registerTranslations } from '../shared/i18n.js';
 import { estimateTokens } from '../shared/token-counter.js';
 import { formatMessageContent } from './markdown-render.js';
 import { isFullscreenActive, closeMessageFullscreen } from './message-fullscreen.js';
-import { escapeHtml, showToast } from './utils.js';
+import { escapeHtml, showToast, getApiParams } from './utils.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 
 // 浮层自有文案：模块自注册，保证独立可测（不依赖 index.js 的注册时机）
 registerTranslations('zh', {
@@ -31,6 +32,9 @@ registerTranslations('zh', {
     popupContextLabel: '上下文',
     popupContextTruncated: '（已截断）',
     popupSystemPrompt: '用户在阅读 AI 回答时选中了其中的片段，希望理解选中内容。请结合上下文，只针对选中片段回答，简洁清楚，不要展开与选中内容无关的长论述。',
+    popupUseTools: '允许使用工具',
+    popupUseToolsHint: '开启后由 AI 调用工具完成任务，浮层只显示执行中与最终结果',
+    popupExecuting: '执行中...',
   },
 });
 
@@ -55,6 +59,9 @@ registerTranslations('en', {
     popupContextLabel: 'Context',
     popupContextTruncated: '(truncated)',
     popupSystemPrompt: 'The user selected a fragment while reading an AI answer and wants to understand it. Using the surrounding context, answer only about the selected fragment, concisely and clearly, without expanding into unrelated long discussion.',
+    popupUseTools: 'Allow tools',
+    popupUseToolsHint: 'Let the AI call tools. Only the running state and final result are shown.',
+    popupExecuting: 'Running...',
   },
 });
 
@@ -74,6 +81,14 @@ let currentContextText = '';
 let currentTruncated = false;
 let isStreaming = false;
 let isLocked = false;
+// 自定义问答是否允许调用工具：默认关闭，仅自定义模式生效
+let useTools = false;
+// 本轮已发送的用户消息（DONE 时与答案一起写入多轮历史）
+let pendingUserContent = '';
+// 当前浮层内的多轮问答历史：关闭/重新打开浮层即清空
+let popupHistory = [];
+// 历史条数上限（user/assistant 成对追加，偶数裁剪不会拆散问答对）
+const POPUP_HISTORY_LIMIT = 8;
 
 // ==================== 上下文提取 ====================
 
@@ -175,6 +190,12 @@ function ensurePopupEl() {
       </div>
     </div>
     <div class="sap-body"></div>
+    <div class="sap-tools-row">
+      <label class="sap-tools">
+        <input type="checkbox" class="sap-tools-checkbox" />
+        <span class="sap-tools-label"></span>
+      </label>
+    </div>
     <div class="sap-input-area">
       <textarea class="sap-input" rows="1"></textarea>
       <button class="sap-send" type="button"></button>
@@ -197,10 +218,12 @@ function ensurePopupEl() {
   popupEl.querySelector('.sap-transfer').addEventListener('click', handleTransferToChat);
   // 自定义提问/连续追问：输入后 Enter 或点发送
   initAskInput();
+  // 工具开关：仅自定义模式可见，控制本轮是否带工具执行
+  initToolsToggle();
   // 重新生成（复用已提取的上下文，因为选区在打开时已被清除）
   popupEl.querySelector('.sap-regen').addEventListener('click', () => {
     if (currentQuestion && currentSelectedText) {
-      sendRequest();
+      sendRequest({ regenerate: true });
     }
   });
 
@@ -236,6 +259,15 @@ function initAskInput() {
   sendBtn.addEventListener('click', submitQuestion);
 }
 
+// 工具开关：勾选后本轮自定义问答走带工具的 ReAct 执行
+function initToolsToggle() {
+  const checkbox = popupEl?.querySelector('.sap-tools-checkbox');
+  if (!checkbox) return;
+  checkbox.addEventListener('change', () => {
+    useTools = checkbox.checked;
+  });
+}
+
 function autoResizeInput() {
   const input = popupEl?.querySelector('.sap-input');
   if (!input) return;
@@ -254,8 +286,10 @@ function updateSendState() {
   if (!popupEl) return;
   const input = popupEl.querySelector('.sap-input');
   const sendBtn = popupEl.querySelector('.sap-send');
+  const checkbox = popupEl.querySelector('.sap-tools-checkbox');
   if (!input || !sendBtn) return;
   sendBtn.disabled = isStreaming || !input.value.trim();
+  if (checkbox) checkbox.disabled = isStreaming;
 }
 
 // 提交输入框里的问题：一次提交即一轮独立问答，沿用同一份选中内容与原文上下文
@@ -306,6 +340,13 @@ function applyPopupLabels() {
   const sendBtn = popupEl.querySelector('.sap-send');
   sendBtn.textContent = t('sidePanel.popupSend');
   sendBtn.title = t('sidePanel.popupSendHint');
+  const toolsLabel = popupEl.querySelector('.sap-tools-label');
+  if (toolsLabel) {
+    toolsLabel.textContent = t('sidePanel.popupUseTools');
+    toolsLabel.title = t('sidePanel.popupUseToolsHint');
+  }
+  const toolsCheckbox = popupEl.querySelector('.sap-tools-checkbox');
+  if (toolsCheckbox) toolsCheckbox.checked = useTools;
   syncInputPlaceholder();
   updateSendState();
   updateLockUI();
@@ -350,11 +391,11 @@ function positionPopup(mouseX, mouseY) {
   el.style.left = left + 'px';
 }
 
-function showPopup(title) {
+function showPopup(title, loadingText) {
   const el = ensurePopupEl();
   applyPopupLabels();
   el.querySelector('.sap-title').textContent = title || t('sidePanel.popupTitle');
-  el.querySelector('.sap-body').innerHTML = `<div class="sap-loading">${escapeHtml(t('sidePanel.popupLoading'))}</div>`;
+  el.querySelector('.sap-body').innerHTML = `<div class="sap-loading">${escapeHtml(loadingText || t('sidePanel.popupLoading'))}</div>`;
   // 新一轮问答：结果区与操作区回到初始态（自定义模式下操作区随结果出现）
   el.classList.remove('has-result');
   el.classList.add('show');
@@ -402,12 +443,25 @@ function closePopup() {
   isCustomMode = false;
   isStreaming = false;
   isLocked = false;
+  useTools = false;
+  resetPopupHistory();
+}
+
+// 与浮层并存、且可能属于同一轮工具执行的模态弹窗（澄清/风险确认/自定义确认等）。
+// 点选它们或在它们之上按 Esc 都不应关闭浮层 —— 否则会连带取消后台正在跑的任务。
+const MODAL_OVERLAY_SELECTOR = '.clarify-overlay, .modal-overlay, .delete-confirm-overlay, .artifacts-modal-overlay, .sched-modal-overlay, .todo-stats-overlay, .todo-io-overlay';
+
+function isModalOverlayOpen() {
+  return Array.from(document.querySelectorAll(MODAL_OVERLAY_SELECTOR))
+    .some((el) => getComputedStyle(el).display !== 'none');
 }
 
 // 点击浮层外部：未锁定时关闭（锁定后只能由叉号或解锁关闭）
 function handleOutsidePointerDown(e) {
   if (!isPopupVisible() || isLocked) return;
   if (popupEl.contains(e.target)) return;
+  // 点在其他弹层上不是“关闭浮层”的语义（clarify/confirm 共用 .clarify-overlay）
+  if (e.target.closest?.(MODAL_OVERLAY_SELECTOR)) return;
   // 点击划词菜单自身不关闭（留给菜单逻辑处理）
   const menu = document.getElementById('selectionFloatingMenu');
   if (menu && menu.contains(e.target)) return;
@@ -418,6 +472,8 @@ function handleOutsidePointerDown(e) {
 function handleEscapeKey(e) {
   if (e.key !== 'Escape') return;
   if (!isPopupVisible() || isLocked) return;
+  // 有其他模态弹窗压在上面时不响应，避免把等待用户作答的任务取消掉
+  if (isModalOverlayOpen()) return;
   closePopup();
 }
 
@@ -539,6 +595,8 @@ function openCustomAsk(selectedText, range) {
   currentTruncated = truncated;
   currentResult = '';
   isStreaming = false;
+  useTools = false;
+  resetPopupHistory();
 
   const el = ensurePopupEl();
   el.querySelector('.sap-title').textContent = t('sidePanel.popupCustomTitle');
@@ -558,23 +616,71 @@ function openCustomAsk(selectedText, range) {
   focusInput();
 }
 
+// 去掉上一轮已完成的问答对：重新生成时不能把同一个问题再叠加一遍
+function dropLastPopupTurn() {
+  if (popupHistory.length < 2) return;
+  const last = popupHistory[popupHistory.length - 1];
+  const prev = popupHistory[popupHistory.length - 2];
+  if (last.role === 'assistant' && prev.role === 'user') {
+    popupHistory.splice(-2, 2);
+  }
+}
+
+// 浮层重新打开/关闭时清空多轮上下文，避免把上一次选区的问答带进来
+function resetPopupHistory() {
+  popupHistory = [];
+  pendingUserContent = '';
+}
+
 // 用已存快照（问题/选中/上下文）发起一次请求；重新生成、追问复用同一份上下文
-function sendRequest() {
+async function sendRequest({ regenerate = false } = {}) {
   currentResult = '';
   isStreaming = true;
 
-  showPopup(isCustomMode ? t('sidePanel.popupCustomTitle') : currentQuestion);
+  // 工具开关对追问同样生效：预置提示词的首次提问保持原来的轻量问答，
+  // 答案出来后的追问可以按用户勾选决定是否带工具。
+  const withTools = useTools;
+  showPopup(
+    isCustomMode ? t('sidePanel.popupCustomTitle') : currentQuestion,
+    withTools ? t('sidePanel.popupExecuting') : null
+  );
+
+  // 重新生成替换上一轮答案，而不是把它当作新的一轮追问
+  if (regenerate) dropLastPopupTurn();
 
   const messages = buildPopupMessages(currentSelectedText, currentContextText, currentQuestion, currentTruncated);
+  // 带上本浮层内的历史问答，让“继续追问”能记住上文
+  if (popupHistory.length > 0) {
+    messages.splice(1, 0, ...popupHistory.map((m) => ({ ...m })));
+  }
+  // 记录本轮用户消息，DONE 时与答案成对写入历史
+  pendingUserContent = messages[messages.length - 1].content;
 
-  currentSessionId = `popup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const sessionId = `${withTools ? 'popup_tools' : 'popup'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  chrome.runtime.sendMessage({
-    type: 'SIDEPANEL_POPUP_ASK',
-    sessionId: currentSessionId,
+  const payload = {
+    type: withTools ? 'SIDEPANEL_POPUP_TOOL_ASK' : 'SIDEPANEL_POPUP_ASK',
+    sessionId,
     messages,
-  }).catch(err => {
+  };
+  if (withTools) {
+    const apiParams = await getApiParams();
+    // 等待参数期间用户可能已关闭浮层：不再发起请求
+    if (!isStreaming) return;
+    payload.apiParams = apiParams;
+    payload.model = state.currentModel || undefined;
+    payload.tabId = state.currentTabId || undefined;
+    payload.agentId = state.activeAgentId || null;
+    payload.agentToolIds = state.activeAgentToolIds ?? null;
+    payload.agentSkillIds = state.activeAgentSkillIds ?? null;
+    payload.agentMcpExcludedServerIds = state.activeAgentMcpExcludedServerIds ?? null;
+  }
+
+  currentSessionId = sessionId;
+
+  chrome.runtime.sendMessage(payload).catch(err => {
     logger.error('[SelectionPopup] sendMessage failed:', err);
+    pendingUserContent = '';
     showPopupError(t('sidePanel.popupRequestFailed'));
     isStreaming = false;
     updateSendState();
@@ -607,6 +713,17 @@ function ensureStreamListener() {
       if (message.finalContent) {
         currentResult = message.finalContent;
       }
+      // 记录本轮问答，供同浮层继续追问；迟到/重复的 DONE 不会重复写入
+      if (pendingUserContent) {
+        if (currentResult) {
+          popupHistory.push({ role: 'user', content: pendingUserContent });
+          popupHistory.push({ role: 'assistant', content: currentResult });
+          if (popupHistory.length > POPUP_HISTORY_LIMIT) {
+            popupHistory = popupHistory.slice(-POPUP_HISTORY_LIMIT);
+          }
+        }
+        pendingUserContent = '';
+      }
       updatePopupContent(formatMessageContent(currentResult));
       // 预置提问的浮层在答案出来后露出输入框，可继续追问；自定义模式本来就常显
       if (!isCustomMode) popupEl.classList.add('show-input');
@@ -616,6 +733,8 @@ function ensureStreamListener() {
       // DONE 与 ERROR 竞争防护：流已结束（或浮层已关）时后到的 ERROR 不再覆盖已展示结果
       if (!isStreaming) return;
       isStreaming = false;
+      // 失败的一轮不写入历史，避免把半截问答带进后续上下文
+      pendingUserContent = '';
       showPopupError(message.error || t('sidePanel.popupRequestFailed'));
       updateSendState();
     }
@@ -631,6 +750,16 @@ export function initSelectionAnswerPopup() {
   ensureStreamListener();
   document.addEventListener('mousedown', handleOutsidePointerDown);
   document.addEventListener('keydown', handleEscapeKey);
+  // 面板关闭/刷新会销毁浮层：仍在跑的旁支任务没有可接收结果的 UI，
+  // 这里取消掉，避免它在后台悄悄继续执行工具（重开浮层也接不上这次运行）
+  window.addEventListener('pagehide', () => {
+    if (!isStreaming || !currentSessionId || !isEphemeralSessionId(currentSessionId)) return;
+    try {
+      chrome.runtime.sendMessage({ type: 'CANCEL_REACT', sessionId: currentSessionId }).catch(() => {});
+    } catch {
+      // 扩展卸载/重载时 context 已失效，忽略即可
+    }
+  });
 }
 
 /**
@@ -649,6 +778,9 @@ export function openSelectionAnswerPopup(prompt, selectedText, mouseX, mouseY, r
   // 新打开重置锁定态（先于 showPopup，applyPopupLabels 会刷出图标）
   isLocked = false;
   isCustomMode = false;
+  useTools = false;
+  // 新的选区是新的对话：不继承上一次浮层的问答历史
+  resetPopupHistory();
   popupEl.classList.remove('sap-custom', 'show-input', 'has-result');
   doRequest(prompt, selectedText, range || state.currentSelectionRange);
 }

@@ -136,6 +136,19 @@ export function resetReactCancel(sessionIdOrTabId) {
 }
 
 /**
+ * 释放临时会话（如划词浮层）的运行期登记：AbortController 与取消标志。
+ * 这类 sessionId 每次都是新的、不会再复用，不清理会随提问次数无限累积。
+ * 真实会话不要调用：登记由下一轮 getOrCreateAbortController 覆盖，
+ * 提前删掉会让迟到的取消扫不到 controller。
+ * @param {string|null} sessionId
+ */
+export function releaseEphemeralSessionState(sessionId) {
+  if (!sessionId) return;
+  sessionAbortControllers.delete(sessionId);
+  cancelledSessions.delete(sessionId);
+}
+
+/**
  * 获取或创建指定会话的 AbortController
  * 每次调用都会创建新的 AbortController（旧的会被替换）
  * @param {string} sessionId

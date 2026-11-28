@@ -1,6 +1,6 @@
 // background/index.js - Service Worker 入口文件
 
-import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity, registerPanelObserverPort, unregisterPanelObserverPort, hasLivePanel } from './state.js';
+import { cancelReactLoop, isCancelled, resetDialogApiCallCount, incrementDialogApiCallCount, getDialogApiCallCount, abortCurrentTool, registerKeepalivePort, unregisterKeepalivePort, hasKeepalivePort, setKeepaliveIdentity, registerPanelObserverPort, unregisterPanelObserverPort, hasLivePanel, releaseEphemeralSessionState } from './state.js';
 import { getStoredConfig, getChatConfig } from './config.js';
 import { getTools, clearAgentConnectivityCache, loadMcpTools, unloadMcpTools, loadRagTools, unloadRagTools, cancelRunningAgentCommands, clearSkillLoadCache, setSessionForcedMcpServers, mergeForcedMcpTools, getMcpToolMetaById } from './tool-executor.js';
 import { RAW_TOOLS } from './constants.js';
@@ -1103,6 +1103,7 @@ chrome.commands?.onCommand?.addListener((command) => {
 // | ATTACH_SIDEPANEL              | side_panel  | 回归侧边栏                  | 是   |
 // | SELECTION_TOOLBAR_ACTION      | content     | 划词工具栏操作（ai-search/explain/translate/summary）| 否 |
 // | SIDEPANEL_POPUP_ASK           | side_panel  | 划词浮层解答（单次轻量调用，不进会话）        | 否 |
+// | SIDEPANEL_POPUP_TOOL_ASK      | side_panel  | 划词浮层问答（带工具 ReAct）               | 否   |
 // | FILL_SIDEPANEL_INPUT          | content     | 追问：填充输入框             | 否   |
 // | DIRECT_SEND                   | content     | 追问：直接发送文本           | 否   |
 // | GENERATE_PDF                  | content     | CDP 生成 PDF               | 是   |
@@ -2247,6 +2248,89 @@ chrome.runtime?.onMessage?.addListener?.((message, sender, sendResponse) => {
           sessionId,
           error: error.message || t('bg.apiCallFailed')
         }).catch(() => {});
+      }
+    });
+
+    return false;
+  }
+
+  // 侧边栏划词浮层问答（带工具）：ReAct 执行期间不推工具细节，
+  // 结束后只回补一条浮层专用终态，浮层保持「执行中」直到结果返回。
+  if (message.type === 'SIDEPANEL_POPUP_TOOL_ASK') {
+    const {
+      sessionId,
+      messages: popupMessages,
+      model,
+      tabId,
+      apiParams,
+      agentId,
+      agentToolIds,
+      agentSkillIds,
+      agentMcpExcludedServerIds
+    } = message;
+    if (!sessionId || !Array.isArray(popupMessages) || popupMessages.length === 0) {
+      return false;
+    }
+
+    resetDialogApiCallCount(sessionId);
+
+    getStoredConfig().then(async (config) => {
+      const popupModel = model || config.modelName;
+      const useStream = config.streamConfig?.streamEnabled !== false;
+      const sendDone = (content) => {
+        chrome.runtime.sendMessage({
+          type: 'SIDEPANEL_POPUP_STREAM_DONE',
+          sessionId,
+          finalContent: content
+        }).catch(() => {});
+      };
+
+      try {
+        const tools = await getTools(agentToolIds, agentId, agentSkillIds, null, agentMcpExcludedServerIds);
+
+        // 没有可用工具：降级为普通轻量问答，用户仍能拿到答案
+        if (tools.length === 0) {
+          const result = await callApiNonStream(
+            popupMessages,
+            popupModel,
+            apiParams || {},
+            sessionId,
+            useStream ? { typePrefix: 'SIDEPANEL_POPUP_' } : {}
+          );
+          const content = result.content !== undefined ? result.content : result;
+          if (!useStream) sendDone(content);
+          return;
+        }
+
+        const result = await reactLoop(
+          popupMessages,
+          popupModel,
+          tools,
+          tabId,
+          apiParams || {},
+          sessionId,
+          null,
+          null,
+          { value: 1 },
+          [],
+          null
+        );
+        // reactLoop 的流式消息走 STREAM_* 广播，浮层不消费；这里补发浮层专用终态
+        sendDone(result && result.content !== undefined ? result.content : result);
+      } catch (error) {
+        // 用户关闭浮层/重新生成的主动取消不需要报错
+        if (error?.name === 'AbortError' || isCancelled(sessionId)) return;
+        logger.error('[Background] sidepanel popup with tools failed:', error);
+        chrome.runtime.sendMessage({
+          type: 'SIDEPANEL_POPUP_STREAM_ERROR',
+          sessionId,
+          error: error.message || t('bg.apiCallFailed')
+        }).catch(() => {});
+      } finally {
+        // 浮层任务没有可续跑的面板：清掉取消/失败时落盘的 checkpoint，
+        // 避免 SW 重启后被自动续跑成没人接收的幽灵任务；临时会话的运行期登记也一并释放
+        deleteReactCheckpoint(sessionId).catch(() => {});
+        releaseEphemeralSessionState(sessionId);
       }
     });
 

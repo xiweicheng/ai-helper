@@ -63,6 +63,18 @@ describe('buildDockEntries', () => {
     expect(entries.map((e) => e.phase)).toEqual(['running']);
   });
 
+  it('划词浮层的临时会话即使出现在任何信号里也不占停靠条', () => {
+    const entries = buildDockEntries({
+      activeSessionId: 'current',
+      generatingIds: ['popup_tools_1_a'],
+      pendingIds: ['popup_2_b'],
+      runningIds: ['popup_tools_3_c'],
+      queuedCounts: { popup_tools_4_d: 2 },
+      completedIds: ['popup_5_e'],
+    });
+    expect(entries).toEqual([]);
+  });
+
   it('只排队还没开跑的会话也要出现，阶段为 queued 并带条数', () => {
     const entries = buildDockEntries({ queuedCounts: { q1: 4 } });
     expect(entries).toHaveLength(1);
@@ -160,6 +172,10 @@ describe('normalizeRunningIds（子任务/子代理不该各占一个执行状�
 
   it('接受 Set 入参、忽略空值', () => {
     expect([...normalizeRunningIds(new Set(['', null, 's3']))]).toEqual(['s3']);
+  });
+
+  it('划词浮层的临时 sessionId 不进入运行集合', () => {
+    expect([...normalizeRunningIds(['popup_1_a', 'popup_tools_2_b', 's1'])]).toEqual(['s1']);
   });
 
   it('后台回执必须经 normalize 后才成为运行集合', () => {

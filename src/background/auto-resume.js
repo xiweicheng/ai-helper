@@ -19,6 +19,7 @@
  */
 import { logger } from '../shared/logger.js';
 import { GOAL_HALT_CHECKPOINT_REASONS } from '../shared/goal.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 
 export const AUTO_RESUME_ALARM_NAME = 'react-auto-resume-watch';
 // 0.5 分钟 = 30s：桌面 Chrome 允许的最小周期
@@ -70,6 +71,8 @@ export function decideAutoResume(checkpoints, activeSessionIds = new Set(), maxA
   const justExhausted = [];
   for (const cp of checkpoints || []) {
     if (!cp || !cp.sessionId) continue;
+    // 浮层旁支任务没有可续跑的面板：续跑只会在后台跑成没人接收的幽灵任务
+    if (isEphemeralSessionId(cp.sessionId)) continue;
     if (TERMINAL_REASONS.has(cp.interruptedReason)) continue;
     if (activeSessionIds.has(cp.sessionId)) continue;
     const attempts = cp.autoResumeAttempts || 0;
@@ -90,6 +93,7 @@ export function decideAutoResume(checkpoints, activeSessionIds = new Set(), maxA
  */
 export function willAutoResumeCheckpoint(cp, activeSessionIds = new Set(), maxAttempts = AUTO_RESUME_MAX_ATTEMPTS) {
   if (!cp || !cp.sessionId) return false;
+  if (isEphemeralSessionId(cp.sessionId)) return false;
   if (TERMINAL_REASONS.has(cp.interruptedReason)) return false;
   if (activeSessionIds.has(cp.sessionId)) return false;
   return (cp.autoResumeAttempts || 0) < maxAttempts;

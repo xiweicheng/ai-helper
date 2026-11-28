@@ -90,6 +90,15 @@ describe('decideAutoResume 自动续跑决策', () => {
     const { targets } = decideAutoResume(list, new Set(['c']));
     expect(targets.map(t => t.checkpoint.sessionId)).toEqual(['b']);
   });
+
+  test('划词浮层的旁支会话不自动续跑（没有可接收结果的面板）', async () => {
+    const m = await import('../../src/background/auto-resume.js');
+    const list = [cp({ sessionId: 'popup_tools_1_a' }), cp({ sessionId: 'popup_2_b' })];
+    const { targets, justExhausted } = m.decideAutoResume(list, new Set());
+    expect(targets).toEqual([]);
+    expect(justExhausted).toEqual([]);
+    expect(m.willAutoResumeCheckpoint(list[0], new Set())).toBe(false);
+  });
 });
 
 // ==================== alarms 生命周期（引用计数） ====================

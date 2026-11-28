@@ -33,6 +33,7 @@ import state from './state.js';
 import * as queueStore from './queue-store.js';
 import { getSession } from '../storage/db.js';
 import { getBaseSessionId } from '../shared/workdir-scope.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 import { extractTextFromContent } from '../shared/token-counter.js';
 import { handleSessionSwitch } from './session-manager-ui.js';
 import logger from '../shared/logger.js';
@@ -160,6 +161,7 @@ function toArray(value) {
  * （`${parent}_subtask_${i}` / `${parent}_sub_${agentId}`）——这是信令隔离的需要，
  * 但它们不是会话：直接建芯片会凭空多出一个「未知会话」的旋转状态（点开也切不到
  * 任何会话），一个任务看起来像两个在执行。这里统一剥回根会话并按 Set 去重。
+ * 划词浮层的临时会话（popup_ / popup_tools_）同样不是会话，直接丢弃。
  *
  * @param {Array<string>|Set<string>} ids
  * @returns {Set<string>}
@@ -167,7 +169,7 @@ function toArray(value) {
 export function normalizeRunningIds(ids) {
   const out = new Set();
   for (const id of toArray(ids)) {
-    if (!id) continue;
+    if (!id || isEphemeralSessionId(id)) continue;
     out.add(getBaseSessionId(String(id)) || String(id));
   }
   return out;
@@ -339,6 +341,8 @@ export function buildDockEntries({
   const entries = [];
   for (const sid of candidates) {
     if (!sid || sid === activeSessionId) continue;
+    // 旁支任务的临时会话不占停靠条（避免出现无法定位的「未知会话」）
+    if (isEphemeralSessionId(sid)) continue;
 
     const queuedCount = Number(queuedMap[sid]) || 0;
     let phase;
@@ -1006,6 +1010,8 @@ function refreshRunningFromBackground() {
 function onExecutionStatus(message) {
   const sid = message?.sessionId;
   if (!sid) return;
+  // 浮层旁支任务不产生停靠条目，也就不需要记录节点进度
+  if (isEphemeralSessionId(sid)) return;
   const prev = nodeInfo.get(sid) || {};
   nodeInfo.set(sid, {
     nodeName: message.nodeName || prev.nodeName || '',

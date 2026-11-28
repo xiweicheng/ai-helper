@@ -10073,6 +10073,33 @@ body {
   font-size: 13px;
 }
 
+/* 工具开关：仅自定义问答的输入区展开时出现 */
+.selection-answer-popup .sap-tools-row {
+  display: none;
+  padding: 8px 12px 0;
+}
+
+/* 工具开关：自定义问答打开输入区即出现；预置菜单在答案出来后的追问输入区出现 */
+.selection-answer-popup.show-input .sap-tools-row {
+  display: flex;
+}
+
+.selection-answer-popup .sap-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.selection-answer-popup .sap-tools-checkbox {
+  margin: 0;
+  accent-color: var(--brand-violet-600);
+  cursor: pointer;
+}
+
 /* 自定义提问/连续追问输入区：默认收起，.show-input 时展开 */
 .selection-answer-popup .sap-input-area {
   display: none;
@@ -10378,6 +10405,9 @@ body {
 }
 
 /* 澄清对话框样式 */
+/* 确认与澄清共用此层：必须高于所有可交互浮层（划词浮层 10009、自定义确认 10010、
+   待办菜单 10020），否则弹窗会被浮层压住、点不到按钮；仍低于 toast（100000）。
+   两者同时出现由 interaction-gate 串行呈现，不需要靠层叠顺序区分。 */
 .clarify-overlay {
   position: fixed;
   top: 0;
@@ -10388,7 +10418,7 @@ body {
   display: none;
   justify-content: center;
   align-items: center;
-  z-index: 5000;
+  z-index: 10030;
   animation: fadeIn 0.2s ease-out;
 }
 

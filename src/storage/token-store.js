@@ -1,6 +1,7 @@
 // storage/token-store.js - Token 使用统计的 IndexedDB CRUD
 
 import { getDB, withStore } from './db.js';
+import { isEphemeralSessionId } from '../shared/session-id.js';
 
 const STORE_NAME = 'tokenStats';
 
@@ -8,7 +9,13 @@ const STORE_NAME = 'tokenStats';
 const OVERALL_KEY = 'overall';
 
 // 系统级会话 ID：不计入"总会话数"，但其 Token 消耗仍计入总量
-const SYSTEM_SESSION_IDS = new Set(['selection_toolbar']);
+// selection_popup 是划词浮层问答（含带工具追问）共用的伪会话
+const SYSTEM_SESSION_IDS = new Set(['selection_toolbar', 'selection_popup']);
+
+/** 是否不应计入「会话数」的系统级/临时会话 */
+function isSystemSession(sessionId) {
+  return !sessionId || SYSTEM_SESSION_IDS.has(sessionId) || isEphemeralSessionId(sessionId);
+}
 
 /**
  * 记录单次 API 调用的 token 使用
@@ -119,7 +126,7 @@ export function getOverallTokenSummary() {
       }
 
       const sessionIds = new Set(
-        records.map(r => r.sessionId).filter(id => id && !SYSTEM_SESSION_IDS.has(id))
+        records.map(r => r.sessionId).filter(id => !isSystemSession(id))
       );
       resolve({
         totalPromptTokens: records.reduce((s, r) => s + (r.promptTokens || 0), 0),
@@ -259,7 +266,7 @@ export function getOverallTokenSummaryByRange(startDate, endDate) {
       }
       
       const sessionIds = new Set(
-        filtered.map(r => r.sessionId).filter(id => id && !SYSTEM_SESSION_IDS.has(id))
+        filtered.map(r => r.sessionId).filter(id => !isSystemSession(id))
       );
       resolve({
         totalPromptTokens: filtered.reduce((s, r) => s + (r.promptTokens || 0), 0),
