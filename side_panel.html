@@ -302,7 +302,10 @@
   </div>
   
   <!-- 消息跳转把手（上一个/下一个问题 + 问题列表；悬停展开，点击钉住） -->
-  <div class="chat-nav-hotzone" id="chatNavHotzone" role="button" tabindex="0" aria-pressed="false" data-i18n-title="chat.navHotzoneTitle" data-i18n-aria-label="chat.navHotzoneTitle"></div>
+  <div class="chat-nav-hotzone" id="chatNavHotzone" role="button" tabindex="0" aria-pressed="false" data-i18n-title="chat.navHotzoneTitle" data-i18n-aria-label="chat.navHotzoneTitle">
+    <!-- 问题密度圆点：一个问题一个点，由 message-jump-nav.js 按提问数渲染，纯指示不接收事件 -->
+    <div class="chat-nav-density" aria-hidden="true"></div>
+  </div>
   <div class="chat-nav-buttons" id="chatNavButtons">
     <button class="chat-nav-btn" id="chatNavUp" data-i18n-title="chat.navPrevTitle" title="上一个问题 (Alt+↑)，Ctrl/Cmd+点击回到最顶端">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

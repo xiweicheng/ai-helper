@@ -6,10 +6,14 @@
 import { t } from '../shared/i18n.js';
 import {
   buildMessageJumpGroups,
+  buildNavDensityBuckets,
+  computeNavRailHeight,
   findActiveGroupIndex,
   findNearestGroupIndex,
   resolveJumpTarget,
   renderQuestionListHtml,
+  focusMessageInView,
+  scrollElementIntoChatView,
 } from './utils.js';
 
 /**
@@ -66,12 +70,13 @@ export function initMessageJumpNav() {
     const viewportTop = chatContainer.getBoundingClientRect().top;
 
     // 快速回到顶部/底部（Ctrl/Cmd+点击 或 Alt+Ctrl/Cmd+方向键）
+    // 统一走带校正的滚动：content-visibility 占位高度会让裸 scrollIntoView 落到别处
     if (toEnd) {
       if (direction === 'prev') {
-        groups[0].start.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        scrollElementIntoChatView(groups[0].start, { align: 'start', behavior: 'smooth' });
       } else {
         const elements = groups[groups.length - 1].elements;
-        elements[elements.length - 1].scrollIntoView({ behavior: 'smooth', block: 'end' });
+        scrollElementIntoChatView(elements[elements.length - 1], { align: 'end', behavior: 'smooth' });
       }
       return 'jumped';
     }
@@ -81,7 +86,7 @@ export function initMessageJumpNav() {
       flashNavBlocked(direction);
       return 'blocked';
     }
-    groups[target].start.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollElementIntoChatView(groups[target].start, { align: 'start', behavior: 'smooth' });
     return 'jumped';
   }
 
@@ -95,6 +100,64 @@ export function initMessageJumpNav() {
     void btn.offsetWidth;
     btn.classList.add('blocked');
     btn.addEventListener('animationend', () => btn.classList.remove('blocked'), { once: true });
+  }
+
+  // ========== 把手密度圆点 ==========
+  // 把手（左侧竖直小长条）里的点 = 提问：点越多问题越多，把手也按提问数长高；
+  // 高度有上限，超量的提问合并成「密度点」（点更大更深），不至于密到糊成一条线。
+  let navRailTotal = -1;
+  let navRailHeight = 0;
+  let navRailBuckets = [];
+
+  /**
+   * 按提问数渲染把手圆点。只有提问数/把手高度变了才重建 DOM：
+   * 流式输出期间 MutationObserver 每帧都会走到这里，重建 innerHTML 没必要，
+   * 当前点高亮由 paintDensityActive 单独负责。
+   * @param {number|null} activeIndex - 当前组下标；null 表示只同步数量、暂不复位高亮
+   */
+  function renderDensityRail(activeIndex = null) {
+    if (!chatNavHotzone) return;
+    const rail = chatNavHotzone.querySelector('.chat-nav-density');
+    if (!rail) return;
+    const chatContainer = document.getElementById('chatContainer');
+    const total = chatContainer ? chatContainer.querySelectorAll('.message.user').length : 0;
+    if (total === 0) {
+      rail.innerHTML = '';
+      rail.classList.remove('single');
+      navRailBuckets = [];
+      navRailTotal = 0;
+      navRailHeight = 0;
+      chatNavHotzone.style.removeProperty('--nav-rail-h');
+      return;
+    }
+    const viewportHeight = (chatContainer && chatContainer.clientHeight) || window.innerHeight || 0;
+    const height = computeNavRailHeight(total, viewportHeight);
+    if (total === navRailTotal && height === navRailHeight) {
+      paintDensityActive(activeIndex);
+      return;
+    }
+    navRailTotal = total;
+    navRailHeight = height;
+    // 高度写给 CSS（fallback 96px），圆点用 space-between 均匀分布，无需逐点算坐标
+    chatNavHotzone.style.setProperty('--nav-rail-h', `${height}px`);
+    navRailBuckets = buildNavDensityBuckets(total, height);
+    rail.classList.toggle('single', navRailBuckets.length === 1);
+    rail.innerHTML = navRailBuckets
+      .map((bucket) => {
+        const level = bucket.count >= 4 ? 3 : bucket.count >= 2 ? 2 : 1;
+        return `<span class="chat-nav-dot${level > 1 ? ` lv${level}` : ''}"></span>`;
+      })
+      .join('');
+    paintDensityActive(activeIndex);
+  }
+
+  function paintDensityActive(activeIndex) {
+    if (!chatNavHotzone || activeIndex === null || activeIndex === undefined) return;
+    const dots = chatNavHotzone.querySelectorAll('.chat-nav-density .chat-nav-dot');
+    if (dots.length === 0) return;
+    // 合并态下一个点代表一段提问：当前组落在谁的区间里，谁就是当前点
+    const bucketIndex = navRailBuckets.findIndex((b) => activeIndex >= b.start && activeIndex < b.end);
+    dots.forEach((dot, i) => dot.classList.toggle('current', i === bucketIndex));
   }
 
   // ========== 列表构建 / 当前组同步 ==========
@@ -126,6 +189,7 @@ export function initMessageJumpNav() {
     // 长期屏蔽跟随，导致滚对话时当前项不露出。
     const activeItem = Array.from(items).find((item) => Number(item.dataset.groupIndex) === activeIndex);
     if (!pointerInPanel && activeIndex >= 0 && activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+    paintDensityActive(activeIndex);
   }
 
   // 滚动/跳转后同步当前组；组数变了说明列表已过期，直接重建
@@ -152,9 +216,12 @@ export function initMessageJumpNav() {
     navJumpGroups = buildMessageJumpGroups(document.getElementById('chatContainer'));
     if (navJumpGroups.length === 0) {
       chatNavQuestionPanel.innerHTML = '';
+      renderDensityRail(-1);
       return false;
     }
     const activeIndex = findCurrentGroupIndex(navJumpGroups);
+    // 圆点与列表同一份分组：编号 N 的条目就是第 N 个点
+    renderDensityRail(activeIndex);
     const searchWasFocused = document.activeElement === chatNavQuestionPanel.querySelector('[data-role="nav-search"]');
     chatNavQuestionPanel.innerHTML = renderQuestionListHtml(navJumpGroups, activeIndex, isNavPinned, navQuery);
     chatNavQuestionPanel.querySelector('.chat-nav-pin').addEventListener('click', (e) => {
@@ -326,9 +393,12 @@ export function initMessageJumpNav() {
         );
         if (!group) return;
         const anchor = group.userElement || group.start;
-        anchor.scrollIntoView({ behavior: 'instant', block: 'start' });
-        anchor.classList.add('bookmark-highlight');
-        setTimeout(() => anchor.classList.remove('bookmark-highlight'), 2000);
+        // 与收藏/搜索共用定位口径：贴顶 + 多帧校正（含高亮），避免占位高度导致落点偏移
+        if (!focusMessageInView(anchor.dataset.messageId)) {
+          scrollElementIntoChatView(anchor, { align: 'start', behavior: 'instant' });
+          anchor.classList.add('bookmark-highlight');
+          setTimeout(() => anchor.classList.remove('bookmark-highlight'), 2000);
+        }
         if (!isNavPinned) {
           collapseChatNavReturningFocus();
         } else {
@@ -376,6 +446,10 @@ export function initMessageJumpNav() {
       navQuery = '';
       if (chatNavQuestionPanel) chatNavQuestionPanel.innerHTML = '';
     }
+    // 新提问 / 切会话都会走到这里：圆点按提问数增删，不依赖面板是否展开。
+    // 只有面板开着时才顺手把当前点标出来（收起态没有列表，就不为它多算一次定位）。
+    const expanded = !!(chatNavQuestionPanel && chatNavQuestionPanel.classList.contains('expanded'));
+    renderDensityRail(expanded && navJumpGroups.length ? findCurrentGroupIndex(navJumpGroups) : null);
     navVisibilityState = show;
   }
 

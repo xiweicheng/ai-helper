@@ -4077,7 +4077,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     // 已切走：只落数值（锚点会取到新会话的 DOM）
-    chrome.storage.local.set({ [key]: { top, atBottom: false, anchor: null } });
+    chrome.storage.local.set({ [key]: { top, atBottom: false, anchor: null } }).catch(() => {});
   }, 200);
   chatContainerEl.addEventListener('scroll', () => {
     const sessionId = state.activeSessionId || 'default';

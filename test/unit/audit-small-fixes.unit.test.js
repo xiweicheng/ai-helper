@@ -75,21 +75,24 @@ describe('PERF-04：滚动位置保存要防抖且不漏最后一段', () => {
   );
 
   test('scroll 回调不再裸写 storage，改走 debounce', () => {
-    expect(scrollBlock).toContain("saveScrollPosition('scrollPosition_'");
-    expect(scrollBlock).not.toMatch(/addEventListener\('scroll',\s*\(\)\s*=>\s*\{\s*\n\s*const key/);
     expect(scrollBlock).toMatch(/const saveScrollPosition = debounce\(/);
+    // 落盘交给 scroll-memory：采集的是「数值 + 锚点」快照，不再直接写数值
+    expect(scrollBlock).toMatch(/saveChatScroll\(sessionId\)/);
+    expect(scrollBlock).not.toMatch(/addEventListener\('scroll',\s*\(\)\s*=>\s*\{\s*\n\s*chrome\.storage\.local\.set/);
     expect(SIDE_INDEX).toMatch(/import \{ debounce \} from '\.\.\/shared\/utils\.js'/);
   });
 
   test('key 与 scrollTop 在事件发生时捕获（防切会话后写错地方）', () => {
-    // 落盘函数只接受参数，不在延迟回调里读 state.activeSessionId
-    expect(scrollBlock).toMatch(/debounce\(\(key, top\) => \{\s*\n\s*chrome\.storage\.local\.set\(\{ \[key\]: top \}\);/);
-    expect(scrollBlock).toMatch(/saveScrollPosition\('scrollPosition_' \+ \(state\.activeSessionId \|\| 'default'\), chatContainerEl\.scrollTop\)/);
+    // key / 数值 / 会话 id 都是事件发生时传进来的，延迟回调里不再回读 activeSessionId
+    expect(scrollBlock).toMatch(/debounce\(\(key, top, sessionId\) => \{/);
+    expect(scrollBlock).toMatch(/saveScrollPosition\(scrollStorageKey\(sessionId\), chatContainerEl\.scrollTop, sessionId\)/);
+    // 已切走会话时只落数值（锚点会取到新会话的 DOM）
+    expect(scrollBlock).toMatch(/chrome\.storage\.local\.set\(\{ \[key\]: \{ top, atBottom: false, anchor: null \} \}\)/);
   });
 
   test('面板收起时用 pagehide 兜底立即落一次', () => {
     expect(scrollBlock).toMatch(/addEventListener\('pagehide'/);
-    expect(scrollBlock).toMatch(/chatContainerEl\.scrollTop/);
+    expect(scrollBlock).toMatch(/saveChatScroll\(/);
   });
 
   test('契约：debounce 多次触发只落最后一次，且带最后一次的参数', async () => {
@@ -133,12 +136,16 @@ describe('PERF-05：docx 不得进入 side_panel 首屏 chunk', () => {
     expect(CHAT_MANAGER).not.toMatch(/from 'docx'/);
   });
 
-  test.skipIf(!distReady)('产物：主 chunk 静态依赖里没有 chat-export/docx，且 OOXML 特征串已移出', () => {
-    const main = distFile('side_panel.js');
-    expect(main).not.toMatch(/from"\.\/chat-export-/);
-    expect(main).toMatch(/await import\(`\.\/chat-export-/);
-    // docx 的标志：OOXML wordprocessingml 命名空间常量
-    expect(main).not.toContain('schemas.openxmlformats.org/wordprocessingml');
+  test.skipIf(!distReady)('产物：静态依赖里没有 chat-export/docx，文档导出仍是按需 chunk', () => {
+    const files = listDistJs();
+    const contents = files.map((f) => distFile(f));
+    // 任何一个 chunk 都不许静态引 chat-export（懒加载被废时这里会红）
+    for (const content of contents) expect(content).not.toMatch(/from"\.\/chat-export-/);
+    // 按需加载点必须存在：Vite 会把共享的动态 import 落到某个 chunk，
+    // 不一定是 side_panel.js，因此按「所有 chunk 里至少有一处」来卡
+    expect(contents.some((content) => /await import\(`\.\/chat-export-/.test(content))).toBe(true);
+    // docx 的标志：OOXML wordprocessingml 命名空间常量不得出现在首屏主 chunk
+    expect(distFile('side_panel.js')).not.toContain('schemas.openxmlformats.org/wordprocessingml');
   });
 
   test.skipIf(!distReady)('产物：主 chunk 体积守住收益（改前 1.38 MB，回退即红）', () => {

@@ -5707,12 +5707,14 @@ body {
   top: 50%;
   transform: translateY(-50%);
   width: 10px;
-  height: 96px;
+  /* 高度随提问数由 JS 写入（`--nav-rail-h`），96px 是样式兜底：
+     圆点多到装不下时不再继续长高，改由圆点合并表达密度（见 utils.NAV_RAIL） */
+  height: var(--nav-rail-h, 96px);
   border-radius: 0 6px 6px 0;
   background: rgba(var(--brand-rgb), 0.16);
   cursor: pointer;
   z-index: 40;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease, height 0.2s ease;
 }
 .chat-nav-hotzone:hover {
   background: rgba(var(--brand-rgb), 0.38);
@@ -5721,6 +5723,54 @@ body {
 .chat-nav-hotzone.pinned {
   background: rgba(var(--brand-rgb), 0.55);
   box-shadow: 0 0 10px rgba(var(--brand-rgb), 0.45);
+}
+/* 问题密度圆点：竖直均匀分布在把手内（一个问题一个点；超量时合并成密度点）。
+   pointer-events: none 是必需的——点落在把手内，点击语义仍是「钉住 / 取消钉住」。 */
+.chat-nav-density {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  /* 上下留白与 utils.NAV_RAIL.paddingY 对齐，圆点才不会顶到圆角上 */
+  padding: 6px 0;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.chat-nav-density.single {
+  justify-content: center;
+}
+.chat-nav-dot {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(var(--brand-rgb), 0.8);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+/* 合并态：一个点代表 2~3 个 / 4 个以上提问，点径与深浅一起加深 */
+.chat-nav-dot.lv2 {
+  width: 4px;
+  height: 4px;
+  background: rgba(var(--brand-rgb), 1);
+}
+.chat-nav-dot.lv3 {
+  width: 5px;
+  height: 5px;
+  background: var(--brand-700);
+}
+/* 当前提问所在的点：与问题列表的 current 高亮同一含义 */
+.chat-nav-dot.current {
+  background: var(--brand-700);
+  transform: scale(1.4);
+}
+/* 钉住态把手底色最深，圆点改用表面色反衬，避免和底色糊在一起 */
+.chat-nav-hotzone.pinned .chat-nav-dot {
+  background: rgba(var(--surface-rgb), 0.85);
+}
+.chat-nav-hotzone.pinned .chat-nav-dot.current {
+  background: var(--surface-rgb);
 }
 /* 空会话（还没有任何用户提问）：整组跳转 UI 隐藏，不留无意义的箭头与把手 */
 .chat-nav-hotzone.chat-nav-empty,

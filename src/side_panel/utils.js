@@ -1160,23 +1160,111 @@ export function focusMessageInView(messageId) {
   if (!target) return false;
 
   // instant：这是「点你就想看你点的」的跳转，平滑滚会让画面长途爬行，盖过定位意图
-  target.scrollIntoView({ behavior: 'instant', block: 'start' });
-  // 助手正文开了 content-visibility：屏幕外按占位高度参与布局，滚到位后真实高度替换
-  // 会把目标挤走。连续几帧校正到目标重新贴住容器顶边，定位才和以前一样准。
-  let frames = 0;
-  const settle = () => {
-    const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
-    if (Math.abs(delta) > 0.5 && frames < 5) {
-      container.scrollTop += delta;
-      frames += 1;
-      requestAnimationFrame(settle);
-    }
-  };
-  requestAnimationFrame(settle);
+  scrollElementIntoChatView(target, { align: 'start', behavior: 'instant' });
   // 高亮沿用既有 bookmark-highlight，不再造第三种闪烁
   target.classList.add('bookmark-highlight');
   setTimeout(() => target.classList.remove('bookmark-highlight'), MESSAGE_HIGHLIGHT_MS);
   return true;
+}
+
+/**
+ * 每个滚动容器最近一次定位的“代数”：同容器上新发起的定位会接管，
+ * 旧的校正循环检测到代数变化立即退出，避免连按 ▲▼ 或多入口同时定位时互相拉扯。
+ */
+const scrollIntents = new WeakMap();
+
+/**
+ * 把元素滚进视野，并按对齐边做精度校正。
+ *
+ * 助手正文开了 content-visibility：屏幕外按占位高度参与布局，滚过去之后真实高度替换，
+ * 落点会漂移（长会话能偏出一整屏）。这里在滚动结束后重新测量目标与容器顶/底边的差，
+ * 连校几帧贴回原对齐边；平滑滚动期间不与动画抢滚动，等它停下再补差。
+ *
+ * 滚动容器不写死聊天区：目录也会挂在全屏阅读、工作目录预览里，按目标最近的滚动容器取。
+ *
+ * @param {HTMLElement} target - 目标元素
+ * @param {{ align?: 'start'|'end', behavior?: 'instant'|'smooth' }} [options]
+ */
+export function scrollElementIntoChatView(target, { align = 'start', behavior = 'instant' } = {}) {
+  if (!target || typeof target.scrollIntoView !== 'function') return;
+  const container = target.closest('#chatContainer, .message-fullscreen-body, .workspace-preview-content');
+  if (!container) {
+    // 找不到已知滚动容器（例如未知的预览宿主）：只做浏览器原生定位，不做校正，
+    // 避免拿聊天区当参照把别的区域的滚动改坏
+    target.scrollIntoView({ behavior, block: align });
+    return;
+  }
+
+  const intent = (scrollIntents.get(container) || 0) + 1;
+  scrollIntents.set(container, intent);
+  const isCurrent = () => scrollIntents.get(container) === intent;
+
+  // 单测环境（jsdom）可能没有 rAF，退化成定时器，保证校正逻辑不因环境抛错
+  const raf = typeof requestAnimationFrame === 'function'
+    ? (cb) => requestAnimationFrame(cb)
+    : (cb) => setTimeout(cb, 16);
+
+  const measure = () => {
+    const box = container.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    return align === 'end' ? rect.bottom - box.bottom : rect.top - box.top;
+  };
+  // 会话切换会重建消息 DOM：目标若已被移除（detached），它的 rect 全是 0，
+  // 继续校正会把滚动拉向错误位置，这里直接放弃
+  const stillValid = () => isCurrent() && target.isConnected && container.isConnected;
+  const settle = () => {
+    let frames = 0;
+    const step = () => {
+      if (!stillValid()) return;
+      const delta = measure();
+      if (Math.abs(delta) > 0.5 && frames < 5) {
+        container.scrollTop += delta;
+        frames += 1;
+        raf(step);
+      }
+    };
+    raf(step);
+  };
+
+  target.scrollIntoView({ behavior, block: align });
+  if (behavior === 'instant') {
+    settle();
+    return;
+  }
+
+  // 平滑滚动：等滚动停下（连续两帧位置不变）再校正；期间用户主动滚轮/触摸/按键
+  // 就立即放弃，避免把用户抢回目标位置
+  let cancelled = false;
+  let lastTop = container.scrollTop;
+  let stillFrames = 0;
+  let frames = 0;
+  const startedAt = performance.now();
+  const abort = () => { cancelled = true; };
+  const cleanup = () => {
+    container.removeEventListener('wheel', abort);
+    container.removeEventListener('touchstart', abort);
+    container.removeEventListener('keydown', abort);
+  };
+  container.addEventListener('wheel', abort, { passive: true, once: true });
+  container.addEventListener('touchstart', abort, { passive: true, once: true });
+  container.addEventListener('keydown', abort, { once: true });
+  const watch = () => {
+    if (cancelled || !stillValid()) {
+      cleanup();
+      return;
+    }
+    const top = container.scrollTop;
+    stillFrames = Math.abs(top - lastTop) < 0.5 ? stillFrames + 1 : 0;
+    lastTop = top;
+    frames += 1;
+    if (stillFrames >= 2 || performance.now() - startedAt > 900 || frames > 90) {
+      cleanup();
+      settle();
+      return;
+    }
+    raf(watch);
+  };
+  raf(watch);
 }
 
 /**
@@ -1351,4 +1439,52 @@ export function renderQuestionListHtml(groups, activeIndex, isPinned, query = ''
   const empty = matched.length === 0 ? `<div class="chat-nav-question-empty">${escapeAttr(t('chat.navNoMatch'))}</div>` : '';
 
   return `${header}${search}<div class="chat-nav-question-list">${empty || items}</div>`;
+}
+
+/**
+ * 把手密度圆点的排布口径（与 styles.css 的 .chat-nav-density padding 对齐）。
+ * - 高度随提问数增长，但最低仍是原来的小长条高度，最高只占对话区三成：
+ *   再高就变成一整条贴着正文的竖线，既挡视线、又让悬停热区大得容易误触。
+ * - 点距 7px 是「3~5px 的点 + 一点留白」的下限，比这更密就分不清颗数了。
+ */
+export const NAV_RAIL = {
+  minHeight: 96,
+  perQuestion: 10,
+  maxViewportRatio: 0.3,
+  dotPitch: 7,
+  paddingY: 6,
+};
+
+/**
+ * 把手高度：一个问题一格，问题越多把手越长，但有下限与上限。
+ * @param {number} total - 提问（问答组）数量
+ * @param {number} viewportHeight - 对话区可视高度
+ * @returns {number} 把手高度（px）
+ */
+export function computeNavRailHeight(total, viewportHeight) {
+  const count = Math.max(1, Math.floor(Number(total) || 1));
+  const wanted = NAV_RAIL.minHeight + (count - 1) * NAV_RAIL.perQuestion;
+  const max = Math.max(NAV_RAIL.minHeight, (Number(viewportHeight) || 0) * NAV_RAIL.maxViewportRatio);
+  return Math.round(Math.max(NAV_RAIL.minHeight, Math.min(wanted, max)));
+}
+
+/**
+ * 把提问装进把手：装得下就是一个问题一个点；高度到顶仍装不下时，
+ * 把相邻问题合并成一个「密度点」（count 记录合并了几个），点径/深浅随之加深。
+ * 圆点数量因此永远有上限，不会细到糊成一条线，同时“这里问题密”仍然看得出来。
+ * @param {number} total - 提问数量
+ * @param {number} railHeight - computeNavRailHeight 的结果（或样式实测高度）
+ * @returns {Array<{start: number, end: number, count: number}>} end 为开区间，start 即该点代表的第一个组下标
+ */
+export function buildNavDensityBuckets(total, railHeight) {
+  const count = Math.max(0, Math.floor(Number(total) || 0));
+  if (count === 0) return [];
+  const usable = Math.max(0, (Number(railHeight) || NAV_RAIL.minHeight) - NAV_RAIL.paddingY * 2);
+  const slots = Math.max(1, Math.min(count, Math.floor(usable / NAV_RAIL.dotPitch) + 1));
+  const at = (i) => Math.floor((i * count) / slots);
+  return Array.from({ length: slots }, (_, s) => ({
+    start: at(s),
+    end: at(s + 1),
+    count: at(s + 1) - at(s),
+  }));
 }

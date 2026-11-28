@@ -22,6 +22,9 @@ import {
   getQuestionPreview,
   filterJumpGroups,
   NAV_SEARCH_MIN_GROUPS,
+  NAV_RAIL,
+  computeNavRailHeight,
+  buildNavDensityBuckets,
 } from '../../src/side_panel/utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -637,6 +640,54 @@ describe('快捷键与提示文案对齐「问答组」口径', () => {
   it('仓库 wiki 快捷键表（zh/en）同步改口径', () => {
     expect(read('.wiki/Configuration.md')).toContain('| `Alt+↑` / `Alt+↓` | 跳转到上一个 / 下一个问题 | Win / Mac |');
     expect(read('.wiki/Configuration-EN.md')).toContain('| `Alt+↑` / `Alt+↓` | Jump to previous / next question | Win / Mac |');
+  });
+});
+
+describe('把手密度圆点：高度随提问数增长、超量合并成密度点', () => {
+  it('单个提问维持原高度，多一个问题长高一格', () => {
+    expect(computeNavRailHeight(1, 800)).toBe(NAV_RAIL.minHeight);
+    expect(computeNavRailHeight(2, 800)).toBe(NAV_RAIL.minHeight + NAV_RAIL.perQuestion);
+    expect(computeNavRailHeight(5, 800)).toBe(NAV_RAIL.minHeight + 4 * NAV_RAIL.perQuestion);
+  });
+
+  it('高度到顶后不再长高（只占对话区三成），也永不低于基础高度', () => {
+    expect(computeNavRailHeight(500, 800)).toBe(Math.round(800 * NAV_RAIL.maxViewportRatio));
+    // 极矮的对话区：上限比下限还小，按下限兜底，把手不能缩成一条缝
+    expect(computeNavRailHeight(30, 100)).toBe(NAV_RAIL.minHeight);
+    // 非法入参按 1 个提问处理，不产生 NaN
+    expect(computeNavRailHeight('x', 800)).toBe(NAV_RAIL.minHeight);
+  });
+
+  it('装得下时一个问题一个点', () => {
+    expect(buildNavDensityBuckets(0, 96)).toEqual([]);
+    expect(buildNavDensityBuckets(3, 96)).toEqual([
+      { start: 0, end: 1, count: 1 },
+      { start: 1, end: 2, count: 1 },
+      { start: 2, end: 3, count: 1 },
+    ]);
+  });
+
+  it('装不下时按容量合并：点数量封顶，区间连续且覆盖全部提问', () => {
+    const buckets = buildNavDensityBuckets(40, 96);
+    const capacity = Math.floor((96 - NAV_RAIL.paddingY * 2) / NAV_RAIL.dotPitch) + 1;
+    expect(buckets).toHaveLength(capacity);
+    expect(buckets[0].start).toBe(0);
+    expect(buckets[buckets.length - 1].end).toBe(40);
+    // 相邻区间首尾相接，既不会漏掉提问，也不会重复计入
+    for (let i = 1; i < buckets.length; i++) expect(buckets[i].start).toBe(buckets[i - 1].end);
+    expect(buckets.reduce((sum, b) => sum + b.count, 0)).toBe(40);
+    // 每点至少代表 1 个提问，点径档位才有意义
+    expect(buckets.every((b) => b.count >= 1)).toBe(true);
+  });
+
+  it('把手盖内的圆点由 JS 渲染，容器只做指示不抢把手的点击', () => {
+    const html = read('side_panel.html');
+    expect(html).toMatch(/id="chatNavHotzone"[\s\S]*?class="chat-nav-density"[\s\S]*?<\/div>\s*<\/div>/);
+    const css = read('src/side_panel/styles.css');
+    const railRule = css.slice(css.indexOf('.chat-nav-density {'), css.indexOf('}', css.indexOf('.chat-nav-density {')));
+    expect(railRule).toMatch(/pointer-events:\s*none/);
+    expect(css).toMatch(/\.chat-nav-hotzone\s*\{[^}]*height:\s*var\(--nav-rail-h,\s*96px\)/s);
+    expect(read('src/side_panel/message-jump-nav.js')).toMatch(/setProperty\('--nav-rail-h'/);
   });
 });
 

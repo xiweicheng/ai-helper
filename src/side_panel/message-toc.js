@@ -7,7 +7,7 @@
 
 import state from './state.js';
 import logger from '../shared/logger.js';
-import { clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { clampPanelToViewport, releasePanelClamp, scrollElementIntoChatView } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
 import {
   bindFullscreenButton,
@@ -556,12 +556,13 @@ export function showMessageToc(messageDiv, headings) {
       
       if (targetHeading) {
         // 目标标题可能在 content-visibility 跳过的正文里：先把所在正文滚进视野
-        // 让它完成渲染，下一帧再精确滚到标题，避免 scrollIntoView 落在占位位置。
+        // 让它完成渲染，下一帧再精确滚到标题，避免 scrollIntoView 落在占位位置；
+        // 滚动结束后统一由 scrollElementIntoChatView 做落点校正。
         const body = targetHeading.closest('.markdown-body');
         if (body) body.scrollIntoView({ behavior: 'smooth', block: 'start' });
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            scrollElementIntoChatView(targetHeading, { align: 'start', behavior: 'smooth' });
           });
         });
 

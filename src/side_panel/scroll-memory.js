@@ -1,5 +1,6 @@
 // scroll-memory.js - 会话滚动位置记忆
 //
+import state from './state.js';
 // 为什么不能只存 scrollTop：助手正文用了 content-visibility: auto（屏幕外按
 // contain-intrinsic-size 占位），切回会话时滚动高度先按占位值算，随后随着真实布局
 // 参与计算而变大/变小，绝对 scrollTop 就会落到别的消息上。
@@ -42,7 +43,9 @@ export function captureScrollSnapshot(container) {
 export function saveChatScroll(sessionId) {
   const container = document.getElementById('chatContainer');
   if (!container) return;
-  chrome.storage.local.set({ [scrollStorageKey(sessionId)]: captureScrollSnapshot(container) });
+  chrome.storage.local
+    .set({ [scrollStorageKey(sessionId)]: captureScrollSnapshot(container) })
+    .catch(() => {});
 }
 
 function nextFrames() {
@@ -65,6 +68,11 @@ function findAnchorMessage(container, id) {
 export async function restoreChatScroll(sessionId) {
   const container = document.getElementById('chatContainer');
   if (!container) return false;
+  // 会话切换是全量重建：如果 150ms 内又切走了，这里恢复的是上一个会话的位置，
+  // 会套到新会话的 DOM 上。当前会话不再是它就直接放弃。
+  const currentSession = () => state.activeSessionId || 'default';
+  const expected = sessionId || 'default';
+  if (currentSession() !== expected) return false;
 
   const key = scrollStorageKey(sessionId);
   let saved;
@@ -73,6 +81,8 @@ export async function restoreChatScroll(sessionId) {
   } catch (e) {
     return false;
   }
+  // 读存储期间可能又切了会话
+  if (currentSession() !== expected) return false;
   if (saved === undefined || saved === null) return false;
   const snap = typeof saved === 'number' ? { top: saved } : saved;
 
@@ -80,12 +90,16 @@ export async function restoreChatScroll(sessionId) {
   for (let i = 0; i < ANCHOR_WAIT_ROUNDS; i += 1) {
     if (snap.atBottom || !snap.anchor || findAnchorMessage(container, snap.anchor.id)) break;
     await new Promise((resolve) => setTimeout(resolve, ANCHOR_WAIT_MS));
+    if (currentSession() !== expected) return false;
   }
 
+  let bottomPasses = 0;
   const settle = () => {
     if (snap.atBottom) {
       container.scrollTop = container.scrollHeight;
-      return true;
+      bottomPasses += 1;
+      // 占位高度换成真实高度后总高度会变大，只贴一次会停在半路：连补几帧
+      return bottomPasses >= 3;
     }
     if (snap.anchor) {
       const target = findAnchorMessage(container, snap.anchor.id);
@@ -104,6 +118,7 @@ export async function restoreChatScroll(sessionId) {
   };
 
   for (let i = 0; i < RESTORE_ATTEMPTS; i += 1) {
+    if (currentSession() !== expected) return false;
     if (settle()) return true;
     await nextFrames();
   }

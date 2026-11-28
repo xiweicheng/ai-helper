@@ -58,7 +58,7 @@ function navPageHtml(questions) {
   return `<!doctype html><html data-theme="light"><head><meta charset="utf-8"><style>${themeCss}</style><style>${panelCss}</style></head>
 <body>
   <div class="chat-container" id="chatContainer" style="height:420px; overflow-y:auto;">${messages}</div>
-  <div class="chat-nav-hotzone" id="chatNavHotzone" role="button" tabindex="0" aria-pressed="false"></div>
+  <div class="chat-nav-hotzone" id="chatNavHotzone" role="button" tabindex="0" aria-pressed="false"><div class="chat-nav-density" aria-hidden="true"></div></div>
   <div class="chat-nav-buttons" id="chatNavButtons">
     <button class="chat-nav-btn" id="chatNavUp"></button>
     <button class="chat-nav-btn" id="chatNavDown"></button>
@@ -270,4 +270,41 @@ test('点击条目后移开鼠标再滚对话，当前项会滚进列表可视�
   expect(state.focusInPanel).toBe(true); // 复现前提：焦点确实滞留在面板内
   expect(state.gi).toBe(25); // 当前项已是最后一组
   expect(state.fullyVisible).toBe(true); // 且被滚进列表可视区
+});
+
+test('把手圆点：一个问题一个点，高度随提问数增长并在上限处改为合并密度点', async ({ page }) => {
+  // 高度是写进 CSS 变量再交给样式过渡的，断言变量值（无头环境里过渡时间轴不一定推进，
+  // 直接量 getBoundingClientRect 会停在动画起点）
+  const railState = () => page.evaluate(() => {
+    const hot = document.getElementById('chatNavHotzone');
+    return {
+      dots: hot.querySelectorAll('.chat-nav-density .chat-nav-dot').length,
+      railHeight: getComputedStyle(hot).getPropertyValue('--nav-rail-h').trim(),
+      viewport: document.getElementById('chatContainer').clientHeight,
+      current: hot.querySelectorAll('.chat-nav-density .chat-nav-dot.current').length,
+    };
+  });
+
+  // 3 个提问：3 个点，高度 96 + 2×10（未触上限）
+  await page.setContent(navPageHtml(['问题一', '问题二', '问题三']));
+  await page.waitForTimeout(100);
+  const three = await railState();
+  expect(three.dots).toBe(3);
+  expect(three.railHeight).toBe('116px');
+
+  // 60 个提问：高度顶到对话区三成，装不下的合并成密度点
+  const many = Array.from({ length: 60 }, (_, i) => `第${i + 1}个问题`);
+  await page.setContent(navPageHtml(many));
+  await page.waitForTimeout(100);
+  const capped = await railState();
+  expect(capped.railHeight).toBe(`${Math.round(capped.viewport * 0.3)}px`);
+  expect(capped.dots).toBeLessThan(60);
+  expect(capped.dots).toBeGreaterThan(3);
+  // 合并点用更大更深的圆点表意「这一段问题密」
+  expect(await page.$eval('#chatNavHotzone', (el) => el.querySelectorAll('.chat-nav-dot.lv2, .chat-nav-dot.lv3').length)).toBeGreaterThan(0);
+
+  // 展开面板后当前提问对应的点高亮（与列表 current 同一组）
+  await page.hover('#chatNavHotzone');
+  await page.waitForSelector('#chatNavQuestionPanel.expanded');
+  expect((await railState()).current).toBe(1);
 });
