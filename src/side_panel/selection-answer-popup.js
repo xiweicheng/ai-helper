@@ -13,7 +13,11 @@ import { escapeHtml, showToast } from './utils.js';
 registerTranslations('zh', {
   sidePanel: {
     popupTitle: '浮层解答',
-    popupTooltip: '浮层解答（不进入对话）',
+    popupCustomTitle: '自定义问答',
+    popupCustomPlaceholder: '想知道这段内容的什么？',
+    popupFollowupPlaceholder: '继续追问...',
+    popupSend: '发送',
+    popupSendHint: 'Enter 发送，Shift+Enter 换行',
     popupLoading: '思考中...',
     popupCopy: '复制',
     popupCopied: '已复制到剪贴板',
@@ -33,7 +37,11 @@ registerTranslations('zh', {
 registerTranslations('en', {
   sidePanel: {
     popupTitle: 'Popup Answer',
-    popupTooltip: 'Answer in popup (not in conversation)',
+    popupCustomTitle: 'Custom Question',
+    popupCustomPlaceholder: 'What would you like to know about this?',
+    popupFollowupPlaceholder: 'Ask a follow-up...',
+    popupSend: 'Send',
+    popupSendHint: 'Enter to send, Shift+Enter for a new line',
     popupLoading: 'Thinking...',
     popupCopy: 'Copy',
     popupCopied: 'Copied to clipboard',
@@ -57,7 +65,10 @@ const CONTEXT_TOKEN_BUDGET = 1500;
 let popupEl = null;
 let currentSessionId = null;
 let currentResult = '';
-let currentPrompt = null;
+// 当前问题文案：预置提示词取其 content，自定义问答取用户输入。两种模式共用一条请求链路。
+let currentQuestion = '';
+// 自定义问答模式：打开时先展示输入框，用户输入后才发请求
+let isCustomMode = false;
 let currentSelectedText = '';
 let currentContextText = '';
 let currentTruncated = false;
@@ -164,6 +175,10 @@ function ensurePopupEl() {
       </div>
     </div>
     <div class="sap-body"></div>
+    <div class="sap-input-area">
+      <textarea class="sap-input" rows="1"></textarea>
+      <button class="sap-send" type="button"></button>
+    </div>
     <div class="sap-actions">
       <button class="sap-btn sap-copy"></button>
       <button class="sap-btn sap-transfer"></button>
@@ -180,9 +195,11 @@ function ensurePopupEl() {
   popupEl.querySelector('.sap-copy').addEventListener('click', handleCopy);
   // 转入对话
   popupEl.querySelector('.sap-transfer').addEventListener('click', handleTransferToChat);
+  // 自定义提问/连续追问：输入后 Enter 或点发送
+  initAskInput();
   // 重新生成（复用已提取的上下文，因为选区在打开时已被清除）
   popupEl.querySelector('.sap-regen').addEventListener('click', () => {
-    if (currentPrompt && currentSelectedText) {
+    if (currentQuestion && currentSelectedText) {
       sendRequest();
     }
   });
@@ -191,6 +208,86 @@ function ensurePopupEl() {
   initDrag(popupEl.querySelector('.sap-header'));
 
   return popupEl;
+}
+
+// ==================== 自定义提问输入 ====================
+
+// 输入区：中文输入法组词时按 Enter 选词不能误发送，用 composition 状态兜底
+function initAskInput() {
+  const input = popupEl.querySelector('.sap-input');
+  const sendBtn = popupEl.querySelector('.sap-send');
+  let composing = false;
+
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => {
+    composing = false;
+    updateSendState();
+  });
+  input.addEventListener('input', () => {
+    autoResizeInput();
+    updateSendState();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    if (composing || e.isComposing) return;
+    e.preventDefault();
+    submitQuestion();
+  });
+  sendBtn.addEventListener('click', submitQuestion);
+}
+
+function autoResizeInput() {
+  const input = popupEl?.querySelector('.sap-input');
+  if (!input) return;
+  // 浮层不可见时不量高：display:none 下 scrollHeight 为 0，会把高度写死成一条线
+  if (!popupEl.classList.contains('show')) return;
+  input.style.height = 'auto';
+  // border-box 下 scrollHeight 不含边框，补上边框再判定，否则单行也会因 2px 溢出冒出滚动条
+  const border = input.offsetHeight - input.clientHeight;
+  const contentHeight = input.scrollHeight + border;
+  input.style.height = Math.min(contentHeight, 96) + 'px';
+  // 超过上限才允许滚动；删回单行时立刻关掉，滚动条不会残留
+  input.style.overflowY = contentHeight > 96 ? 'auto' : 'hidden';
+}
+
+function updateSendState() {
+  if (!popupEl) return;
+  const input = popupEl.querySelector('.sap-input');
+  const sendBtn = popupEl.querySelector('.sap-send');
+  if (!input || !sendBtn) return;
+  sendBtn.disabled = isStreaming || !input.value.trim();
+}
+
+// 提交输入框里的问题：一次提交即一轮独立问答，沿用同一份选中内容与原文上下文
+function submitQuestion() {
+  if (isStreaming) return;
+  const input = popupEl?.querySelector('.sap-input');
+  const question = (input?.value || '').trim();
+  if (!question) return;
+  input.value = '';
+  autoResizeInput();
+  currentQuestion = question;
+  sendRequest();
+}
+
+function syncInputPlaceholder() {
+  const input = popupEl?.querySelector('.sap-input');
+  if (!input) return;
+  // 自定义模式下首次提问前提示“问什么”，出过结果后就变成追问语义
+  const firstAsk = isCustomMode && !popupEl.classList.contains('has-result');
+  input.placeholder = firstAsk
+    ? t('sidePanel.popupCustomPlaceholder')
+    : t('sidePanel.popupFollowupPlaceholder');
+}
+
+function focusInput() {
+  const input = popupEl?.querySelector('.sap-input');
+  if (!input) return;
+  // 等浮层显示完成后再聚焦/量高，否则 display:none 阶段两者都无效
+  requestAnimationFrame(() => {
+    autoResizeInput();
+    input.focus();
+  });
 }
 
 // 每次打开时刷新静态文案（支持 i18n 热切换，不缓存翻译结果）
@@ -206,6 +303,11 @@ function applyPopupLabels() {
   const regenBtn = popupEl.querySelector('.sap-regen');
   regenBtn.textContent = t('sidePanel.popupRegenerate');
   regenBtn.title = t('sidePanel.popupRegenerate');
+  const sendBtn = popupEl.querySelector('.sap-send');
+  sendBtn.textContent = t('sidePanel.popupSend');
+  sendBtn.title = t('sidePanel.popupSendHint');
+  syncInputPlaceholder();
+  updateSendState();
   updateLockUI();
 }
 
@@ -253,8 +355,11 @@ function showPopup(title) {
   applyPopupLabels();
   el.querySelector('.sap-title').textContent = title || t('sidePanel.popupTitle');
   el.querySelector('.sap-body').innerHTML = `<div class="sap-loading">${escapeHtml(t('sidePanel.popupLoading'))}</div>`;
+  // 新一轮问答：结果区与操作区回到初始态（自定义模式下操作区随结果出现）
+  el.classList.remove('has-result');
   el.classList.add('show');
-  popupEl.style.display = 'block';
+  el.style.display = 'block';
+  updateSendState();
 }
 
 function isPopupVisible() {
@@ -266,6 +371,7 @@ function updatePopupContent(html, scrollToEnd = true) {
   if (!body) return;
   body.innerHTML = `<div class="sap-content markdown-body">${html}</div>`;
   if (scrollToEnd) body.scrollTop = body.scrollHeight;
+  popupEl.classList.add('has-result');
 }
 
 function showPopupError(msg) {
@@ -282,9 +388,18 @@ function closePopup() {
   if (popupEl) {
     popupEl.classList.remove('show');
     popupEl.style.display = 'none';
+    const input = popupEl.querySelector('.sap-input');
+    if (input) {
+      input.value = '';
+      // 关闭时清掉内联高度：隐藏态量不出高度，留着会让下次打开变成一条细线
+      input.style.height = '';
+      input.style.overflowY = '';
+    }
   }
   currentSessionId = null;
   currentResult = '';
+  currentQuestion = '';
+  isCustomMode = false;
   isStreaming = false;
   isLocked = false;
 }
@@ -355,7 +470,7 @@ function handleCopy() {
 }
 
 function handleTransferToChat() {
-  if (!currentResult || !currentPrompt) return;
+  if (!currentResult || !currentQuestion) return;
 
   // 「转入对话」的产物是写进 #chatContainer 的两条消息，而全屏阅读时对话流就在覆盖层
   // 之下（且正在阅读的那条被迁出了容器）——先退出全屏，才能与非全屏模式下一致：
@@ -364,20 +479,20 @@ function handleTransferToChat() {
     closeMessageFullscreen();
   }
 
-  // 快照当前结果：closePopup() 会同步清空模块级 currentResult/currentPrompt，
+  // 快照当前结果：closePopup() 会同步清空模块级 currentResult/currentQuestion，
   // 而下面写入对话流走的是异步回调，若直接引用模块变量会读到空值（助手气泡变空白）。
   const assistantContent = currentResult;
-  const promptContent = currentPrompt.content;
+  const questionContent = currentQuestion;
 
   // 构造与对话流一致的消息格式，写入会话
   const compressedCtx = currentContextText
     ? `[${t('sidePanel.popupContextLabel')}]\n${currentContextText}\n\n`
     : '';
-  const userMessage = `${compressedCtx}[${t('sidePanel.selectedContentLabel')}]\n${currentSelectedText}\n\n[${t('sidePanel.userQuestionLabel')}]\n${currentPrompt.content}`;
+  const userMessage = `${compressedCtx}[${t('sidePanel.selectedContentLabel')}]\n${currentSelectedText}\n\n[${t('sidePanel.userQuestionLabel')}]\n${questionContent}`;
 
   // 动态导入避免循环依赖
   import('./chat-manager.js').then(({ addMessage }) => {
-    addMessage('user', promptContent, true, [], null, false, userMessage);
+    addMessage('user', questionContent, true, [], null, false, userMessage);
     state.messageHistory.push({ role: 'user', content: userMessage, timestamp: new Date().toISOString() });
     addMessage('assistant', assistantContent, true);
     state.messageHistory.push({ role: 'assistant', content: assistantContent });
@@ -402,10 +517,11 @@ function handleTransferToChat() {
 
 // ==================== 请求发送 ====================
 
+// 预置提示词：直接带着问题发请求
 function doRequest(prompt, selectedText, range) {
   const { context: contextText, truncated } = extractSelectionContext(range, selectedText);
 
-  currentPrompt = prompt;
+  currentQuestion = prompt.content;
   currentSelectedText = selectedText;
   currentContextText = contextText;
   currentTruncated = truncated;
@@ -413,14 +529,43 @@ function doRequest(prompt, selectedText, range) {
   sendRequest();
 }
 
-// 用已存快照（提示词/选中/上下文）发起一次请求；重新生成复用同一份上下文
+// 自定义问答：先打开输入框，用户输入后再发请求
+function openCustomAsk(selectedText, range) {
+  const { context: contextText, truncated } = extractSelectionContext(range, selectedText);
+
+  currentQuestion = '';
+  currentSelectedText = selectedText;
+  currentContextText = contextText;
+  currentTruncated = truncated;
+  currentResult = '';
+  isStreaming = false;
+
+  const el = ensurePopupEl();
+  el.querySelector('.sap-title').textContent = t('sidePanel.popupCustomTitle');
+  el.querySelector('.sap-body').innerHTML = '';
+  // 重置输入框：清掉上一次残留的内联高度/滚动状态，避免打开时就是一条线或带滚动条
+  const input = el.querySelector('.sap-input');
+  if (input) {
+    input.value = '';
+    input.style.height = '';
+    input.style.overflowY = '';
+  }
+  // 还没提问：结果区与操作区都收起，只留输入框
+  el.classList.remove('has-result');
+  el.classList.add('sap-custom', 'show-input', 'show');
+  el.style.display = 'block';
+  applyPopupLabels();
+  focusInput();
+}
+
+// 用已存快照（问题/选中/上下文）发起一次请求；重新生成、追问复用同一份上下文
 function sendRequest() {
   currentResult = '';
   isStreaming = true;
 
-  showPopup(currentPrompt?.content);
+  showPopup(isCustomMode ? t('sidePanel.popupCustomTitle') : currentQuestion);
 
-  const messages = buildPopupMessages(currentSelectedText, currentContextText, currentPrompt.content, currentTruncated);
+  const messages = buildPopupMessages(currentSelectedText, currentContextText, currentQuestion, currentTruncated);
 
   currentSessionId = `popup_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -432,6 +577,7 @@ function sendRequest() {
     logger.error('[SelectionPopup] sendMessage failed:', err);
     showPopupError(t('sidePanel.popupRequestFailed'));
     isStreaming = false;
+    updateSendState();
   });
 }
 
@@ -462,11 +608,16 @@ function ensureStreamListener() {
         currentResult = message.finalContent;
       }
       updatePopupContent(formatMessageContent(currentResult));
+      // 预置提问的浮层在答案出来后露出输入框，可继续追问；自定义模式本来就常显
+      if (!isCustomMode) popupEl.classList.add('show-input');
+      syncInputPlaceholder();
+      updateSendState();
     } else if (message.type === 'SIDEPANEL_POPUP_STREAM_ERROR') {
       // DONE 与 ERROR 竞争防护：流已结束（或浮层已关）时后到的 ERROR 不再覆盖已展示结果
       if (!isStreaming) return;
       isStreaming = false;
       showPopupError(message.error || t('sidePanel.popupRequestFailed'));
+      updateSendState();
     }
   });
 }
@@ -483,7 +634,7 @@ export function initSelectionAnswerPopup() {
 }
 
 /**
- * 打开浮层解答（由划词菜单图标按钮触发）
+ * 打开浮层解答（由划词菜单项点击触发）
  * @param {Object} prompt - 提示词对象 { content, code, ... }
  * @param {string} selectedText - 选中的文本
  * @param {number} mouseX - 鼠标 x 坐标（视口坐标，用于定位浮层）
@@ -497,5 +648,24 @@ export function openSelectionAnswerPopup(prompt, selectedText, mouseX, mouseY, r
   positionPopup(mouseX, mouseY);
   // 新打开重置锁定态（先于 showPopup，applyPopupLabels 会刷出图标）
   isLocked = false;
+  isCustomMode = false;
+  popupEl.classList.remove('sap-custom', 'show-input', 'has-result');
   doRequest(prompt, selectedText, range || state.currentSelectionRange);
+}
+
+/**
+ * 打开自定义问答浮层（由划词菜单「自定义问答」触发）：先输入问题，提交后才发起请求
+ * @param {string} selectedText - 选中的文本
+ * @param {number} mouseX - 鼠标 x 坐标（视口坐标，用于定位浮层）
+ * @param {number} mouseY - 鼠标 y 坐标
+ * @param {Range} [range] - 选区 Range 快照（调用方需在清除选区前先 cloneRange 传入）
+ */
+export function openSelectionCustomAskPopup(selectedText, mouseX, mouseY, range) {
+  if (!selectedText) return;
+
+  ensureStreamListener();
+  positionPopup(mouseX, mouseY);
+  isLocked = false;
+  isCustomMode = true;
+  openCustomAsk(selectedText, range || state.currentSelectionRange);
 }

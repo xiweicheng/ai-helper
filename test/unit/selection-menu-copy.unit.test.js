@@ -80,6 +80,49 @@ describe('划词菜单复制按钮 - CSS 结构', () => {
   });
 });
 
+describe('划词菜单行为对调 + 自定义问答入口', () => {
+  const showFn = indexSrc.slice(
+    indexSrc.indexOf('function showFloatingMenu'),
+    indexSrc.indexOf('async function handleSelectionPromptClick')
+  );
+  const customHelper = indexSrc.slice(
+    indexSrc.indexOf('function openCustomAskFromMenu'),
+    indexSrc.indexOf('function showFloatingMenu')
+  );
+
+  test('整行点击默认走浮层解答，右侧图标才送入当前会话', () => {
+    // 整行 → 浮层（不打断阅读）；图标 → 对话流
+    expect(showFn).toContain('openSelectionPopupFromMenu(prompt, text, item)');
+    expect(showFn).toContain('handleSelectionPromptClick(prompt, text)');
+    expect(showFn).toContain("t('sidePanel.sendToChatTooltip')");
+    // 旧的「浮层解答」图标提示语义已失效，不应残留
+    expect(showFn).not.toContain('popupTooltip');
+  });
+
+  test('自定义项常驻菜单底部：提示词一条都没开也不早退', () => {
+    expect(showFn).toContain("t('sidePanel.customAskMenuItem')");
+    expect(showFn).not.toContain('no prompts enabled in menu');
+    expect(indexSrc).toContain('function openSelectionPopupFromMenu');
+  });
+
+  test('点自定义问答 → 打开带输入框的浮层（不直接发请求）', () => {
+    expect(customHelper).toContain('openSelectionCustomAskPopup');
+    expect(customHelper).not.toContain('handleSelectionPromptClick');
+  });
+
+  test('新增 i18n 键在 zh/en 两个注册块成对存在', () => {
+    const zhBlock = indexSrc.slice(
+      indexSrc.indexOf("registerTranslations('zh'"),
+      indexSrc.indexOf("registerTranslations('en'")
+    );
+    const enBlock = indexSrc.slice(indexSrc.indexOf("registerTranslations('en'"));
+    for (const [name, block] of [['zh', zhBlock], ['en', enBlock]]) {
+      expect(block, name).toContain('sendToChatTooltip');
+      expect(block, name).toContain('customAskMenuItem');
+    }
+  });
+});
+
 describe('划词菜单复制按钮 - i18n 键成对', () => {
   // 新键跟随 index.js 模块内的 registerTranslations zh/en 双块惯例，不动共享 locales
   test('index.js 的 zh/en 注册块都含 tooltip 与 done 两个键', () => {

@@ -5724,8 +5724,10 @@ body {
   background: rgba(var(--brand-rgb), 0.55);
   box-shadow: 0 0 10px rgba(var(--brand-rgb), 0.45);
 }
-/* 问题密度圆点：竖直均匀分布在把手内（一个问题一个点；超量时合并成密度点）。
-   pointer-events: none 是必需的——点落在把手内，点击语义仍是「钉住 / 取消钉住」。 */
+/* 问题密度圆点：竖直均匀分布在把手内。
+   - 一个问题一个点，装不下时合并相邻问题（点本身长得一样，不做大小区分）；
+   - 只有「当前提问」那个点更大更深，用来告诉用户自己停在会话的哪一段；
+   - pointer-events: none 是必需的——点落在把手内，点击语义仍是「钉住 / 取消钉住」。 */
 .chat-nav-density {
   position: absolute;
   inset: 0;
@@ -5747,23 +5749,15 @@ body {
   height: 3px;
   border-radius: 50%;
   background: rgba(var(--brand-rgb), 0.8);
-  transition: background 0.2s ease, transform 0.2s ease;
+  transition: background 0.2s ease, width 0.2s ease, height 0.2s ease, box-shadow 0.2s ease;
 }
-/* 合并态：一个点代表 2~3 个 / 4 个以上提问，点径与深浅一起加深 */
-.chat-nav-dot.lv2 {
-  width: 4px;
-  height: 4px;
-  background: rgba(var(--brand-rgb), 1);
-}
-.chat-nav-dot.lv3 {
-  width: 5px;
-  height: 5px;
-  background: var(--brand-700);
-}
-/* 当前提问所在的点：与问题列表的 current 高亮同一含义 */
+/* 当前提问所在的点：全场唯一被放大加深的点，位置即「我大概读到哪」 */
 .chat-nav-dot.current {
+  width: 6px;
+  height: 6px;
   background: var(--brand-700);
-  transform: scale(1.4);
+  /* 用表面色垫一圈，让当前点从相邻点里“浮”出来 */
+  box-shadow: 0 0 0 1.5px rgba(var(--surface-rgb), 0.95);
 }
 /* 钉住态把手底色最深，圆点改用表面色反衬，避免和底色糊在一起 */
 .chat-nav-hotzone.pinned .chat-nav-dot {
@@ -9863,7 +9857,7 @@ body {
   font-size: 13px;
 }
 
-/* 划词菜单项右侧动作区：代码徽标 + 浮层解答图标 */
+/* 划词菜单项右侧动作区：代码徽标 + 在对话中提问图标 */
 .selection-floating-menu .menu-item-actions {
   display: flex;
   align-items: center;
@@ -9871,7 +9865,7 @@ body {
   flex-shrink: 0;
 }
 
-.selection-floating-menu .menu-item-popup-btn {
+.selection-floating-menu .menu-item-chat-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -9886,15 +9880,39 @@ body {
   transition: all 0.15s ease;
 }
 
-.selection-floating-menu .menu-item-popup-btn svg {
+.selection-floating-menu .menu-item-chat-btn svg {
   width: 13px;
   height: 13px;
+  flex-shrink: 0;
 }
 
-.selection-floating-menu .menu-item-popup-btn:hover {
+.selection-floating-menu .menu-item-chat-btn:hover {
   background: rgba(var(--brand-violet-rgb), 0.12);
   border-color: rgba(var(--brand-violet-rgb), 0.35);
   color: var(--brand-violet-600);
+}
+
+/* 自定义问答入口：与提示词项用分隔线区隔，文案带编辑图标 */
+.selection-floating-menu .menu-divider {
+  height: 1px;
+  margin: 4px 10px;
+  background: rgba(var(--overlay-rgb), 0.1);
+}
+
+.selection-floating-menu .menu-item-custom {
+  color: var(--text-secondary);
+}
+
+.selection-floating-menu .menu-item-custom-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selection-floating-menu .menu-item-custom-label svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 /* ==================== 划词浮层解答面板 ==================== */
@@ -10018,6 +10036,83 @@ body {
 .selection-answer-popup .sap-error {
   color: var(--danger-strong);
   font-size: 13px;
+}
+
+/* 自定义提问/连续追问输入区：默认收起，.show-input 时展开 */
+.selection-answer-popup .sap-input-area {
+  display: none;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(var(--overlay-rgb), 0.1);
+}
+
+.selection-answer-popup.show-input .sap-input-area {
+  display: flex;
+}
+
+.selection-answer-popup .sap-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  max-height: 96px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: rgba(var(--overlay-rgb), 0.04);
+  border: 1px solid rgba(var(--overlay-rgb), 0.15);
+  border-radius: 6px;
+  /* 单行时不出现竖向滚动条；超过 max-height 后由 JS 切到 auto */
+  overflow-y: hidden;
+  scrollbar-width: none;
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.selection-answer-popup .sap-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.selection-answer-popup .sap-input:focus {
+  border-color: rgba(var(--brand-violet-rgb), 0.5);
+}
+
+.selection-answer-popup .sap-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.selection-answer-popup .sap-send {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12px;
+  border: 1px solid rgba(var(--brand-violet-rgb), 0.35);
+  border-radius: 6px;
+  background: rgba(var(--brand-violet-rgb), 0.12);
+  color: var(--brand-violet-600);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.selection-answer-popup .sap-send:hover:not(:disabled) {
+  background: rgba(var(--brand-violet-rgb), 0.2);
+}
+
+.selection-answer-popup .sap-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 自定义模式还没出结果：结果区空着就收起，操作区等结果出现再显示 */
+.selection-answer-popup.sap-custom .sap-body:empty {
+  display: none;
+}
+
+.selection-answer-popup.sap-custom:not(.has-result) .sap-actions {
+  display: none;
 }
 
 .selection-answer-popup .sap-actions {

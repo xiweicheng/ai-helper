@@ -689,6 +689,28 @@ describe('把手密度圆点：高度随提问数增长、超量合并成密度�
     expect(css).toMatch(/\.chat-nav-hotzone\s*\{[^}]*height:\s*var\(--nav-rail-h,\s*96px\)/s);
     expect(read('src/side_panel/message-jump-nav.js')).toMatch(/setProperty\('--nav-rail-h'/);
   });
+
+  // 点只承载「一个提问」这一种语义：大小/深浅的差异全部留给「当前点」，
+  // 否则用户会怀疑大小不同的点是不是代表不同类型的提问。
+  it('圆点一律同款，只有当前点被放大加深', () => {
+    const css = read('src/side_panel/styles.css');
+    const nav = read('src/side_panel/message-jump-nav.js');
+    expect(css).not.toMatch(/\.chat-nav-dot\.lv\d/);
+    expect(nav).not.toMatch(/lv\$\{level\}/);
+    expect(nav).toMatch(/map\(\(\) => '<span class="chat-nav-dot"><\/span>'\)/);
+    expect(css).toMatch(/\.chat-nav-dot\.current\s*\{[^}]*width:\s*6px/s);
+  });
+
+  // 面板收起时也要能看出「我停在哪一段」：滚动的 rAF 回调整里不能因为没展开就整体退出
+  it('收起态滚动也点亮当前点', () => {
+    const nav = read('src/side_panel/message-jump-nav.js');
+    const scrollBlock = nav.slice(
+      nav.indexOf("chatContainer.addEventListener('scroll'"),
+      nav.indexOf('// ========== 空会话隐藏')
+    );
+    expect(scrollBlock).toMatch(/function paintDensityByViewport|paintDensityByViewport\(\)/);
+    expect(scrollBlock).not.toMatch(/if \(!chatNavQuestionPanel \|\| !chatNavQuestionPanel\.classList\.contains\('expanded'\)\) return/);
+  });
 });
 
 describe('formatNavTime：条目提问时间', () => {

@@ -300,10 +300,40 @@ test('把手圆点：一个问题一个点，高度随提问数增长并在上�
   expect(capped.railHeight).toBe(`${Math.round(capped.viewport * 0.3)}px`);
   expect(capped.dots).toBeLessThan(60);
   expect(capped.dots).toBeGreaterThan(3);
-  // 合并点用更大更深的圆点表意「这一段问题密」
-  expect(await page.$eval('#chatNavHotzone', (el) => el.querySelectorAll('.chat-nav-dot.lv2, .chat-nav-dot.lv3').length)).toBeGreaterThan(0);
+  // 点一律同款：合并只减少点数，不用大小再叠一层语义
+  expect(await page.$eval('#chatNavHotzone', (el) => el.querySelectorAll('.chat-nav-dot[class*="lv"]').length)).toBe(0);
 
-  // 展开面板后当前提问对应的点高亮（与列表 current 同一组）
+  // 收起态用真滚轮滚到会话底部：不展开列表，最后一个点也会变成当前点
+  // （程序化改 scrollTop 不一定派发 scroll，且同一帧内量到的是滚动前的位置，改用真滚轮）
+  await page.mouse.move(200, 400);
+  await page.mouse.wheel(0, 60000);
+  await page.waitForTimeout(400);
+  const atBottom = await page.evaluate(() => {
+    const dots = [...document.querySelectorAll('#chatNavHotzone .chat-nav-dot')];
+    return {
+      current: dots.findIndex((d) => d.classList.contains('current')),
+      total: dots.length,
+      expanded: document.getElementById('chatNavQuestionPanel').classList.contains('expanded'),
+      scrollTop: Math.round(document.getElementById('chatContainer').scrollTop),
+    };
+  });
+  expect(atBottom.scrollTop).toBeGreaterThan(0);
+  expect(atBottom.expanded).toBe(false);
+  expect(atBottom.current).toBe(atBottom.total - 1);
+
+  // 回到顶部：当前点跟到第一个
+  await page.mouse.wheel(0, -60000);
+  await page.waitForTimeout(400);
+  expect(await page.evaluate(() => {
+    const dots = [...document.querySelectorAll('#chatNavHotzone .chat-nav-dot')];
+    return dots.findIndex((d) => d.classList.contains('current'));
+  })).toBe(0);
+  expect(await page.evaluate(() => {
+    const dots = [...document.querySelectorAll('#chatNavHotzone .chat-nav-dot')];
+    return dots.findIndex((d) => d.classList.contains('current'));
+  })).toBe(0);
+
+  // 展开面板后当前点仍与列表 current 同一组（只有一个点被点亮）
   await page.hover('#chatNavHotzone');
   await page.waitForSelector('#chatNavQuestionPanel.expanded');
   expect((await railState()).current).toBe(1);

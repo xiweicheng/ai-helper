@@ -102,9 +102,12 @@ export function initMessageJumpNav() {
     btn.addEventListener('animationend', () => btn.classList.remove('blocked'), { once: true });
   }
 
-  // ========== 把手密度圆点 ==========
-  // 把手（左侧竖直小长条）里的点 = 提问：点越多问题越多，把手也按提问数长高；
-  // 高度有上限，超量的提问合并成「密度点」（点更大更深），不至于密到糊成一条线。
+  // ========== 把手圆点 ==========
+  // 把手（左侧竖直小长条）里的点 = 提问：一个问题一个点，问题越多点越多，
+  // 把手也按提问数长高；高度封顶后不再长高，把相邻问题合并成一个点（点本身
+  // 长得一样，密度只靠「点变密」表达）。
+  // 全部点里只有「当前提问」那个不一样大/不一样深——位置即「我大概读到哪」，
+  // 顶部/中间/底部一眼可辨。
   let navRailTotal = -1;
   let navRailHeight = 0;
   let navRailBuckets = [];
@@ -114,11 +117,12 @@ export function initMessageJumpNav() {
    * 流式输出期间 MutationObserver 每帧都会走到这里，重建 innerHTML 没必要，
    * 当前点高亮由 paintDensityActive 单独负责。
    * @param {number|null} activeIndex - 当前组下标；null 表示只同步数量、暂不复位高亮
+   * @returns {boolean} 是否重建了点（调用方据此补画一次当前点）
    */
   function renderDensityRail(activeIndex = null) {
-    if (!chatNavHotzone) return;
+    if (!chatNavHotzone) return false;
     const rail = chatNavHotzone.querySelector('.chat-nav-density');
-    if (!rail) return;
+    if (!rail) return false;
     const chatContainer = document.getElementById('chatContainer');
     const total = chatContainer ? chatContainer.querySelectorAll('.message.user').length : 0;
     if (total === 0) {
@@ -128,13 +132,13 @@ export function initMessageJumpNav() {
       navRailTotal = 0;
       navRailHeight = 0;
       chatNavHotzone.style.removeProperty('--nav-rail-h');
-      return;
+      return false;
     }
     const viewportHeight = (chatContainer && chatContainer.clientHeight) || window.innerHeight || 0;
     const height = computeNavRailHeight(total, viewportHeight);
     if (total === navRailTotal && height === navRailHeight) {
       paintDensityActive(activeIndex);
-      return;
+      return false;
     }
     navRailTotal = total;
     navRailHeight = height;
@@ -142,13 +146,10 @@ export function initMessageJumpNav() {
     chatNavHotzone.style.setProperty('--nav-rail-h', `${height}px`);
     navRailBuckets = buildNavDensityBuckets(total, height);
     rail.classList.toggle('single', navRailBuckets.length === 1);
-    rail.innerHTML = navRailBuckets
-      .map((bucket) => {
-        const level = bucket.count >= 4 ? 3 : bucket.count >= 2 ? 2 : 1;
-        return `<span class="chat-nav-dot${level > 1 ? ` lv${level}` : ''}"></span>`;
-      })
-      .join('');
+    // 点一律同款：装不下时合并只是少画几个点，不用点径/深浅再叠一层语义
+    rail.innerHTML = navRailBuckets.map(() => '<span class="chat-nav-dot"></span>').join('');
     paintDensityActive(activeIndex);
+    return true;
   }
 
   function paintDensityActive(activeIndex) {
@@ -158,6 +159,19 @@ export function initMessageJumpNav() {
     // 合并态下一个点代表一段提问：当前组落在谁的区间里，谁就是当前点
     const bucketIndex = navRailBuckets.findIndex((b) => activeIndex >= b.start && activeIndex < b.end);
     dots.forEach((dot, i) => dot.classList.toggle('current', i === bucketIndex));
+  }
+
+  /**
+   * 按当前滚动位置点亮「当前点」。面板收起时也走这里：
+   * 不用展开列表也能看出自己停在会话的顶部/中间/底部。
+   */
+  function paintDensityByViewport() {
+    if (!chatNavHotzone || navRailBuckets.length === 0) return;
+    const chatContainer = document.getElementById('chatContainer');
+    if (!chatContainer) return;
+    const groups = buildMessageJumpGroups(chatContainer);
+    if (groups.length === 0) return;
+    paintDensityActive(findCurrentGroupIndex(groups));
   }
 
   // ========== 列表构建 / 当前组同步 ==========
@@ -408,18 +422,22 @@ export function initMessageJumpNav() {
     }
   }
 
-  // 面板展开期间跟随滚动更新当前组
+  // 滚动时同步当前组：面板展开时连列表高亮一起更新，收起时只挪把手上的当前点
   {
     const chatContainer = document.getElementById('chatContainer');
     if (chatContainer) {
       let navScrollScheduled = false;
       chatContainer.addEventListener('scroll', () => {
-        if (!chatNavQuestionPanel || !chatNavQuestionPanel.classList.contains('expanded')) return;
         if (navScrollScheduled) return;
         navScrollScheduled = true;
         requestAnimationFrame(() => {
           navScrollScheduled = false;
-          updateActiveQuestion();
+          if (chatNavQuestionPanel && chatNavQuestionPanel.classList.contains('expanded')) {
+            updateActiveQuestion();
+            return;
+          }
+          // 面板收起：圆点也要跟着滚动走，否则看不出自己停在顶部/中间/底部
+          paintDensityByViewport();
         });
       }, { passive: true });
     }
@@ -447,9 +465,11 @@ export function initMessageJumpNav() {
       if (chatNavQuestionPanel) chatNavQuestionPanel.innerHTML = '';
     }
     // 新提问 / 切会话都会走到这里：圆点按提问数增删，不依赖面板是否展开。
-    // 只有面板开着时才顺手把当前点标出来（收起态没有列表，就不为它多算一次定位）。
+    // 面板开着时顺手标出当前点；收起态则在圆点重建后按滚动位置补画一次，
+    // 让用户不展开列表也知道自己停在会话的哪一段。
     const expanded = !!(chatNavQuestionPanel && chatNavQuestionPanel.classList.contains('expanded'));
-    renderDensityRail(expanded && navJumpGroups.length ? findCurrentGroupIndex(navJumpGroups) : null);
+    const rebuilt = renderDensityRail(expanded && navJumpGroups.length ? findCurrentGroupIndex(navJumpGroups) : null);
+    if (rebuilt && !expanded) paintDensityByViewport();
     navVisibilityState = show;
   }
 

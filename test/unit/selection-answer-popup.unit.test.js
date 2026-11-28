@@ -115,7 +115,7 @@ describe('转入对话：全屏阅读下先退出全屏（接线守卫）', () =
   it('退出全屏在结果早退之后、写入对话流之前', () => {
     expect(fnStart).toBeGreaterThan(-1);
     expect(fnBody).toContain('if (isFullscreenActive()) {');
-    expect(fnBody.indexOf('if (!currentResult || !currentPrompt) return;')).toBeLessThan(fnBody.indexOf('if (isFullscreenActive())'));
+    expect(fnBody.indexOf('if (!currentResult || !currentQuestion) return;')).toBeLessThan(fnBody.indexOf('if (isFullscreenActive())'));
     expect(fnBody.indexOf('if (isFullscreenActive())')).toBeLessThan(fnBody.indexOf("import('./chat-manager.js')"));
   });
 
@@ -125,5 +125,40 @@ describe('转入对话：全屏阅读下先退出全屏（接线守卫）', () =
       const body = modSrc.slice(start, modSrc.indexOf('\n}\n', start));
       expect(body, `${name} 不应退全屏`).not.toContain('closeMessageFullscreen');
     }
+  });
+});
+
+describe('自定义问答：先输入再发送（接线守卫）', () => {
+  it('导出自定义问答入口，且打开时不立即发起请求（只准备上下文）', () => {
+    expect(modSrc).toContain('export function openSelectionCustomAskPopup');
+    const start = modSrc.indexOf('function openCustomAsk');
+    const body = modSrc.slice(start, modSrc.indexOf('\n}\n', start));
+    expect(body).toContain('extractSelectionContext');
+    expect(body).not.toContain('chrome.runtime.sendMessage');
+    expect(body).toContain('focusInput()');
+  });
+
+  it('Enter 发送 / Shift+Enter 换行，并对中文输入法组词回车兜底', () => {
+    const start = modSrc.indexOf('function initAskInput');
+    const body = modSrc.slice(start, modSrc.indexOf('\n}\n', start));
+    expect(body).toContain("e.key !== 'Enter' || e.shiftKey");
+    expect(body).toContain('composing');
+    expect(body).toContain('submitQuestion');
+    expect(modSrc).toContain("input.addEventListener('compositionstart'");
+    expect(modSrc).toContain("input.addEventListener('compositionend'");
+  });
+
+  it('预置提问与自定义提问共用同一条请求链路（buildPopupMessages 取 currentQuestion）', () => {
+    const start = modSrc.indexOf('function sendRequest');
+    const body = modSrc.slice(start, modSrc.indexOf('\n}\n', start));
+    expect(body).toContain('buildPopupMessages(currentSelectedText, currentContextText, currentQuestion, currentTruncated)');
+    expect(modSrc).not.toContain('currentPrompt');
+  });
+
+  it('预置提问的浮层在答案出来后露出追问输入框', () => {
+    const doneIdx = modSrc.indexOf("message.type === 'SIDEPANEL_POPUP_STREAM_DONE'");
+    expect(doneIdx).toBeGreaterThan(-1);
+    const tail = modSrc.slice(doneIdx, doneIdx + 600);
+    expect(tail).toContain("if (!isCustomMode) popupEl.classList.add('show-input')");
   });
 });

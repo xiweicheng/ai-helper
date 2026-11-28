@@ -53,7 +53,7 @@ import { resolveWorkdirForSession, formatWorkdirLabel } from '../shared/workdir-
 import { reconcileSessionWorkdir } from './workdir-reconcile.js';
 import { isWorkdirSwitchBlocked } from './workdir-switch-lock.js';
 import { subscribe as subscribeQueueStore } from './queue-store.js';
-import { initSelectionAnswerPopup, openSelectionAnswerPopup } from './selection-answer-popup.js';
+import { initSelectionAnswerPopup, openSelectionAnswerPopup, openSelectionCustomAskPopup } from './selection-answer-popup.js';
 
 // 内部工具：从存储读取的 pairedAgents 解密 token
 function _decodeAgents(agents) {
@@ -70,6 +70,8 @@ registerTranslations('zh', {
     askBasedOnSelection: '基于选中内容提问',
     copySelectionTooltip: '复制选中内容',
     copySelectionDone: '已复制选中内容',
+    sendToChatTooltip: '在对话中提问',
+    customAskMenuItem: '自定义问答',
     selectedContentLabel: '选中内容',
     selectedContentSummary: '摘要',
     userQuestionLabel: '用户问题',
@@ -154,6 +156,8 @@ registerTranslations('en', {
     askBasedOnSelection: 'Ask based on selection',
     copySelectionTooltip: 'Copy selection',
     copySelectionDone: 'Selection copied',
+    sendToChatTooltip: 'Ask in conversation',
+    customAskMenuItem: 'Custom question',
     selectedContentLabel: 'Selected content',
     selectedContentSummary: 'summary',
     userQuestionLabel: 'User question',
@@ -1058,17 +1062,38 @@ function ensureSelectionMenuEl() {
   return selectionMenuEl;
 }
 
+// 菜单项点击：就近弹出浮层解答（默认路径，不打断当前阅读视野）
+function openSelectionPopupFromMenu(prompt, text, anchorEl) {
+  // 先把选区快照 clone 出来：后续清除选区 + hideFloatingMenu 会置空 currentSelectionRange，
+  // 而浮层需要它提取选中片段所在的整条消息作为上下文
+  const rangeSnapshot = state.currentSelectionRange ? state.currentSelectionRange.cloneRange() : null;
+  // 以菜单项自身位置为锚点，浮层贴着被点的这一行展开
+  const rect = anchorEl?.getBoundingClientRect?.();
+  const x = rect ? rect.left + rect.width / 2 : state.lastMouseX;
+  const y = rect ? rect.bottom : state.lastMouseY;
+  // 清除文本选区：否则划词 mouseup 定时器（+50ms）检测到选区仍在，会把菜单重新弹出
+  window.getSelection()?.removeAllRanges();
+  window.hideFloatingMenu();
+  openSelectionAnswerPopup(prompt, text, x, y, rangeSnapshot);
+}
+
+// 「自定义问答」：先弹浮层输入框，用户输入问题后再发起请求
+function openCustomAskFromMenu(text, anchorEl) {
+  const rangeSnapshot = state.currentSelectionRange ? state.currentSelectionRange.cloneRange() : null;
+  const rect = anchorEl?.getBoundingClientRect?.();
+  const x = rect ? rect.left + rect.width / 2 : state.lastMouseX;
+  const y = rect ? rect.bottom : state.lastMouseY;
+  window.getSelection()?.removeAllRanges();
+  window.hideFloatingMenu();
+  openSelectionCustomAskPopup(text, x, y, rangeSnapshot);
+}
+
 function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
   if (!state.enableSelectionQuery) {
     return;
   }
 
   const menuPrompts = state.customPrompts.filter(p => p.enabledInMenu === true);
-
-  if (menuPrompts.length === 0) {
-    logger.debug('[SidePanel] showFloatingMenu skipped: no prompts enabled in menu');
-    return;
-  }
 
   const menuEl = ensureSelectionMenuEl();
   // 标题/悬停提示在每次渲染时取词，避免 i18n 热切换后仍是旧语言
@@ -1088,38 +1113,56 @@ function showFloatingMenu(selection, text, mouseX = 0, mouseY = 0) {
       <span>${displayContent}</span>
       <span class="menu-item-actions">
         <span class="menu-item-code">/${prompt.code}</span>
-        <button class="menu-item-popup-btn" title="${t('sidePanel.popupTooltip')}">
+        <button class="menu-item-chat-btn" title="${t('sidePanel.sendToChatTooltip')}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="14" rx="2"/>
-            <line x1="7" y1="8" x2="17" y2="8"/>
-            <line x1="7" y1="12" x2="13" y2="12"/>
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"/>
           </svg>
         </button>
       </span>
     `;
+    // 整行点击：浮层解答（默认，停在当前阅读位置）
     item.addEventListener('click', (e) => {
       e.stopPropagation();
-      handleSelectionPromptClick(prompt, text);
+      openSelectionPopupFromMenu(prompt, text, item);
     });
-    // 浮层图标：单独走浮层解答，不进入对话流（stopPropagation 避免触发菜单项的对话流点击）
-    item.querySelector('.menu-item-popup-btn').addEventListener('click', (e) => {
+    // 右侧图标：送入当前会话问答（stopPropagation 避免触发整行的浮层解答）
+    item.querySelector('.menu-item-chat-btn').addEventListener('click', (e) => {
       e.stopPropagation();
-      // 先把选区快照 clone 出来：后续清除选区 + hideFloatingMenu 会置空 currentSelectionRange，
-      // 而浮层需要它提取选中片段所在的整条消息作为上下文
-      const rangeSnapshot = state.currentSelectionRange ? state.currentSelectionRange.cloneRange() : null;
-      // 清除文本选区：否则划词 mouseup 定时器（+50ms）检测到选区仍在，会把菜单重新弹出
       window.getSelection()?.removeAllRanges();
       window.hideFloatingMenu();
-      openSelectionAnswerPopup(prompt, text, mouseX, mouseY, rangeSnapshot);
+      handleSelectionPromptClick(prompt, text);
     });
     selectionMenuItems.appendChild(item);
   });
+
+  // 自定义问答常驻菜单底部：与提示词是否配置在菜单中无关，划词功能开启即可用
+  const divider = document.createElement('div');
+  divider.className = 'menu-divider';
+  selectionMenuItems.appendChild(divider);
+
+  const customItem = document.createElement('div');
+  customItem.className = 'menu-item menu-item-custom';
+  customItem.innerHTML = `
+    <span class="menu-item-custom-label">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/>
+        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>
+      </svg>
+      <span>${t('sidePanel.customAskMenuItem')}</span>
+    </span>
+  `;
+  customItem.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openCustomAskFromMenu(text, customItem);
+  });
+  selectionMenuItems.appendChild(customItem);
 
   // mouseX/mouseY 是视口坐标，菜单为 fixed 定位，直接以视口为基准估算并 clamp
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
 
-  const estimatedMenuHeight = 40 + menuPrompts.length * 36;
+  // header 40 + 每项 36 + 分隔线 9 + 自定义项 36
+  const estimatedMenuHeight = 40 + menuPrompts.length * 36 + 45;
   const estimatedMenuWidth = 180;
   const menuOffset = 30;
 
@@ -1175,8 +1218,8 @@ async function handleSelectionPromptClick(prompt, selectedText) {
     return;
   }
 
-  // 全屏阅读里点菜单项会把问题发进对话流，而对话流在覆盖层之下——发送前先退出全屏，
-  // 否则用户看不到新回答（「浮层解答」走的是另一条路径，它浮在覆盖层之上，不需要退出）
+  // 全屏阅读里点菜单项右侧「在对话中提问」会把问题发进对话流，而对话流在覆盖层之下——发送前先退出全屏，
+  // 否则用户看不到新回答（整行点击走的是浮层解答，它浮在覆盖层之上，不需要退出）
   if (isFullscreenActive()) {
     closeMessageFullscreen();
   }
