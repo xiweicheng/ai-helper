@@ -3,7 +3,7 @@
 import state from './state.js';
 import { getSortedBookmarks, removeBookmarkById, removeBookmark, toggleBookmarkPin, isBookmarked } from './bookmark-manager.js';
 import { switchToSession } from './session-manager.js';
-import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp, focusMessageInView } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
 import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import logger from '../shared/logger.js';
@@ -454,23 +454,14 @@ async function navigateToBookmark(sessionId, messageId) {
 
   // 定位到消息（等待 DOM 重建完成）
   setTimeout(() => {
-    const chatContainer = document.getElementById('chatContainer');
-    if (!chatContainer) return;
-    const messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
-    if (messageEl) {
-      messageEl.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-      // 高亮效果
-      messageEl.classList.add('bookmark-highlight');
-      setTimeout(() => {
-        messageEl.classList.remove('bookmark-highlight');
-      }, 2000);
-    } else {
-      // 消息已不存在，移除孤儿收藏
-      removeBookmark(sessionId, messageId).then(() => {
-        refreshBookmarkPanel();
-        showToast(t('bookmark.messageNotExistToast'), 'warning');
-      });
-    }
+    // 与搜索/停靠芯片/会话跳转共用同一定位口径：贴顶 + 多帧校正，
+    // 避免 content-visibility 占位高度导致落到相邻消息上
+    if (focusMessageInView(messageId)) return;
+    // 消息已不存在，移除孤儿收藏
+    removeBookmark(sessionId, messageId).then(() => {
+      refreshBookmarkPanel();
+      showToast(t('bookmark.messageNotExistToast'), 'warning');
+    });
   }, 500);
 }
 

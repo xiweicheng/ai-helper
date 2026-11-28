@@ -2,7 +2,7 @@
 
 import state from './state.js';
 import { switchToSession } from './session-manager.js';
-import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp } from './utils.js';
+import { escapeHtml, showToast, clampPanelToViewport, releasePanelClamp, focusMessageInView } from './utils.js';
 import { getSideRailSlot } from './side-rail.js';
 import { bindFullscreenButton, createFullscreenButton, exitPanelFullscreen } from './panel-fullscreen.js';
 import { getAllSessions, getSession, deleteMessageFromSession } from '../storage/db.js';
@@ -698,55 +698,42 @@ async function navigateToSearchResult(sessionId, messageId) {
       logger.warn('[SearchPanel] chatContainer not found');
       return;
     }
-    let messageEl = chatContainer.querySelector(`.message[data-message-id="${messageId}"]`);
-    // 兜底：去掉 .message 类名限制再试一次（某些渲染路径可能缺失 message 类）
-    if (!messageEl) {
-      messageEl = chatContainer.querySelector(`[data-message-id="${messageId}"]`);
-    }
-    // 调试日志：输出所有 data-message-id，方便排查匹配失败原因
-    if (!messageEl) {
-      const allMsgIds = Array.from(chatContainer.querySelectorAll('[data-message-id]'), el => el.dataset.messageId);
-      logger.warn('[SearchPanel] positionmessage failed', {
-        targetSessionId: sessionId,
-        activeSessionId: state.activeSessionId,
-        targetMessageId: messageId,
-        typeOfMessageId: typeof messageId,
-        messageIdLength: messageId.length,
-        domMessageIds: allMsgIds,
-        chatContainerHtmlLen: chatContainer.innerHTML.length,
-      });
-    }
-    if (messageEl) {
-      messageEl.scrollIntoView({ behavior: 'instant', block: 'nearest' });
-      // 高亮效果（与收藏定位一致）
-      messageEl.classList.add('bookmark-highlight');
-      setTimeout(() => {
-        messageEl.classList.remove('bookmark-highlight');
-      }, 2000);
-    } else {
-      showToast(t('searchPanel.messageDeleted'), 'warning');
-      // 消息在 DOM 中找不到，说明是 IndexedDB 中的脏数据（之前删除未成功清理）
-      // 自动从 IndexedDB 中移除，下次搜索不会再命中
-      try {
-        const cleaned = await deleteMessageFromSession(sessionId, messageId);
-        if (cleaned) {
-          // 也从当前搜索结果中移除，避免重复点击
-          searchResults = searchResults.filter(r => !(r.sessionId === sessionId && r.messageId === messageId));
-          // 刷新搜索结果面板
-          const content = document.getElementById('searchPanelContent');
-          const count = document.getElementById('searchPanelCount');
-          if (content && searchResults.length > 0) {
-            renderSearchResults(searchResults, lastSearchQuery, content);
-            count.textContent = t('searchPanel.countResult', { count: searchResults.length });
-          } else if (content && searchResults.length === 0) {
-            content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
-            if (count) count.textContent = t('searchPanel.noResult');
-          }
-          logger.debug('[SearchPanel] cleaned IndexedDB dirtydata:', sessionId, messageId);
+    // 与收藏 / 停靠芯片 / 会话跳转共用定位口径：贴顶 + 多帧校正，
+    // 避免 content-visibility 占位高度让目标落到相邻消息上
+    if (focusMessageInView(messageId)) return;
+
+    const allMsgIds = Array.from(chatContainer.querySelectorAll('[data-message-id]'), el => el.dataset.messageId);
+    logger.warn('[SearchPanel] positionmessage failed', {
+      targetSessionId: sessionId,
+      activeSessionId: state.activeSessionId,
+      targetMessageId: messageId,
+      typeOfMessageId: typeof messageId,
+      messageIdLength: messageId.length,
+      domMessageIds: allMsgIds,
+      chatContainerHtmlLen: chatContainer.innerHTML.length,
+    });
+    showToast(t('searchPanel.messageDeleted'), 'warning');
+    // 消息在 DOM 中找不到，说明是 IndexedDB 中的脏数据（之前删除未成功清理）
+    // 自动从 IndexedDB 中移除，下次搜索不会再命中
+    try {
+      const cleaned = await deleteMessageFromSession(sessionId, messageId);
+      if (cleaned) {
+        // 也从当前搜索结果中移除，避免重复点击
+        searchResults = searchResults.filter(r => !(r.sessionId === sessionId && r.messageId === messageId));
+        // 刷新搜索结果面板
+        const content = document.getElementById('searchPanelContent');
+        const count = document.getElementById('searchPanelCount');
+        if (content && searchResults.length > 0) {
+          renderSearchResults(searchResults, lastSearchQuery, content);
+          count.textContent = t('searchPanel.countResult', { count: searchResults.length });
+        } else if (content && searchResults.length === 0) {
+          content.innerHTML = `<div class="search-panel-empty">${t('searchPanel.noMatch')}</div>`;
+          if (count) count.textContent = t('searchPanel.noResult');
         }
-      } catch (e) {
-        logger.warn('[SearchPanel] cleanupdirtydata failed:', e);
+        logger.debug('[SearchPanel] cleaned IndexedDB dirtydata:', sessionId, messageId);
       }
+    } catch (e) {
+      logger.warn('[SearchPanel] cleanupdirtydata failed:', e);
     }
   }, 500);
 }

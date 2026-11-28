@@ -1021,6 +1021,29 @@ function insertThinkingBadge(contentDiv, badge, visibleThinking) {
 }
 
 /**
+ * 把耗时交给紧随其后的思考正文：CSS 会把它渲染到首行末尾右侧（类似工具行的耗时列）。
+ * 若这一轮没有正文（只发起了工具调用），耗时直接跟在图标后面，
+ * 让「这里发生过一次思考」留在时间线上，而不是整行消失。
+ */
+function applyThinkingDuration(badge, duration) {
+  const next = badge.nextElementSibling;
+  const hasContent = !!next && next.classList.contains('thinking-content');
+  if (!duration) {
+    // 既没有正文、也没有耗时，图标说明不了任何信息
+    if (!hasContent) badge.remove();
+    return;
+  }
+  if (hasContent) {
+    next.dataset.duration = duration;
+    return;
+  }
+  const span = document.createElement('span');
+  span.className = 'thinking-duration';
+  span.textContent = duration;
+  badge.appendChild(span);
+}
+
+/**
  * 把已登记的流式气泡挂回会话区末尾（接管路径专用，只挪位置不动内容）。
  * 与 reconnectStreamingElement 的区别：接管气泡一直是活的（镜像每条增量都在原地
  * 更新），既不需要回填正文，也不能把可见指示器收成「思考结果」——那颗指示器上
@@ -1082,7 +1105,7 @@ export function reconnectStreamingElement(sessionId) {
       const badge = document.createElement('span');
       badge.className = 'thinking-badge';
       badge.dataset.status = 'success';
-      badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>' + t('chatStream.thinkingResult');
+      badge.innerHTML = '<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>';
       insertThinkingBadge(contentDiv, badge, indicator);
     });
   }
@@ -1376,10 +1399,11 @@ export function appendToolCallItems(element, toolCalls) {
     const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>`;
     badge.dataset.status = 'success';
 
     insertThinkingBadge(contentDiv, badge, visibleThinking);
+    applyThinkingDuration(badge, duration);
     visibleThinking.classList.add('hidden');
     // 第一轮的指示器挂在 message-content 上，留着就是一颗不会再被收口的空转圈
     if (!contentDiv.contains(visibleThinking)) visibleThinking.remove();
@@ -2041,7 +2065,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
     const duration = _thinkingStartTime > 0 ? formatDuration(Date.now() - _thinkingStartTime) : '';
     const badge = document.createElement('span');
     badge.className = 'thinking-badge';
-    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>${t('chatStream.thinkingResult')}${duration ? ' <span class="thinking-duration">'+duration+'</span>' : ''}`;
+    badge.innerHTML = `<svg class="thinking-icon-static" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3 3 3 0 0 1 3 3v1a3 3 0 0 1-3 3 3 3 0 0 0-3 3v1a3 3 0 0 0 3 3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/></svg>`;
     badge.dataset.status = 'success';
     
     if (streamContent.contains(visibleThinking)) {
@@ -2075,6 +2099,7 @@ export function finalizeStreamingMessage(element, content, executionLog = [], re
       visibleThinking.classList.add('hidden');
       visibleThinking.remove();
     }
+    applyThinkingDuration(badge, duration);
   }
   
   // 隐藏所有剩余的思考指示器（确保全部隐藏）

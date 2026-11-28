@@ -1161,6 +1161,18 @@ export function focusMessageInView(messageId) {
 
   // instant：这是「点你就想看你点的」的跳转，平滑滚会让画面长途爬行，盖过定位意图
   target.scrollIntoView({ behavior: 'instant', block: 'start' });
+  // 助手正文开了 content-visibility：屏幕外按占位高度参与布局，滚到位后真实高度替换
+  // 会把目标挤走。连续几帧校正到目标重新贴住容器顶边，定位才和以前一样准。
+  let frames = 0;
+  const settle = () => {
+    const delta = target.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    if (Math.abs(delta) > 0.5 && frames < 5) {
+      container.scrollTop += delta;
+      frames += 1;
+      requestAnimationFrame(settle);
+    }
+  };
+  requestAnimationFrame(settle);
   // 高亮沿用既有 bookmark-highlight，不再造第三种闪烁
   target.classList.add('bookmark-highlight');
   setTimeout(() => target.classList.remove('bookmark-highlight'), MESSAGE_HIGHLIGHT_MS);

@@ -27,6 +27,7 @@ import { initTodoPanel } from './todo-panel.js';
 import { initGoalPanel } from './goal-panel.js';
 import { markSessionCompleted, restoreCompletedSessions } from './session-manager.js';
 import { newSession, closeCurrentSession } from './session-manager-ui.js';
+import { restoreChatScroll, saveChatScroll, scrollStorageKey } from './scroll-memory.js';
 import { initVersionInfo } from './version-info.js';
 import { initPanelContext } from './panel-context.js';
 import logger from '../shared/logger.js';
@@ -2961,15 +2962,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // 恢复滚动位置（收藏定位时跳过，由 navigateToBookmark 自行处理）
       if (!e.detail?.skipScrollRestore) {
-        const scrollKey = 'scrollPosition_' + (sessionId || 'default');
-        chrome.storage.local.get([scrollKey], (result) => {
-          if (result[scrollKey] !== undefined) {
-            setTimeout(() => {
-              const el = document.getElementById('chatContainer');
-              if (el) el.scrollTop = result[scrollKey];
-            }, 150);
-          }
-        });
+        setTimeout(() => {
+          restoreChatScroll(sessionId).then(() => {
+            import('./chat-streaming.js')
+              .then(({ updateScrollButtonState }) => updateScrollButtonState())
+              .catch(() => {});
+          });
+        }, 150);
       }
       // 检查被遗弃的 checkpoint
       _checkForAbandonedCheckpoint();
@@ -3029,18 +3028,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 恢复该会话的滚动位置（收藏定位时跳过，由 navigateToBookmark 自行处理）
     if (!e.detail?.skipScrollRestore) {
-      const scrollKey = 'scrollPosition_' + (sessionId || 'default');
-      chrome.storage.local.get([scrollKey], (result) => {
-        if (result[scrollKey] !== undefined) {
-          setTimeout(async () => {
-            const el = document.getElementById('chatContainer');
-            if (el) el.scrollTop = result[scrollKey];
-            // 恢复滚动位置后更新"滚动到底部"按钮状态
-            const { updateScrollButtonState } = await import('./chat-streaming.js');
-            updateScrollButtonState();
-          }, 150);
-        }
-      });
+      setTimeout(async () => {
+        await restoreChatScroll(sessionId);
+        // 恢复滚动位置后更新"滚动到底部"按钮状态
+        const { updateScrollButtonState } = await import('./chat-streaming.js');
+        updateScrollButtonState();
+      }, 150);
     }
   });
 
@@ -4074,19 +4067,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 滚动位置：以前每次 scroll 事件直接写 storage，滚动全程高频同步 IO（PERF-04）。
-  // 改为静默 200ms 后只写最后一次；key 与 scrollTop 都在事件发生时捕获，
-  // 否则延迟落盘时 activeSessionId 可能已切走，会把位置写到别的会话上
-  const saveScrollPosition = debounce((key, top) => {
-    chrome.storage.local.set({ [key]: top });
+  // 改为静默 200ms 后只写最后一次；key 与数值都在事件发生时捕获，
+  // 否则延迟落盘时 activeSessionId 可能已切走，会把位置写到别的会话上。
+  // 落盘内容除了 scrollTop 还带「视野顶部消息锚点」，切回时按锚点校正，
+  // 避免 content-visibility 占位高度导致绝对位置漂移。
+  const saveScrollPosition = debounce((key, top, sessionId) => {
+    if (state.activeSessionId === sessionId) {
+      saveChatScroll(sessionId);
+      return;
+    }
+    // 已切走：只落数值（锚点会取到新会话的 DOM）
+    chrome.storage.local.set({ [key]: { top, atBottom: false, anchor: null } });
   }, 200);
   chatContainerEl.addEventListener('scroll', () => {
-    saveScrollPosition('scrollPosition_' + (state.activeSessionId || 'default'), chatContainerEl.scrollTop);
+    const sessionId = state.activeSessionId || 'default';
+    saveScrollPosition(scrollStorageKey(sessionId), chatContainerEl.scrollTop, sessionId);
   });
   // 面板收起时 debounce 可能还在等，兜底立即落一次，不丢最后一段滚动
   window.addEventListener('pagehide', () => {
-    chrome.storage.local.set({
-      ['scrollPosition_' + (state.activeSessionId || 'default')]: chatContainerEl.scrollTop,
-    });
+    saveChatScroll(state.activeSessionId || 'default');
   });
 
   // 更多操作下拉菜单

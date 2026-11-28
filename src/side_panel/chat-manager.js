@@ -10,6 +10,7 @@ import { addToInputHistory } from './input-history.js';
 import { formatMessageContent, addCodeCopyButtons, renderMessageMermaid, renderMermaidCharts, addTableToolbarEvents, applyFilePathLinks, bindFileLinkDelegate, stripArtifactMarkers } from './markdown-render.js';
 import { loadSessions, saveCurrentSession, createSession, archiveCurrentSession, appendMessageToSession, importSessions, markSessionCompleted, persistSessionState, hydrateSessionWorkdir } from './session-manager.js';
 import { renderSessionTabs, handleDuplicateSession } from './session-manager-ui.js';
+import { restoreChatScroll } from './scroll-memory.js';
 import { ICON_COPY_16, ICON_IMAGE_24, ICON_CLOCK_24, ICON_QUOTE_1024, ICON_EXPORT_1024, ICON_WORD_1024, ICON_PDF_1024, ICON_DROPDOWN_ARROW } from './icons.js';
 import { loadAndShowPrototype } from './ui-prototype.js';
 import { estimateTokens, estimateMessagesTokens, assessContextPressure, getContextWindow, trimMessagesByBudget, compressQuotedContext } from '../shared/token-counter.js';
@@ -575,15 +576,10 @@ async function _loadChatHistoryImpl() {
     // 如果存在，自动添加一个"继续执行"提示卡片
     await _checkForAbandonedCheckpoint();
     
-    const scrollKey = 'scrollPosition_' + (state.activeSessionId || 'default');
-    chrome.storage.local.get([scrollKey], (result) => {
-      if (result[scrollKey] !== undefined) {
-        setTimeout(() => {
-          const chatContainerEl = document.getElementById('chatContainer');
-          chatContainerEl.scrollTop = result[scrollKey];
-        }, 100);
-      }
-    });
+    // 按锚点恢复上次离开时的滚动位置（content-visibility 占位高度会让绝对位置漂移）
+    setTimeout(() => {
+      restoreChatScroll(state.activeSessionId).catch(() => {});
+    }, 100);
   } else {
     // 首次打开：自动创建默认会话并渲染标签栏
     await createSession();
@@ -2859,6 +2855,32 @@ export function restoreMessageFromHtml(htmlContent, messageId = null, resumable 
   if (messageId) {
     messageEl.dataset.messageId = messageId;
   }
+
+  // 历史缓存里的思考标记是「浮动兄弟节点」：换行时浮动会把后续行挤出缩进。
+  // 恢复时把耗时挪到正文右侧（首行末尾），标记并入首段内联，并清掉段落开头空白（含全角），
+  // 保证换行后顶头。
+  messageEl.querySelectorAll('.thinking-badge').forEach((badge) => {
+    const next = badge.nextElementSibling;
+    const insideContent = badge.closest('.thinking-content');
+    const content = next && next.classList.contains('thinking-content') ? next : insideContent;
+    const durationEl = badge.querySelector('.thinking-duration');
+    if (durationEl) {
+      if (content) content.dataset.duration = durationEl.textContent.trim();
+      durationEl.remove();
+    }
+    // 已经在正文内部：原位保留
+    if (insideContent) return;
+    // 孤立标记：这一轮只发起了工具调用、没有正文，保留图标+耗时作为时间线痕迹
+    if (!content) return;
+    const body = content.querySelector('.markdown-body') || content;
+    const first = body.firstElementChild;
+    const host = first && /^(P|LI|H[1-6])$/.test(first.tagName) ? first : body;
+    host.insertBefore(badge, host.firstChild);
+  });
+  messageEl.querySelectorAll('.thinking-content p').forEach((p) => {
+    const first = p.firstChild;
+    if (first && first.nodeType === 3) first.nodeValue = first.nodeValue.replace(/^[\s\u3000]+/, '');
+  });
 
   // 如果标记为可恢复，在 footer 中挂「继续执行」入口（HTML 中可能不存在）
   // 单一实现在 chat-resume._mountResumeButton：这里的旧内联副本已合并，避免两处按钮行为漂移

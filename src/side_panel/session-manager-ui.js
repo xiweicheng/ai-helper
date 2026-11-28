@@ -2,6 +2,7 @@
 // 本模块不与 chat-manager.js 产生循环依赖，通过 DOM 事件通知上层
 
 import state from './state.js';
+import { restoreChatScroll } from './scroll-memory.js';
 import { BUILTIN_TOOLS } from './constants.js';
 import { renderAgentSelector } from './agent-manager.js';
 import { getAgent } from './agent-store.js';
@@ -1825,15 +1826,14 @@ const FOCUS_SETTLE_MS = 500;
  * 否则视野会停在消息区最顶部，比不定位更突兀。
  */
 function restoreSessionScroll(sessionId) {
-  const scrollKey = `scrollPosition_${sessionId || 'default'}`;
-  chrome.storage.local.get([scrollKey], (result) => {
-    const el = document.getElementById('chatContainer');
-    if (el && result[scrollKey] !== undefined) el.scrollTop = result[scrollKey];
-    // 滚动后要同步「滚动到底部」按钮状态，不然徽标停在旧值
-    import('./chat-streaming.js')
-      .then(({ updateScrollButtonState }) => updateScrollButtonState())
-      .catch(() => {});
-  });
+  restoreChatScroll(sessionId)
+    .catch(() => {})
+    .finally(() => {
+      // 滚动后要同步「滚动到底部」按钮状态，不然徽标停在旧值
+      import('./chat-streaming.js')
+        .then(({ updateScrollButtonState }) => updateScrollButtonState())
+        .catch(() => {});
+    });
 }
 
 /**
